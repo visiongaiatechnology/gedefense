@@ -1,0 +1,54 @@
+[Unit]
+Description=VGT GeDefense Production Beta Rust XDP Core
+After=network-online.target gedefense-bpffs.service
+Wants=network-online.target
+Requires=gedefense-bpffs.service
+Before=gedefense-control.service
+StartLimitIntervalSec=120
+StartLimitBurst=4
+
+[Service]
+Type=simple
+User=root
+Group=gedefense
+RuntimeDirectory=vgt-gedefense
+RuntimeDirectoryMode=0750
+ExecStart=/opt/vgt/gedefense/current/libexec/gedefense-core --interface=auto --bpf-object=/opt/vgt/gedefense/current/lib/gedefense/gedefense-ebpf --socket=/run/vgt-gedefense/core.sock --auth-key=/etc/vgt/gedefense/secrets/core-ipc.key --storage-key=/etc/vgt/gedefense/secrets/storage-master.key --quarantine-dir=/var/lib/vgt/gedefense/quarantine/objects --control-user=gedefense
+Restart=on-failure
+RestartSec=3s
+TimeoutStartSec=30s
+TimeoutStopSec=15s
+LimitMEMLOCK=infinity
+NoNewPrivileges=true
+CapabilityBoundingSet=CAP_BPF CAP_NET_ADMIN CAP_PERFMON CAP_SYS_ADMIN CAP_SYS_RESOURCE CAP_KILL
+AmbientCapabilities=CAP_BPF CAP_NET_ADMIN CAP_PERFMON CAP_SYS_ADMIN CAP_SYS_RESOURCE CAP_KILL
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectClock=true
+ProtectHostname=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX AF_NETLINK
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service bpf perf_event_open pidfd_open pidfd_send_signal
+SystemCallErrorNumber=EPERM
+ReadOnlyPaths=/opt/vgt/gedefense/current /etc/vgt/gedefense/secrets
+ReadWritePaths=/run/vgt-gedefense /sys/fs/bpf /var/lib/vgt/gedefense/quarantine
+ReadWritePaths=/etc/sysctl.d
+ReadWritePaths=-/proc/sys/kernel/kptr_restrict -/proc/sys/kernel/dmesg_restrict -/proc/sys/kernel/randomize_va_space -/proc/sys/kernel/yama/ptrace_scope -/proc/sys/kernel/unprivileged_bpf_disabled
+ReadWritePaths=-/proc/sys/fs/protected_fifos -/proc/sys/fs/protected_regular -/proc/sys/fs/suid_dumpable
+ReadWritePaths=-/proc/sys/net/ipv4/tcp_syncookies -/proc/sys/net/ipv4/conf/all/accept_redirects -/proc/sys/net/ipv4/conf/default/accept_redirects -/proc/sys/net/ipv4/conf/all/send_redirects -/proc/sys/net/ipv4/conf/default/send_redirects
+ReadWritePaths=-/proc/sys/net/ipv6/conf/all/accept_redirects -/proc/sys/net/ipv6/conf/default/accept_redirects
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

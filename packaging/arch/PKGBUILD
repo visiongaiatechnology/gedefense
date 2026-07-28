@@ -1,0 +1,102 @@
+# STATUS: DIAMANT VGT SUPREME
+# Maintainer: VisionGaia Technology
+
+pkgname=gedefense
+pkgver=1.0.0_beta.5
+_release=1.0.0-beta.5
+pkgrel=1
+pkgdesc='GeDefense Linux security platform: XDP, XDR, evidence and response plane'
+arch=('x86_64')
+url='https://github.com/VisionGaiaTechnology'
+license=('AGPL-3.0-only')
+depends=('glibc' 'argon2' 'libelf' 'openssl')
+makedepends=('go>=1.23' 'rustup' 'clang' 'llvm' 'make' 'pkgconf' 'nodejs' 'python')
+provides=('linux-security-control-plane')
+conflicts=('gaiasentinel')
+options=('!debug' '!strip')
+backup=('etc/vgt/gedefense/gedefense.toml')
+source=()
+sha256sums=()
+
+_source_root="${GEDEFENSE_SOURCE_ROOT:-$(realpath "${startdir}/../..")}"
+
+prepare() {
+  local required
+  for required in \
+    VERSION \
+    Makefile \
+    control/go.mod \
+    gateway/go.mod \
+    rust/Cargo.lock \
+    packaging/systemd/gedefense-control.service; do
+    [[ -f "${_source_root}/${required}" ]] || {
+      printf 'Missing local GeDefense source: %s\n' "${required}" >&2
+      return 1
+    }
+  done
+
+  [[ "$(<"${_source_root}/VERSION")" == "${_release}" ]] || {
+    printf 'VERSION does not match package release %s\n' "${_release}" >&2
+    return 1
+  }
+}
+
+build() {
+  make -C "${_source_root}" full
+}
+
+check() {
+  make -C "${_source_root}" test
+}
+
+package() {
+  local release_root="${pkgdir}/opt/vgt/gedefense/releases/${_release}"
+
+  install -Dm755 "${_source_root}/dist/gedefense-control" \
+    "${release_root}/bin/gedefense-control"
+  install -Dm755 "${_source_root}/dist/gedefense-access" \
+    "${release_root}/bin/gedefense-access"
+  install -Dm755 "${_source_root}/dist/gedefense-core" \
+    "${release_root}/libexec/gedefense-core"
+  install -Dm644 "${_source_root}/dist/gedefense-ebpf" \
+    "${release_root}/lib/gedefense/gedefense-ebpf"
+
+  install -Dm644 "${_source_root}/README.md" \
+    "${release_root}/share/README.md"
+  install -Dm644 "${_source_root}/SECURITY.md" \
+    "${release_root}/share/SECURITY.md"
+  install -Dm644 "${_source_root}/TOOLCHAINS.lock" \
+    "${release_root}/share/TOOLCHAINS.lock"
+
+  install -d "${pkgdir}/opt/vgt/gedefense"
+  ln -s "releases/${_release}" "${pkgdir}/opt/vgt/gedefense/current"
+
+  install -Dm640 "${_source_root}/gedefense.toml" \
+    "${pkgdir}/etc/vgt/gedefense/gedefense.toml"
+  install -Dm644 "${_source_root}/xdr-baseline.example.json" \
+    "${pkgdir}/etc/vgt/gedefense/xdr-baseline.json"
+
+  install -Dm644 \
+    "${_source_root}/packaging/systemd/gedefense-bpffs.service" \
+    "${pkgdir}/usr/lib/systemd/system/gedefense-bpffs.service"
+  install -Dm644 \
+    "${_source_root}/packaging/systemd/gedefense-core.service" \
+    "${pkgdir}/usr/lib/systemd/system/gedefense-core.service"
+  install -Dm644 \
+    "${_source_root}/packaging/systemd/gedefense-control.service" \
+    "${pkgdir}/usr/lib/systemd/system/gedefense-control.service"
+
+  sed \
+    -e 's#@RELEASE@#/opt/vgt/gedefense/current#g' \
+    -e 's#@PUBLIC_PORT@#9843#g' \
+    -e 's#@PUBLIC_HOST@#127.0.0.1:9843#g' \
+    "${_source_root}/packaging/systemd/gedefense-access.service.in" \
+    > "${srcdir}/gedefense-access.service"
+  install -Dm644 "${srcdir}/gedefense-access.service" \
+    "${pkgdir}/usr/lib/systemd/system/gedefense-access.service"
+
+  install -Dm644 "${_source_root}/packaging/tmpfiles/vgt-gedefense.conf" \
+    "${pkgdir}/usr/lib/tmpfiles.d/vgt-gedefense.conf"
+  install -Dm644 "${_source_root}/packaging/sysusers/vgt-gedefense.conf" \
+    "${pkgdir}/usr/lib/sysusers.d/vgt-gedefense.conf"
+}

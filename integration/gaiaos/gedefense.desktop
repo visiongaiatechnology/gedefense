@@ -1,0 +1,13 @@
+# STATUS: DIAMANT VGT SUPREME
+[Desktop Entry]
+Name=VGT GeDefense
+GenericName=GaiaOS Security Center
+Comment=Kernel defense, XDR, integrity, cases, quarantine and Gaia Cells
+Exec=gedefense-app
+Icon=security-high
+Terminal=false
+Type=Application
+Categories=System;Security;Settings;
+Keywords=Security;GeDefense;XDR;Firewall;Quarantine;GaiaOS;
+StartupNotify=true
+StartupWMClass=VGT-GeDefense

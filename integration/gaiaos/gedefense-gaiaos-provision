@@ -1,0 +1,132 @@
+#!/usr/bin/env bash
+# STATUS: DIAMANT VGT SUPREME
+set -Eeuo pipefail
+umask 0077
+
+readonly CONFIG_DIR=/etc/vgt/gedefense
+readonly SECRET_DIR=${CONFIG_DIR}/secrets
+readonly STATE_DIR=/var/lib/vgt/gedefense
+readonly RELEASE=/opt/vgt/gedefense/current
+readonly PROFILE=/usr/share/gedefense/profiles/gaiaos.toml
+
+fail() {
+  printf 'GeDefense GaiaOS provisioning failed: %s\n' "$1" >&2
+  exit 1
+}
+
+require_regular_or_absent() {
+  local path=$1
+  [[ ! -L "$path" ]] || fail "symlink refused: $path"
+  [[ ! -e "$path" || -f "$path" ]] || fail "non-regular path refused: $path"
+}
+
+install_random_key() {
+  local path=$1 owner=$2 group=$3 mode=$4
+  require_regular_or_absent "$path"
+  if [[ -f "$path" ]]; then
+    [[ $(stat -c %s -- "$path") -eq 32 ]] || fail "invalid key length: $path"
+  else
+    local temporary
+    temporary=$(mktemp -- "${path}.new.XXXXXXXX")
+    head -c 32 /dev/urandom >"$temporary"
+    chown "$owner:$group" "$temporary"
+    chmod "$mode" "$temporary"
+    mv -T -- "$temporary" "$path"
+  fi
+  chown "$owner:$group" "$path"
+  chmod "$mode" "$path"
+}
+
+install_dashboard_token() {
+  local path=${STATE_DIR}/dashboard.token
+  require_regular_or_absent "$path"
+  if [[ ! -s "$path" ]]; then
+    local temporary
+    temporary=$(mktemp -- "${path}.new.XXXXXXXX")
+    openssl rand -base64 32 | tr '+/' '-_' | tr -d '=\n' >"$temporary"
+    printf '\n' >>"$temporary"
+    chown gedefense:gedefense "$temporary"
+    chmod 0600 "$temporary"
+    mv -T -- "$temporary" "$path"
+  fi
+}
+
+install_initial_password() {
+  local record=${CONFIG_DIR}/access-password
+  require_regular_or_absent "$record"
+  [[ -s "$record" ]] && return 0
+  local plaintext record_tmp
+  plaintext=$(openssl rand -base64 24 | tr -d '\n')
+  record_tmp=$(mktemp -- "${record}.new.XXXXXXXX")
+  printf '%s\n' "$plaintext" |
+    "${RELEASE}/bin/gedefense-access" --hash-password-stdin >"$record_tmp"
+  chown gedefense:gedefense "$record_tmp"
+  chmod 0600 "$record_tmp"
+  mv -T -- "$record_tmp" "$record"
+  printf '%s\n' "$plaintext" >"${STATE_DIR}/initial-access-password"
+  chown root:root "${STATE_DIR}/initial-access-password"
+  chmod 0600 "${STATE_DIR}/initial-access-password"
+  : >/var/lib/vgt/gedefense-password-setup-required
+  chown root:root /var/lib/vgt/gedefense-password-setup-required
+  chmod 0644 /var/lib/vgt/gedefense-password-setup-required
+}
+
+install_tls_identity() {
+  local cert=${CONFIG_DIR}/tls/access.crt key=${CONFIG_DIR}/tls/access.key
+  require_regular_or_absent "$cert"
+  require_regular_or_absent "$key"
+  if [[ ! -s "$cert" || ! -s "$key" ]]; then
+    rm -f -- "$cert" "$key"
+    openssl req -x509 -newkey rsa:3072 -sha256 -nodes -days 397 \
+      -subj '/CN=127.0.0.1' \
+      -addext 'subjectAltName=IP:127.0.0.1,DNS:localhost' \
+      -keyout "$key" -out "$cert"
+  fi
+  chown root:gedefense "$cert" "$key"
+  chmod 0644 "$cert"
+  chmod 0640 "$key"
+}
+
+install_xdr_baseline() {
+  local destination=${CONFIG_DIR}/xdr-baseline.json
+  local control_hash core_hash access_hash temporary
+  control_hash=$(sha256sum "${RELEASE}/bin/gedefense-control" | cut -d' ' -f1)
+  core_hash=$(sha256sum "${RELEASE}/libexec/gedefense-core" | cut -d' ' -f1)
+  access_hash=$(sha256sum "${RELEASE}/bin/gedefense-access" | cut -d' ' -f1)
+  temporary=$(mktemp -- "${destination}.new.XXXXXXXX")
+  printf '%s\n' \
+    '{"version":1,"profiles":[{"path":"/opt/vgt/gedefense/current/bin/gedefense-control","sha256":"'"$control_hash"'"},{"path":"/opt/vgt/gedefense/current/libexec/gedefense-core","sha256":"'"$core_hash"'"},{"path":"/opt/vgt/gedefense/current/bin/gedefense-access","sha256":"'"$access_hash"'"}]}' \
+    >"$temporary"
+  chown root:gedefense "$temporary"
+  chmod 0640 "$temporary"
+  mv -T -- "$temporary" "$destination"
+}
+
+[[ $(id -u) -eq 0 ]] || fail "root is required"
+[[ -x ${RELEASE}/bin/gedefense-access ]] || fail "GeDefense release is not installed"
+[[ -f "$PROFILE" && ! -L "$PROFILE" ]] || fail "GaiaOS profile is unavailable"
+
+install -d -m 0750 -o root -g gedefense "$CONFIG_DIR"
+install -d -m 0750 -o root -g gedefense "$SECRET_DIR" "${CONFIG_DIR}/tls"
+install -d -m 0755 -o root -g root /var/lib/vgt
+install -d -m 0750 -o gedefense -g gedefense "$STATE_DIR"
+install -d -m 0700 -o root -g gedefense \
+  "${STATE_DIR}/quarantine" "${STATE_DIR}/quarantine/objects"
+
+require_regular_or_absent "${CONFIG_DIR}/gedefense.toml"
+if [[ ! -f ${CONFIG_DIR}/gedefense.toml ]]; then
+  install -m 0640 -o root -g gedefense "$PROFILE" "${CONFIG_DIR}/gedefense.toml"
+fi
+
+install_random_key "${SECRET_DIR}/core-ipc.key" root gedefense 0640
+install_random_key "${SECRET_DIR}/storage-master.key" root gedefense 0640
+install_random_key "${SECRET_DIR}/gaia-cells.key" root gedefense 0640
+install_random_key "${STATE_DIR}/xdr-log.key" gedefense gedefense 0600
+install_random_key "${STATE_DIR}/runtime-settings.key" gedefense gedefense 0600
+install_random_key "${STATE_DIR}/access-session.key" gedefense gedefense 0600
+install_dashboard_token
+install_initial_password
+install_tls_identity
+install_xdr_baseline
+
+printf 'GeDefense GaiaOS provisioning complete.\n'

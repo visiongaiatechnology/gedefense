@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# STATUS: DIAMANT VGT SUPREME
+set -Eeuo pipefail
+
+readonly url=https://127.0.0.1:9843/
+readonly marker=/var/lib/vgt/gedefense-password-setup-required
+readonly cert=/etc/vgt/gedefense/tls/access.crt
+
+show_error() {
+  if command -v kdialog >/dev/null 2>&1; then
+    kdialog --title 'VGT GeDefense' --error "$1"
+  else
+    notify-send --urgency=critical 'VGT GeDefense' "$1"
+  fi
+}
+
+if [[ -e "$marker" ]]; then
+  command -v kdialog >/dev/null 2>&1 ||
+    show_error 'Für die Ersteinrichtung wird kdialog benötigt.'
+  first=$(kdialog --title 'VGT GeDefense' --password \
+    'Neues Operator-Passwort (mindestens 12 Zeichen):') || exit 0
+  second=$(kdialog --title 'VGT GeDefense' --password \
+    'Operator-Passwort wiederholen:') || exit 0
+  if [[ ${#first} -lt 12 || "$first" != "$second" ]]; then
+    show_error 'Die Passwörter stimmen nicht überein oder sind zu kurz.'
+    exit 1
+  fi
+  printf '%s\n' "$first" | pkexec /usr/lib/gaiaos/gedefense-set-password ||
+    {
+      show_error 'Das Operator-Passwort konnte nicht gesetzt werden.'
+      exit 1
+    }
+  unset first second
+fi
+
+systemctl --quiet is-active gedefense-access.service ||
+  pkexec /usr/bin/systemctl start \
+    gedefense-gaiaos-provision.service gedefense-bpffs.service \
+    gedefense-core.service gedefense-control.service gedefense-access.service
+
+for _attempt in {1..40}; do
+  curl --fail --silent --max-time 1 --cacert "$cert" "$url" >/dev/null && break
+  sleep 0.25
+done
+curl --fail --silent --max-time 1 --cacert "$cert" "$url" >/dev/null ||
+  {
+    show_error 'GeDefense ist nicht bereit. Prüfe gedefense-*.service.'
+    exit 1
+  }
+
+spki=$(openssl x509 -in "$cert" -pubkey -noout |
+  openssl pkey -pubin -outform der |
+  openssl dgst -sha256 -binary |
+  openssl base64 -A)
+
+if command -v chromium >/dev/null 2>&1; then
+  exec chromium --app="$url" --name='VGT-GeDefense' --class='VGT-GeDefense' \
+    --ignore-certificate-errors-spki-list="$spki"
+fi
+if command -v brave >/dev/null 2>&1; then
+  exec brave --app="$url" --name='VGT-GeDefense' --class='VGT-GeDefense' \
+    --ignore-certificate-errors-spki-list="$spki"
+fi
+exec xdg-open "$url"

@@ -1,0 +1,25 @@
+[Unit]
+Description=VGT GeDefense BPF Filesystem Preparation
+ConditionPathIsMountPoint=!/sys/fs/bpf
+Before=gedefense-core.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/mount -t bpf -o nodev,nosuid,noexec bpf /sys/fs/bpf
+RemainAfterExit=yes
+User=root
+Group=root
+NoNewPrivileges=true
+CapabilityBoundingSet=CAP_SYS_ADMIN
+AmbientCapabilities=CAP_SYS_ADMIN
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictAddressFamilies=AF_UNIX
+RestrictRealtime=true
+RestrictSUIDSGID=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service @mount
+SystemCallErrorNumber=EPERM
+
+[Install]
+WantedBy=multi-user.target

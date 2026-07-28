@@ -1,0 +1,16 @@
+[workspace]
+resolver = "2"
+members = ["gedefense-common", "gedefense-ebpf", "gedefense-core"]
+
+[workspace.package]
+version = "1.0.0-beta.5"
+edition = "2021"
+license = "AGPL-3.0-only"
+authors = ["VisionGaia Technology"]
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+opt-level = 3
+panic = "abort"
+strip = true

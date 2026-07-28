@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "profiles": [
+    {
+      "executable": "/opt/vgt/gedefense/current/bin/gedefense-control",
+      "allowed_parents": ["/usr/lib/systemd/systemd"],
+      "allow_external_network": true,
+      "allowed_remote_ports": [443]
+    },
+    {
+      "executable": "/opt/vgt/gedefense/current/libexec/gedefense-core",
+      "allowed_uids": [0],
+      "allowed_parents": ["/usr/lib/systemd/systemd"],
+      "allow_external_network": false
+    }
+  ]
+}

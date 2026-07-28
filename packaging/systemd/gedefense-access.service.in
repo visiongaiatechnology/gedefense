@@ -1,0 +1,43 @@
+[Unit]
+Description=VGT GeDefense HTTPS Password Gateway
+After=network-online.target gedefense-control.service
+Wants=network-online.target
+Requires=gedefense-control.service
+StartLimitIntervalSec=120
+StartLimitBurst=4
+
+[Service]
+Type=simple
+User=gedefense
+Group=gedefense
+ExecStart=@RELEASE@/bin/gedefense-access --listen=0.0.0.0:@PUBLIC_PORT@ --backend=http://127.0.0.1:9844 --public-host=@PUBLIC_HOST@ --password-file=/etc/vgt/gedefense/access-password --session-key-file=/var/lib/vgt/gedefense/access-session.key --backend-token-file=/var/lib/vgt/gedefense/dashboard.token --tls-cert=/etc/vgt/gedefense/tls/access.crt --tls-key=/etc/vgt/gedefense/tls/access.key
+Restart=on-failure
+RestartSec=3s
+TimeoutStartSec=30s
+TimeoutStopSec=15s
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectClock=true
+ProtectHostname=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+ReadOnlyPaths=@RELEASE@ /etc/vgt/gedefense
+ReadWritePaths=/var/lib/vgt/gedefense
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
