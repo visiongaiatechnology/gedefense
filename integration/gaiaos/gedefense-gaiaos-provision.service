@@ -1,0 +1,28 @@
+# STATUS: DIAMANT VGT SUPREME
+[Unit]
+Description=Provision VGT GeDefense for GaiaOS
+Before=gedefense-core.service
+ConditionPathExists=/opt/vgt/gedefense/current/bin/gedefense-access
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/gaiaos/gedefense-gaiaos-provision
+RemainAfterExit=yes
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/etc/vgt/gedefense /var/lib/vgt
+RestrictAddressFamilies=AF_UNIX
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+[Install]
+WantedBy=multi-user.target

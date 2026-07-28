@@ -1,0 +1,45 @@
+[Unit]
+Description=VGT GeDefense Production Beta Control Plane
+After=network-online.target gedefense-core.service
+Wants=network-online.target gedefense-core.service
+StartLimitIntervalSec=120
+StartLimitBurst=4
+
+[Service]
+Type=notify
+NotifyAccess=main
+WatchdogSec=20s
+User=gedefense
+Group=gedefense
+ExecStartPre=/opt/vgt/gedefense/current/bin/gedefense-control --config=/etc/vgt/gedefense/gedefense.toml --preflight
+ExecStart=/opt/vgt/gedefense/current/bin/gedefense-control --config=/etc/vgt/gedefense/gedefense.toml
+Restart=on-failure
+RestartSec=3s
+TimeoutStartSec=45s
+TimeoutStopSec=15s
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectClock=true
+ProtectHostname=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+ReadOnlyPaths=/opt/vgt/gedefense/current /etc/vgt/gedefense
+ReadWritePaths=/var/lib/vgt/gedefense /run/vgt-gedefense
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

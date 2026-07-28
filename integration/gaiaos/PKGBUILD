@@ -1,0 +1,65 @@
+# STATUS: DIAMANT VGT SUPREME
+# Maintainer: VisionGaia Technology
+
+pkgname=gaiaos-gedefense-integration
+pkgver=1.0.0_beta.5
+pkgrel=1
+pkgdesc='Native GaiaOS profile and authority contract for GeDefense'
+arch=('any')
+url='https://github.com/VisionGaiaTechnology'
+license=('AGPL-3.0-only')
+depends=("gedefense=${pkgver}")
+conflicts=('gaiasentinel')
+replaces=('gaiasentinel')
+provides=('gaiaos-security-control-plane')
+source=(
+  'contract.json'
+  'gaiaos-profile.toml'
+  'README.md'
+  'build-local-packages.sh'
+  'verify_sync.py'
+  'gedefense-gaiaos-provision'
+  'gedefense-gaiaos-provision.service'
+  'gedefense-core-gaiaos.conf'
+  'gedefense-set-password'
+  'gedefense-app'
+  'gedefense.desktop'
+)
+sha256sums=(
+  'ad7182c07bf99d2e047136ea87dc3f93873014eb8baee1d319ac81d386fae9c5'
+  '5d547631714232abe6b749b7a0a480af8c5471f283d689de8876143e3c8cab43'
+  '505d3cfff66442380b3d093eed2f542a1e7e014dfd387898b6aaaa175ff1457e'
+  '73c912672acbbf92677d37369cc382cead7c379df01ee76f49282dc69b825fc4'
+  'a683e758ea20003def0f52681a4db441c63ea9dc184360ed6884f924361a783a'
+  '3d993c9385275dcd98998fe21a81a3163a87eb5f0952aa6eecaf749e3f918794'
+  'e64f097dfda4ad19d1a243dfbd57a298450a49ea3003bd26ad9248fbb879cd32'
+  'faf78cd6dd81d766104d3db0e205b2af1e9a83b57aa0aa5af85843113d3e48e3'
+  '1b9cc8622f95c29200587e69e69b315849ce9742d850d5581fb07087ac04bb24'
+  '8386acb92967f666c8d3d99f6ea8b2b694667af39701a613167baaa9c1502f9d'
+  'e8e9abe33e9936bf8e2bd7719ca0dcc7ae6cc9d567491ad1e8d98edae13e207e'
+)
+
+package() {
+  install -Dm644 "${srcdir}/contract.json" \
+    "${pkgdir}/usr/share/gaiaos/security/gedefense-contract.json"
+  install -Dm640 "${srcdir}/gaiaos-profile.toml" \
+    "${pkgdir}/usr/share/gedefense/profiles/gaiaos.toml"
+  install -Dm644 "${srcdir}/README.md" \
+    "${pkgdir}/usr/share/doc/gaiaos-gedefense-integration/README.md"
+  install -Dm755 "${srcdir}/build-local-packages.sh" \
+    "${pkgdir}/usr/lib/gaiaos/build-local-gedefense-packages"
+  install -Dm755 "${srcdir}/verify_sync.py" \
+    "${pkgdir}/usr/lib/gaiaos/verify-gedefense-sync"
+  install -Dm755 "${srcdir}/gedefense-gaiaos-provision" \
+    "${pkgdir}/usr/lib/gaiaos/gedefense-gaiaos-provision"
+  install -Dm644 "${srcdir}/gedefense-gaiaos-provision.service" \
+    "${pkgdir}/usr/lib/systemd/system/gedefense-gaiaos-provision.service"
+  install -Dm644 "${srcdir}/gedefense-core-gaiaos.conf" \
+    "${pkgdir}/usr/lib/systemd/system/gedefense-core.service.d/10-gaiaos-provision.conf"
+  install -Dm755 "${srcdir}/gedefense-set-password" \
+    "${pkgdir}/usr/lib/gaiaos/gedefense-set-password"
+  install -Dm755 "${srcdir}/gedefense-app" \
+    "${pkgdir}/usr/bin/gedefense-app"
+  install -Dm644 "${srcdir}/gedefense.desktop" \
+    "${pkgdir}/usr/share/applications/gedefense.desktop"
+}

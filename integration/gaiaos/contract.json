@@ -1,0 +1,22 @@
+{
+  "schema": "vgt-gedefense-gaiaos-integration-v1",
+  "gedefense_version": "1.0.0-beta.5",
+  "minimum_gaiaos_version": "0.1",
+  "security_authority": "gedefense",
+  "sentinel_runtime_mode": "migration-source-only",
+  "generic_linux_supported": true,
+  "gaiaos_supported": true,
+  "capabilities": {
+    "boot_trust_evidence": "implemented",
+    "encrypted_signed_evidence_ledger": "implemented",
+    "xdp_network_enforcement": "implemented",
+    "bounded_xdr": "implemented",
+    "gaia_cells_runtime_adapter": "implemented-v1-runtime-optional",
+    "transaction_engine_v2": "implemented",
+    "integrity_v2": "implemented",
+    "persistent_hardening_profiles": "implemented",
+    "encrypted_quarantine": "implemented",
+    "case_engine": "implemented",
+    "isolated_deception_service": "deferred-outside-beta-authority"
+  }
+}

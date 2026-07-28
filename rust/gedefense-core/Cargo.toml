@@ -1,0 +1,15 @@
+[package]
+name = "gedefense-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+aya = "=0.14.0"
+libc = "=0.2.189"
+base64 = "=0.22.1"
+hex = "=0.4.3"
+hmac = "=0.12.1"
+sha2 = "=0.10.9"
+aes-gcm = "=0.10.3"
+gedefense-common = { path = "../gedefense-common" }

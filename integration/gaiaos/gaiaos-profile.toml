@@ -1,0 +1,97 @@
+# VGT GeDefense native GaiaOS profile.
+# Unknown keys are rejected by the GeDefense strict TOML parser.
+
+[node]
+name = "GaiaOS-Local"
+interface = "auto"
+mode = "standalone"
+
+[dashboard]
+listen = "127.0.0.1:9844"
+allow_remote = false
+allowed_hosts = "127.0.0.1,localhost,::1"
+token_file = "/var/lib/vgt/gedefense/dashboard.token"
+tls_cert_file = ""
+tls_key_file = ""
+rate_limit_per_minute = 240
+rate_limit_burst = 40
+max_sse_clients = 16
+
+[core]
+socket = "/run/vgt-gedefense/core.sock"
+auth_key_file = "/etc/vgt/gedefense/secrets/core-ipc.key"
+request_timeout_millis = 1500
+
+[defense]
+allowlist = ""
+enforcement = "observe"
+default_ttl_seconds = 3600
+max_ttl_seconds = 604800
+max_block_entries = 250000
+strict_asn_drop = false
+dpi_enabled = false
+
+[policy]
+state_file = "/var/lib/vgt/gedefense/policy.json"
+signing_key_file = "/var/lib/vgt/gedefense/policy.ed25519"
+public_key_file = "/var/lib/vgt/gedefense/policy.ed25519.pub"
+storage_key_file = "/etc/vgt/gedefense/secrets/storage-master.key"
+require_signed = true
+
+[xdr]
+enabled = true
+mode = "observe"
+scan_interval_millis = 750
+network_interval_seconds = 3
+integrity_interval_seconds = 3
+alert_score = 40
+contain_score = 80
+kill_score = 120
+max_command_bytes = 8192
+command_preview_bytes = 320
+dedupe_seconds = 300
+max_incident_log_bytes = 67108864
+incident_log = "/var/lib/vgt/gedefense/incidents.jsonl"
+log_key_file = "/var/lib/vgt/gedefense/xdr-log.key"
+baseline_file = "/etc/vgt/gedefense/xdr-baseline.json"
+protected_paths = "/opt/vgt/gedefense/current/bin/gedefense-control,/opt/vgt/gedefense/current/bin/gedefense-access,/opt/vgt/gedefense/current/libexec/gedefense-core,/opt/vgt/gedefense/current/lib/gedefense/gedefense-ebpf,/etc/vgt/gedefense/gedefense.toml,/etc/vgt/gedefense/xdr-baseline.json,/etc/os-release,/etc/sysctl.d/10-gaiaos-hardening.conf,/etc/nftables.conf,/etc/apparmor.d,/boot/vmlinuz-linux-hardened,/boot/initramfs-linux-hardened.img,/var/lib/pacman/local"
+allow_processes = ""
+worker_count = 4
+queue_capacity = 2048
+max_evaluations_per_scan = 4096
+behavior_enabled = true
+behavior_warmup_samples = 24
+behavior_zscore_milli = 3500
+behavior_min_connections = 8
+behavior_max_profiles = 4096
+behavior_max_ports_per_profile = 256
+behavior_profile_file = "/var/lib/vgt/gedefense/behavior-profiles.json"
+storage_key_file = "/etc/vgt/gedefense/secrets/storage-master.key"
+
+[runtime]
+settings_file = "/var/lib/vgt/gedefense/runtime-settings.json"
+key_file = "/var/lib/vgt/gedefense/runtime-settings.key"
+storage_key_file = "/etc/vgt/gedefense/secrets/storage-master.key"
+
+[cells]
+enabled = true
+socket = "/run/gaia-cells/control.sock"
+auth_key_file = "/etc/vgt/gedefense/secrets/gaia-cells.key"
+request_timeout_millis = 1500
+
+[release]
+channel = "beta"
+minimum_observe_seconds = 300
+minimum_canary_seconds = 900
+core_failure_threshold = 3
+max_evaluation_drop_permille = 5
+emergency_stop_file = "/var/lib/vgt/gedefense/EMERGENCY_STOP"
+auto_degrade = true
+
+[feeds]
+enabled = true
+auto_apply = false
+refresh_minutes = 60
+max_download_bytes = 8388608
+max_entries = 100000
+sources = "https://feodotracker.abuse.ch/downloads/ipblocklist.txt,https://www.spamhaus.org/drop/drop.txt"

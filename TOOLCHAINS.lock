@@ -1,0 +1,8 @@
+Go release validation = 1.23.2
+Node.js syntax validation = 22.16.0
+Gateway native password library = libargon2.so.1
+Rust stable = 1.97.1
+Rust eBPF nightly = nightly-2026-07-16
+bpf-linker = 0.10.3
+aya = 0.14.0
+aya-ebpf = 0.2.1
