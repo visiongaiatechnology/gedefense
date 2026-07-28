@@ -42,6 +42,9 @@ Found a vulnerability or have an improvement? **Open an issue or contact us.**
 
 ---
 
+<img width="1920" height="911" alt="ge1" src="https://github.com/user-attachments/assets/3b1e8094-7832-499e-ae61-c0d1d535c500" />
+
+
 ## 🔍 What is VGT GeDefense?
 
 GeDefense is not a firewall rule manager. It is a **local sovereign Linux Security Fabric** — kernel-near network defense, Host XDR, encrypted evidence ledger, reversible system hardening and GaiaOS-native isolation in one system, operated without any cloud control plane.
@@ -70,6 +73,9 @@ VGT GeDefense:
 A single regex, feed, behavioral or masquerading hit **cannot authorize process termination**. Enforce requires at minimum two independent authorized categories, objective broker evidence and a non-degraded system state.
 
 ---
+
+<img width="1920" height="911" alt="ge2" src="https://github.com/user-attachments/assets/cf2261d2-fc2a-492b-a79a-4c01b59594d8" />
+
 
 ## 🏛️ Architecture
 
@@ -110,6 +116,9 @@ A single regex, feed, behavioral or masquerading hit **cannot authorize process 
 **GaiaOS-native** — Identical core binaries, native provisioning, GaiaOS hardening profile, boot trust evidence, optional Gaia Cells integration. GeDefense is the **single security authority** in GaiaOS. Sentinel serves exclusively as migration and audit source — no competing runtime daemon.
 
 ---
+
+<img width="1920" height="911" alt="ge3" src="https://github.com/user-attachments/assets/b3c316ec-07ba-4b37-a000-558bf690578d" />
+
 
 ## 🛡️ Defense Fabric
 
