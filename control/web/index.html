@@ -1,0 +1,339 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#05090f">
+  <title>GeDefense 1.0.0-beta.5 · VisionGaiaTechnology</title>
+  <link rel="stylesheet" href="/assets/app.css">
+  <script type="module" src="/assets/app.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#workspace" data-i18n="skip.content">Zum Inhalt</a>
+  <div class="background-grid" aria-hidden="true"></div>
+  <div class="app-shell">
+    <aside class="sidebar" data-i18n-aria="nav.label" aria-label="Hauptnavigation">
+      <div class="brand-lockup">
+        <div class="brand-mark" aria-hidden="true"><span></span></div>
+        <div><strong>GeDefense</strong><small data-i18n="brand.powered">powered by VisionGaiaTechnology</small></div>
+      </div>
+      <nav class="nav-stack">
+        <button class="nav-item active" type="button" data-view="overview" aria-current="page"><span aria-hidden="true">◈</span><b data-i18n="nav.overview">Übersicht</b></button>
+        <button class="nav-item" type="button" data-view="xdr"><span aria-hidden="true">⌬</span><b data-i18n="nav.xdr">GeDefense XDR</b></button>
+        <button class="nav-item" type="button" data-view="network"><span aria-hidden="true">⌁</span><b data-i18n="nav.network">Netzwerk</b></button>
+        <button class="nav-item" type="button" data-view="policy"><span aria-hidden="true">◇</span><b data-i18n="nav.policy">Policy Trust</b></button>
+        <button class="nav-item" type="button" data-view="forensics"><span aria-hidden="true">◎</span><b data-i18n="nav.forensics">Forensik</b></button>
+        <button class="nav-item" type="button" data-view="release"><span aria-hidden="true">△</span><b data-i18n="nav.release">Beta Release</b></button>
+        <button class="nav-item" type="button" data-view="settings"><span aria-hidden="true">⚙</span><b data-i18n="nav.settings">Einstellungen</b></button>
+        <button class="nav-item" type="button" data-view="system"><span aria-hidden="true">⎔</span><b data-i18n="nav.system">System</b></button>
+      </nav>
+      <div class="sidebar-foot">
+        <div class="mini-status"><span id="sidebarPulse" class="status-dot"></span><div><b id="sidebarState">INITIALISIERT</b><small id="sidebarMode">Observe</small></div></div>
+        <span class="powered-line">GeDefense <span id="versionText">1.0.0-beta.5</span></span>
+        <small class="vgt-credit" data-i18n="brand.powered">powered by VisionGaiaTechnology</small>
+      </div>
+    </aside>
+
+    <div class="main-column">
+      <header class="topbar">
+        <div><p id="viewEyebrow" class="eyebrow">SOVEREIGN DEFENSE FABRIC</p><h1 id="viewTitle">Übersicht</h1></div>
+        <div class="top-actions">
+          <time id="clock" class="clock">--:--:--</time>
+          <label class="language-control"><span class="sr-only" data-i18n="top.language">Sprache</span><select id="languageSelect" data-i18n-aria="top.language" aria-label="Sprache"><option value="de">DE</option><option value="en">EN</option><option value="ru">RU</option></select></label>
+          <button id="supportButton" class="button button-support" type="button" data-i18n="top.support">VGT unterstützen</button>
+          <button id="authButton" class="button button-quiet" type="button" data-i18n="top.operator">Operator-Key</button>
+          <span id="systemBadge" class="badge badge-warning">INITIALISIERT</span>
+        </div>
+      </header>
+
+      <main id="workspace" class="workspace">
+        <section class="view active" data-page="overview" aria-labelledby="overviewHeading">
+          <div class="hero panel">
+            <div class="hero-copy">
+              <p class="eyebrow" data-i18n="overview.kicker">GEDEFENSE 1.0.0-beta.5 // FULL STACK BETA</p>
+              <h2 id="overviewHeading" data-i18n="overview.heading">Abwehr, die den Host als Gesamtsystem versteht.</h2>
+              <p data-i18n="overview.description">Rust-XDP, signierte Policy-Snapshots und Linux-XDR korrelieren Netzwerk, Prozesse, Integrität und Verhalten – lokal, nachvollziehbar und ohne Cloud-Abhängigkeit.</p>
+              <div class="hero-state"><span id="heroPulse" class="status-dot"></span><b id="shieldState">CONTROL ONLY</b><small id="coreMode">Rust Core offline</small></div>
+              <div class="hero-brand">GeDefense <b>1.0.0-beta.5</b> <span data-i18n="brand.powered">powered by VisionGaiaTechnology</span></div>
+            </div>
+            <div class="defense-orb" aria-hidden="true"><div class="orb-core"></div><div class="orbit orbit-one"></div><div class="orbit orbit-two"></div><div class="orbit orbit-three"></div><div class="scan-line"></div></div>
+          </div>
+
+          <div class="metric-grid">
+            <article class="metric panel"><span data-i18n="metric.kernel">Kernel Core</span><strong id="coreMetric">OFFLINE</strong><small id="coreDetail" data-i18n="metric.ipc">IPC-Prüfung</small></article>
+            <article class="metric panel"><span data-i18n="metric.xdr">XDR Engine</span><strong id="xdrMetric">STARTING</strong><small id="xdrDetail" data-i18n="metric.sensorInit">Sensorinitialisierung</small></article>
+            <article class="metric panel"><span data-i18n="metric.rules">Aktive Regeln</span><strong id="blockCount">0</strong><small data-i18n="metric.signedCidrs">signierte CIDR-Policies</small></article>
+            <article class="metric panel"><span data-i18n="metric.anomalies">Anomalien</span><strong id="anomalyCount">0</strong><small data-i18n="metric.adaptive">adaptive Abweichungen</small></article>
+            <article class="metric panel"><span data-i18n="metric.uptime">Uptime</span><strong id="uptime">00:00:00</strong><small id="nodeName">VGT Node</small></article>
+          </div>
+
+          <div class="overview-grid">
+            <article class="panel chart-panel">
+              <div class="section-head"><div><p class="eyebrow" data-i18n="network.pulse">NETWORK PULSE</p><h3 data-i18n="network.throughput">Echtzeit-Durchsatz</h3></div><div class="rate-pair"><span><b id="rxRate">0 B/s</b>RX</span><span><b id="txRate">0 B/s</b>TX</span></div></div>
+              <canvas id="trafficChart" width="1100" height="320" data-i18n-aria="network.chartLabel" aria-label="Netzwerkdurchsatz"></canvas>
+              <div class="resource-grid">
+                <div><span>CPU</span><b id="cpuText">0%</b><div class="progress"><i id="cpuBar"></i></div></div>
+                <div><span>RAM</span><b id="memText">0%</b><div class="progress"><i id="memBar"></i></div></div>
+                <div><span data-i18n="network.interface">Interface</span><b id="iface">---</b><div class="progress fixed"><i></i></div></div>
+              </div>
+            </article>
+            <article class="panel stream-panel">
+              <div class="section-head"><div><p class="eyebrow">SENTINEL STREAM</p><h3 data-i18n="stream.title">Letzte Ereignisse</h3></div><span class="live-label"><i></i>LIVE</span></div>
+              <ol id="events" class="event-list"></ol>
+            </article>
+          </div>
+        </section>
+
+        <section class="view" data-page="xdr" aria-labelledby="xdrHeading" hidden>
+          <div class="page-intro"><div><p class="eyebrow">CORRELATION FABRIC</p><h2 id="xdrHeading">GeDefense XDR</h2><p data-i18n="xdr.description">Prozess-, Netzwerk-, Herkunfts-, Integritäts- und Verhaltenssignale werden als unabhängige Kategorien bewertet.</p></div><span id="xdrModeBadge" class="badge badge-warning">OBSERVE</span></div>
+          <div class="metric-grid compact">
+            <article class="metric panel"><span data-i18n="xdr.processes">Überwachte Prozesse</span><strong id="xdrProcesses">0</strong><small data-i18n="xdr.processDetail">aktuelle PID-Identitäten</small></article>
+            <article class="metric panel"><span data-i18n="xdr.flows">Externe Flows</span><strong id="xdrConnections">0</strong><small data-i18n="xdr.flowDetail">prozesskorreliert</small></article>
+            <article class="metric panel"><span data-i18n="xdr.evaluations">Evaluierungen</span><strong id="evaluationCount">0</strong><small data-i18n="xdr.pipeline">begrenzte Worker-Pipeline</small></article>
+            <article class="metric panel"><span data-i18n="xdr.queue">Queue</span><strong id="queueDepth">0 / 0</strong><small id="queueDrops">0 Drops</small></article>
+            <article class="metric panel"><span data-i18n="xdr.profiles">Profile</span><strong id="profileCount">0</strong><small id="warmProfiles">0 warm</small></article>
+          </div>
+          <article class="panel table-panel">
+            <div class="section-head"><div><p class="eyebrow">INCIDENT TIMELINE</p><h3 data-i18n="xdr.incidents">Korrelierte Incidents</h3></div><button id="loadProfiles" class="button button-quiet" type="button" data-i18n="xdr.loadProfiles">Profile laden</button></div>
+            <div class="table-wrap"><table><thead><tr><th data-i18n="table.time">Zeit</th><th data-i18n="table.score">Score</th><th data-i18n="table.process">Prozess</th><th data-i18n="table.signals">Signale</th><th data-i18n="table.decision">Entscheidung</th><th data-i18n="table.result">Ergebnis</th><th></th></tr></thead><tbody id="incidents"></tbody></table></div>
+          </article>
+          <article class="panel table-panel profile-panel">
+            <div class="section-head"><div><p class="eyebrow">ADAPTIVE BASELINE</p><h3 data-i18n="xdr.behavior">Verhaltensprofile</h3></div><span id="behaviorIntegrity" class="badge">INTEGRITY UNKNOWN</span></div>
+            <div class="table-wrap"><table><thead><tr><th data-i18n="table.executable">Executable</th><th data-i18n="table.samples">Samples</th><th data-i18n="table.avgConnections">Ø Verbindungen</th><th data-i18n="table.avgTargets">Ø Ziele</th><th data-i18n="table.knownPorts">Bekannte Ports</th><th data-i18n="table.lastSignal">Letztes Signal</th></tr></thead><tbody id="profiles"></tbody></table></div>
+          </article>
+        </section>
+
+        <section class="view" data-page="network" aria-labelledby="networkHeading" hidden>
+          <div class="page-intro"><div><p class="eyebrow">KINETIC NETWORK POLICY</p><h2 id="networkHeading" data-i18n="network.heading">Netzwerkverteidigung</h2><p data-i18n="network.description">CIDR-Regeln werden normalisiert, zeitlich begrenzt und als signierter Policy-Snapshot persistiert.</p></div><span id="enforcementBadge" class="badge badge-warning">OBSERVE</span></div>
+          <div class="network-grid">
+            <article class="panel form-panel">
+              <div class="section-head"><div><p class="eyebrow">NEW CONTAINMENT</p><h3 data-i18n="network.newRule">Regel setzen</h3></div></div>
+              <form id="blockForm">
+                <label><span data-i18n="network.target">Ziel-IP oder CIDR</span><input id="target" name="target" autocomplete="off" spellcheck="false" placeholder="203.0.113.4 / 2001:db8::/64" required></label>
+                <label><span data-i18n="network.reason">Begründung</span><input id="reason" name="reason" maxlength="240" data-i18n-placeholder="network.reasonPlaceholder" placeholder="Anomales Scan-Verhalten" required></label>
+                <label><span data-i18n="network.ttl">Gültigkeit</span><select id="ttl" name="ttl"><option value="900" data-i18n="network.15m">15 Minuten</option><option value="3600" selected data-i18n="network.1h">1 Stunde</option><option value="21600" data-i18n="network.6h">6 Stunden</option><option value="86400" data-i18n="network.24h">24 Stunden</option></select></label>
+                <button class="button button-primary" type="submit" data-i18n="network.activate">Policy aktivieren</button>
+              </form>
+              <button id="syncFeeds" class="button button-secondary" type="button" data-i18n="network.sync">Threat Feeds synchronisieren</button>
+              <p id="actionMessage" class="form-message" role="status"></p>
+            </article>
+            <article class="panel table-panel">
+              <div class="section-head"><div><p class="eyebrow">ACTIVE CONTAINMENT</p><h3 data-i18n="network.rules">Blockregeln</h3></div><span><b id="feedCount">0</b> <span data-i18n="network.feedVectors">Feed-Vektoren</span></span></div>
+              <div class="table-wrap"><table><thead><tr><th data-i18n="table.target">Ziel</th><th data-i18n="table.source">Quelle</th><th data-i18n="table.reason">Begründung</th><th data-i18n="table.expiry">Ablauf</th><th data-i18n="table.status">Status</th><th></th></tr></thead><tbody id="rules"></tbody></table></div>
+            </article>
+          </div>
+        </section>
+
+        <section class="view" data-page="policy" aria-labelledby="policyHeading" hidden>
+          <div class="page-intro"><div><p class="eyebrow">TRUSTED POLICY STATE</p><h2 id="policyHeading">Policy Trust</h2><p data-i18n="policy.description">Jede persistente Regelgeneration wird deterministisch serialisiert, AES-256-GCM-verschlüsselt und mit Ed25519 signiert.</p></div><span id="policyBadge" class="badge badge-warning">UNVERIFIED</span></div>
+          <div class="trust-grid">
+            <article class="panel trust-card"><span class="trust-icon">◇</span><p data-i18n="policy.signer">Signer</p><strong id="policySigner">---</strong><small data-i18n="policy.signerDetail">lokaler Ed25519-Vertrauensanker</small></article>
+            <article class="panel trust-card"><span class="trust-icon">↻</span><p data-i18n="policy.generation">Generation</p><strong id="policyGeneration">0</strong><small data-i18n="policy.generationDetail">monotoner Policy-Stand</small></article>
+            <article class="panel trust-card"><span class="trust-icon">⌁</span><p data-i18n="policy.lastUpdate">Letztes Update</p><strong id="policyUpdated">---</strong><small data-i18n="policy.updateDetail">UTC-signierter Snapshot</small></article>
+          </div>
+          <article class="panel architecture-panel">
+            <div class="section-head"><div><p class="eyebrow">TRUST CHAIN</p><h3 data-i18n="policy.lifecycle">Policy-Lebenszyklus</h3></div></div>
+            <div class="flow-diagram" aria-label="Policy lifecycle"><div><b data-i18n="policy.apiValidation">API-Validierung</b><span data-i18n="policy.strictJson">striktes JSON + Replay-Schutz</span></div><i>→</i><div><b data-i18n="policy.mutation">State-Mutation</b><span data-i18n="policy.normalized">normalisierte CIDR-Regel</span></div><i>→</i><div><b data-i18n="policy.signature">Ed25519-Signatur</b><span data-i18n="policy.deterministic">deterministische Generation</span></div><i>→</i><div><b data-i18n="policy.core">Rust Core</b><span data-i18n="policy.ipc">authentifiziertes VGT3 IPC</span></div></div>
+          </article>
+        </section>
+
+        <section class="view" data-page="forensics" aria-labelledby="forensicsHeading" hidden>
+          <div class="page-intro"><div><p class="eyebrow">EVIDENCE INTEGRITY</p><h2 id="forensicsHeading" data-i18n="forensics.heading">Forensik</h2><p data-i18n="forensics.description">Incidents werden redigiert, AES-256-GCM-verschlüsselt, HMAC-verkettet und gegen einen atomischen Head-Checkpoint geprüft.</p></div><button id="exportForensics" class="button button-primary" type="button" data-i18n="forensics.export">Export erstellen</button></div>
+          <div class="trust-grid">
+            <article class="panel trust-card"><span class="trust-icon">◎</span><p data-i18n="forensics.chain">Incident-Kette</p><strong id="incidentIntegrity">UNKNOWN</strong><small id="incidentDetail" data-i18n="forensics.initializing">Initialisierung</small></article>
+            <article class="panel trust-card"><span class="trust-icon">◌</span><p data-i18n="forensics.incidents">Incidents</p><strong id="incidentCount">0</strong><small data-i18n="forensics.records">authentifizierte Records</small></article>
+            <article class="panel trust-card"><span class="trust-icon">⌾</span><p data-i18n="forensics.responses">Reaktionen</p><strong id="actionCount">0</strong><small data-i18n="forensics.broker">Broker-Entscheidungen</small></article>
+          </div>
+          <article class="panel table-panel quarantine-panel">
+            <div class="section-head">
+              <div><p class="eyebrow">ENCRYPTED RESPONSE VAULT</p><h3 data-i18n="quarantine.heading">Dateiquarantäne</h3></div>
+              <span id="quarantineHealth" class="badge">INITIALIZING</span>
+            </div>
+            <p class="panel-description" data-i18n="quarantine.description">Dateien werden vor der Mutation gegen ihre unveränderliche Identität geprüft, atomar erfasst und verschlüsselt gespeichert.</p>
+            <form id="quarantinePreviewForm" class="hardening-form">
+              <label><span data-i18n="quarantine.path">Absoluter Dateipfad</span><input id="quarantinePath" class="mono" autocomplete="off" spellcheck="false" maxlength="2048" required></label>
+              <label><span data-i18n="quarantine.reason">Begründung</span><input id="quarantineReason" autocomplete="off" maxlength="240" required></label>
+              <button class="button button-danger" type="submit" data-i18n="quarantine.preview">Identität prüfen</button>
+            </form>
+            <div class="table-wrap"><table><thead><tr><th data-i18n="table.id">ID</th><th data-i18n="quarantine.path">Pfad</th><th>SHA-256</th><th data-i18n="quarantine.size">Größe</th><th data-i18n="table.status">Status</th><th></th></tr></thead><tbody id="quarantineRows"></tbody></table></div>
+          </article>
+          <article class="panel table-panel case-panel">
+            <div class="section-head"><div><p class="eyebrow">CORRELATED INVESTIGATION</p><h3 data-i18n="cases.heading">Security Cases</h3></div><span id="caseHealth" class="badge">INITIALIZING</span></div>
+            <form id="caseStatusForm" class="hardening-form">
+              <label><span data-i18n="cases.selected">Ausgewählter Fall</span><input id="selectedCaseID" class="mono" readonly required></label>
+              <label><span data-i18n="table.status">Status</span><select id="caseStatus"><option value="investigating">investigating</option><option value="resolved">resolved</option><option value="dismissed">dismissed</option><option value="open">open</option></select></label>
+              <label><span data-i18n="cases.resolution">Auflösung</span><input id="caseResolution" maxlength="512"></label>
+              <button class="button button-primary" type="submit" data-i18n="cases.commit">Status beweisbar speichern</button>
+            </form>
+            <div class="table-wrap"><table><thead><tr><th data-i18n="table.id">ID</th><th data-i18n="table.summary">Titel</th><th data-i18n="table.severity">Severity</th><th data-i18n="cases.occurrences">Vorkommen</th><th data-i18n="table.status">Status</th><th data-i18n="table.time">Zeit</th><th></th></tr></thead><tbody id="caseRows"></tbody></table></div>
+          </article>
+          <article class="panel table-panel"><div class="section-head"><div><p class="eyebrow">EVIDENCE REGISTER</p><h3 data-i18n="forensics.history">Incident-Historie</h3></div></div><div class="table-wrap"><table><thead><tr><th data-i18n="table.time">Zeit</th><th data-i18n="table.id">ID</th><th data-i18n="table.severity">Severity</th><th data-i18n="table.score">Score</th><th data-i18n="table.summary">Zusammenfassung</th><th data-i18n="table.action">Action</th><th data-i18n="table.status">Status</th></tr></thead><tbody id="forensicIncidents"></tbody></table></div></article>
+        </section>
+
+        <section class="view" data-page="release" aria-labelledby="releaseHeading" hidden>
+          <div class="page-intro"><div><p class="eyebrow">PRODUCTION BETA SAFETY GATE</p><h2 id="releaseHeading">Beta Release Control</h2><p data-i18n="release.description">Aktive Reaktion wird ausschließlich stufenweise freigegeben.</p></div><span id="releasePhaseBadge" class="badge badge-warning">OBSERVE</span></div>
+          <div class="trust-grid">
+            <article class="panel trust-card"><span class="trust-icon">△</span><p data-i18n="release.phase">Phase</p><strong id="releasePhase">OBSERVE</strong><small id="releaseSince" data-i18n="release.startPhase">Startphase</small></article>
+            <article class="panel trust-card"><span class="trust-icon">✓</span><p data-i18n="release.readiness">Readiness</p><strong id="releaseReady">BLOCKED</strong><small id="releaseDetail" data-i18n="release.gateCheck">Gate-Prüfung</small></article>
+            <article class="panel trust-card"><span class="trust-icon">⌁</span><p data-i18n="release.heartbeat">Core Heartbeat</p><strong id="releaseCoreMisses">0</strong><small data-i18n="release.failures">aufeinanderfolgende Fehler</small></article>
+            <article class="panel trust-card"><span class="trust-icon">◇</span><p data-i18n="release.kernelState">Kernel Fail-safe</p><strong id="releaseKernelState">UNVERIFIED</strong><small id="releaseFailSafe" data-i18n="release.kernelStateDetail">XDP-Leerzustand muss bestätigt sein</small></article>
+          </div>
+          <div class="release-grid">
+            <article class="panel form-panel">
+              <div class="section-head"><div><p class="eyebrow">STAGED PROMOTION</p><h3 data-i18n="release.change">Phase wechseln</h3></div></div>
+              <form id="releaseForm">
+                <label><span data-i18n="release.target">Zielphase</span><select id="releaseTarget"><option value="canary" data-i18n="release.canary">Canary / Contain</option><option value="enforce" data-i18n="release.enforce">Enforce</option><option value="observe" data-i18n="release.observe">Zurück zu Observe</option></select></label>
+                <label><span data-i18n="release.reason">Freigabegrund</span><input id="releaseReason" maxlength="240" data-i18n-placeholder="release.reasonPlaceholder" placeholder="Canary nach abgeschlossener Beobachtungsphase" required></label>
+                <label><span data-i18n="release.confirmation">Explizite Bestätigung</span><input id="releaseConfirmation" autocomplete="off" spellcheck="false" placeholder="PROMOTE:CANARY" required></label>
+                <button class="button button-primary" type="submit" data-i18n="release.submit">Gate prüfen und wechseln</button>
+              </form>
+              <p class="form-message" data-i18n="release.confirmationHint">Bestätigungen: PROMOTE:CANARY, PROMOTE:ENFORCE oder RETURN:OBSERVE.</p>
+            </article>
+            <article class="panel form-panel danger-zone">
+              <div class="section-head"><div><p class="eyebrow">FAIL-SAFE</p><h3 data-i18n="release.emergency">Emergency Stop</h3></div></div>
+              <p data-i18n="release.emergencyDescription">Persistiert einen lokalen Stop-Anker und blockiert aktive Reaktion.</p>
+              <form id="emergencyForm">
+                <label><span data-i18n="network.reason">Begründung</span><input id="emergencyReason" maxlength="240" data-i18n-placeholder="release.emergencyReasonPlaceholder" placeholder="Unerwartetes Reaktionsverhalten erkannt" required></label>
+                <button class="button button-danger" type="submit" data-i18n="release.emergencySubmit">Aktive Reaktion sofort sperren</button>
+              </form>
+              <form id="emergencyClearForm" class="secondary-form">
+                <label><span data-i18n="release.clearReason">Aufhebungsgrund</span><input id="emergencyClearReason" maxlength="240" data-i18n-placeholder="release.clearReasonPlaceholder" placeholder="Ursache geprüft" required></label>
+                <label><span data-i18n="release.confirmation">Explizite Bestätigung</span><input id="emergencyClearConfirmation" autocomplete="off" spellcheck="false" placeholder="CLEAR:EMERGENCY-STOP" required></label>
+                <button class="button button-secondary" type="submit" data-i18n="release.clearSubmit">Emergency Stop aufheben</button>
+              </form>
+            </article>
+          </div>
+          <article class="panel architecture-panel"><div class="section-head"><div><p class="eyebrow">CURRENT BLOCKERS</p><h3 data-i18n="release.conditions">Freigabebedingungen</h3></div></div><ul id="releaseBlockers" class="gate-list"></ul></article>
+        </section>
+
+        <section class="view" data-page="settings" aria-labelledby="settingsHeading" hidden>
+          <div class="page-intro"><div><p class="eyebrow">RUNTIME DEFENSE CONTROL</p><h2 id="settingsHeading" data-i18n="settings.heading">Einstellungen</h2><p data-i18n="settings.description">Module und Reaktionsschwellen werden live geändert und verschlüsselt persistiert.</p></div><span id="settingsRevision" class="badge">REVISION 0</span></div>
+          <form id="settingsForm" class="settings-layout">
+            <article class="panel settings-panel">
+              <div class="section-head"><div><p class="eyebrow">SECURITY MODULES</p><h3 data-i18n="settings.components">Aktive Komponenten</h3></div></div>
+              <div class="toggle-list">
+                <label class="toggle-row"><span><b data-i18n="settings.xdr">XDR Sensor</b><small data-i18n="settings.xdrDetail">Prozesse, Integrität und Reaktionspipeline</small></span><input id="settingXdr" type="checkbox"><i></i></label>
+                <label class="toggle-row"><span><b data-i18n="settings.network">Netzwerk-Korrelation</b><small data-i18n="settings.networkDetail">Externe Flows den Prozessen zuordnen</small></span><input id="settingNetwork" type="checkbox"><i></i></label>
+                <label class="toggle-row"><span><b data-i18n="settings.behavior">Behavior Learning</b><small data-i18n="settings.behaviorDetail">Adaptive, MAC-geschützte Prozessprofile</small></span><input id="settingBehavior" type="checkbox"><i></i></label>
+                <label class="toggle-row"><span><b data-i18n="settings.feeds">Threat Feeds</b><small data-i18n="settings.feedsDetail">Öffentliche Präfixe lokal zur Korrelation stagen</small></span><input id="settingFeeds" type="checkbox"><i></i></label>
+                <label class="toggle-row"><span><b data-i18n="settings.autoFeeds">Automatischer Feed-Sync</b><small data-i18n="settings.autoFeedsDetail">Synchronisierung im konfigurierten Intervall</small></span><input id="settingAutoFeeds" type="checkbox"><i></i></label>
+                <label class="toggle-row"><span><b data-i18n="settings.autoDegrade">Auto-Degrade</b><small data-i18n="settings.autoDegradeDetail">Bei Core-, Policy- oder Sensorfehlern auf Observe zurückfallen</small></span><input id="settingAutoDegrade" type="checkbox"><i></i></label>
+              </div>
+            </article>
+            <article class="panel settings-panel">
+              <div class="section-head"><div><p class="eyebrow">CORRELATION TUNING</p><h3 data-i18n="settings.tuning">Intervalle und Schwellen</h3></div></div>
+              <div class="settings-fields">
+                <label><span data-i18n="settings.processScan">Prozess-Scan (ms)</span><input id="settingScan" type="number" min="100" max="60000" step="50" required></label>
+                <label><span data-i18n="settings.networkScan">Netzwerk-Scan (s)</span><input id="settingNetworkInterval" type="number" min="1" max="300" required></label>
+                <label><span data-i18n="settings.alert">Alert Score</span><input id="settingAlert" type="number" min="1" max="248" required></label>
+                <label><span data-i18n="settings.contain">Contain Score</span><input id="settingContain" type="number" min="2" max="249" required></label>
+                <label><span data-i18n="settings.kill">Kill Score</span><input id="settingKill" type="number" min="3" max="250" required></label>
+              </div>
+              <button class="button button-primary" type="submit" data-i18n="settings.save">Einstellungen verschlüsselt speichern</button>
+              <p id="settingsMessage" class="form-message" role="status"></p>
+            </article>
+            <article class="panel settings-panel module-panel">
+              <div class="section-head"><div><p class="eyebrow">EXPERIMENTAL SIGNAL FABRIC</p><h3 data-i18n="settings.ruleModules">Regelmodule verschalten</h3></div><span data-i18n="settings.observeOnly">Nur in Observe/Degraded änderbar</span></div>
+              <div class="module-grid">
+                <label class="toggle-row"><span><b>Command</b><small data-i18n="settings.moduleCommand">Integrierte RE2-Kommandoerkennung</small></span><input id="moduleCommand" type="checkbox"><i></i></label>
+                <label class="toggle-row"><span><b>Origin</b><small data-i18n="settings.moduleOrigin">memfd, gelöschte und temporäre Executables</small></span><input id="moduleOrigin" type="checkbox"><i></i></label>
+                <label class="toggle-row"><span><b>Lineage</b><small data-i18n="settings.moduleLineage">Eltern-Kind-Prozesskorrelation</small></span><input id="moduleLineage" type="checkbox"><i></i></label>
+                <label class="toggle-row"><span><b>Masquerading</b><small data-i18n="settings.moduleMasquerading">Prozessname gegen Executable-Pfad</small></span><input id="moduleMasquerading" type="checkbox"><i></i></label>
+                <label class="toggle-row"><span><b>Threat Intel</b><small data-i18n="settings.moduleThreat">Remote-IP gegen gestagte Präfixe</small></span><input id="moduleThreatIntel" type="checkbox"><i></i></label>
+                <label class="toggle-row"><span><b>Baseline</b><small data-i18n="settings.moduleBaseline">Lokale Prozess- und Netzwerkbaseline</small></span><input id="moduleBaseline" type="checkbox"><i></i></label>
+              </div>
+            </article>
+          </form>
+          <article class="panel table-panel hardening-panel">
+            <div class="section-head">
+              <div><p class="eyebrow">DURABLE SECURITY TRANSACTIONS</p><h3 data-i18n="hardening.heading">Systemhärtung</h3></div>
+              <span id="transactionHealth" class="badge">INITIALIZING</span>
+            </div>
+            <p class="panel-description" data-i18n="hardening.description">Profile werden zuerst gegen den Live-Kernel vorgeprüft und nur mit transaktionsgebundener Bestätigung angewendet.</p>
+            <form id="hardeningPreviewForm" class="hardening-form">
+              <label><span data-i18n="hardening.profile">Profil</span><select id="hardeningProfile"><option value="linux-server-balanced">Linux Server · Balanced</option><option value="gaiaos-workstation-strict">GaiaOS Workstation · Strict</option></select></label>
+              <label><span data-i18n="hardening.reason">Begründung</span><input id="hardeningReason" autocomplete="off" maxlength="240" required></label>
+              <button class="button button-primary" type="submit" data-i18n="hardening.preview">Live-Zustand vorprüfen</button>
+            </form>
+            <div id="transactionSelection" class="transaction-selection" hidden>
+              <div><span data-i18n="hardening.selected">Ausgewählte Transaktion</span><code id="selectedTransactionID">---</code></div>
+              <pre id="selectedTransactionPlan" aria-label="Transaction plan"></pre>
+              <form id="transactionExecuteForm" class="hardening-form confirmation-form">
+                <label><span data-i18n="hardening.confirmation">Exakte Bestätigung</span><input id="transactionConfirmation" class="mono" autocomplete="off" spellcheck="false" maxlength="128" required></label>
+                <button id="transactionExecute" class="button button-danger" type="submit" data-i18n="hardening.execute">Transaktion ausführen</button>
+              </form>
+            </div>
+            <div class="table-wrap"><table><thead><tr><th>ID</th><th data-i18n="table.type">Typ</th><th data-i18n="table.summary">Zusammenfassung</th><th data-i18n="table.status">Status</th><th data-i18n="table.time">Zeit</th><th></th></tr></thead><tbody id="transactionRows"></tbody></table></div>
+          </article>
+          <article class="panel table-panel custom-rules-panel">
+            <div class="section-head"><div><p class="eyebrow">OPERATOR RULE WORKSPACE</p><h3 data-i18n="settings.customRules">Eigene RE2-Regeln</h3></div><span data-i18n="settings.alertOnly">Nur Signal/Score, niemals direkte Kill-Autorisierung</span></div>
+            <form id="customRuleForm" class="custom-rule-form">
+              <label><span data-i18n="settings.ruleId">Regel-ID</span><input id="customRuleId" autocomplete="off" spellcheck="false" placeholder="CUSTOM.MY-RULE" maxlength="64" required></label>
+              <label><span data-i18n="settings.category">Kategorie</span><input id="customRuleCategory" autocomplete="off" spellcheck="false" placeholder="operator" maxlength="32" required></label>
+              <label><span data-i18n="settings.score">Score</span><input id="customRuleScore" type="number" min="1" max="100" value="25" required></label>
+              <label class="rule-summary"><span data-i18n="settings.summary">Zusammenfassung</span><input id="customRuleSummary" autocomplete="off" maxlength="160" required></label>
+              <label class="rule-pattern"><span data-i18n="settings.pattern">RE2-Pattern</span><input id="customRulePattern" class="mono" autocomplete="off" spellcheck="false" maxlength="512" placeholder="(?i)\btool-name\b" required></label>
+              <button class="button button-primary" type="submit" data-i18n="settings.addRule">Regel verschlüsselt speichern</button>
+            </form>
+            <div class="table-wrap"><table><thead><tr><th data-i18n="settings.ruleId">Regel-ID</th><th data-i18n="settings.category">Kategorie</th><th data-i18n="settings.score">Score</th><th data-i18n="settings.pattern">RE2-Pattern</th><th data-i18n="table.status">Status</th><th></th></tr></thead><tbody id="customRuleRows"></tbody></table></div>
+          </article>
+          <article class="panel table-panel allowlist-panel">
+            <div class="section-head"><div><p class="eyebrow">MANAGEMENT SURVIVAL PATH</p><h3 data-i18n="settings.allowlist">Management-Allowlist</h3></div><span data-i18n="settings.required">Pflicht vor Enforce</span></div>
+            <form id="allowlistForm" class="inline-form"><label><span data-i18n="settings.ipCidr">IP oder CIDR</span><input id="allowlistTarget" autocomplete="off" spellcheck="false" placeholder="203.0.113.10/32" required></label><button class="button button-primary" type="submit" data-i18n="settings.add">Hinzufügen</button></form>
+            <div class="table-wrap"><table><thead><tr><th data-i18n="table.networkCidr">Netz/CIDR</th><th data-i18n="table.kernelProtection">Kernel-Schutz</th><th></th></tr></thead><tbody id="allowlistRows"></tbody></table></div>
+          </article>
+        </section>
+
+        <section class="view" data-page="system" aria-labelledby="systemHeading" hidden>
+          <div class="page-intro"><div><p class="eyebrow">NODE DIAGNOSTICS</p><h2 id="systemHeading" data-i18n="system.heading">System</h2><p data-i18n="system.description">Gesundheit der privilegierten und unprivilegierten Sicherheitsdomänen.</p></div><span id="nodeModeBadge" class="badge">STANDALONE</span></div>
+          <div class="system-grid">
+            <article class="panel diagnostic"><span data-i18n="system.node">Node</span><strong id="systemNode">---</strong><small id="systemUptime">---</small></article>
+            <article class="panel diagnostic"><span data-i18n="system.dataPlane">Data Plane</span><strong id="systemCore">OFFLINE</strong><small id="systemCoreDetail">Rust XDP Core</small></article>
+            <article class="panel diagnostic"><span data-i18n="system.xdr">XDR Sensor</span><strong id="systemXdr">---</strong><small id="systemXdrDetail">---</small></article>
+            <article class="panel diagnostic"><span data-i18n="system.policy">Policy</span><strong id="systemPolicy">---</strong><small id="systemPolicyDetail">---</small></article>
+            <article class="panel diagnostic"><span data-i18n="system.behavior">Behavior Store</span><strong id="systemBehavior">---</strong><small id="systemBehaviorDetail">---</small></article>
+            <article class="panel diagnostic"><span data-i18n="system.feeds">Feed Matrix</span><strong id="systemFeeds">0</strong><small id="systemFeedTime" data-i18n="system.notSynced">Noch nicht synchronisiert</small></article>
+          </div>
+          <article class="panel table-panel cells-panel">
+            <div class="section-head"><div><p class="eyebrow">GAIA ISOLATION FABRIC</p><h3 data-i18n="cells.heading">Gaia Cells</h3></div><span id="cellsHealth" class="badge">NOT AVAILABLE</span></div>
+            <p class="panel-description" data-i18n="cells.description">GeDefense bindet Aktionen an UUID, Lifecycle-Generation und Kernel-cgroup-ID. Labels werden ausschließlich als untrusted Anzeige behandelt.</p>
+            <label class="cell-reason"><span data-i18n="cells.reason">Begründung für Isolation</span><input id="cellActionReason" maxlength="240" autocomplete="off"></label>
+            <div class="table-wrap"><table><thead><tr><th>UUID</th><th data-i18n="cells.label">Label</th><th data-i18n="cells.class">Klasse</th><th data-i18n="table.status">Status</th><th data-i18n="cells.network">Netzwerk</th><th>cgroup ID</th><th></th></tr></thead><tbody id="cellsRows"></tbody></table></div>
+          </article>
+          <article class="panel architecture-panel"><div class="section-head"><div><p class="eyebrow">SECURITY DOMAINS</p><h3 data-i18n="system.domains">Getrennte Vertrauenszonen</h3></div></div><div class="domain-grid"><div><b data-i18n="system.kernel">Kernel</b><span data-i18n="system.kernelDetail">Rust eBPF/XDP</span></div><div><b data-i18n="system.broker">Privileged Broker</b><span data-i18n="system.brokerDetail">pidfd + Evidence-Recheck</span></div><div><b data-i18n="system.control">Control Plane</b><span data-i18n="system.controlDetail">Go Standardbibliothek</span></div><div><b data-i18n="system.dashboard">Dashboard</b><span data-i18n="system.dashboardDetail">Same-Origin, CSP, Session-Authentifizierung</span></div></div></article>
+        </section>
+      </main>
+      <footer class="product-footer" data-i18n="footer.powered">GeDefense 1.0.0-beta.5 powered by VisionGaiaTechnology</footer>
+    </div>
+  </div>
+
+  <dialog id="authDialog">
+    <form method="dialog">
+      <div class="dialog-head"><div><p class="eyebrow" data-i18n="auth.eyebrow">OPERATOR ACCESS</p><h2 data-i18n="auth.title">Dashboard-Key</h2></div><button value="cancel" data-i18n-aria="dialog.close" aria-label="Schließen">×</button></div>
+      <p data-i18n="auth.description">Der Operator-Key bleibt ausschließlich im flüchtigen Speicher dieses Browser-Tabs und wird beim Neuladen verworfen.</p>
+      <label><span data-i18n="auth.token">Bearer Token</span><input id="tokenInput" type="password" autocomplete="off"></label>
+      <button id="saveToken" value="default" class="button button-primary" data-i18n="auth.save">Sitzung autorisieren</button>
+    </form>
+  </dialog>
+
+  <dialog id="supportDialog" class="support-dialog">
+    <form method="dialog">
+      <div class="dialog-head"><div><p class="eyebrow">VISIONGAIA TECHNOLOGY</p><h2 data-i18n="support.title">VisionGaiaTechnology unterstützen</h2></div><button value="cancel" data-i18n-aria="dialog.close" aria-label="Schließen">×</button></div>
+      <p data-i18n="support.description">GeDefense wird unabhängig entwickelt.</p>
+      <div class="support-table" role="table">
+        <div class="support-row support-head" role="row"><b data-i18n="support.method">Methode</b><b data-i18n="support.address">Adresse</b><span></span></div>
+        <div class="support-row" role="row"><b>PayPal</b><code>paypal.me/dergoldenelotus</code><a class="button button-secondary compact" href="https://paypal.me/dergoldenelotus" target="_blank" rel="noopener noreferrer" data-i18n="support.paypal">PayPal öffnen</a></div>
+        <div class="support-row" role="row"><b>Bitcoin</b><code>bc1q3ue5gq822tddmkdrek79adlkm36fatat3lz0dm</code><button class="button button-quiet compact copy-address" type="button" data-copy="bc1q3ue5gq822tddmkdrek79adlkm36fatat3lz0dm" data-i18n="support.copy">Kopieren</button></div>
+        <div class="support-row" role="row"><b>ETH</b><code>0xD37DEfb09e07bD775EaaE9ccDaFE3a5b2348Fe85</code><button class="button button-quiet compact copy-address" type="button" data-copy="0xD37DEfb09e07bD775EaaE9ccDaFE3a5b2348Fe85" data-i18n="support.copy">Kopieren</button></div>
+        <div class="support-row" role="row"><b>USDT (ERC-20)</b><code>0xD37DEfb09e07bD775EaaE9ccDaFE3a5b2348Fe85</code><button class="button button-quiet compact copy-address" type="button" data-copy="0xD37DEfb09e07bD775EaaE9ccDaFE3a5b2348Fe85" data-i18n="support.copy">Kopieren</button></div>
+      </div>
+      <p class="support-note" data-i18n="support.note">Krypto-Adressen vor jeder Überweisung selbst prüfen.</p>
+      <div class="support-version">GeDefense <b>1.0.0-beta.5</b> <span data-i18n="brand.powered">powered by VisionGaiaTechnology</span></div>
+    </form>
+  </dialog>
+
+  <div id="toastRegion" class="toast-region" aria-live="polite" aria-atomic="true"></div>
+  <noscript data-i18n="noscript">Das GeDefense Command Center benötigt lokales JavaScript.</noscript>
+</body>
+</html>
