@@ -7,6 +7,7 @@ import {
   applyTransaction,
   APIError,
   clearEmergencyStop,
+  createFIMBaseline,
   deleteBlock,
   exportForensics,
   emergencyStop,
@@ -14,6 +15,11 @@ import {
   getQuarantine,
   getCases,
   getCells,
+  getBootTrust,
+  getEvidence,
+  getFIM,
+  getHardeningPosture,
+  getPackageIntegrity,
   getRelease,
   getSettings,
   getStatus,
@@ -24,12 +30,16 @@ import {
   previewCellAction,
   removeAllowlist,
   reverseTransaction,
+  scanFIM,
+  scanMalware,
+  scanPackageIntegrity,
   setToken,
   setCaseStatus,
   streamSnapshots,
   syncFeeds,
   transitionRelease,
-  updateSettings
+  updateSettings,
+  verifyEvidence
 } from './api.js';
 import { appendTraffic, drawTraffic } from './charts.js';
 import { initializeI18n, locale, setLanguage, t } from './i18n.js';
@@ -54,8 +64,24 @@ let streamController = null;
 let pollTimer = 0;
 let selectedTransaction = null;
 
+const configurableHardeningControls = new Set([
+  'kernel.aslr',
+  'kernel.kptr',
+  'kernel.dmesg',
+  'kernel.ptrace',
+  'kernel.bpf',
+  'filesystem.protected-links',
+  'filesystem.suid-dumps',
+  'network.syn-cookies',
+  'network.ipv4-redirects',
+  'network.ipv6-redirects'
+]);
+
 const viewMeta = {
   overview: ['view.overview.eyebrow', 'view.overview.title'],
+  hardening: ['view.hardening.eyebrow', 'view.hardening.title'],
+  integrity: ['view.integrity.eyebrow', 'view.integrity.title'],
+  boot: ['view.boot.eyebrow', 'view.boot.title'],
   xdr: ['view.xdr.eyebrow', 'view.xdr.title'],
   network: ['view.network.eyebrow', 'view.network.title'],
   policy: ['view.policy.eyebrow', 'view.policy.title'],
@@ -86,6 +112,9 @@ function activateView(name) {
   text('viewTitle', t(viewMeta[selected][1]));
   { const url = new URL(location.href); url.hash = selected; history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`); }
   if (selected === 'overview') requestAnimationFrame(() => drawTraffic(byID('trafficChart')));
+  if (selected === 'hardening') Promise.all([loadHardening(), loadTransactions()]).catch(handleActionError);
+  if (selected === 'integrity') loadIntegrity().catch(handleActionError);
+  if (selected === 'boot') loadBootTrust().catch(handleActionError);
   if (selected === 'settings') Promise.all([loadSettings(), loadTransactions()]).catch(handleActionError);
   if (selected === 'forensics') Promise.all([loadQuarantine(), loadCases()]).catch(handleActionError);
   if (selected === 'system') loadCells().catch(handleActionError);
@@ -498,10 +527,12 @@ function renderCells(payload) {
   }
   const rows = cells.map(cell => {
     const row = document.createElement('tr');
+    const guardedNetwork = cell.network_state === 'guarded';
+    const networkLabel = guardedNetwork ? t('cells.networkGuarded') : cell.network_state;
     for (const [value, className] of [
       [cell.uuid, 'mono'], [cell.label, ''], [cell.class, ''],
       [cell.state, cell.state === 'running' ? 'state-good' : 'state-warn'],
-      [cell.network_state, cell.network_state === 'revoked' ? 'state-warn' : 'state-good'],
+      [networkLabel, (cell.network_state === 'revoked' || guardedNetwork) ? 'state-warn' : 'state-good'],
       [cell.cgroup_id, 'mono']
     ]) {
       const column = document.createElement('td');
@@ -536,13 +567,310 @@ async function loadCells() {
   return payload;
 }
 
+function emptyTable(body, columns, message) {
+  const row = document.createElement('tr');
+  const cell = document.createElement('td');
+  cell.colSpan = columns;
+  cell.className = 'empty-cell';
+  cell.textContent = message;
+  row.append(cell);
+  body.replaceChildren(row);
+}
+
+function updateHardeningSelectionCount() {
+  const selected = document.querySelectorAll('#hardeningSwitches input[data-runtime-managed="true"]:checked').length;
+  text('hardeningSelectionCount', `${selected} AUSGEWÄHLT`);
+}
+
+function renderHardeningSwitches(checks) {
+  const container = byID('hardeningSwitches');
+  if (!checks.length) {
+    const message = document.createElement('p');
+    message.className = 'empty-state';
+    message.textContent = 'Keine Härtungskontrollen verfügbar.';
+    container.replaceChildren(message);
+    updateHardeningSelectionCount();
+    return;
+  }
+  const controls = checks.map(check => {
+    const configurable = configurableHardeningControls.has(String(check.id || ''));
+    const protectedState = check.state === 'PROTECTED';
+    const row = document.createElement('label');
+    row.className = `toggle-row hardening-control ${configurable ? 'runtime-control' : 'platform-control'}`;
+
+    const copy = document.createElement('span');
+    const title = document.createElement('b');
+    title.textContent = String(check.title || check.id || 'Kontrolle');
+    const detail = document.createElement('small');
+    detail.textContent = configurable
+      ? String(check.recommendation || 'Aktiv, live gemessen und durch GeDefense verwaltet.')
+      : `${String(check.evidence || 'Nicht messbar')} · ${String(check.recommendation || 'Plattformkontrolle ohne sichere Laufzeitänderung.')}`;
+    const domain = document.createElement('em');
+    domain.textContent = configurable ? 'RUNTIME + PERSISTENT' : 'INSTALLATION / BOOT / FIRMWARE';
+    copy.append(title, detail, domain);
+
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.checked = protectedState;
+    input.disabled = !configurable || protectedState;
+    input.dataset.controlId = String(check.id || '');
+    input.dataset.runtimeManaged = String(configurable);
+    input.setAttribute('aria-label', String(check.title || check.id || 'Kontrolle'));
+    input.addEventListener('change', updateHardeningSelectionCount);
+    const switchVisual = document.createElement('i');
+    switchVisual.setAttribute('aria-hidden', 'true');
+    row.append(copy, input, switchVisual);
+    return row;
+  });
+  container.replaceChildren(...controls);
+  updateHardeningSelectionCount();
+}
+
+function renderHardening(payload) {
+  const score = Math.max(0, Math.min(100, Number(payload?.score || 0)));
+  text('hardeningScore', score);
+  text('hardeningScoreTitle', String(payload?.level || 'UNAVAILABLE'));
+  text('hardeningCollected', payload?.collected_at ? formatTime(payload.collected_at) : 'Keine Messung');
+  badge('hardeningLevel', String(payload?.level || 'UNAVAILABLE'), score >= 90 ? 'good' : score >= 50 ? 'warning' : 'danger');
+  byID('hardeningScoreRing').style.setProperty('--score', String(score));
+
+  const domains = Array.isArray(payload?.domains) ? payload.domains : [];
+  const domainCards = domains.map(domain => {
+    const card = document.createElement('article');
+    card.className = 'panel posture-domain';
+    const header = document.createElement('header');
+    const title = document.createElement('h3');
+    title.textContent = domain.title || domain.id || 'Domain';
+    const value = document.createElement('strong');
+    value.textContent = `${Number(domain.score || 0)}%`;
+    header.append(title, value);
+    const detail = document.createElement('small');
+    detail.textContent = `${Number(domain.protected || 0)} von ${Number(domain.total || 0)} Kontrollen vollständig geschützt`;
+    const progress = document.createElement('div');
+    progress.className = 'progress';
+    const bar = document.createElement('i');
+    bar.style.width = `${Math.max(0, Math.min(100, Number(domain.score || 0)))}%`;
+    progress.append(bar);
+    card.append(header, detail, progress);
+    return card;
+  });
+  byID('hardeningDomains').replaceChildren(...domainCards);
+
+  const body = byID('hardeningChecks');
+  const checks = Array.isArray(payload?.checks) ? payload.checks : [];
+  renderHardeningSwitches(checks);
+  if (!checks.length) {
+    emptyTable(body, 5, 'Keine Härtungsdaten verfügbar.');
+    return;
+  }
+  const rows = checks.map(check => {
+    const row = document.createElement('tr');
+    for (const value of [check.domain, check.title]) {
+      const cell = document.createElement('td');
+      cell.textContent = String(value || '---');
+      row.append(cell);
+    }
+    const state = document.createElement('td');
+    state.className = `posture-state ${String(check.state || 'unavailable').toLowerCase()}`;
+    state.textContent = String(check.state || 'UNAVAILABLE');
+    const evidence = document.createElement('td');
+    evidence.textContent = String(check.evidence || '---');
+    evidence.className = 'mono';
+    const recommendation = document.createElement('td');
+    recommendation.textContent = String(check.recommendation || (check.managed ? 'Durch GeDefense transaktional verwaltet.' : 'Keine Maßnahme erforderlich.'));
+    row.append(state, evidence, recommendation);
+    return row;
+  });
+  body.replaceChildren(...rows);
+}
+
+async function loadHardening() {
+  const payload = await getHardeningPosture();
+  renderHardening(payload);
+  return payload;
+}
+
+function renderFIM(status) {
+  const healthy = status?.health === 'HEALTHY';
+  badge('fimHealth', String(status?.health || 'UNAVAILABLE'), healthy ? 'good' : 'danger');
+  text('fimBaselineCount', number(status?.baseline_count));
+  text('fimGeneration', number(status?.generation));
+  const findings = Array.isArray(status?.last_scan?.findings) ? status.last_scan.findings : [];
+  text('fimFindings', number(findings.length));
+  text('fimRoots', Array.isArray(status?.roots) && status.roots.length ? status.roots.join(' · ') : 'Keine geschützten Pfade geladen');
+  const body = byID('fimRows');
+  if (!findings.length) {
+    emptyTable(body, 5, 'Keine Dateiabweichungen im letzten Scan.');
+    return;
+  }
+  const rows = findings.map(finding => {
+    const row = document.createElement('tr');
+    for (const [value, className] of [
+      [finding.status, `posture-state ${String(finding.status || '').toLowerCase()}`],
+      [finding.path, 'mono'],
+      [finding.size, ''],
+      [finding.mode, 'mono'],
+      [finding.message, '']
+    ]) {
+      const cell = document.createElement('td');
+      cell.textContent = String(value ?? '---');
+      if (className) cell.className = className;
+      row.append(cell);
+    }
+    return row;
+  });
+  body.replaceChildren(...rows);
+}
+
+function renderEvidence(payload) {
+  const status = payload?.status || payload || {};
+  const records = Array.isArray(payload?.records) ? payload.records : [];
+  badge('evidenceHealth', status.healthy ? 'VERIFIED' : 'DEGRADED', status.healthy ? 'good' : 'danger');
+  text('evidenceRecords', number(status.records));
+  text('evidenceBytes', `${number(status.stored_bytes)} B`);
+  text('evidenceHead', status.head_hash ? String(status.head_hash).slice(0, 16) : '---');
+  text('evidenceKey', status.public_key ? `Ed25519 ${status.public_key}` : 'Signer nicht geladen');
+  const body = byID('evidenceRows');
+  if (!records.length) {
+    emptyTable(body, 6, 'Noch keine authentifizierten Evidence-Records.');
+    return;
+  }
+  const rows = records.map(record => {
+    const row = document.createElement('tr');
+    for (const [value, className] of [
+      [record.sequence, 'mono'],
+      [formatTime(record.time), ''],
+      [record.severity, ''],
+      [record.kind, 'mono'],
+      [record.source, ''],
+      [record.message, '']
+    ]) {
+      const cell = document.createElement('td');
+      cell.textContent = String(value ?? '---');
+      if (className) cell.className = className;
+      row.append(cell);
+    }
+    return row;
+  });
+  body.replaceChildren(...rows);
+}
+
+function renderPackageIntegrity(status) {
+  const clean = Boolean(status?.last_scan) && !status?.running &&
+    Number(status?.modified || 0) === 0 && Number(status?.missing || 0) === 0 &&
+    Number(status?.errors || 0) === 0;
+  const state = status?.running ? 'SCANNT' : clean ? 'VERIFIZIERT' : status?.last_scan ? 'ABWEICHUNG' : 'NICHT GEPRÜFT';
+  badge('packageIntegrityHealth', state, status?.running ? 'warning' : clean ? 'good' : 'danger');
+  text('packageIntegrityPackages', number(status?.packages));
+  text('packageIntegrityFiles', number(status?.files));
+  text('packageIntegrityDeviations', number(Number(status?.modified || 0) + Number(status?.missing || 0) + Number(status?.errors || 0)));
+  text('packageIntegrityDetail', status?.last_scan ? `Letzter Scan ${formatTime(status.last_scan)}` : 'Pacman-MTREE-Vertrauensbasis');
+  const findings = Array.isArray(status?.findings) ? status.findings : [];
+  const body = byID('packageIntegrityRows');
+  if (!findings.length) {
+    emptyTable(body, 3, status?.running ? 'Paketdateien werden kryptografisch geprüft.' : 'Keine Paketabweichungen im letzten Scan.');
+    return;
+  }
+  const rows = findings.map(finding => {
+    const row = document.createElement('tr');
+    for (const [value, className] of [
+      [finding.status, `posture-state ${String(finding.status || '').toLowerCase()}`],
+      [finding.package, 'mono'],
+      [finding.path, 'mono']
+    ]) {
+      const cell = document.createElement('td');
+      cell.textContent = String(value || '---');
+      if (className) cell.className = className;
+      row.append(cell);
+    }
+    return row;
+  });
+  body.replaceChildren(...rows);
+}
+
+function renderMalwareProtection() {
+  const sensor = String(snapshot?.xdr?.sensor || '');
+  const active = Boolean(snapshot?.core_connected) && sensor.includes('fanotify-exec');
+  badge('malwareProtectionHealth', active ? 'AKTIV' : 'NICHT VERIFIZIERT', active ? 'good' : 'danger');
+  text('malwareRuntime', active ? 'FANOTIFY EXEC GUARD' : 'SENSOR NICHT BEREIT');
+  text('malwareSignatures', active ? 'ROOT + FS-VERITY' : 'NICHT VERIFIZIERT');
+  text('malwareReleaseGate', active ? 'SCAN + HASH RECHECK' : 'FAIL CLOSED');
+  text('malwareProtectionDetail', active
+    ? 'Ausführbare Dateien unter /home werden vor dem ersten Befehl geprüft. Browserdownloads bleiben bis zu einem sauberen Verdict in der GaiaCell-Quarantäne.'
+    : 'Der aktuelle Snapshot bestätigt den Fanotify-Ereigniskanal nicht. Geschützte Freigaben bleiben gesperrt.');
+  return active;
+}
+
+function renderMalwareResult(result, path) {
+  const clean = result?.state === 'clean';
+  const suspicious = result?.state === 'suspicious';
+  badge('malwareScanState', String(result?.state || 'unknown').toUpperCase(), clean ? 'good' : suspicious ? 'warning' : 'danger');
+  text('malwareResultPath', path || '---');
+  text('malwareResultType', result?.classification || '---');
+  text('malwareResultSize', `${number(result?.size)} B`);
+  text('malwareResultReason', result?.reason || '---');
+  text('malwareResultHash', result?.sha256 || '---');
+}
+
+async function loadIntegrity() {
+  const [fim, evidence, packages] = await Promise.all([getFIM(), getEvidence(), getPackageIntegrity()]);
+  renderFIM(fim);
+  renderEvidence(evidence);
+  renderPackageIntegrity(packages);
+  const packageHealthy = !packages?.last_scan ||
+    (!packages?.running && Number(packages?.modified || 0) === 0 &&
+      Number(packages?.missing || 0) === 0 && Number(packages?.errors || 0) === 0);
+  const healthy = fim?.health === 'HEALTHY' && Boolean(evidence?.status?.healthy) && packageHealthy && renderMalwareProtection();
+  badge('integrityHealth', healthy ? 'GESCHÜTZT' : 'HANDLUNGSBEDARF', healthy ? 'good' : 'danger');
+  return { fim, evidence, packages };
+}
+
+function renderBootTrust(report) {
+  badge('bootClaim', String(report?.claim_level || 'EVIDENCE ONLY'), report?.astraeaos ? 'good' : 'warning');
+  text('bootPlatform', report?.platform || '---');
+  text('bootDistro', report?.distro_name || report?.distro_id || '---');
+  text('bootGaia', report?.astraeaos ? 'ERKANNT' : 'NICHT ERKANNT');
+  text('bootVersion', report?.version_id || '---');
+  text('bootSummary', report?.summary || '---');
+  text('bootGenerated', report?.generated_at ? formatTime(report.generated_at) : '---');
+  const body = byID('bootRows');
+  const items = Array.isArray(report?.items) ? report.items : [];
+  if (!items.length) {
+    emptyTable(body, 5, 'Keine Boot-Evidenz verfügbar.');
+    return;
+  }
+  const rows = items.map(item => {
+    const row = document.createElement('tr');
+    for (const [value, className] of [
+      [item.id, 'mono'],
+      [item.state, `posture-state ${String(item.state || '').toLowerCase()}`],
+      [item.summary, ''],
+      [item.source, 'mono'],
+      [item.digest || item.evidence || '---', 'mono']
+    ]) {
+      const cell = document.createElement('td');
+      cell.textContent = String(value ?? '---');
+      if (className) cell.className = className;
+      row.append(cell);
+    }
+    return row;
+  });
+  body.replaceChildren(...rows);
+}
+
+async function loadBootTrust() {
+  const report = await getBootTrust();
+  renderBootTrust(report);
+  return report;
+}
+
 function updateSnapshot(data) {
   snapshot = data;
   const xdr = data.xdr || {};
   const policy = data.policy || {};
   const behavior = xdr.behavior || {};
   const release = data.release || {};
-  text('versionText', data.version || '1.0.0-beta.5');
+  text('versionText', data.version || '2.0.0-beta.1');
   if (data.settings) applySettings(data.settings);
   text('nodeName', data.node_name || 'VGT Node');
   text('uptime', formatUptime(data.uptime_seconds));
@@ -582,6 +910,7 @@ function updateSnapshot(data) {
 
   text('xdrMetric', xdr.enabled ? (xdr.degraded ? t('dynamic.degraded') : String(xdr.mode || 'observe').toUpperCase()) : t('dynamic.disabled'));
   text('xdrDetail', xdr.degraded ? xdr.degraded_reason || t('dynamic.disabled') : `${xdr.sensor || 'sensor'} · ${t('dynamic.incidents', { value: number(xdr.incidents_total) })}`);
+  renderMalwareProtection();
   text('anomalyCount', number(xdr.anomalies_total));
   text('xdrProcesses', number(xdr.processes));
   text('xdrConnections', number(xdr.open_connections));
@@ -838,20 +1167,75 @@ function bindActions() {
       handleActionError(error);
     }
   });
-  byID('hardeningPreviewForm').addEventListener('submit', async event => {
+  byID('hardeningSwitchForm').addEventListener('submit', async event => {
     event.preventDefault();
     try {
-      const profile = byID('hardeningProfile').value;
+      const controls = Array.from(
+        document.querySelectorAll('#hardeningSwitches input[data-runtime-managed="true"]:checked'),
+        input => input.dataset.controlId
+      ).filter(Boolean);
+      if (!controls.length) throw new Error('Mindestens eine aktivierbare Schutzmaßnahme auswählen.');
       const transaction = await previewTransaction({
         type: 'hardening.sysctl-profile',
-        summary: t('hardening.summary', { profile }),
+        summary: `${controls.length} ausgewählte AstraeaOS-Härtungskontrollen`,
         reason: byID('hardeningReason').value.trim(),
-        payload: { profile }
+        payload: { controls }
       });
       selectTransaction(transaction);
       toast(t('hardening.previewReady'), 'good');
       await loadTransactions();
     } catch (error) {
+      handleActionError(error);
+    }
+  });
+  byID('refreshHardening').addEventListener('click', () => loadHardening().catch(handleActionError));
+  byID('refreshBoot').addEventListener('click', () => loadBootTrust().catch(handleActionError));
+  byID('fimScan').addEventListener('click', async () => {
+    try {
+      await scanFIM();
+      toast('FIM-Prüfung abgeschlossen.', 'good');
+      await Promise.all([loadIntegrity(), loadHardening(), refresh()]);
+    } catch (error) {
+      handleActionError(error);
+    }
+  });
+  byID('fimBaseline').addEventListener('click', async () => {
+    try {
+      await createFIMBaseline();
+      toast('Verschlüsselte FIM-Baseline wurde neu erstellt.', 'good');
+      await Promise.all([loadIntegrity(), loadHardening(), refresh()]);
+    } catch (error) {
+      handleActionError(error);
+    }
+  });
+  byID('evidenceVerify').addEventListener('click', async () => {
+    try {
+      await verifyEvidence();
+      toast('Die Evidence-Kette ist kryptografisch verifiziert.', 'good');
+      await Promise.all([loadIntegrity(), loadHardening()]);
+    } catch (error) {
+      handleActionError(error);
+    }
+  });
+  byID('packageIntegrityScan').addEventListener('click', async () => {
+    try {
+      await scanPackageIntegrity();
+      toast('Paketintegritätsprüfung wurde gestartet.', 'good');
+      await loadIntegrity();
+    } catch (error) {
+      handleActionError(error);
+    }
+  });
+  byID('malwareScanForm').addEventListener('submit', async event => {
+    event.preventDefault();
+    const path = byID('malwareScanPath').value.trim();
+    try {
+      const result = await scanMalware(path);
+      renderMalwareResult(result, path);
+      toast(result.state === 'clean' ? 'Inhaltsprüfung abgeschlossen: kein Fund.' : 'Fund wurde als XDR-Evidenz und Sicherheitsfall erfasst.', result.state === 'clean' ? 'good' : 'danger');
+      await refresh();
+    } catch (error) {
+      badge('malwareScanState', 'SCAN ABGEWIESEN', 'danger');
       handleActionError(error);
     }
   });

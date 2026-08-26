@@ -112,6 +112,16 @@ export async function streamSnapshots({ onSnapshot, onEvent, signal }) {
   dispatch();
 }
 export const getStatus = signal => api('/api/v1/status', { signal });
+export const getHardeningPosture = () => api('/api/v1/hardening/posture');
+export const getBootTrust = () => api('/api/v1/boot-trust');
+export const getFIM = () => api('/api/v1/fim');
+export const scanFIM = () => api('/api/v1/fim/scan', { method: 'POST', json: {} });
+export const createFIMBaseline = () => api('/api/v1/fim/baseline', { method: 'POST', json: {} });
+export const getPackageIntegrity = () => api('/api/v1/package-integrity');
+export const scanPackageIntegrity = () => api('/api/v1/package-integrity/scan', { method: 'POST', json: {} });
+export const scanMalware = path => api('/api/v1/malware/scan', { method: 'POST', json: { path } });
+export const getEvidence = () => api('/api/v1/evidence?limit=100');
+export const verifyEvidence = () => api('/api/v1/evidence/verify');
 export const getPolicy = () => api('/api/v1/policy');
 export const getProfiles = () => api('/api/v1/xdr/profiles');
 export const exportForensics = () => api('/api/v1/forensics/export');

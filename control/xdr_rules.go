@@ -142,7 +142,7 @@ func (e *XDRRuleEngine) EvaluateProcess(p ProcessSample, connections []NetConnec
 	}
 	if e.moduleEnabled("masquerading") && p.Comm != "" && cleanExe != "" {
 		base := strings.TrimSuffix(filepath.Base(cleanExe), " (deleted)")
-		if !strings.EqualFold(base, p.Comm) && !strings.HasPrefix(p.Comm, "(") {
+		if !commMatchesExecutable(p.Comm, base) && !strings.HasPrefix(p.Comm, "(") {
 			matches = append(matches, RuleMatch{ID: "XDR.NAME_PATH_MISMATCH", Category: "masquerading", Score: 15, Summary: "Process name differs from executable name"})
 		}
 	}
@@ -157,6 +157,17 @@ func (e *XDRRuleEngine) EvaluateProcess(p ProcessSample, connections []NetConnec
 		matches = append(matches, baseline.Evaluate(p, connections)...)
 	}
 	return combineMatches(matches)
+}
+
+func commMatchesExecutable(comm, executableBase string) bool {
+	if strings.EqualFold(comm, executableBase) {
+		return true
+	}
+	// Linux TASK_COMM_LEN is 16 bytes including the terminating NUL. A
+	// 15-byte comm that is an exact executable prefix is truncation evidence,
+	// not masquerading evidence.
+	return len(comm) == 15 && len(executableBase) > len(comm) &&
+		strings.EqualFold(comm, executableBase[:len(comm)])
 }
 
 func (e *XDRRuleEngine) moduleEnabled(name string) bool {

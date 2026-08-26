@@ -10,3 +10,7 @@ func scanLinuxProcesses(int) (map[string]ProcessSample, error) {
 func correlateLinuxConnections(map[string]ProcessSample) (map[string][]NetConnection, int) {
 	return nil, 0
 }
+
+func readExecProcess(CoreExecEvent, int) (ProcessSample, error) {
+	return ProcessSample{}, errors.New("kernel exec sensor is only supported on Linux")
+}

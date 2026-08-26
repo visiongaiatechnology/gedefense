@@ -246,7 +246,7 @@ func decodeCellIsolationAfter(raw json.RawMessage) (cellIsolationAfter, error) {
 		return cellIsolationAfter{}, errors.New("Gaia Cell result state is invalid")
 	}
 	if after.NetworkState != "normal" && after.NetworkState != "revoked" &&
-		after.NetworkState != "none" {
+		after.NetworkState != "guarded" && after.NetworkState != "none" {
 		return cellIsolationAfter{}, errors.New("Gaia Cell result network state is invalid")
 	}
 	return after, nil

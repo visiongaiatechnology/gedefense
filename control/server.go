@@ -41,6 +41,8 @@ type APIServer struct {
 	replay      *ReplayGuard
 	sseClients  atomic.Int32
 	bootTrust   *BootTrustCollector
+	hardening   *HardeningCollector
+	packages    *PackageIntegrityScanner
 }
 
 func NewAPIServer(cfg Config, state *State, core *CoreClient, feeds *FeedManager, policy *PolicyStore, xdr *XDREngine, release *ReleaseController, settings *SettingsStore, token string) *APIServer {
@@ -48,17 +50,23 @@ func NewAPIServer(cfg Config, state *State, core *CoreClient, feeds *FeedManager
 		cfg: cfg, state: state, core: core, feeds: feeds, policy: policy, xdr: xdr, release: release, settings: settings, token: token,
 		limiter: NewRateLimiter(cfg.Dashboard.RateLimitPerMinute, cfg.Dashboard.RateLimitBurst), replay: NewReplayGuard(10 * time.Minute),
 		bootTrust: NewBootTrustCollector(5 * time.Minute),
+		hardening: NewHardeningCollector(),
+		packages:  NewPackageIntegrityScanner(),
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /", s.index)
 	mux.HandleFunc("GET /assets/{name}", s.asset)
 	mux.HandleFunc("GET /api/v1/status", s.auth(s.status))
 	mux.HandleFunc("GET /api/v1/boot-trust", s.auth(s.bootTrustStatus))
+	mux.HandleFunc("GET /api/v1/hardening/posture", s.auth(s.hardeningPosture))
 	mux.HandleFunc("GET /api/v1/evidence", s.auth(s.evidenceStatus))
 	mux.HandleFunc("GET /api/v1/evidence/verify", s.auth(s.evidenceVerify))
 	mux.HandleFunc("GET /api/v1/fim", s.auth(s.fimStatus))
 	mux.HandleFunc("POST /api/v1/fim/scan", s.auth(s.fimScan))
 	mux.HandleFunc("POST /api/v1/fim/baseline", s.auth(s.fimBaseline))
+	mux.HandleFunc("GET /api/v1/package-integrity", s.auth(s.packageIntegrityStatus))
+	mux.HandleFunc("POST /api/v1/package-integrity/scan", s.auth(s.packageIntegrityScan))
+	mux.HandleFunc("POST /api/v1/malware/scan", s.auth(s.malwareScan))
 	mux.HandleFunc("GET /api/v1/transactions", s.auth(s.transactionStatus))
 	mux.HandleFunc("POST /api/v1/transactions/preview", s.auth(s.transactionPreview))
 	mux.HandleFunc("POST /api/v1/transactions/{id}/apply", s.auth(s.transactionApply))
@@ -89,6 +97,8 @@ func NewAPIServer(cfg Config, state *State, core *CoreClient, feeds *FeedManager
 	mux.HandleFunc("GET /livez", s.liveness)
 	mux.HandleFunc("GET /readyz", s.readiness)
 	mux.HandleFunc("GET /healthz", s.readiness)
+	mux.HandleFunc("GET /bootz", s.bootHealth)
+	mux.HandleFunc("GET /panelz", s.panelStatus)
 	s.http = &http.Server{
 		Addr: cfg.Dashboard.Listen, Handler: s.secure(mux), ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout: 15 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second,
@@ -150,7 +160,13 @@ func (s *APIServer) secure(next http.Handler) http.Handler {
 			http.Error(w, "invalid host", http.StatusBadRequest)
 			return
 		}
-		if strings.HasPrefix(r.URL.Path, "/api/") || r.URL.Path == "/metrics" || r.URL.Path == "/healthz" || r.URL.Path == "/livez" || r.URL.Path == "/readyz" {
+		if strings.HasPrefix(r.URL.Path, "/api/") ||
+			r.URL.Path == "/metrics" ||
+			r.URL.Path == "/healthz" ||
+			r.URL.Path == "/livez" ||
+			r.URL.Path == "/readyz" ||
+			r.URL.Path == "/bootz" ||
+			r.URL.Path == "/panelz" {
 			if !s.limiter.Allow(remoteIdentity(r.RemoteAddr), time.Now()) {
 				w.Header().Set("Retry-After", "2")
 				http.Error(w, "rate limit exceeded", http.StatusTooManyRequests)
@@ -319,6 +335,12 @@ func (s *APIServer) bootTrustStatus(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, s.bootTrust.Collect())
 }
 
+func (s *APIServer) hardeningPosture(w http.ResponseWriter, _ *http.Request) {
+	posture := s.hardening.Collect(s.state.Snapshot(), s.bootTrust.Collect())
+	posture.Checks = append(posture.Checks, packageIntegrityPostureCheck(s.packages.Status()))
+	writeJSON(w, http.StatusOK, summarizeHardening(posture.CollectedAt, posture.Checks))
+}
+
 func (s *APIServer) evidenceStatus(w http.ResponseWriter, r *http.Request) {
 	ledger := s.state.EvidenceLedger()
 	if ledger == nil {
@@ -370,6 +392,58 @@ func (s *APIServer) readiness(w http.ResponseWriter, r *http.Request) {
 	}
 	snap := s.state.Snapshot()
 	writeJSON(w, status, map[string]any{"ok": ready, "release": snap.Release, "blockers": blockers, "core": snap.CoreConnected, "xdr": snap.XDR, "policy": snap.Policy})
+}
+
+func localHealthRequest(r *http.Request) bool {
+	return isLoopbackRemote(r.RemoteAddr)
+}
+
+func (s *APIServer) bootHealth(w http.ResponseWriter, r *http.Request) {
+	if !localHealthRequest(r) {
+		http.NotFound(w, r)
+		return
+	}
+	snap := s.state.Snapshot()
+	status := http.StatusOK
+	if !snap.CoreConnected {
+		status = http.StatusServiceUnavailable
+	}
+	writeJSON(w, status, map[string]any{
+		"ok":             snap.CoreConnected,
+		"core_connected": snap.CoreConnected,
+		"core_mode":      snap.CoreMode,
+	})
+}
+
+func (s *APIServer) panelStatus(w http.ResponseWriter, r *http.Request) {
+	if !localHealthRequest(r) {
+		http.NotFound(w, r)
+		return
+	}
+	snap := s.state.Snapshot()
+	openFindings := snap.Cases.Open
+	if !snap.Cases.Healthy {
+		uniqueFindings := make(map[string]struct{})
+		for _, incident := range snap.Incidents {
+			if !incident.Acknowledged {
+				uniqueFindings[caseFingerprint(incident)] = struct{}{}
+			}
+		}
+		openFindings = len(uniqueFindings)
+	}
+	safe := snap.CoreConnected && !snap.XDR.Degraded && openFindings == 0
+	state := "alert"
+	if safe {
+		state = "safe"
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":             safe,
+		"state":          state,
+		"open_findings":  openFindings,
+		"core_connected": snap.CoreConnected,
+		"xdr_degraded":   snap.XDR.Degraded,
+		"xdr_sensor":     snap.XDR.Sensor,
+	})
 }
 
 func isLoopbackRemote(remote string) bool {
@@ -628,6 +702,69 @@ func (s *APIServer) fimBaseline(w http.ResponseWriter, _ *http.Request) {
 		),
 	})
 	writeJSON(w, http.StatusOK, status)
+}
+
+func (s *APIServer) packageIntegrityStatus(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, s.packages.Status())
+}
+
+func (s *APIServer) packageIntegrityScan(w http.ResponseWriter, _ *http.Request) {
+	err := s.packages.Start(func(status PackageIntegrityStatus) {
+		severity := "info"
+		kind := "package_integrity.verified"
+		message := fmt.Sprintf("Pacman package integrity verified: packages=%d files=%d verified=%d", status.Packages, status.Files, status.Verified)
+		if status.Modified > 0 || status.Missing > 0 || status.Errors > 0 {
+			severity = "critical"
+			kind = "package_integrity.deviation"
+			message = fmt.Sprintf(
+				"Pacman package integrity deviation: modified=%d missing=%d errors=%d",
+				status.Modified, status.Missing, status.Errors,
+			)
+		}
+		s.state.AddEvent(Event{Severity: severity, Kind: kind, Source: "package-integrity", Message: message})
+	})
+	if err != nil {
+		apiError(w, http.StatusConflict, "package integrity scan rejected", err)
+		return
+	}
+	writeJSON(w, http.StatusAccepted, s.packages.Status())
+}
+
+func (s *APIServer) malwareScan(w http.ResponseWriter, r *http.Request) {
+	if s.core == nil {
+		apiError(w, http.StatusServiceUnavailable, "malware scanner unavailable", nil)
+		return
+	}
+	var request struct {
+		Path string `json:"path"`
+	}
+	if err := decodeStrictJSON(w, r, 8<<10, &request); err != nil {
+		apiError(w, http.StatusBadRequest, "invalid malware scan request", err)
+		return
+	}
+	result, err := s.core.MalwareScan(request.Path)
+	if err != nil {
+		apiError(w, http.StatusConflict, "malware scan rejected", err)
+		return
+	}
+	severity := "info"
+	kind := "malware.clean"
+	if result.State == "suspicious" {
+		severity = "high"
+		kind = "malware.suspicious"
+	} else if result.State == "malicious" {
+		severity = "critical"
+		kind = "malware.detected"
+	}
+	s.state.AddEvent(Event{
+		Severity: severity, Kind: kind, Source: "malware-scanner",
+		Message: fmt.Sprintf("Content scan %s: type=%s reason=%s size=%d sha256=%s", result.State, result.Classification, result.Reason, result.Size, result.SHA256),
+		Target:  request.Path,
+	})
+	if result.State != "clean" && s.xdr != nil {
+		s.xdr.recordManualMalwareFinding(request.Path, result)
+	}
+	writeJSON(w, http.StatusOK, result)
 }
 
 func (s *APIServer) transactionStatus(w http.ResponseWriter, r *http.Request) {

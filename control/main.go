@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -15,7 +16,7 @@ import (
 	"time"
 )
 
-const version = "1.0.0-beta.5"
+const version = "2.0.0-beta.1"
 
 func detectInterface(requested string) (string, error) {
 	if requested != "" && requested != "auto" {
@@ -28,12 +29,26 @@ func detectInterface(requested string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	var downCandidate string
 	for _, i := range ifs {
-		if i.Flags&net.FlagUp != 0 && i.Flags&net.FlagLoopback == 0 {
+		if i.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		if i.Flags&net.FlagUp != 0 {
 			return i.Name, nil
 		}
+		if downCandidate == "" {
+			// Prefer a real NIC even if link is not up yet (common on live boot
+			// before NetworkManager finishes). The control plane can still serve
+			// the local dashboard; the Rust core resolves the data plane itself.
+			downCandidate = i.Name
+		}
 	}
-	return "", errors.New("no active non-loopback interface found")
+	if downCandidate != "" {
+		return downCandidate, nil
+	}
+	// Last resort: allow local HTTPS dashboard bring-up without a NIC.
+	return "lo", nil
 }
 
 func persistPolicy(policy *PolicyStore, cfg Config, state *State) error {
@@ -57,6 +72,8 @@ func main() {
 	showVersion := flag.Bool("version", false, "print version")
 	verifyForensics := flag.String("verify-forensics", "", "verify a signed forensics export")
 	trustedPublicKey := flag.String("public-key", "", "trusted Ed25519 public key for offline verification")
+	scanFile := flag.String("scan-file", "", "scan one absolute file through the privileged malware core")
+	userScanFile := flag.String("user-scan-file", "", "scan one browser-quarantine file through the peer-bound malware socket")
 	probeURL := flag.String("probe-ready", "", "wait for a loopback /readyz endpoint")
 	probeLiveURL := flag.String("probe-live", "", "wait for a loopback /livez endpoint")
 	probeTimeout := flag.Duration("probe-timeout", 30*time.Second, "maximum readiness probe duration")
@@ -126,6 +143,43 @@ func main() {
 	cfg, err := loadConfig(*configPath)
 	if err != nil {
 		log.Fatalf("configuration: %v", err)
+	}
+	if *userScanFile != "" {
+		result, scanErr := UserMalwareScan("/run/gedefense-scan/scan.sock", *userScanFile, 30*time.Second)
+		if scanErr != nil {
+			log.Fatalf("user malware scan: %v", scanErr)
+		}
+		encoder := json.NewEncoder(os.Stdout)
+		encoder.SetEscapeHTML(true)
+		if encodeErr := encoder.Encode(result); encodeErr != nil {
+			log.Fatalf("malware result encoding: %v", encodeErr)
+		}
+		if result.State != "clean" {
+			os.Exit(2)
+		}
+		return
+	}
+	if *scanFile != "" {
+		if os.Geteuid() != 0 {
+			log.Fatal("--scan-file requires administrative execution")
+		}
+		core, coreErr := NewCoreClient(cfg.Core.Socket, cfg.Core.AuthKeyFile, time.Duration(cfg.Core.RequestTimeoutMillis)*time.Millisecond)
+		if coreErr != nil {
+			log.Fatalf("core client: %v", coreErr)
+		}
+		result, scanErr := core.MalwareScan(*scanFile)
+		if scanErr != nil {
+			log.Fatalf("malware scan: %v", scanErr)
+		}
+		encoder := json.NewEncoder(os.Stdout)
+		encoder.SetEscapeHTML(true)
+		if encodeErr := encoder.Encode(result); encodeErr != nil {
+			log.Fatalf("malware result encoding: %v", encodeErr)
+		}
+		if result.State != "clean" {
+			os.Exit(2)
+		}
+		return
 	}
 	iface, err := detectInterface(cfg.Node.Interface)
 	if err != nil {
@@ -331,6 +385,7 @@ func main() {
 			case <-stopWorkers:
 				return
 			case <-ping.C:
+				_ = cells.Status(true)
 				mode, pingErr := core.Ping()
 				online := pingErr == nil
 				if !online {

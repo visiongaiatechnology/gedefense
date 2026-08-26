@@ -58,26 +58,58 @@ func readLinuxProcess(pid, maxCmdBytes int) (ProcessSample, error) {
 	return ProcessSample{PID: pid, PPID: ppid, StartTicks: start, UID: uid, GID: gid, Comm: comm, Exe: exe, ParentExe: parentExe, Cmdline: cmd, CmdSHA256: commandDigest(cmd), Cgroup: strings.TrimSpace(cg)}, nil
 }
 
+func readExecProcess(event CoreExecEvent, maxCmdBytes int) (ProcessSample, error) {
+	process, err := readLinuxProcess(event.PID, maxCmdBytes)
+	if err != nil {
+		return ProcessSample{}, err
+	}
+	if process.UID != event.UID || process.GID != event.GID || process.Comm != event.Comm {
+		return ProcessSample{}, errors.New("exec event identity changed before enrichment")
+	}
+	return process, nil
+}
+
 func parseProcStat(s string) (ppid int, startTicks uint64, comm string, err error) {
 	open := strings.IndexByte(s, '(')
 	close := strings.LastIndexByte(s, ')')
-	if open < 0 || close <= open || close+2 > len(s) {
+	if open <= 1 || close <= open || close+2 > len(s) || s[close+1] != ' ' {
 		return 0, 0, "", errors.New("malformed proc stat")
+	}
+	pidField := s[:open]
+	if pidField[len(pidField)-1] != ' ' {
+		return 0, 0, "", errors.New("malformed proc stat pid")
+	}
+	pid, err := strconv.ParseUint(pidField[:len(pidField)-1], 10, 31)
+	if err != nil || pid == 0 {
+		return 0, 0, "", errors.New("invalid proc stat pid")
 	}
 	comm = s[open+1 : close]
 	fields := strings.Fields(s[close+2:]) // starts at field 3 (state)
 	if len(fields) <= 19 {
 		return 0, 0, "", errors.New("short proc stat")
 	}
+	if !validProcState(fields[0]) {
+		return 0, 0, "", errors.New("invalid proc stat state")
+	}
 	ppid64, err := strconv.ParseInt(fields[1], 10, 32) // field 4
 	if err != nil {
 		return 0, 0, "", err
+	}
+	if ppid64 < 0 {
+		return 0, 0, "", errors.New("invalid proc stat parent pid")
 	}
 	start, err := strconv.ParseUint(fields[19], 10, 64) // field 22
 	if err != nil {
 		return 0, 0, "", err
 	}
+	if start == 0 {
+		return 0, 0, "", errors.New("invalid proc stat start ticks")
+	}
 	return int(ppid64), start, comm, nil
+}
+
+func validProcState(state string) bool {
+	return len(state) == 1 && strings.ContainsRune("RSDZTWtXxKPI", rune(state[0]))
 }
 
 func readProcIDs(path string) (uint32, uint32) {
