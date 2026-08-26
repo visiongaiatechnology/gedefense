@@ -27,12 +27,19 @@ const (
 	cellIdentityVersion  = 1
 	cellRuntimeRootUID   = 0
 	cellPolicyDigestSize = 64
+	cellNetworkLeaseTTL  = 15
+	cellNetworkBatchMax  = 64
 )
+
+var networkLeasedCellProfiles = map[string]struct{}{
+	"browser": {}, "desktop-online": {}, "gaiacom": {}, "gedefense-ui": {},
+}
 
 type GaiaCell struct {
 	Version      int       `json:"version"`
 	UUID         string    `json:"uuid"`
 	Label        string    `json:"label"`
+	Profile      string    `json:"profile"`
 	Class        string    `json:"class"`
 	CgroupPath   string    `json:"cgroup_path"`
 	CgroupID     uint64    `json:"cgroup_id"`
@@ -199,7 +206,49 @@ func (a *GaiaCellsAdapter) listLocked() ([]GaiaCell, error) {
 		}
 		seen[key] = struct{}{}
 	}
+	if err := a.authorizeNetworkLocked(cells); err != nil {
+		return nil, err
+	}
 	return cells, nil
+}
+
+func (a *GaiaCellsAdapter) authorizeNetworkLocked(cells []GaiaCell) error {
+	type identity struct {
+		UUID         string `json:"uuid"`
+		Generation   uint64 `json:"generation"`
+		CgroupID     uint64 `json:"cgroup_id"`
+		PolicyDigest string `json:"policy_digest"`
+	}
+	identities := make([]identity, 0, len(cells))
+	for _, cell := range cells {
+		if _, allowed := networkLeasedCellProfiles[cell.Profile]; !allowed || cell.State != "running" ||
+			(cell.NetworkState != "guarded" && cell.NetworkState != "normal") {
+			continue
+		}
+		identities = append(identities, identity{UUID: cell.UUID, Generation: cell.Generation,
+			CgroupID: cell.CgroupID, PolicyDigest: cell.PolicyDigest})
+	}
+	for offset := 0; offset < len(identities); offset += cellNetworkBatchMax {
+		end := offset + cellNetworkBatchMax
+		if end > len(identities) {
+			end = len(identities)
+		}
+		payload := struct {
+			TTLSeconds uint64     `json:"ttl_seconds"`
+			Cells      []identity `json:"cells"`
+		}{TTLSeconds: cellNetworkLeaseTTL, Cells: identities[offset:end]}
+		var response struct {
+			Result string `json:"result"`
+			Count  int    `json:"count"`
+		}
+		if err := a.commandLocked("AUTHORIZE_NETWORK", payload, &response); err != nil {
+			return err
+		}
+		if response.Result != "applied" || response.Count != end-offset {
+			return errors.New("Gaia Cells runtime returned an invalid network lease result")
+		}
+	}
+	return nil
 }
 
 func (a *GaiaCellsAdapter) Action(
@@ -359,7 +408,7 @@ func verifyGaiaCellsPeer(connection net.Conn) error {
 }
 
 func validateGaiaCell(cell GaiaCell) error {
-	if cell.Version != cellIdentityVersion || !validCellUUID(cell.UUID) ||
+	if cell.Version != cellIdentityVersion || !validCellUUID(cell.UUID) || !validCellProfile(cell.Profile) ||
 		len(cell.Label) > 128 || strings.ContainsRune(cell.Label, '\x00') ||
 		cell.CgroupID == 0 || cell.Generation == 0 ||
 		len(cell.PolicyDigest) != cellPolicyDigestSize ||
@@ -372,7 +421,7 @@ func validateGaiaCell(cell GaiaCell) error {
 		return errors.New("Gaia Cell policy digest is invalid")
 	}
 	switch cell.Class {
-	case "application", "workspace", "vault":
+	case "application", "workspace", "vault", "microvm":
 	default:
 		return errors.New("Gaia Cell class is invalid")
 	}
@@ -382,13 +431,24 @@ func validateGaiaCell(cell GaiaCell) error {
 		return errors.New("Gaia Cell state is invalid")
 	}
 	switch cell.NetworkState {
-	case "normal", "revoked", "none":
+	case "normal", "revoked", "guarded", "none":
 	default:
 		return errors.New("Gaia Cell network state is invalid")
 	}
 	return nil
 }
 
+func validCellProfile(value string) bool {
+	if len(value) == 0 || len(value) > 32 || value[0] == '-' || value[len(value)-1] == '-' {
+		return false
+	}
+	for _, character := range value {
+		if (character < 'a' || character > 'z') && (character < '0' || character > '9') && character != '-' {
+			return false
+		}
+	}
+	return true
+}
 func validCellUUID(value string) bool {
 	if len(value) != 36 {
 		return false

@@ -19,9 +19,10 @@ import (
 )
 
 type mockCellRuntime struct {
-	mu   sync.Mutex
-	cell GaiaCell
-	key  []byte
+	mu             sync.Mutex
+	cell           GaiaCell
+	key            []byte
+	authorizations int
 }
 
 func startMockCellRuntime(
@@ -43,10 +44,10 @@ func startMockCellRuntime(
 		key: key,
 		cell: GaiaCell{
 			Version: 1, UUID: "01234567-89ab-cdef-0123-456789abcdef",
-			Label: "Browser", Class: "application",
+			Label: "Browser", Profile: "browser", Class: "application",
 			CgroupPath: "/sys/fs/cgroup/gaia-cells/browser", CgroupID: 4815,
 			PolicyDigest: strings.Repeat("ab", 32), Generation: 7,
-			State: "running", NetworkState: "normal",
+			State: "running", NetworkState: "guarded",
 			ObservedAt: time.Unix(1_700_000_000, 0).UTC(),
 		},
 	}
@@ -96,6 +97,23 @@ func (runtime *mockCellRuntime) handle(connection net.Conn) {
 	switch request.Command {
 	case "LIST":
 		payload = []GaiaCell{runtime.cell}
+	case "AUTHORIZE_NETWORK":
+		decoded, decodeErr := base64.RawURLEncoding.DecodeString(request.Payload)
+		var leaseRequest struct {
+			TTLSeconds uint64 `json:"ttl_seconds"`
+			Cells      []struct {
+				UUID string `json:"uuid"`
+			} `json:"cells"`
+		}
+		if decodeErr != nil || json.Unmarshal(decoded, &leaseRequest) != nil || leaseRequest.TTLSeconds != cellNetworkLeaseTTL ||
+			len(leaseRequest.Cells) != 1 || leaseRequest.Cells[0].UUID != runtime.cell.UUID {
+			status = "ERR"
+			payload = map[string]string{"error": "rejected"}
+			break
+		}
+		runtime.authorizations += len(leaseRequest.Cells)
+		runtime.cell.NetworkState = "normal"
+		payload = map[string]any{"result": "applied", "count": len(leaseRequest.Cells)}
 	case "FREEZE":
 		runtime.cell.State = "frozen"
 		payload = map[string]string{"result": "applied"}
@@ -134,6 +152,12 @@ func TestGaiaCellsAdapterAuthenticatedLifecycle(t *testing.T) {
 	if !status.Healthy || status.Availability != "online" || len(status.Cells) != 1 {
 		t.Fatalf("unexpected adapter status: %+v", status)
 	}
+	runtime.mu.Lock()
+	authorizations, network := runtime.authorizations, runtime.cell.NetworkState
+	runtime.mu.Unlock()
+	if authorizations != 1 || network != "normal" {
+		t.Fatalf("per-cell network lease was not applied: authorizations=%d network=%s", authorizations, network)
+	}
 	cell := status.Cells[0]
 	if err := adapter.Action("FREEZE", cell.UUID, cell.Generation, cell.CgroupID); err != nil {
 		t.Fatal(err)
@@ -153,6 +177,9 @@ func TestGaiaCellTransactionIsReversibleAndIdentityBound(t *testing.T) {
 	engine, _, _ := newTestTransactionEngine(
 		t, applier, func(EvidenceRecord) error { return nil },
 	)
+	if _, err := adapter.List(); err != nil {
+		t.Fatal(err)
+	}
 	runtime.mu.Lock()
 	cell := runtime.cell
 	runtime.mu.Unlock()
@@ -197,9 +224,9 @@ func TestGaiaCellsRejectsInvalidIdentityAndUnavailableRuntime(t *testing.T) {
 	}
 	cell := GaiaCell{
 		Version: 1, UUID: "01234567-89ab-cdef-0123-456789abcdef",
-		Class: "application", CgroupPath: "/tmp/forged", CgroupID: 1,
+		Profile: "default", Class: "application", CgroupPath: "/tmp/forged", CgroupID: 1,
 		PolicyDigest: strings.Repeat("ab", 32), Generation: 1,
-		State: "running", NetworkState: "normal", ObservedAt: time.Now().UTC(),
+		State: "running", NetworkState: "guarded", ObservedAt: time.Now().UTC(),
 	}
 	if err := validateGaiaCell(cell); err == nil {
 		t.Fatal("Cell outside cgroup v2 jail was accepted")

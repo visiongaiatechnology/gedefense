@@ -122,7 +122,7 @@ func (b *XDRBaseline) Evaluate(p ProcessSample, conns []NetConnection) []RuleMat
 			out = append(out, RuleMatch{ID: "BASELINE.UID_MISMATCH", Category: "identity", Score: 55, Summary: "Process UID is outside its approved baseline"})
 		}
 	}
-	if len(c.parents) > 0 {
+	if len(c.parents) > 0 && strings.TrimSpace(p.ParentExe) != "" {
 		if _, ok := c.parents[resolveBaselinePath(strings.TrimSuffix(p.ParentExe, " (deleted)"))]; !ok {
 			out = append(out, RuleMatch{ID: "BASELINE.PARENT_MISMATCH", Category: "lineage", Score: 50, Summary: "Parent executable is outside the approved baseline", KillEligible: true})
 		}

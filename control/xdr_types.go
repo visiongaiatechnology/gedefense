@@ -13,6 +13,8 @@ type XDRIncident struct {
 	PPID           int       `json:"ppid,omitempty"`
 	StartTicks     uint64    `json:"start_ticks,omitempty"`
 	UID            uint32    `json:"uid,omitempty"`
+	CellCgroupID   uint64    `json:"cell_cgroup_id,omitempty"`
+	SocketFamily   int32     `json:"socket_family,omitempty"`
 	Process        string    `json:"process,omitempty"`
 	Executable     string    `json:"executable,omitempty"`
 	Parent         string    `json:"parent,omitempty"`

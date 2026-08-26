@@ -3,8 +3,10 @@
 package main
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -29,6 +31,21 @@ const (
 	maxKernelBytes   = 256 << 20
 )
 
+var requiredPCRSelection = [...]int{0, 2, 4, 7, 9, 11, 12}
+
+type localBootAttestation struct {
+	Schema             string `json:"schema"`
+	Status             string `json:"status"`
+	SecureBoot         bool   `json:"secure_boot"`
+	BootID             string `json:"boot_id"`
+	SigningMode        string `json:"signing_mode"`
+	KernelCommandLine  string `json:"kernel_command_line"`
+	PCRSignatureSHA256 string `json:"pcr_signature_sha256"`
+	PCRPublicKeySHA256 string `json:"pcr_public_key_sha256"`
+	PCRSelection       []int  `json:"pcr_selection"`
+	PCRReadout         string `json:"pcr_readout"`
+}
+
 type BootTrustEvidence struct {
 	ID       string `json:"id"`
 	State    string `json:"state"`
@@ -45,7 +62,7 @@ type BootTrustReport struct {
 	DistroID    string              `json:"distro_id,omitempty"`
 	DistroName  string              `json:"distro_name,omitempty"`
 	VersionID   string              `json:"version_id,omitempty"`
-	GaiaOS      bool                `json:"gaiaos"`
+	AstraeaOS   bool                `json:"astraeaos"`
 	Summary     string              `json:"summary"`
 	Items       []BootTrustEvidence `json:"items"`
 }
@@ -123,12 +140,17 @@ func (p bootTrustProbe) collect(now time.Time) BootTrustReport {
 	report.DistroID = osRelease["ID"]
 	report.DistroName = osRelease["NAME"]
 	report.VersionID = osRelease["VERSION_ID"]
-	report.GaiaOS = strings.EqualFold(report.DistroID, "gaiaos")
+	report.AstraeaOS = strings.EqualFold(report.DistroID, "astraeaos")
 	report.Items = append(report.Items, distroEvidence(report))
 	report.Items = append(report.Items, p.secureBootEvidence())
 	report.Items = append(report.Items, p.lockdownEvidence())
 	report.Items = append(report.Items, p.cmdlineEvidence())
 	report.Items = append(report.Items, p.tpmEvidence())
+	attestation := p.attestationEvidence()
+	report.Items = append(report.Items, attestation)
+	if attestation.State == bootStateEnabled {
+		report.ClaimLevel = "local-attestation"
+	}
 	report.Items = append(report.Items, p.cgroupEvidence())
 	report.Items = append(report.Items, p.gaiaCellsEvidence())
 	report.Items = append(report.Items, p.kernelImageEvidence())
@@ -145,8 +167,8 @@ func distroEvidence(report BootTrustReport) BootTrustEvidence {
 		}
 	}
 	summary := "Linux distribution identity observed."
-	if report.GaiaOS {
-		summary = "GaiaOS distribution identity observed."
+	if report.AstraeaOS {
+		summary = "AstraeaOS distribution identity observed."
 	}
 	return BootTrustEvidence{
 		ID: "distribution", State: bootStateObserved, Summary: summary,
@@ -298,6 +320,80 @@ func (p bootTrustProbe) tpmEvidence() BootTrustEvidence {
 		Summary: "No TPM interface was observed.",
 		Source:  "sysfs/devfs",
 	}
+}
+
+func (p bootTrustProbe) attestationEvidence() BootTrustEvidence {
+	const source = "/run/astraeaos/boot-attestation.json"
+	data, err := p.readBounded(source, maxBootTextBytes)
+	if err != nil {
+		return BootTrustEvidence{
+			ID: "measured-boot-attestation", State: bootStateNotAvailable,
+			Summary: "No verified local TPM2 boot attestation is available.",
+			Source:  source,
+		}
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	var value localBootAttestation
+	if err := decoder.Decode(&value); err != nil {
+		return BootTrustEvidence{
+			ID: "measured-boot-attestation", State: bootStateWarning,
+			Summary: "The local TPM2 boot attestation is malformed.",
+			Source:  source,
+		}
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return BootTrustEvidence{
+			ID: "measured-boot-attestation", State: bootStateWarning,
+			Summary: "The local TPM2 boot attestation contains trailing data.",
+			Source:  source,
+		}
+	}
+	currentBootID, err := p.readBounded("/proc/sys/kernel/random/boot_id", 128)
+	if err != nil {
+		return BootTrustEvidence{
+			ID: "measured-boot-attestation", State: bootStateUnknown,
+			Summary: "The current boot identity cannot be compared with attestation evidence.",
+			Source:  source,
+		}
+	}
+	selectionValid := len(value.PCRSelection) == len(requiredPCRSelection)
+	if selectionValid {
+		for index, expected := range requiredPCRSelection {
+			if value.PCRSelection[index] != expected {
+				selectionValid = false
+				break
+			}
+		}
+	}
+	valid := value.Schema == "astraeaos.boot-attestation.v1" &&
+		value.Status == "verified" && value.SecureBoot &&
+		strings.TrimSpace(value.BootID) == strings.TrimSpace(string(currentBootID)) &&
+		selectionValid && validSHA256(value.PCRSignatureSHA256) &&
+		validSHA256(value.PCRPublicKeySHA256) && strings.TrimSpace(value.PCRReadout) != ""
+	if !valid {
+		return BootTrustEvidence{
+			ID: "measured-boot-attestation", State: bootStateWarning,
+			Summary: "Local boot attestation does not match the current boot or required PCR policy.",
+			Source:  source,
+		}
+	}
+	digest := sha256.Sum256(data)
+	return BootTrustEvidence{
+		ID: "measured-boot-attestation", State: bootStateEnabled,
+		Summary:  "Secure Boot and TPM2 PCR measurements were verified for the current boot.",
+		Source:   source,
+		Evidence: "PCRs 0,2,4,7,9,11,12; policy-key=" + value.PCRPublicKeySHA256[:16],
+		Digest:   hex.EncodeToString(digest[:]),
+	}
+}
+
+func validSHA256(value string) bool {
+	if len(value) != sha256.Size*2 {
+		return false
+	}
+	_, err := hex.DecodeString(value)
+	return err == nil && value == strings.ToLower(value)
 }
 
 func (p bootTrustProbe) cgroupEvidence() BootTrustEvidence {

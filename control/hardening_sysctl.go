@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"sort"
 )
 
 type SysctlProfile struct {
@@ -16,6 +18,48 @@ type SysctlProfile struct {
 type SysctlTransactionApplier struct {
 	core     SysctlCore
 	profiles map[string]SysctlProfile
+}
+
+type sysctlControlDefinition struct {
+	Mask   uint16
+	Values map[string]string
+}
+
+var sysctlControlDefinitions = map[string]sysctlControlDefinition{
+	"kernel.aslr": {Mask: 1 << 0, Values: map[string]string{
+		"kernel.randomize_va_space": "2",
+	}},
+	"kernel.kptr": {Mask: 1 << 1, Values: map[string]string{
+		"kernel.kptr_restrict": "2",
+	}},
+	"kernel.dmesg": {Mask: 1 << 2, Values: map[string]string{
+		"kernel.dmesg_restrict": "1",
+	}},
+	"kernel.ptrace": {Mask: 1 << 3, Values: map[string]string{
+		"kernel.yama.ptrace_scope": "2",
+	}},
+	"kernel.bpf": {Mask: 1 << 4, Values: map[string]string{
+		"kernel.unprivileged_bpf_disabled": "1",
+	}},
+	"filesystem.protected-links": {Mask: 1 << 5, Values: map[string]string{
+		"fs.protected_fifos": "2", "fs.protected_regular": "2",
+	}},
+	"filesystem.suid-dumps": {Mask: 1 << 6, Values: map[string]string{
+		"fs.suid_dumpable": "0",
+	}},
+	"network.syn-cookies": {Mask: 1 << 7, Values: map[string]string{
+		"net.ipv4.tcp_syncookies": "1",
+	}},
+	"network.ipv4-redirects": {Mask: 1 << 8, Values: map[string]string{
+		"net.ipv4.conf.all.accept_redirects":     "0",
+		"net.ipv4.conf.default.accept_redirects": "0",
+		"net.ipv4.conf.all.send_redirects":       "0",
+		"net.ipv4.conf.default.send_redirects":   "0",
+	}},
+	"network.ipv6-redirects": {Mask: 1 << 9, Values: map[string]string{
+		"net.ipv6.conf.all.accept_redirects":     "0",
+		"net.ipv6.conf.default.accept_redirects": "0",
+	}},
 }
 
 type SysctlCore interface {
@@ -47,8 +91,8 @@ func NewSysctlTransactionApplier(core SysctlCore) *SysctlTransactionApplier {
 					"net.ipv6.conf.default.accept_redirects": "0",
 				},
 			},
-			"gaiaos-workstation-strict": {
-				Name: "gaiaos-workstation-strict",
+			"astraeaos-workstation-strict": {
+				Name: "astraeaos-workstation-strict",
 				Values: map[string]string{
 					"kernel.kptr_restrict":                   "2",
 					"kernel.dmesg_restrict":                  "1",
@@ -81,13 +125,9 @@ func (a *SysctlTransactionApplier) Preview(
 	if a.core == nil {
 		return nil, nil, errors.New("privileged core is unavailable")
 	}
-	profileName, err := decodeSysctlProfileRequest(payload)
+	profile, err := decodeSysctlProfileRequest(payload, a.profiles)
 	if err != nil {
 		return nil, nil, err
-	}
-	profile, exists := a.profiles[profileName]
-	if !exists {
-		return nil, nil, errors.New("hardening profile is not supported")
 	}
 	before := make(map[string]string, len(profile.Values))
 	for _, key := range sortedJSONMapKeys(profile.Values) {
@@ -113,19 +153,59 @@ func (a *SysctlTransactionApplier) Preview(
 	return plan, captured, err
 }
 
-func decodeSysctlProfileRequest(payload json.RawMessage) (string, error) {
+func decodeSysctlProfileRequest(payload json.RawMessage, profiles map[string]SysctlProfile) (SysctlProfile, error) {
 	var request struct {
-		Profile string `json:"profile"`
+		Profile  string   `json:"profile"`
+		Controls []string `json:"controls"`
 	}
 	decoder := json.NewDecoder(bytes.NewReader(payload))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&request); err != nil {
-		return "", errors.New("invalid hardening profile request")
+		return SysctlProfile{}, errors.New("invalid hardening profile request")
 	}
-	if request.Profile == "" || len(request.Profile) > 64 {
-		return "", errors.New("hardening profile is required")
+	var trailing any
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		return SysctlProfile{}, errors.New("hardening profile request contains trailing data")
 	}
-	return request.Profile, nil
+	if (request.Profile == "") == (len(request.Controls) == 0) {
+		return SysctlProfile{}, errors.New("exactly one hardening profile or control selection is required")
+	}
+	if request.Profile != "" {
+		if len(request.Profile) > 64 {
+			return SysctlProfile{}, errors.New("hardening profile is outside bounds")
+		}
+		profile, exists := profiles[request.Profile]
+		if !exists {
+			return SysctlProfile{}, errors.New("hardening profile is not supported")
+		}
+		return profile, nil
+	}
+	if len(request.Controls) > len(sysctlControlDefinitions) {
+		return SysctlProfile{}, errors.New("hardening control selection is outside bounds")
+	}
+	controls := append([]string(nil), request.Controls...)
+	sort.Strings(controls)
+	values := make(map[string]string)
+	var mask uint16
+	for index, controlID := range controls {
+		if index > 0 && controls[index-1] == controlID {
+			return SysctlProfile{}, errors.New("hardening control selection contains duplicates")
+		}
+		definition, exists := sysctlControlDefinitions[controlID]
+		if !exists {
+			return SysctlProfile{}, errors.New("hardening control is not supported")
+		}
+		mask |= definition.Mask
+		for key, value := range definition.Values {
+			values[key] = value
+		}
+	}
+	if mask == 0 || len(values) == 0 {
+		return SysctlProfile{}, errors.New("hardening control selection is empty")
+	}
+	return SysctlProfile{
+		Name: fmt.Sprintf("astraeaos-custom-%04x", mask), Values: values,
+	}, nil
 }
 
 func decodeSysctlState(raw json.RawMessage) (string, map[string]string, string, error) {

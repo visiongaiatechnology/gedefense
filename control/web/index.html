@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="dark">
   <meta name="theme-color" content="#05090f">
-  <title>GeDefense 1.0.0-beta.5 · VisionGaiaTechnology</title>
+  <title>GeDefense Beta v2 · VisionGaiaTechnology</title>
   <link rel="stylesheet" href="/assets/app.css">
   <script type="module" src="/assets/app.js"></script>
 </head>
@@ -20,6 +20,9 @@
       </div>
       <nav class="nav-stack">
         <button class="nav-item active" type="button" data-view="overview" aria-current="page"><span aria-hidden="true">◈</span><b data-i18n="nav.overview">Übersicht</b></button>
+        <button class="nav-item" type="button" data-view="hardening"><span aria-hidden="true">◆</span><b>Härtung</b></button>
+        <button class="nav-item" type="button" data-view="integrity"><span aria-hidden="true">◉</span><b>Integrität</b></button>
+        <button class="nav-item" type="button" data-view="boot"><span aria-hidden="true">△</span><b>Boot Trust</b></button>
         <button class="nav-item" type="button" data-view="xdr"><span aria-hidden="true">⌬</span><b data-i18n="nav.xdr">GeDefense XDR</b></button>
         <button class="nav-item" type="button" data-view="network"><span aria-hidden="true">⌁</span><b data-i18n="nav.network">Netzwerk</b></button>
         <button class="nav-item" type="button" data-view="policy"><span aria-hidden="true">◇</span><b data-i18n="nav.policy">Policy Trust</b></button>
@@ -30,7 +33,7 @@
       </nav>
       <div class="sidebar-foot">
         <div class="mini-status"><span id="sidebarPulse" class="status-dot"></span><div><b id="sidebarState">INITIALISIERT</b><small id="sidebarMode">Observe</small></div></div>
-        <span class="powered-line">GeDefense <span id="versionText">1.0.0-beta.5</span></span>
+        <span class="powered-line">GeDefense <span id="versionText">2.0.0-beta.1</span></span>
         <small class="vgt-credit" data-i18n="brand.powered">powered by VisionGaiaTechnology</small>
       </div>
     </aside>
@@ -51,11 +54,11 @@
         <section class="view active" data-page="overview" aria-labelledby="overviewHeading">
           <div class="hero panel">
             <div class="hero-copy">
-              <p class="eyebrow" data-i18n="overview.kicker">GEDEFENSE 1.0.0-beta.5 // FULL STACK BETA</p>
+              <p class="eyebrow" data-i18n="overview.kicker">GEDEFENSE BETA V2 // UNIVERSAL LINUX</p>
               <h2 id="overviewHeading" data-i18n="overview.heading">Abwehr, die den Host als Gesamtsystem versteht.</h2>
               <p data-i18n="overview.description">Rust-XDP, signierte Policy-Snapshots und Linux-XDR korrelieren Netzwerk, Prozesse, Integrität und Verhalten – lokal, nachvollziehbar und ohne Cloud-Abhängigkeit.</p>
               <div class="hero-state"><span id="heroPulse" class="status-dot"></span><b id="shieldState">CONTROL ONLY</b><small id="coreMode">Rust Core offline</small></div>
-              <div class="hero-brand">GeDefense <b>1.0.0-beta.5</b> <span data-i18n="brand.powered">powered by VisionGaiaTechnology</span></div>
+              <div class="hero-brand">GeDefense <b>2.0.0-beta.1</b> <span data-i18n="brand.powered">powered by VisionGaiaTechnology</span></div>
             </div>
             <div class="defense-orb" aria-hidden="true"><div class="orb-core"></div><div class="orbit orbit-one"></div><div class="orbit orbit-two"></div><div class="orbit orbit-three"></div><div class="scan-line"></div></div>
           </div>
@@ -79,14 +82,121 @@
               </div>
             </article>
             <article class="panel stream-panel">
-              <div class="section-head"><div><p class="eyebrow">SENTINEL STREAM</p><h3 data-i18n="stream.title">Letzte Ereignisse</h3></div><span class="live-label"><i></i>LIVE</span></div>
+              <div class="section-head"><div><p class="eyebrow">GEDEFENSE EVIDENCE STREAM</p><h3 data-i18n="stream.title">Letzte Ereignisse</h3></div><span class="live-label"><i></i>LIVE</span></div>
               <ol id="events" class="event-list"></ol>
             </article>
           </div>
         </section>
 
+        <section class="view" data-page="hardening" aria-labelledby="hardeningCenterHeading" hidden>
+          <div class="page-intro"><div><p class="eyebrow">GEDEFENSE HARDENING CENTER</p><h2 id="hardeningCenterHeading">Systemhärtung</h2><p>GeDefense misst den echten Systemzustand und führt Änderungen ausschließlich als prüfbare, reversible Sicherheitstransaktionen aus.</p></div><span id="hardeningLevel" class="badge badge-warning">WIRD GEPRÜFT</span></div>
+          <div class="hardening-score-grid">
+            <article class="panel posture-score"><div class="score-ring" id="hardeningScoreRing"><strong id="hardeningScore">0</strong><span>/ 100</span></div><div><p class="eyebrow">LOKALE SCHUTZLAGE</p><h3 id="hardeningScoreTitle">Analyse läuft</h3><small id="hardeningCollected">Noch keine Messung</small></div></article>
+            <article class="panel protection-control hardening-principle">
+              <p class="eyebrow">ZERO-TRUST APPLY PIPELINE</p>
+              <h3>Auswahl → Vorschau → Bestätigung → Verifikation</h3>
+              <p>Jede aktivierte Kontrolle wird durch den privilegierten Rust-Core per authentifiziertem IPC gesetzt. Compare-and-Set verhindert konkurrierende Änderungen; der Vorzustand bleibt für Rollback erhalten.</p>
+              <div class="assurance-row"><span>ALLOWLISTED</span><span>ATOMIC</span><span>REVERSIBLE</span><span>AUDITED</span></div>
+            </article>
+          </div>
+          <article class="panel hardening-switchboard">
+            <div class="section-head"><div><p class="eyebrow">MODULAR HARDENING CONTROLS</p><h3>Schutzmaßnahmen auswählen</h3></div><span id="hardeningSelectionCount">0 AUSGEWÄHLT</span></div>
+            <p class="panel-description">Aktivierbare Kontrollen werden live und persistent angewendet. Plattformkontrollen wie AppArmor-Bootmodus, LUKS, TPM und Secure Boot werden ebenfalls gemessen, können aber nur im jeweils sicheren Installations-, Boot- oder Firmwarepfad geändert werden.</p>
+            <form id="hardeningSwitchForm">
+              <div id="hardeningSwitches" class="hardening-switches" aria-live="polite"></div>
+              <div class="hardening-savebar">
+                <label><span>Begründung für das Audit-Log</span><input id="hardeningReason" autocomplete="off" maxlength="240" required placeholder="Ausgewählte Schutzmaßnahmen aktivieren"></label>
+                <button class="button button-primary" type="submit">Auswahl sicher vorprüfen</button>
+              </div>
+            </form>
+          </article>
+          <div id="hardeningDomains" class="posture-domains" aria-live="polite"></div>
+          <article class="panel table-panel posture-panel">
+            <div class="section-head"><div><p class="eyebrow">CONTROL INVENTORY</p><h3>Schutzmaßnahmen und Empfehlungen</h3></div><button id="refreshHardening" class="button button-quiet" type="button">Neu prüfen</button></div>
+            <div class="table-wrap"><table><thead><tr><th>Bereich</th><th>Schutzmaßnahme</th><th>Status</th><th>Messwert</th><th>Empfehlung</th></tr></thead><tbody id="hardeningChecks"></tbody></table></div>
+          </article>
+          <article class="panel table-panel hardening-panel">
+            <div class="section-head"><div><p class="eyebrow">DURABLE SECURITY TRANSACTIONS</p><h3>Sicherheitstransaktionen</h3></div><span id="transactionHealth" class="badge">INITIALISIERUNG</span></div>
+            <div id="transactionSelection" class="transaction-selection" hidden>
+              <div><span>Ausgewählte Transaktion</span><code id="selectedTransactionID">---</code></div>
+              <pre id="selectedTransactionPlan" aria-label="Transaktionsplan"></pre>
+              <form id="transactionExecuteForm" class="hardening-form confirmation-form">
+                <label><span>Exakte Bestätigung</span><input id="transactionConfirmation" class="mono" autocomplete="off" spellcheck="false" maxlength="128" required></label>
+                <button id="transactionExecute" class="button button-danger" type="submit">Transaktion ausführen</button>
+              </form>
+            </div>
+            <div class="table-wrap"><table><thead><tr><th>ID</th><th>Typ</th><th>Zusammenfassung</th><th>Status</th><th>Zeit</th><th></th></tr></thead><tbody id="transactionRows"></tbody></table></div>
+          </article>
+        </section>
+
+        <section class="view" data-page="integrity" aria-labelledby="integrityHeading" hidden>
+          <div class="page-intro"><div><p class="eyebrow">INTEGRITY & EVIDENCE</p><h2 id="integrityHeading">Integrität</h2><p>Dateiintegrität und die verschlüsselte, signierte Beweiskette werden getrennt überwacht und gemeinsam korreliert.</p></div><span id="integrityHealth" class="badge">WIRD GEPRÜFT</span></div>
+          <div class="integrity-grid">
+            <article class="panel domain-dashboard">
+              <div class="section-head"><div><p class="eyebrow">FILE INTEGRITY MONITOR</p><h3>FIM Baseline</h3></div><span id="fimHealth" class="badge">---</span></div>
+              <div class="domain-metrics"><div><span>Geschützte Dateien</span><strong id="fimBaselineCount">0</strong></div><div><span>Generation</span><strong id="fimGeneration">0</strong></div><div><span>Abweichungen</span><strong id="fimFindings">0</strong></div></div>
+              <p id="fimRoots" class="domain-detail">Keine Pfade geladen</p>
+              <div class="button-row"><button id="fimScan" class="button button-primary" type="button">Jetzt prüfen</button><button id="fimBaseline" class="button button-quiet" type="button">Baseline neu erstellen</button></div>
+            </article>
+            <article class="panel domain-dashboard">
+              <div class="section-head"><div><p class="eyebrow">SIGNED EVIDENCE LEDGER</p><h3>Beweiskette</h3></div><span id="evidenceHealth" class="badge">---</span></div>
+              <div class="domain-metrics"><div><span>Records</span><strong id="evidenceRecords">0</strong></div><div><span>Speicher</span><strong id="evidenceBytes">0 B</strong></div><div><span>Head</span><strong id="evidenceHead" class="mono">---</strong></div></div>
+              <p id="evidenceKey" class="domain-detail mono">Signer nicht geladen</p>
+              <div class="button-row"><button id="evidenceVerify" class="button button-primary" type="button">Kette kryptografisch prüfen</button></div>
+            </article>
+          </div>
+          <article class="panel domain-dashboard malware-dashboard">
+            <div class="section-head"><div><p class="eyebrow">ON-ACCESS MALWARE DEFENSE</p><h3>Ausführungsschutz &amp; Inhaltsprüfung</h3></div><span id="malwareProtectionHealth" class="badge">WIRD GEPRÜFT</span></div>
+            <div class="domain-metrics"><div><span>Runtime Guard</span><strong id="malwareRuntime">---</strong></div><div><span>Signaturvertrauen</span><strong id="malwareSignatures">---</strong></div><div><span>Browserfreigabe</span><strong id="malwareReleaseGate">---</strong></div></div>
+            <p id="malwareProtectionDetail" class="domain-detail">Fanotify-, Signatur- und Browserfreigabestatus werden aus der aktuellen Core-Evidenz geladen.</p>
+            <form id="malwareScanForm" class="malware-scan-form">
+              <label for="malwareScanPath">Absolute Datei im erlaubten Benutzerpfad<input id="malwareScanPath" name="path" type="text" maxlength="2048" required autocomplete="off" spellcheck="false" placeholder="/home/benutzer/Downloads/datei.bin"></label>
+              <button class="button button-primary" type="submit">Datei prüfen</button>
+            </form>
+            <div class="malware-result-head"><span>Letztes manuelles Verdict</span><span id="malwareScanState" class="badge">KEIN ERGEBNIS</span></div>
+            <div class="malware-result-grid">
+              <div><span>Pfad</span><strong id="malwareResultPath" class="mono">---</strong></div>
+              <div><span>Typ</span><strong id="malwareResultType">---</strong></div>
+              <div><span>Größe</span><strong id="malwareResultSize">---</strong></div>
+              <div><span>Grund</span><strong id="malwareResultReason">---</strong></div>
+              <div class="malware-result-hash"><span>SHA-256</span><strong id="malwareResultHash" class="mono">---</strong></div>
+            </div>
+          </article>
+          <article class="panel table-panel"><div class="section-head"><div><p class="eyebrow">FIM FINDINGS</p><h3>Letzte Dateiabweichungen</h3></div></div><div class="table-wrap"><table><thead><tr><th>Status</th><th>Pfad</th><th>Größe</th><th>Modus</th><th>Details</th></tr></thead><tbody id="fimRows"></tbody></table></div></article>
+          <article class="panel table-panel"><div class="section-head"><div><p class="eyebrow">EVIDENCE RECORDS</p><h3>Authentifizierte Ereignisse</h3></div></div><div class="table-wrap"><table><thead><tr><th>Sequenz</th><th>Zeit</th><th>Severity</th><th>Typ</th><th>Quelle</th><th>Nachricht</th></tr></thead><tbody id="evidenceRows"></tbody></table></div></article>
+          <article class="panel domain-dashboard package-integrity-dashboard">
+            <div class="section-head"><div><p class="eyebrow">PACMAN TRUST DATABASE</p><h3>Paketintegrität</h3></div><span id="packageIntegrityHealth" class="badge">---</span></div>
+            <div class="domain-metrics"><div><span>Pakete</span><strong id="packageIntegrityPackages">0</strong></div><div><span>Dateien</span><strong id="packageIntegrityFiles">0</strong></div><div><span>Abweichungen</span><strong id="packageIntegrityDeviations">0</strong></div></div>
+            <p id="packageIntegrityDetail" class="domain-detail">Pacman-MTREE-Vertrauensbasis</p>
+            <div class="button-row"><button id="packageIntegrityScan" class="button button-primary" type="button">Pakete prüfen</button></div>
+          </article>
+          <article class="panel table-panel"><div class="section-head"><div><p class="eyebrow">PACKAGE FINDINGS</p><h3>Abweichungen vom signierten Paketstand</h3></div></div><div class="table-wrap"><table><thead><tr><th>Status</th><th>Paket</th><th>Pfad</th></tr></thead><tbody id="packageIntegrityRows"></tbody></table></div></article>
+        </section>
+
+        <section class="view" data-page="boot" aria-labelledby="bootHeading" hidden>
+          <div class="page-intro"><div><p class="eyebrow">MEASURED BOOT POSTURE</p><h2 id="bootHeading">Boot Trust</h2><p>Secure Boot, Kernel Lockdown, TPM, Kernelargumente und Gaia-Cells-Basis werden als lokale Evidenz bewertet – ohne Remote-Attestierung vorzutäuschen.</p></div><span id="bootClaim" class="badge">EVIDENCE ONLY</span></div>
+          <div class="trust-grid">
+            <article class="panel trust-card"><span class="trust-icon">△</span><p>Plattform</p><strong id="bootPlatform">---</strong><small id="bootDistro">---</small></article>
+            <article class="panel trust-card"><span class="trust-icon">◆</span><p>AstraeaOS</p><strong id="bootGaia">---</strong><small id="bootVersion">---</small></article>
+            <article class="panel trust-card"><span class="trust-icon">◉</span><p>Zusammenfassung</p><strong id="bootSummary">---</strong><small id="bootGenerated">---</small></article>
+          </div>
+          <article class="panel table-panel"><div class="section-head"><div><p class="eyebrow">BOOT EVIDENCE</p><h3>Gemessene Vertrauensanker</h3></div><button id="refreshBoot" class="button button-quiet" type="button">Neu messen</button></div><div class="table-wrap"><table><thead><tr><th>Kontrolle</th><th>Status</th><th>Zusammenfassung</th><th>Quelle</th><th>Digest / Evidenz</th></tr></thead><tbody id="bootRows"></tbody></table></div></article>
+        </section>
+
         <section class="view" data-page="xdr" aria-labelledby="xdrHeading" hidden>
           <div class="page-intro"><div><p class="eyebrow">CORRELATION FABRIC</p><h2 id="xdrHeading">GeDefense XDR</h2><p data-i18n="xdr.description">Prozess-, Netzwerk-, Herkunfts-, Integritäts- und Verhaltenssignale werden als unabhängige Kategorien bewertet.</p></div><span id="xdrModeBadge" class="badge badge-warning">OBSERVE</span></div>
+          <article class="panel xdr-explainer">
+            <div class="section-head"><div><p class="eyebrow">WAS XDR KONKRET SCHÜTZT</p><h3>Lokale Signale werden zu einer belastbaren Entscheidung korreliert</h3></div><span>KEINE CLOUD ERFORDERLICH</span></div>
+            <div class="xdr-capability-grid">
+              <div><b>Prozessidentität</b><p>PID, UID, Executable-Hash, Elternprozess und Startzeit verhindern Namens-Masquerading und PID-Reuse-Fehlentscheidungen.</p><code>eBPF tracepoint + /proc evidence</code></div>
+              <div><b>Netzwerkbezug</b><p>Externe Ziele, Ports und Verbindungsraten werden dem verursachenden Prozess zugeordnet und gegen lokale Threat-Intel bewertet.</p><code>XDP/eBPF + nftables policy</code></div>
+              <div><b>Verhaltensabweichung</b><p>Gelernte, MAC-geschützte Baselines erkennen neue Ziele, Ports, Prozessketten und ungewöhnliche Aktivitätsmuster.</p><code>adaptive baseline + HMAC integrity</code></div>
+              <div><b>Integrität &amp; Herkunft</b><p>Gelöschte, temporäre oder memfd-basierte Programme sowie Abweichungen von FIM- und Paket-Baselines erhöhen den Risikoscore.</p><code>FIM + pacman MTREE + origin rules</code></div>
+              <div><b>Reaktion</b><p>Observe erzeugt Evidenz; Enforce kann Prozesse stoppen, Dateien quarantänisieren und Ziele zeitlich begrenzt blockieren.</p><code>pidfd + quarantine broker + nftables</code></div>
+              <div><b>Nachweisbarkeit</b><p>Entscheidungen, Signale und Operatoraktionen landen in einer verschlüsselten, signierten und verketteten Evidence-Historie.</p><code>AES-256-GCM + Ed25519 + HMAC chain</code></div>
+            </div>
+            <div class="xdr-flow"><span>Sensoren</span><i>→</i><span>Normalisierung</span><i>→</i><span>Korrelation &amp; Score</span><i>→</i><span>Policy Gate</span><i>→</i><span>Reaktion + Evidenz</span></div>
+          </article>
           <div class="metric-grid compact">
             <article class="metric panel"><span data-i18n="xdr.processes">Überwachte Prozesse</span><strong id="xdrProcesses">0</strong><small data-i18n="xdr.processDetail">aktuelle PID-Identitäten</small></article>
             <article class="metric panel"><span data-i18n="xdr.flows">Externe Flows</span><strong id="xdrConnections">0</strong><small data-i18n="xdr.flowDetail">prozesskorreliert</small></article>
@@ -245,27 +355,6 @@
               </div>
             </article>
           </form>
-          <article class="panel table-panel hardening-panel">
-            <div class="section-head">
-              <div><p class="eyebrow">DURABLE SECURITY TRANSACTIONS</p><h3 data-i18n="hardening.heading">Systemhärtung</h3></div>
-              <span id="transactionHealth" class="badge">INITIALIZING</span>
-            </div>
-            <p class="panel-description" data-i18n="hardening.description">Profile werden zuerst gegen den Live-Kernel vorgeprüft und nur mit transaktionsgebundener Bestätigung angewendet.</p>
-            <form id="hardeningPreviewForm" class="hardening-form">
-              <label><span data-i18n="hardening.profile">Profil</span><select id="hardeningProfile"><option value="linux-server-balanced">Linux Server · Balanced</option><option value="gaiaos-workstation-strict">GaiaOS Workstation · Strict</option></select></label>
-              <label><span data-i18n="hardening.reason">Begründung</span><input id="hardeningReason" autocomplete="off" maxlength="240" required></label>
-              <button class="button button-primary" type="submit" data-i18n="hardening.preview">Live-Zustand vorprüfen</button>
-            </form>
-            <div id="transactionSelection" class="transaction-selection" hidden>
-              <div><span data-i18n="hardening.selected">Ausgewählte Transaktion</span><code id="selectedTransactionID">---</code></div>
-              <pre id="selectedTransactionPlan" aria-label="Transaction plan"></pre>
-              <form id="transactionExecuteForm" class="hardening-form confirmation-form">
-                <label><span data-i18n="hardening.confirmation">Exakte Bestätigung</span><input id="transactionConfirmation" class="mono" autocomplete="off" spellcheck="false" maxlength="128" required></label>
-                <button id="transactionExecute" class="button button-danger" type="submit" data-i18n="hardening.execute">Transaktion ausführen</button>
-              </form>
-            </div>
-            <div class="table-wrap"><table><thead><tr><th>ID</th><th data-i18n="table.type">Typ</th><th data-i18n="table.summary">Zusammenfassung</th><th data-i18n="table.status">Status</th><th data-i18n="table.time">Zeit</th><th></th></tr></thead><tbody id="transactionRows"></tbody></table></div>
-          </article>
           <article class="panel table-panel custom-rules-panel">
             <div class="section-head"><div><p class="eyebrow">OPERATOR RULE WORKSPACE</p><h3 data-i18n="settings.customRules">Eigene RE2-Regeln</h3></div><span data-i18n="settings.alertOnly">Nur Signal/Score, niemals direkte Kill-Autorisierung</span></div>
             <form id="customRuleForm" class="custom-rule-form">
@@ -304,7 +393,7 @@
           <article class="panel architecture-panel"><div class="section-head"><div><p class="eyebrow">SECURITY DOMAINS</p><h3 data-i18n="system.domains">Getrennte Vertrauenszonen</h3></div></div><div class="domain-grid"><div><b data-i18n="system.kernel">Kernel</b><span data-i18n="system.kernelDetail">Rust eBPF/XDP</span></div><div><b data-i18n="system.broker">Privileged Broker</b><span data-i18n="system.brokerDetail">pidfd + Evidence-Recheck</span></div><div><b data-i18n="system.control">Control Plane</b><span data-i18n="system.controlDetail">Go Standardbibliothek</span></div><div><b data-i18n="system.dashboard">Dashboard</b><span data-i18n="system.dashboardDetail">Same-Origin, CSP, Session-Authentifizierung</span></div></div></article>
         </section>
       </main>
-      <footer class="product-footer" data-i18n="footer.powered">GeDefense 1.0.0-beta.5 powered by VisionGaiaTechnology</footer>
+      <footer class="product-footer" data-i18n="footer.powered">GeDefense Beta v2 powered by VisionGaiaTechnology</footer>
     </div>
   </div>
 
@@ -329,7 +418,7 @@
         <div class="support-row" role="row"><b>USDT (ERC-20)</b><code>0xD37DEfb09e07bD775EaaE9ccDaFE3a5b2348Fe85</code><button class="button button-quiet compact copy-address" type="button" data-copy="0xD37DEfb09e07bD775EaaE9ccDaFE3a5b2348Fe85" data-i18n="support.copy">Kopieren</button></div>
       </div>
       <p class="support-note" data-i18n="support.note">Krypto-Adressen vor jeder Überweisung selbst prüfen.</p>
-      <div class="support-version">GeDefense <b>1.0.0-beta.5</b> <span data-i18n="brand.powered">powered by VisionGaiaTechnology</span></div>
+      <div class="support-version">GeDefense <b>2.0.0-beta.1</b> <span data-i18n="brand.powered">powered by VisionGaiaTechnology</span></div>
     </form>
   </dialog>
 

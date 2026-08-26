@@ -29,31 +29,33 @@ type evaluationJob struct {
 }
 
 type XDREngine struct {
-	cfg        Config
-	state      *State
-	core       *CoreClient
-	feeds      *FeedManager
-	policy     *PolicyStore
-	settings   *SettingsStore
-	release    *ReleaseController
-	rules      *XDRRuleEngine
-	baseline   *XDRBaseline
-	behavior   *BehaviorModel
-	logger     *IncidentLogger
-	selfPID    int
-	seeded     bool
-	seen       map[string]struct{}
-	dedupe     map[string]time.Time
-	protected  map[string]protectedObject
-	degraded   bool
-	degradeWhy string
-	mu         sync.RWMutex
-	highJobs   chan evaluationJob
-	normalJobs chan evaluationJob
-	workers    sync.WaitGroup
-	drops      atomic.Uint64
-	evaluated  atomic.Uint64
-	anomalies  atomic.Uint64
+	cfg             Config
+	state           *State
+	core            *CoreClient
+	feeds           *FeedManager
+	policy          *PolicyStore
+	settings        *SettingsStore
+	release         *ReleaseController
+	rules           *XDRRuleEngine
+	baseline        *XDRBaseline
+	behavior        *BehaviorModel
+	logger          *IncidentLogger
+	selfPID         int
+	seeded          bool
+	seen            map[string]struct{}
+	dedupe          map[string]time.Time
+	protected       map[string]protectedObject
+	cellPolicyEpoch string
+	cellPolicies    map[uint64]uint8
+	degraded        bool
+	degradeWhy      string
+	mu              sync.RWMutex
+	highJobs        chan evaluationJob
+	normalJobs      chan evaluationJob
+	workers         sync.WaitGroup
+	drops           atomic.Uint64
+	evaluated       atomic.Uint64
+	anomalies       atomic.Uint64
 }
 
 func (e *XDREngine) SetReleaseController(release *ReleaseController) {
@@ -84,7 +86,8 @@ func NewXDREngine(cfg Config, state *State, core *CoreClient, feeds *FeedManager
 	e := &XDREngine{
 		cfg: cfg, state: state, core: core, feeds: feeds, policy: policy, settings: settings, rules: NewXDRRuleEngine(), baseline: baseline,
 		behavior: behavior, logger: logger, selfPID: os.Getpid(), seen: map[string]struct{}{}, dedupe: map[string]time.Time{},
-		protected: map[string]protectedObject{}, highJobs: make(chan evaluationJob, highCap), normalJobs: make(chan evaluationJob, normalCap),
+		protected: map[string]protectedObject{}, cellPolicies: map[uint64]uint8{},
+		highJobs: make(chan evaluationJob, highCap), normalJobs: make(chan evaluationJob, normalCap),
 	}
 	if err := logger.Healthy(); err != nil {
 		e.degraded = true
@@ -114,6 +117,129 @@ func (e *XDREngine) runtimeSettings() RuntimeSettings {
 	return defaultRuntimeSettings(e.cfg)
 }
 
+func xdrSensorMode(execOnline, egressOnline, malwareOnline, cellLSMConfigured, cellLSMOnline bool) string {
+	mode := "procfs-bounded-fallback"
+	switch {
+	case execOnline && egressOnline:
+		mode = "ebpf-exec+cgroup-egress+procfs-fallback"
+	case execOnline:
+		mode = "ebpf-exec+procfs-fallback"
+	case egressOnline:
+		mode = "cgroup-egress+procfs-bounded-fallback"
+	}
+	if cellLSMConfigured {
+		if cellLSMOnline {
+			mode = "bpf-lsm-cell+" + mode
+		} else {
+			mode = "cell-lsm-unavailable+" + mode
+		}
+	}
+	if malwareOnline {
+		return "fanotify-exec+" + mode
+	}
+	return "malware-events-unavailable+" + mode
+}
+
+func desiredCellLSMPolicies(status GaiaCellsStatus) (map[uint64]uint8, error) {
+	desired := make(map[uint64]uint8)
+	if !status.Enabled {
+		return desired, nil
+	}
+	if !status.Healthy || status.Availability != "online" {
+		return nil, errors.New("authenticated Gaia Cells inventory is unavailable")
+	}
+	for _, cell := range status.Cells {
+		if err := validateGaiaCell(cell); err != nil {
+			return nil, err
+		}
+		if (cell.State == "running" || cell.State == "frozen") && cell.NetworkState == "none" {
+			desired[cell.CgroupID] = cellLSMDenyNonUnixSocket
+		}
+	}
+	return desired, nil
+}
+
+func (e *XDREngine) syncCellLSMPolicies() error {
+	if !e.cfg.Cells.Enabled {
+		return nil
+	}
+	if e.core == nil {
+		return errors.New("GeDefense core is unavailable for Cell LSM synchronization")
+	}
+	epoch, err := e.core.CellPolicyEpoch()
+	if err != nil {
+		return err
+	}
+	adapter := e.state.Cells()
+	if adapter == nil {
+		return errors.New("Gaia Cells adapter is unavailable")
+	}
+	desired, err := desiredCellLSMPolicies(adapter.Status(false))
+	if err != nil {
+		return err
+	}
+	if epoch != e.cellPolicyEpoch {
+		e.cellPolicyEpoch = epoch
+		e.cellPolicies = make(map[uint64]uint8)
+	}
+	additions := make([]uint64, 0, len(desired))
+	for cgroupID, flags := range desired {
+		if current, exists := e.cellPolicies[cgroupID]; !exists || current != flags {
+			additions = append(additions, cgroupID)
+		}
+	}
+	sort.Slice(additions, func(left, right int) bool { return additions[left] < additions[right] })
+	for _, cgroupID := range additions {
+		flags := desired[cgroupID]
+		if err := e.core.CellPolicySet(cgroupID, flags); err != nil {
+			return fmt.Errorf("apply Cell LSM policy for cgroup %d: %w", cgroupID, err)
+		}
+		e.cellPolicies[cgroupID] = flags
+	}
+	removals := make([]uint64, 0)
+	for cgroupID := range e.cellPolicies {
+		if _, exists := desired[cgroupID]; !exists {
+			removals = append(removals, cgroupID)
+		}
+	}
+	sort.Slice(removals, func(left, right int) bool { return removals[left] < removals[right] })
+	for _, cgroupID := range removals {
+		if err := e.core.CellPolicyDelete(cgroupID); err != nil {
+			return fmt.Errorf("delete stale Cell LSM policy for cgroup %d: %w", cgroupID, err)
+		}
+		delete(e.cellPolicies, cgroupID)
+	}
+	return nil
+}
+
+func (e *XDREngine) recordCellLSMDeny(event CoreCellLSMDenyEvent) {
+	fingerprint := fmt.Sprintf("cell-lsm:%d:%d:%d", event.CgroupID, event.PID, event.Family)
+	if !e.claimFingerprint(fingerprint) {
+		return
+	}
+	summary := fmt.Sprintf(
+		"BPF LSM denied socket creation in offline Gaia Cell: cgroup=%d family=%d pid=%d uid=%d",
+		event.CgroupID, event.Family, event.PID, event.UID,
+	)
+	target := fmt.Sprintf("cgroup:%d", event.CgroupID)
+	if err := e.state.RecordEvidence(EvidenceRecord{
+		Severity: "high", Kind: "cell.lsm_socket_denied", Source: "bpf-lsm",
+		Message: summary, Target: target,
+	}); err != nil {
+		e.markDegraded("Cell LSM evidence commit failed")
+	}
+	e.state.AddEvent(Event{
+		Severity: "high", Kind: "cell.lsm_socket_denied", Source: "bpf-lsm",
+		Message: summary, Target: target,
+	})
+	e.appendIncident(XDRIncident{
+		ID: randomID(), Time: time.Now().UTC(), Severity: "high", Score: 220, ResponseScore: 220,
+		PID: event.PID, UID: event.UID, CellCgroupID: event.CgroupID, SocketFamily: event.Family,
+		RuleIDs: []string{"CELL.LSM_SOCKET_DENY"}, Categories: []string{"cell-isolation", "lsm", "network"},
+		Summary: summary, Decision: "deny-socket", Action: "deny", Outcome: "blocked by BPF LSM before socket creation",
+	})
+}
+
 func (e *XDREngine) protectedPaths() []string {
 	paths := make([]string, 0, len(e.protected))
 	for path := range e.protected {
@@ -134,6 +260,7 @@ func (e *XDREngine) Run(ctx context.Context) {
 
 	runtime := e.runtimeSettings()
 	scanTick := time.NewTicker(time.Duration(runtime.ScanIntervalMillis) * time.Millisecond)
+	execTick := time.NewTicker(100 * time.Millisecond)
 	netTick := time.NewTicker(time.Duration(runtime.NetworkIntervalSeconds) * time.Second)
 	integrityTick := time.NewTicker(time.Duration(e.cfg.XDR.IntegrityIntervalSeconds) * time.Second)
 	logVerifyTick := time.NewTicker(30 * time.Second)
@@ -141,6 +268,7 @@ func (e *XDREngine) Run(ctx context.Context) {
 	behaviorSaveTick := time.NewTicker(5 * time.Minute)
 	statusTick := time.NewTicker(time.Second)
 	defer scanTick.Stop()
+	defer execTick.Stop()
 	defer netTick.Stop()
 	defer integrityTick.Stop()
 	defer logVerifyTick.Stop()
@@ -156,7 +284,15 @@ func (e *XDREngine) Run(ctx context.Context) {
 
 	_, runtimeXDRMode := e.state.Modes()
 	runtime = e.runtimeSettings()
-	sensor := "procfs-bounded"
+	cellLSMPolicyOnline := true
+	if e.cfg.Cells.Enabled {
+		if err := e.syncCellLSMPolicies(); err != nil {
+			cellLSMPolicyOnline = false
+			e.state.AddEvent(Event{Severity: "critical", Kind: "xdr.cell_lsm_policy_unavailable", Source: "bpf-lsm", Message: "Gaia Cell BPF-LSM policy synchronization is unavailable; existing restrictive entries remain installed"})
+		}
+	}
+	cellLSMEventOnline := true
+	sensor := xdrSensorMode(true, true, true, e.cfg.Cells.Enabled, cellLSMPolicyOnline)
 	if !runtime.XDREnabled {
 		sensor = "disabled-by-operator"
 	}
@@ -168,6 +304,14 @@ func (e *XDREngine) Run(ctx context.Context) {
 	e.state.AddEvent(Event{Severity: "info", Kind: "xdr.online", Source: "xdr", Message: fmt.Sprintf("GeDefense XDR online: mode=%s workers=%d bounded_queue=%d", runtimeXDRMode, e.cfg.XDR.WorkerCount, cap(e.highJobs)+cap(e.normalJobs))})
 
 	var processes map[string]ProcessSample
+	execSensorOnline := true
+	egressSensorOnline := true
+	malwareSensorOnline := true
+	var execRetryAfter time.Time
+	var egressRetryAfter time.Time
+	var malwareRetryAfter time.Time
+	var cellLSMEventRetryAfter time.Time
+	var cellLSMPolicyRetryAfter time.Time
 	for {
 		select {
 		case <-ctx.Done():
@@ -193,6 +337,123 @@ func (e *XDREngine) Run(ctx context.Context) {
 			now := time.Now().UTC()
 			degraded, reason := e.degradedState()
 			e.state.UpdateXDRScan(len(p), -1, now, degraded, reason, len(e.protected))
+		case now := <-execTick.C:
+			runtime = e.runtimeSettings()
+			if e.cfg.Cells.Enabled && !now.Before(cellLSMEventRetryAfter) {
+				events, err := e.core.CellLSMEvents()
+				if err != nil {
+					if cellLSMEventOnline {
+						cellLSMEventOnline = false
+						e.state.AddEvent(Event{Severity: "critical", Kind: "xdr.cell_lsm_event_unavailable", Source: "bpf-lsm", Message: "Gaia Cell BPF-LSM enforcement events are unavailable"})
+						if runtime.XDREnabled {
+							e.state.SetXDRStatus(XDRStatus{Enabled: true, Mode: runtimeXDRMode, Sensor: xdrSensorMode(execSensorOnline, egressSensorOnline, malwareSensorOnline, true, false), ProtectedObjects: len(e.protected), QueueCapacity: cap(e.highJobs) + cap(e.normalJobs), Behavior: e.behavior.Summary()})
+						}
+					}
+					cellLSMEventRetryAfter = now.Add(10 * time.Second)
+				} else {
+					if !cellLSMEventOnline {
+						cellLSMEventOnline = true
+						e.state.AddEvent(Event{Severity: "info", Kind: "xdr.cell_lsm_event_recovered", Source: "bpf-lsm", Message: "Gaia Cell BPF-LSM enforcement event correlation recovered"})
+					}
+					for _, event := range events {
+						e.recordCellLSMDeny(event)
+					}
+				}
+			}
+			if !runtime.XDREnabled {
+				continue
+			}
+			if !now.Before(execRetryAfter) {
+				events, err := e.core.ExecEvents()
+				if err != nil {
+					if execSensorOnline {
+						execSensorOnline = false
+						e.state.AddEvent(Event{Severity: "warning", Kind: "xdr.exec_sensor_fallback", Source: "kernel", Message: "Kernel exec event stream unavailable; bounded procfs detection remains active"})
+						e.state.SetXDRStatus(XDRStatus{Enabled: true, Mode: runtimeXDRMode, Sensor: xdrSensorMode(execSensorOnline, egressSensorOnline, malwareSensorOnline, e.cfg.Cells.Enabled, cellLSMEventOnline && cellLSMPolicyOnline), ProtectedObjects: len(e.protected), QueueCapacity: cap(e.highJobs) + cap(e.normalJobs), Behavior: e.behavior.Summary()})
+					}
+					execRetryAfter = now.Add(10 * time.Second)
+				} else {
+					if !execSensorOnline {
+						execSensorOnline = true
+						e.state.AddEvent(Event{Severity: "info", Kind: "xdr.exec_sensor_recovered", Source: "kernel", Message: "Kernel exec event stream recovered"})
+						e.state.SetXDRStatus(XDRStatus{Enabled: true, Mode: runtimeXDRMode, Sensor: xdrSensorMode(execSensorOnline, egressSensorOnline, malwareSensorOnline, e.cfg.Cells.Enabled, cellLSMEventOnline && cellLSMPolicyOnline), ProtectedObjects: len(e.protected), QueueCapacity: cap(e.highJobs) + cap(e.normalJobs), Behavior: e.behavior.Summary()})
+					}
+					for _, event := range events {
+						process, readErr := readExecProcess(event, e.cfg.XDR.MaxCommandBytes)
+						if readErr != nil || process.PID == e.selfPID || e.allowedProcess(process.Exe) {
+							continue
+						}
+						key := fmt.Sprintf("%d:%d", process.PID, process.StartTicks)
+						e.mu.Lock()
+						_, alreadySeen := e.seen[key]
+						e.seen[key] = struct{}{}
+						e.mu.Unlock()
+						if alreadySeen {
+							continue
+						}
+						e.submit(evaluationJob{process: process, source: "exec"}, true)
+					}
+				}
+			}
+			if !now.Before(malwareRetryAfter) {
+				batch, err := e.core.MalwareEvents()
+				if err != nil {
+					if malwareSensorOnline {
+						malwareSensorOnline = false
+						e.state.AddEvent(Event{Severity: "critical", Kind: "xdr.malware_sensor_unavailable", Source: "kernel", Message: "Fanotify execution decisions remain fail-closed, but their XDR event channel is unavailable"})
+						e.state.SetXDRStatus(XDRStatus{Enabled: true, Mode: runtimeXDRMode, Sensor: xdrSensorMode(execSensorOnline, egressSensorOnline, malwareSensorOnline, e.cfg.Cells.Enabled, cellLSMEventOnline && cellLSMPolicyOnline), ProtectedObjects: len(e.protected), QueueCapacity: cap(e.highJobs) + cap(e.normalJobs), Behavior: e.behavior.Summary()})
+					}
+					malwareRetryAfter = now.Add(10 * time.Second)
+				} else {
+					if !malwareSensorOnline {
+						malwareSensorOnline = true
+						e.state.AddEvent(Event{Severity: "info", Kind: "xdr.malware_sensor_recovered", Source: "kernel", Message: "Fanotify execution block events are again correlated by XDR"})
+						e.state.SetXDRStatus(XDRStatus{Enabled: true, Mode: runtimeXDRMode, Sensor: xdrSensorMode(execSensorOnline, egressSensorOnline, malwareSensorOnline, e.cfg.Cells.Enabled, cellLSMEventOnline && cellLSMPolicyOnline), ProtectedObjects: len(e.protected), QueueCapacity: cap(e.highJobs) + cap(e.normalJobs), Behavior: e.behavior.Summary()})
+					}
+					if batch.Dropped > 0 {
+						e.recordMalwareOverflow(batch.Dropped)
+					}
+					for _, event := range batch.Events {
+						e.recordMalwareEvent(event)
+					}
+				}
+			}
+			if now.Before(egressRetryAfter) {
+				continue
+			}
+			egressEvents, err := e.core.EgressEvents()
+			if err != nil {
+				if egressSensorOnline {
+					egressSensorOnline = false
+					e.state.AddEvent(Event{Severity: "warning", Kind: "xdr.egress_sensor_fallback", Source: "kernel", Message: "Kernel cgroup egress event stream unavailable; block policy remains owned by the Rust core"})
+					e.state.SetXDRStatus(XDRStatus{Enabled: true, Mode: runtimeXDRMode, Sensor: xdrSensorMode(execSensorOnline, egressSensorOnline, malwareSensorOnline, e.cfg.Cells.Enabled, cellLSMEventOnline && cellLSMPolicyOnline), ProtectedObjects: len(e.protected), QueueCapacity: cap(e.highJobs) + cap(e.normalJobs), Behavior: e.behavior.Summary()})
+				}
+				egressRetryAfter = now.Add(10 * time.Second)
+				continue
+			}
+			if !egressSensorOnline {
+				egressSensorOnline = true
+				e.state.AddEvent(Event{Severity: "info", Kind: "xdr.egress_sensor_recovered", Source: "kernel", Message: "Kernel cgroup egress event stream recovered"})
+				e.state.SetXDRStatus(XDRStatus{Enabled: true, Mode: runtimeXDRMode, Sensor: xdrSensorMode(execSensorOnline, egressSensorOnline, malwareSensorOnline, e.cfg.Cells.Enabled, cellLSMEventOnline && cellLSMPolicyOnline), ProtectedObjects: len(e.protected), QueueCapacity: cap(e.highJobs) + cap(e.normalJobs), Behavior: e.behavior.Summary()})
+			}
+			for _, event := range egressEvents {
+				target := event.Destination.String()
+				fingerprint := fmt.Sprintf("kernel-egress:%d:%d:%s:%s", event.UID, event.Protocol, target, event.Comm)
+				if !e.claimFingerprint(fingerprint) {
+					continue
+				}
+				processName := event.Comm
+				if processName == "" {
+					processName = "unknown"
+				}
+				e.state.AddEvent(Event{
+					Severity: "high",
+					Kind:     "xdr.egress_blocked",
+					Source:   "kernel",
+					Message:  fmt.Sprintf("Kernel blocked outbound protocol=%d process=%s pid=%d uid=%d", event.Protocol, processName, event.PID, event.UID),
+					Target:   target,
+				})
+			}
 		case <-netTick.C:
 			runtime = e.runtimeSettings()
 			netTick.Reset(time.Duration(runtime.NetworkIntervalSeconds) * time.Second)
@@ -234,8 +495,23 @@ func (e *XDREngine) Run(ctx context.Context) {
 			}
 		case now := <-cleanupTick.C:
 			e.cleanupDedupe(now)
-		case <-statusTick.C:
+		case now := <-statusTick.C:
 			runtime = e.runtimeSettings()
+			if e.cfg.Cells.Enabled && !now.Before(cellLSMPolicyRetryAfter) {
+				if err := e.syncCellLSMPolicies(); err != nil {
+					if cellLSMPolicyOnline {
+						cellLSMPolicyOnline = false
+						e.state.AddEvent(Event{Severity: "critical", Kind: "xdr.cell_lsm_policy_unavailable", Source: "bpf-lsm", Message: "Gaia Cell BPF-LSM policy synchronization is unavailable; existing restrictive entries remain installed"})
+					}
+					cellLSMPolicyRetryAfter = now.Add(10 * time.Second)
+				} else if !cellLSMPolicyOnline {
+					cellLSMPolicyOnline = true
+					e.state.AddEvent(Event{Severity: "info", Kind: "xdr.cell_lsm_policy_recovered", Source: "bpf-lsm", Message: "Gaia Cell BPF-LSM policy synchronization recovered"})
+				}
+				if runtime.XDREnabled {
+					e.state.SetXDRStatus(XDRStatus{Enabled: true, Mode: runtimeXDRMode, Sensor: xdrSensorMode(execSensorOnline, egressSensorOnline, malwareSensorOnline, true, cellLSMEventOnline && cellLSMPolicyOnline), ProtectedObjects: len(e.protected), QueueCapacity: cap(e.highJobs) + cap(e.normalJobs), Behavior: e.behavior.Summary()})
+				}
+			}
 			e.state.UpdateXDRRuntime(len(e.highJobs)+len(e.normalJobs), cap(e.highJobs)+cap(e.normalJobs), e.drops.Load(), e.evaluated.Load(), e.anomalies.Load(), e.behavior.Summary())
 			e.state.SetXDREnabled(runtime.XDREnabled, runtime.NetworkSensorEnabled)
 		}
@@ -346,6 +622,9 @@ func (e *XDREngine) evaluate(p ProcessSample, conns []NetConnection, source stri
 	if p.PID <= 4 || p.PID == e.selfPID {
 		return
 	}
+	if !hasTrustedExecutableIdentity(p) {
+		return
+	}
 	runtime := e.runtimeSettings()
 	if err := e.rules.Configure(runtime); err != nil {
 		e.markDegraded("runtime rule configuration invalid")
@@ -400,16 +679,89 @@ func (e *XDREngine) evaluate(p ProcessSample, conns []NetConnection, source stri
 		Decision: decision.Decision, Action: "none", Outcome: "observed",
 	}
 	incident.Action, incident.Outcome = e.respond(incident)
+	e.appendIncident(incident)
+	e.state.AddEvent(Event{Severity: severity, Kind: "xdr." + incident.Decision, Source: source, Message: incident.Summary + " [" + strings.Join(incident.RuleIDs, ",") + "]", Target: fmt.Sprintf("pid:%d", p.PID)})
+}
+
+func (e *XDREngine) appendIncident(incident XDRIncident) {
 	if e.logger != nil {
-		if h, err := e.logger.Append(incident); err == nil {
-			incident.RecordHash = h
+		if hash, err := e.logger.Append(incident); err == nil {
+			incident.RecordHash = hash
 		} else {
 			log.Printf("xdr incident log: %v", err)
 			e.markDegraded("incident log unavailable")
 		}
 	}
 	e.state.AddIncident(incident)
-	e.state.AddEvent(Event{Severity: severity, Kind: "xdr." + incident.Decision, Source: source, Message: incident.Summary + " [" + strings.Join(incident.RuleIDs, ",") + "]", Target: fmt.Sprintf("pid:%d", p.PID)})
+}
+
+func (e *XDREngine) recordMalwareEvent(event CoreMalwareEvent) {
+	severity := "high"
+	score := 180
+	ruleID := "MALWARE.CONTENT_SUSPICIOUS"
+	if event.State == "malicious" {
+		severity = "critical"
+		score = 250
+		ruleID = "MALWARE.CONTENT_MATCH"
+	} else if event.State == "blocked" {
+		severity = "critical"
+		score = 250
+		ruleID = "MALWARE.SCAN_FAILURE"
+	}
+	message := fmt.Sprintf("Execution blocked before first instruction: type=%s reason=%s size=%d sha256=%s pid=%d uid=%d", event.Classification, event.Reason, event.Size, event.SHA256, event.PID, event.UID)
+	e.state.AddEvent(Event{Severity: severity, Kind: "malware.execution_blocked", Source: "fanotify", Message: message, Target: event.Path})
+	fingerprint := fmt.Sprintf("malware:%d:%s:%s:%s", event.PID, event.SHA256, event.State, event.Reason)
+	if !e.claimFingerprint(fingerprint) {
+		return
+	}
+	e.appendIncident(XDRIncident{
+		ID: randomID(), Time: time.Now().UTC(), Severity: severity, Score: score, ResponseScore: score,
+		PID: event.PID, UID: event.UID, Executable: event.Path, CommandSHA256: event.SHA256,
+		RuleIDs: []string{ruleID}, Categories: []string{"malware", "integrity"}, Summary: message,
+		Decision: "deny-execution", Action: "deny-exec", Outcome: "blocked by fanotify before execution",
+	})
+}
+
+func (e *XDREngine) recordManualMalwareFinding(path string, result MalwareScanResult) {
+	severity := "high"
+	score := 180
+	ruleID := "MALWARE.MANUAL_SUSPICIOUS"
+	if result.State == "malicious" {
+		severity = "critical"
+		score = 250
+		ruleID = "MALWARE.MANUAL_MATCH"
+	}
+	fingerprint := fmt.Sprintf("manual-malware:%s:%s:%s", result.SHA256, result.State, result.Reason)
+	if !e.claimFingerprint(fingerprint) {
+		return
+	}
+	summary := fmt.Sprintf("Manual content scan %s: type=%s reason=%s size=%d sha256=%s", result.State, result.Classification, result.Reason, result.Size, result.SHA256)
+	e.appendIncident(XDRIncident{
+		ID: randomID(), Time: time.Now().UTC(), Severity: severity, Score: score, ResponseScore: score,
+		Executable: path, CommandSHA256: result.SHA256, RuleIDs: []string{ruleID}, Categories: []string{"malware", "manual-scan"},
+		Summary: summary, Decision: "alert", Action: "none", Outcome: "operator scan recorded; quarantine authorization required",
+	})
+}
+
+func (e *XDREngine) recordMalwareOverflow(dropped uint64) {
+	reason := fmt.Sprintf("malware event queue overflow: %d records were dropped", dropped)
+	e.markDegraded(reason)
+	e.state.AddEvent(Event{Severity: "critical", Kind: "malware.event_queue_overflow", Source: "fanotify", Message: reason})
+	fingerprint := fmt.Sprintf("malware-overflow:%d", dropped)
+	if !e.claimFingerprint(fingerprint) {
+		return
+	}
+	e.appendIncident(XDRIncident{
+		ID: randomID(), Time: time.Now().UTC(), Severity: "critical", Score: 250, ResponseScore: 250,
+		RuleIDs: []string{"MALWARE.EVENT_QUEUE_OVERFLOW"}, Categories: []string{"malware", "sensor-health"}, Summary: reason,
+		Decision: "degrade", Action: "disable-response", Outcome: "fanotify blocking remains fail-closed; XDR active response disabled",
+	})
+}
+
+func hasTrustedExecutableIdentity(p ProcessSample) bool {
+	executable := filepath.Clean(strings.TrimSuffix(p.Exe, " (deleted)"))
+	return executable != "." && executable != string(filepath.Separator) &&
+		filepath.IsAbs(executable)
 }
 
 func (e *XDREngine) respond(i XDRIncident) (string, string) {
@@ -619,12 +971,7 @@ func (e *XDREngine) selfTamper(path, reason string) {
 	e.markDegraded(reason + ": " + path)
 	i := XDRIncident{ID: randomID(), Time: time.Now().UTC(), Severity: "critical", Score: 250, Executable: path,
 		RuleIDs: []string{"XDR.SELF_TAMPER"}, Categories: []string{"integrity"}, Summary: reason, Decision: "degrade", Action: "disable-response", Outcome: "active XDR response disabled until restart and verification"}
-	if e.logger != nil {
-		if h, err := e.logger.Append(i); err == nil {
-			i.RecordHash = h
-		}
-	}
-	e.state.AddIncident(i)
+	e.appendIncident(i)
 	e.state.AddEvent(Event{Severity: "critical", Kind: "xdr.self_tamper", Source: "integrity", Message: reason, Target: path})
 }
 

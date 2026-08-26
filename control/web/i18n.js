@@ -1,6 +1,6 @@
 'use strict';
 
-const VERSION = '1.0.0-beta.5';
+const VERSION = '2.0.0-beta.1';
 const SUPPORTED = new Set(['de', 'en', 'ru']);
 const LOCALES = { de: 'de-DE', en: 'en-US', ru: 'ru-RU' };
 
@@ -15,6 +15,9 @@ const messages = {
     'nav.settings': 'Einstellungen', 'nav.system': 'System',
     'top.operator': 'Operator-Key', 'top.support': 'VGT unterstützen', 'top.language': 'Sprache',
     'view.overview.eyebrow': 'SOVEREIGN DEFENSE FABRIC', 'view.overview.title': 'Übersicht',
+    'view.hardening.eyebrow': 'LOCAL SECURITY POSTURE', 'view.hardening.title': 'Härtung',
+    'view.integrity.eyebrow': 'INTEGRITY & EVIDENCE', 'view.integrity.title': 'Integrität',
+    'view.boot.eyebrow': 'MEASURED BOOT POSTURE', 'view.boot.title': 'Boot Trust',
     'view.xdr.eyebrow': 'CORRELATION & RESPONSE', 'view.xdr.title': 'GeDefense XDR',
     'view.network.eyebrow': 'XDP POLICY CONTROL', 'view.network.title': 'Netzwerk',
     'view.policy.eyebrow': 'SIGNED TRUST STATE', 'view.policy.title': 'Policy Trust',
@@ -152,7 +155,7 @@ Object.assign(messages.en, {
   ...messages.de,
   'skip.content':'Skip to content','nav.label':'Main navigation','nav.overview':'Overview','nav.network':'Network','nav.forensics':'Forensics','nav.release':'Beta Release','nav.settings':'Settings','nav.system':'System',
   'top.operator':'Operator key','top.support':'Support VGT','top.language':'Language',
-  'view.overview.title':'Overview','view.network.title':'Network','view.forensics.title':'Forensics','view.settings.title':'Settings',
+  'view.overview.title':'Overview','view.hardening.title':'Hardening','view.integrity.title':'Integrity','view.boot.title':'Boot Trust','view.network.title':'Network','view.forensics.title':'Forensics','view.settings.title':'Settings',
   'overview.heading':'Defense that understands the host as one system.','overview.description':'Rust XDP, signed policy snapshots and Linux XDR correlate network, processes, integrity and behavior — locally, transparently and without cloud dependency.',
   'metric.rules':'Active rules','metric.anomalies':'Anomalies','metric.ipc':'IPC verification','metric.sensorInit':'Sensor initialization','metric.signedCidrs':'signed CIDR policies','metric.adaptive':'adaptive deviations',
   'network.throughput':'Real-time throughput','network.chartLabel':'Network throughput','network.interface':'Interface','stream.title':'Recent events',
@@ -179,7 +182,7 @@ Object.assign(messages.ru, {
   ...messages.de,
   'skip.content':'Перейти к содержимому','nav.label':'Главная навигация','nav.overview':'Обзор','nav.network':'Сеть','nav.forensics':'Форензика','nav.release':'Бета-релиз','nav.settings':'Настройки','nav.system':'Система',
   'top.operator':'Ключ оператора','top.support':'Поддержать VGT','top.language':'Язык',
-  'view.overview.title':'Обзор','view.network.title':'Сеть','view.forensics.title':'Форензика','view.settings.title':'Настройки','view.system.title':'Система',
+  'view.overview.title':'Обзор','view.hardening.title':'Усиление защиты','view.integrity.title':'Целостность','view.boot.title':'Доверие загрузки','view.network.title':'Сеть','view.forensics.title':'Форензика','view.settings.title':'Настройки','view.system.title':'Система',
   'overview.heading':'Защита, которая воспринимает хост как единую систему.','overview.description':'Rust XDP, подписанные снимки политик и Linux XDR связывают сеть, процессы, целостность и поведение — локально, прозрачно и без зависимости от облака.',
   'metric.rules':'Активные правила','metric.anomalies':'Аномалии','metric.ipc':'Проверка IPC','metric.sensorInit':'Инициализация сенсора','metric.signedCidrs':'подписанные CIDR-политики','metric.adaptive':'адаптивные отклонения',
   'network.throughput':'Трафик в реальном времени','network.chartLabel':'Сетевая пропускная способность','network.interface':'Интерфейс','stream.title':'Последние события',
@@ -345,24 +348,24 @@ Object.assign(messages.ru, {
 Object.assign(messages.de, {
   'cells.heading':'Gaia Cells','cells.description':'GeDefense bindet Aktionen an UUID, Lifecycle-Generation und Kernel-cgroup-ID. Labels werden ausschließlich als untrusted Anzeige behandelt.',
   'cells.reason':'Begründung für Isolation','cells.label':'Label','cells.class':'Klasse','cells.network':'Netzwerk',
-  'cells.empty':'Keine Gaia Cells gemeldet.','cells.runtimeMissing':'Die Gaia-Cells-Runtime ist in GaiaOS noch nicht installiert.',
-  'cells.freeze':'Einfrieren','cells.revokeNetwork':'Netz entziehen',
+  'cells.empty':'Keine Gaia Cells gemeldet.','cells.runtimeMissing':'Die Gaia-Cells-Runtime ist in AstraeaOS noch nicht installiert.',
+  'cells.freeze':'Einfrieren','cells.revokeNetwork':'Netz entziehen','cells.networkGuarded':'GESPERRT - GEDEFENSE NICHT BEREIT',
   'cells.reasonRequired':'Eine Begründung mit mindestens drei Zeichen ist erforderlich.',
   'cells.previewReady':'Die Cell-Aktion wurde an ihre Kernelidentität gebunden und als Vorschau gespeichert.'
 });
 Object.assign(messages.en, {
   'cells.heading':'Gaia Cells','cells.description':'GeDefense binds actions to UUID, lifecycle generation, and kernel cgroup ID. Labels are treated only as untrusted display data.',
   'cells.reason':'Isolation reason','cells.label':'Label','cells.class':'Class','cells.network':'Network',
-  'cells.empty':'No Gaia Cells reported.','cells.runtimeMissing':'The Gaia Cells runtime is not installed in GaiaOS yet.',
-  'cells.freeze':'Freeze','cells.revokeNetwork':'Revoke network',
+  'cells.empty':'No Gaia Cells reported.','cells.runtimeMissing':'The Gaia Cells runtime is not installed in AstraeaOS yet.',
+  'cells.freeze':'Freeze','cells.revokeNetwork':'Revoke network','cells.networkGuarded':'BLOCKED - GEDEFENSE NOT READY',
   'cells.reasonRequired':'A reason of at least three characters is required.',
   'cells.previewReady':'The Cell action was bound to its kernel identity and stored as a preview.'
 });
 Object.assign(messages.ru, {
   'cells.heading':'Gaia Cells','cells.description':'GeDefense привязывает действия к UUID, поколению жизненного цикла и kernel cgroup ID. Метки используются только как недоверенные отображаемые данные.',
   'cells.reason':'Причина изоляции','cells.label':'Метка','cells.class':'Класс','cells.network':'Сеть',
-  'cells.empty':'Gaia Cells не обнаружены.','cells.runtimeMissing':'Среда выполнения Gaia Cells ещё не установлена в GaiaOS.',
-  'cells.freeze':'Заморозить','cells.revokeNetwork':'Отключить сеть',
+  'cells.empty':'Gaia Cells не обнаружены.','cells.runtimeMissing':'Среда выполнения Gaia Cells ещё не установлена в AstraeaOS.',
+  'cells.freeze':'Заморозить','cells.revokeNetwork':'Отключить сеть','cells.networkGuarded':'ЗАБЛОКИРОВАНО — GEDEFENSE НЕ ГОТОВ',
   'cells.reasonRequired':'Требуется причина длиной не менее трёх символов.',
   'cells.previewReady':'Действие Cell привязано к идентичности ядра и сохранено как предпросмотр.'
 });

@@ -50,6 +50,40 @@ func TestDestructiveRuleNeedsASecondStrongSignal(t *testing.T) {
 	}
 }
 
+func TestLinuxCommTruncationIsNotMasquerading(t *testing.T) {
+	decision := NewXDRRuleEngine().EvaluateProcess(ProcessSample{
+		PID: 3001, StartTicks: 9, Comm: "gedefense-acces",
+		Exe: "/opt/vgt/gedefense/current/bin/gedefense-access",
+	}, nil, nil, nil)
+	if slices.Contains(decision.RuleIDs, "XDR.NAME_PATH_MISMATCH") {
+		t.Fatalf("Linux TASK_COMM_LEN truncation became a false finding: %+v", decision)
+	}
+}
+
+func TestUnresolvedExecutableIdentityIsNotEvaluated(t *testing.T) {
+	if hasTrustedExecutableIdentity(ProcessSample{Comm: "(sd-close)"}) {
+		t.Fatal("transient process without executable evidence was trusted")
+	}
+	if !hasTrustedExecutableIdentity(ProcessSample{Exe: "/usr/bin/example"}) {
+		t.Fatal("absolute executable identity was rejected")
+	}
+}
+
+func TestBaselineDoesNotInventMissingParentEvidence(t *testing.T) {
+	baseline := &XDRBaseline{compiled: map[string]compiledBaseline{
+		"/usr/bin/example": {
+			profile: BaselineProfile{Executable: "/usr/bin/example"},
+			parents: map[string]struct{}{"/usr/lib/systemd/systemd": {}},
+		},
+	}}
+	matches := baseline.Evaluate(ProcessSample{Exe: "/usr/bin/example"}, nil)
+	for _, match := range matches {
+		if match.ID == "BASELINE.PARENT_MISMATCH" {
+			t.Fatal("unavailable parent evidence was reported as a confirmed mismatch")
+		}
+	}
+}
+
 func TestCommandRedaction(t *testing.T) {
 	in := `curl -H "Authorization: Bearer abcdefghijklmnop" https://alice:supersecret@example.test --token=abc123 --password hunter2`
 	out := NewXDRRuleEngine().RedactCommand(in, 4096)
@@ -101,6 +135,33 @@ func TestParseProcStatHandlesSpacesAndParentheses(t *testing.T) {
 	}
 	if ppid != 42 || start != 987654 || comm != "worker ) thread" {
 		t.Fatalf("unexpected parse result: ppid=%d start=%d comm=%q", ppid, start, comm)
+	}
+}
+
+func TestParseProcStatRejectsInvalidProcessIdentity(t *testing.T) {
+	validFields := []string{"S", "1"}
+	for len(validFields) < 19 {
+		validFields = append(validFields, "0")
+	}
+	validFields = append(validFields, "4242")
+
+	withField := func(index int, value string) string {
+		fields := append([]string(nil), validFields...)
+		fields[index] = value
+		return strings.Join(fields, " ")
+	}
+	tests := []string{
+		"0 (worker) " + strings.Join(validFields, " "),
+		"worker (worker) " + strings.Join(validFields, " "),
+		"1 (worker) " + withField(0, "?"),
+		"1 (worker) " + withField(1, "-1"),
+		"1 (worker) " + withField(19, "0"),
+		"1 (worker)" + strings.Join(validFields, " "),
+	}
+	for _, input := range tests {
+		if _, _, _, err := parseProcStat(input); err == nil {
+			t.Fatalf("accepted invalid process identity: %q", input)
+		}
 	}
 }
 
