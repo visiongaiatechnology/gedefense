@@ -2,8 +2,11 @@
 resolver = "2"
 members = ["gedefense-common", "gedefense-ebpf", "gedefense-core"]
 
+[patch.crates-io]
+aya = { path = "vendor/aya" }
+
 [workspace.package]
-version = "1.0.0-beta.5"
+version = "2.0.0-beta.1"
 edition = "2021"
 license = "AGPL-3.0-only"
 authors = ["VisionGaia Technology"]
