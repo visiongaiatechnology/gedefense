@@ -1,19 +1,28 @@
 use aya::{
     maps::{
         lpm_trie::{Key, LpmTrie},
-        MapData,
+        HashMap as AyaHashMap, MapData, MapError, RingBuf,
     },
-    programs::{Xdp, XdpMode},
-    Ebpf,
+    programs::{
+        tc, CgroupAttachMode, CgroupSkb, CgroupSkbAttachType, Lsm, SchedClassifier,
+        TcAttachType, TracePoint, Xdp, XdpMode,
+    },
+    Btf, Ebpf,
 };
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
-use gedefense_common::ACTION_DROP;
+use gedefense_common::{
+    CellLsmDenyEvent, EgressDropEvent, ExecEvent, ACTION_DROP,
+    CELL_LSM_DENY_NON_UNIX_SOCKET, EXEC_COMM_BYTES, NETWORK_ADDRESS_BYTES, NETWORK_FAMILY_V4,
+    NETWORK_FAMILY_V6,
+};
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
+mod malware;
 mod process_control;
 mod quarantine;
 #[cfg(test)]
 use process_control::valid_rule_token;
+use malware::{handle_user_scan, MalwareScanner};
 use process_control::{lookup_identity, peer_uid, pidfd_signal};
 use quarantine::{FileIdentity, QuarantineBroker};
 use std::{
@@ -41,6 +50,9 @@ const MAX_REQUEST_BYTES: u64 = 4096;
 const MAX_RESPONSE_BYTES: usize = 2048;
 const CLOCK_WINDOW_SECS: u64 = 30;
 const REPLAY_CACHE_CAPACITY: usize = 4096;
+const MAX_EXEC_EVENTS_PER_RESPONSE: usize = 24;
+const MAX_EGRESS_EVENTS_PER_RESPONSE: usize = 24;
+const MAX_CELL_LSM_EVENTS_PER_RESPONSE: usize = 24;
 const HARDENING_FILE: &str = "/etc/sysctl.d/90-vgt-gedefense.conf";
 const RENAME_NOREPLACE: u32 = 1;
 const RENAME_EXCHANGE: u32 = 2;
@@ -60,7 +72,7 @@ net.ipv4.tcp_syncookies = 1\n\
 net.ipv6.conf.all.accept_redirects = 0\n\
 net.ipv6.conf.default.accept_redirects = 0\n";
 
-const HARDENING_GAIAOS: &str = "# Managed atomically by VGT GeDefense. Manual edits are rejected.\n\
+const HARDENING_ASTRAEAOS: &str = "# Managed atomically by VGT GeDefense. Manual edits are rejected.\n\
 fs.protected_fifos = 2\n\
 fs.protected_regular = 2\n\
 fs.suid_dumpable = 0\n\
@@ -77,12 +89,83 @@ net.ipv4.tcp_syncookies = 1\n\
 net.ipv6.conf.all.accept_redirects = 0\n\
 net.ipv6.conf.default.accept_redirects = 0\n";
 
-fn hardening_content(profile: &str) -> Option<&'static str> {
+const HARDENING_CUSTOM_MASK: u16 = 0x03ff;
+
+fn hardening_content(profile: &str) -> Option<String> {
     match profile {
-        "linux-server-balanced" => Some(HARDENING_SERVER),
-        "gaiaos-workstation-strict" => Some(HARDENING_GAIAOS),
-        _ => None,
+        "linux-server-balanced" => Some(HARDENING_SERVER.to_owned()),
+        "astraeaos-workstation-strict" => Some(HARDENING_ASTRAEAOS.to_owned()),
+        _ => custom_hardening_content(profile),
     }
+}
+
+fn custom_hardening_content(profile: &str) -> Option<String> {
+    let encoded = profile.strip_prefix("astraeaos-custom-")?;
+    if encoded.len() != 4 || !encoded.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return None;
+    }
+    let mask = u16::from_str_radix(encoded, 16).ok()?;
+    if mask == 0 || mask & !HARDENING_CUSTOM_MASK != 0 {
+        return None;
+    }
+    let mut content = format!(
+        "# Managed atomically by VGT GeDefense. Manual edits are rejected.\n# Profile: {profile}\n"
+    );
+    let controls: &[(u16, &[(&str, &str)])] = &[
+        (1 << 0, &[("kernel.randomize_va_space", "2")]),
+        (1 << 1, &[("kernel.kptr_restrict", "2")]),
+        (1 << 2, &[("kernel.dmesg_restrict", "1")]),
+        (1 << 3, &[("kernel.yama.ptrace_scope", "2")]),
+        (1 << 4, &[("kernel.unprivileged_bpf_disabled", "1")]),
+        (1 << 5, &[("fs.protected_fifos", "2"), ("fs.protected_regular", "2")]),
+        (1 << 6, &[("fs.suid_dumpable", "0")]),
+        (1 << 7, &[("net.ipv4.tcp_syncookies", "1")]),
+        (
+            1 << 8,
+            &[
+                ("net.ipv4.conf.all.accept_redirects", "0"),
+                ("net.ipv4.conf.all.send_redirects", "0"),
+                ("net.ipv4.conf.default.accept_redirects", "0"),
+                ("net.ipv4.conf.default.send_redirects", "0"),
+            ],
+        ),
+        (
+            1 << 9,
+            &[
+                ("net.ipv6.conf.all.accept_redirects", "0"),
+                ("net.ipv6.conf.default.accept_redirects", "0"),
+            ],
+        ),
+    ];
+    let mut values = Vec::new();
+    for (bit, entries) in controls {
+        if mask & bit != 0 {
+            values.extend_from_slice(entries);
+        }
+    }
+    values.sort_unstable_by_key(|(key, _)| *key);
+    for (key, value) in values {
+        content.push_str(key);
+        content.push_str(" = ");
+        content.push_str(value);
+        content.push('\n');
+    }
+    Some(content)
+}
+
+fn recognized_hardening_state(content: &str) -> Option<String> {
+    for profile in ["linux-server-balanced", "astraeaos-workstation-strict"] {
+        if hardening_content(profile).as_deref() == Some(content) {
+            return Some(profile.to_owned());
+        }
+    }
+    let profile = content
+        .lines()
+        .find_map(|line| line.strip_prefix("# Profile: "))?;
+    if hardening_content(profile).as_deref() == Some(content) {
+        return Some(profile.to_owned());
+    }
+    None
 }
 
 fn hardening_file_state() -> Result<String, BoxError> {
@@ -103,12 +186,8 @@ fn hardening_file_state() -> Result<String, BoxError> {
     }
     let mut content = String::with_capacity(metadata.len() as usize);
     file.read_to_string(&mut content)?;
-    for profile in ["linux-server-balanced", "gaiaos-workstation-strict"] {
-        if hardening_content(profile) == Some(content.as_str()) {
-            return Ok(profile.to_owned());
-        }
-    }
-    Err("persistent hardening state is not managed by GeDefense".into())
+    recognized_hardening_state(&content)
+        .ok_or_else(|| "persistent hardening state is not managed by GeDefense".into())
 }
 
 fn hardening_temp_name() -> Result<CString, BoxError> {
@@ -254,12 +333,8 @@ fn hardening_file_state_at(path: &Path) -> Result<String, BoxError> {
     }
     let mut content = String::new();
     file.read_to_string(&mut content)?;
-    for profile in ["linux-server-balanced", "gaiaos-workstation-strict"] {
-        if hardening_content(profile) == Some(content.as_str()) {
-            return Ok(profile.to_owned());
-        }
-    }
-    Err("captured hardening state is unmanaged".into())
+    recognized_hardening_state(&content)
+        .ok_or_else(|| "captured hardening state is unmanaged".into())
 }
 
 fn sysctl_spec(key: &str) -> Option<(&'static str, &'static [&'static str])> {
@@ -344,30 +419,111 @@ fn compare_set_sysctl(key: &str, expected: &str, desired: &str) -> Result<String
 
 struct KernelCore {
     _ebpf: Ebpf,
+    exec_events: RingBuf<MapData>,
+    egress_events: RingBuf<MapData>,
+    cell_lsm_events: RingBuf<MapData>,
+    cell_lsm_policies: AyaHashMap<MapData, u64, u8>,
     allow_v4: LpmTrie<MapData, [u8; 4], u8>,
     allow_v6: LpmTrie<MapData, [u8; 16], u8>,
     v4: LpmTrie<MapData, [u8; 4], u8>,
     v6: LpmTrie<MapData, [u8; 16], u8>,
     blocked: HashSet<Target>,
-    mode: &'static str,
+    mode: String,
+    cell_lsm_attached: bool,
+    cell_policy_epoch: String,
 }
 
 impl KernelCore {
-    fn load(object: &str, iface: &str) -> Result<Self, BoxError> {
+    fn load(object: &str, iface: &str, require_cell_lsm: bool) -> Result<Self, BoxError> {
         let mut ebpf = Ebpf::load_file(object)?;
-        let program: &mut Xdp = ebpf
-            .program_mut("gedefense_xdp")
-            .ok_or("XDP program missing")?
-            .try_into()?;
-        program.load()?;
-        let mode = match program.attach(iface, XdpMode::Driver) {
-            Ok(_) => "native",
-            Err(native) => {
-                eprintln!("native XDP unavailable ({native}); using generic mode");
-                program.attach(iface, XdpMode::Skb)?;
-                "generic"
+        let xdp_mode = {
+            let program: &mut Xdp = ebpf
+                .program_mut("gedefense_xdp")
+                .ok_or("XDP program missing")?
+                .try_into()?;
+            program.load()?;
+            match program.attach(iface, XdpMode::Driver) {
+                Ok(_) => Some("native"),
+                Err(native) => {
+                    eprintln!("native XDP unavailable ({native}); using generic mode");
+                    match program.attach(iface, XdpMode::Skb) {
+                        Ok(_) => Some("generic"),
+                        Err(generic) => {
+                            eprintln!(
+                                "generic XDP unavailable ({generic}); using TC ingress kernel enforcement"
+                            );
+                            None
+                        }
+                    }
+                }
             }
         };
+        let ingress_mode = match xdp_mode {
+            Some(mode) => mode,
+            None => {
+                if let Err(error) = tc::qdisc_add_clsact(iface) {
+                    if !matches!(error, tc::TcError::AlreadyAttached) {
+                        return Err(error.into());
+                    }
+                }
+                let program: &mut SchedClassifier = ebpf
+                    .program_mut("gedefense_tc_ingress")
+                    .ok_or("TC ingress program missing")?
+                    .try_into()?;
+                program.load()?;
+                program.attach_with_options(
+                    iface,
+                    TcAttachType::Ingress,
+                    tc::TcAttachOptions::Netlink(tc::NlOptions::default()),
+                )?;
+                "tc-ingress"
+            }
+        };
+        let exec_program: &mut TracePoint = ebpf
+            .program_mut("gedefense_exec")
+            .ok_or("process exec tracepoint program missing")?
+            .try_into()?;
+        exec_program.load()?;
+        if let Err(error) = exec_program.attach("sched", "sched_process_exec") {
+            eprintln!("Process exec tracepoint unavailable ({error}); falling back to fanotify and procfs monitoring");
+        }
+        let cgroup = File::open("/sys/fs/cgroup")?;
+        let egress_program: &mut CgroupSkb = ebpf
+            .program_mut("gedefense_egress")
+            .ok_or("cgroup egress program missing")?
+            .try_into()?;
+        egress_program.load()?;
+        egress_program.attach(
+            cgroup,
+            CgroupSkbAttachType::Egress,
+            CgroupAttachMode::AllowMultiple,
+        )?;
+        let cell_lsm_attached = match attach_cell_socket_lsm(&mut ebpf) {
+            Ok(()) => true,
+            Err(error) if !require_cell_lsm => {
+                eprintln!("BPF LSM unavailable ({error}); Gaia Cell host socket reinforcement disabled");
+                false
+            }
+            Err(error) => {
+                return Err(format!("required Gaia Cell BPF LSM attach failed: {error}").into())
+            }
+        };
+        let exec_events = RingBuf::try_from(
+            ebpf.take_map("EXEC_EVENTS")
+                .ok_or("EXEC_EVENTS missing")?,
+        )?;
+        let egress_events = RingBuf::try_from(
+            ebpf.take_map("EGRESS_EVENTS")
+                .ok_or("EGRESS_EVENTS missing")?,
+        )?;
+        let cell_lsm_events = RingBuf::try_from(
+            ebpf.take_map("CELL_LSM_EVENTS")
+                .ok_or("CELL_LSM_EVENTS missing")?,
+        )?;
+        let cell_lsm_policies = AyaHashMap::try_from(
+            ebpf.take_map("CELL_LSM_POLICIES")
+                .ok_or("CELL_LSM_POLICIES missing")?,
+        )?;
         let allow_v4 = LpmTrie::try_from(
             ebpf.take_map("ALLOWLIST_V4")
                 .ok_or("ALLOWLIST_V4 missing")?,
@@ -384,15 +540,161 @@ impl KernelCore {
             ebpf.take_map("BLOCKLIST_V6")
                 .ok_or("BLOCKLIST_V6 missing")?,
         )?;
+        let mode = if cell_lsm_attached {
+            format!("{ingress_mode}+bpf-lsm-cell")
+        } else {
+            ingress_mode.to_owned()
+        };
         Ok(Self {
             _ebpf: ebpf,
+            exec_events,
+            egress_events,
+            cell_lsm_events,
+            cell_lsm_policies,
             allow_v4,
             allow_v6,
             v4,
             v6,
             blocked: HashSet::new(),
             mode,
+            cell_lsm_attached,
+            cell_policy_epoch: random_epoch()?,
         })
+    }
+
+    fn cell_policy_epoch(&self) -> Result<String, BoxError> {
+        self.require_cell_lsm()?;
+        Ok(self.cell_policy_epoch.clone())
+    }
+
+    fn set_cell_policy(&mut self, cgroup_id: &str, flags: &str) -> Result<String, BoxError> {
+        self.require_cell_lsm()?;
+        let cgroup_id = parse_cell_cgroup_id(cgroup_id)?;
+        let flags = parse_cell_policy_flags(flags)?;
+        self.cell_lsm_policies.insert(cgroup_id, flags, 0)?;
+        Ok("applied".to_owned())
+    }
+
+    fn delete_cell_policy(&mut self, cgroup_id: &str) -> Result<String, BoxError> {
+        self.require_cell_lsm()?;
+        let cgroup_id = parse_cell_cgroup_id(cgroup_id)?;
+        match self.cell_lsm_policies.remove(&cgroup_id) {
+            Ok(()) | Err(MapError::KeyNotFound) => Ok("deleted".to_owned()),
+            Err(error) => Err(error.into()),
+        }
+    }
+
+    fn take_cell_lsm_events(&mut self) -> Result<String, BoxError> {
+        self.require_cell_lsm()?;
+        let mut encoded = Vec::with_capacity(MAX_CELL_LSM_EVENTS_PER_RESPONSE);
+        while encoded.len() < MAX_CELL_LSM_EVENTS_PER_RESPONSE {
+            let Some(item) = self.cell_lsm_events.next() else {
+                break;
+            };
+            if item.len() != std::mem::size_of::<CellLsmDenyEvent>() {
+                return Err("kernel Gaia Cell LSM event has invalid size".into());
+            }
+            let cgroup_id = u64::from_ne_bytes(item[0..8].try_into()?);
+            let pid = u32::from_ne_bytes(item[8..12].try_into()?);
+            let uid = u32::from_ne_bytes(item[12..16].try_into()?);
+            let family = i32::from_ne_bytes(item[16..20].try_into()?);
+            let action = item[20];
+            if cgroup_id == 0
+                || pid == 0
+                || family <= 0
+                || family > i32::from(u8::MAX)
+                || family == libc::AF_UNIX
+                || action != ACTION_DROP
+            {
+                return Err("kernel Gaia Cell LSM event has invalid metadata".into());
+            }
+            encoded.push(format!("{cgroup_id}:{pid}:{uid}:{family}"));
+        }
+        if encoded.is_empty() {
+            Ok("empty".to_owned())
+        } else {
+            Ok(encoded.join(","))
+        }
+    }
+
+    fn require_cell_lsm(&self) -> Result<(), BoxError> {
+        if self.cell_lsm_attached {
+            Ok(())
+        } else {
+            Err("Gaia Cell BPF LSM is unavailable".into())
+        }
+    }
+
+    fn take_exec_events(&mut self) -> Result<String, BoxError> {
+        let mut encoded = Vec::with_capacity(MAX_EXEC_EVENTS_PER_RESPONSE);
+        while encoded.len() < MAX_EXEC_EVENTS_PER_RESPONSE {
+            let Some(item) = self.exec_events.next() else {
+                break;
+            };
+            if item.len() != std::mem::size_of::<ExecEvent>() {
+                return Err("kernel exec event has invalid size".into());
+            }
+            let pid = u32::from_ne_bytes(item[0..4].try_into()?);
+            let uid = u32::from_ne_bytes(item[4..8].try_into()?);
+            let gid = u32::from_ne_bytes(item[8..12].try_into()?);
+            let comm: [u8; EXEC_COMM_BYTES] = item[12..12 + EXEC_COMM_BYTES].try_into()?;
+            let comm_len = comm
+                .iter()
+                .position(|value| *value == 0)
+                .unwrap_or(EXEC_COMM_BYTES);
+            encoded.push(format!(
+                "{pid}:{uid}:{gid}:{}",
+                hex::encode(&comm[..comm_len])
+            ));
+        }
+        if encoded.is_empty() {
+            Ok("empty".to_owned())
+        } else {
+            Ok(encoded.join(","))
+        }
+    }
+
+    fn take_egress_events(&mut self) -> Result<String, BoxError> {
+        let mut encoded = Vec::with_capacity(MAX_EGRESS_EVENTS_PER_RESPONSE);
+        while encoded.len() < MAX_EGRESS_EVENTS_PER_RESPONSE {
+            let Some(item) = self.egress_events.next() else {
+                break;
+            };
+            if item.len() != std::mem::size_of::<EgressDropEvent>() {
+                return Err("kernel egress event has invalid size".into());
+            }
+            let pid = u32::from_ne_bytes(item[0..4].try_into()?);
+            let uid = u32::from_ne_bytes(item[4..8].try_into()?);
+            let family = item[8];
+            let protocol = item[9];
+            let action = item[10];
+            if action != ACTION_DROP || !matches!(family, NETWORK_FAMILY_V4 | NETWORK_FAMILY_V6) {
+                return Err("kernel egress event has invalid metadata".into());
+            }
+            let address_len = if family == NETWORK_FAMILY_V4 {
+                4
+            } else {
+                NETWORK_ADDRESS_BYTES
+            };
+            let destination = &item[12..12 + address_len];
+            let comm_start = 12 + NETWORK_ADDRESS_BYTES;
+            let comm: [u8; EXEC_COMM_BYTES] =
+                item[comm_start..comm_start + EXEC_COMM_BYTES].try_into()?;
+            let comm_len = comm
+                .iter()
+                .position(|value| *value == 0)
+                .unwrap_or(EXEC_COMM_BYTES);
+            encoded.push(format!(
+                "{pid}:{uid}:{family}:{protocol}:{}:{}",
+                hex::encode(destination),
+                hex::encode(&comm[..comm_len])
+            ));
+        }
+        if encoded.is_empty() {
+            Ok("empty".to_owned())
+        } else {
+            Ok(encoded.join(","))
+        }
     }
 
     fn add(&mut self, target: &str) -> Result<(), BoxError> {
@@ -465,6 +767,39 @@ impl KernelCore {
         }
         Ok(())
     }
+}
+
+fn attach_cell_socket_lsm(ebpf: &mut Ebpf) -> Result<(), BoxError> {
+    let btf = Btf::from_sys_fs()?;
+    let program: &mut Lsm = ebpf
+        .program_mut("gedefense_cell_socket_create")
+        .ok_or("Gaia Cell socket LSM program missing")?
+        .try_into()?;
+    program.load("socket_create", &btf)?;
+    program.attach()?;
+    Ok(())
+}
+
+fn random_epoch() -> Result<String, BoxError> {
+    let mut bytes = [0u8; 16];
+    File::open("/dev/urandom")?.read_exact(&mut bytes)?;
+    Ok(hex::encode(bytes))
+}
+
+fn parse_cell_cgroup_id(value: &str) -> Result<u64, BoxError> {
+    let parsed = value.parse::<u64>()?;
+    if parsed == 0 {
+        return Err("Gaia Cell cgroup ID must be non-zero".into());
+    }
+    Ok(parsed)
+}
+
+fn parse_cell_policy_flags(value: &str) -> Result<u8, BoxError> {
+    let parsed = value.parse::<u8>()?;
+    if parsed != CELL_LSM_DENY_NON_UNIX_SOCKET {
+        return Err("Gaia Cell LSM policy flags are invalid".into());
+    }
+    Ok(parsed)
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -645,10 +980,18 @@ fn write_response(
 fn process_command(
     core: &mut KernelCore,
     quarantine: &QuarantineBroker,
+    scanner: &MalwareScanner,
     parts: &[&str],
 ) -> Result<String, BoxError> {
     match parts {
         ["PING"] => Ok(core.mode.to_string()),
+        ["CELL_POLICY_EPOCH"] => core.cell_policy_epoch(),
+        ["CELL_POLICY_SET", cgroup_id, flags] => core.set_cell_policy(cgroup_id, flags),
+        ["CELL_POLICY_DEL", cgroup_id] => core.delete_cell_policy(cgroup_id),
+        ["CELL_LSM_EVENTS"] => core.take_cell_lsm_events(),
+        ["EXEC_EVENTS"] => core.take_exec_events(),
+        ["EGRESS_EVENTS"] => core.take_egress_events(),
+        ["MALWARE_EVENTS"] => scanner.take_events(),
         ["CLEAR_BLOCKLIST"] => core.clear_blocklist().map(|_| "cleared".into()),
         ["VERIFY_EMPTY"] if core.blocked.is_empty() => Ok("empty".into()),
         ["VERIFY_EMPTY"] => Err("blocklist is not empty".into()),
@@ -662,6 +1005,7 @@ fn process_command(
         ["SYSCTL_SET", key, expected, desired] => compare_set_sysctl(key, expected, desired),
         ["HARDENING_GET"] => hardening_file_state(),
         ["HARDENING_SET", expected, desired] => compare_set_hardening_file(expected, desired),
+        ["MALWARE_SCAN", path] => scanner.inspect_token(path),
         ["QUARANTINE_INSPECT", path] => quarantine.inspect_token(path),
         ["QUARANTINE_APPLY", path, object_id, identity] => quarantine.quarantine_token(
             path,
@@ -694,6 +1038,7 @@ fn handle_connection(
     mut stream: UnixStream,
     core: &mut KernelCore,
     quarantine: &QuarantineBroker,
+    scanner: &MalwareScanner,
     control_uid: u32,
     auth_key: &[u8],
     replay: &mut ReplayGuard,
@@ -776,7 +1121,7 @@ fn handle_connection(
     }
 
     let command = &fields[3..fields.len() - 1];
-    match process_command(core, quarantine, command) {
+    match process_command(core, quarantine, scanner, command) {
         Ok(message) => {
             if let Err(error) = write_response(&mut stream, auth_key, nonce, "OK", &message) {
                 eprintln!("IPC response failed: {error}");
@@ -796,6 +1141,11 @@ fn arg(name: &str, default: &str) -> String {
         .unwrap_or_else(|| default.to_owned())
 }
 
+fn flag(name: &str) -> bool {
+    let expected = format!("--{name}");
+    env::args().any(|value| value == expected)
+}
+
 fn valid_interface_name(name: &str) -> bool {
     !name.is_empty()
         && name.len() < libc::IFNAMSIZ
@@ -804,10 +1154,47 @@ fn valid_interface_name(name: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'.' | b':'))
 }
 
+fn interface_exists(name: &str) -> bool {
+    valid_interface_name(name) && Path::new("/sys/class/net").join(name).exists()
+}
+
+fn fallback_interface() -> Result<String, BoxError> {
+    let mut candidates = Vec::new();
+    for entry in fs::read_dir("/sys/class/net")? {
+        let entry = entry?;
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else {
+            continue;
+        };
+        if name == "lo" || !valid_interface_name(name) {
+            continue;
+        }
+        let state = fs::read_to_string(entry.path().join("operstate")).unwrap_or_default();
+        let priority = match state.trim() {
+            "up" => 0_u8,
+            "unknown" | "dormant" => 1_u8,
+            _ => 2_u8,
+        };
+        candidates.push((priority, name.to_owned()));
+    }
+    candidates.sort_unstable();
+    if let Some((_, name)) = candidates.into_iter().next() {
+        eprintln!(
+            "no active default route yet; attaching XDP to validated interface {name}"
+        );
+        return Ok(name);
+    }
+    if interface_exists("lo") {
+        eprintln!("no non-loopback interface present; using loopback fail-safe");
+        return Ok("lo".to_owned());
+    }
+    Err("no validated network interface found".into())
+}
+
 fn detect_interface(requested: &str) -> Result<String, BoxError> {
     if requested != "auto" {
-        if !valid_interface_name(requested) {
-            return Err("invalid interface name".into());
+        if !interface_exists(requested) {
+            return Err("invalid or unavailable interface name".into());
         }
         return Ok(requested.to_owned());
     }
@@ -816,12 +1203,12 @@ fn detect_interface(requested: &str) -> Result<String, BoxError> {
         let fields: Vec<&str> = line.split_whitespace().collect();
         if fields.len() >= 4 && fields[1] == "00000000" {
             let flags = u32::from_str_radix(fields[3], 16).unwrap_or(0);
-            if flags & 0x1 != 0 && valid_interface_name(fields[0]) {
+            if flags & 0x1 != 0 && interface_exists(fields[0]) {
                 return Ok(fields[0].to_owned());
             }
         }
     }
-    Err("no active default-route interface found".into())
+    fallback_interface()
 }
 
 fn main() -> Result<(), BoxError> {
@@ -836,7 +1223,9 @@ fn main() -> Result<(), BoxError> {
         "bpf-object",
         "/opt/vgt/gedefense/current/lib/gedefense/gedefense-ebpf",
     );
+    let require_cell_lsm = flag("require-bpf-lsm");
     let socket = arg("socket", "/run/vgt-gedefense/core.sock");
+    let scan_socket = arg("scan-socket", "/run/gedefense-scan/scan.sock");
     let auth_key_path = arg("auth-key", "/etc/vgt/gedefense/secrets/core-ipc.key");
     let storage_key_path = arg(
         "storage-key",
@@ -847,6 +1236,7 @@ fn main() -> Result<(), BoxError> {
         "/var/lib/vgt/gedefense/quarantine/objects",
     );
     let control_user = arg("control-user", "gedefense");
+    let malware_hashes = arg("malware-hashes", "/etc/vgt/gedefense/malware-hashes.sha256");
     eprintln!("GeDefense core startup phase=control-identity");
     let (control_uid, control_gid) = lookup_identity(&control_user)
         .map_err(|error| std::io::Error::other(format!("control identity: {error}")))?;
@@ -859,6 +1249,51 @@ fn main() -> Result<(), BoxError> {
     let quarantine = QuarantineBroker::new(&quarantine_dir, &storage_key)
         .map_err(|error| std::io::Error::other(format!("quarantine vault: {error}")))?;
     storage_key.fill(0);
+    eprintln!("GeDefense core startup phase=malware-on-access");
+    let scanner = MalwareScanner::load(&malware_hashes)
+        .map_err(|error| std::io::Error::other(format!("malware signatures: {error}")))?;
+    scanner
+        .start_on_access(&[Path::new("/home").to_path_buf()])
+        .map_err(|error| std::io::Error::other(format!("on-access guard: {error}")))?;
+    eprintln!("GeDefense core startup phase=user-scan-socket");
+    let scan_parent = Path::new(&scan_socket)
+        .parent()
+        .ok_or("user scan socket parent is missing")?;
+    if scan_parent != Path::new("/run/gedefense-scan") {
+        return Err("user scan socket escaped runtime jail".into());
+    }
+    fs::create_dir_all(scan_parent)?;
+    let scan_parent_metadata = fs::symlink_metadata(scan_parent)?;
+    if !scan_parent_metadata.is_dir()
+        || scan_parent_metadata.file_type().is_symlink()
+        || scan_parent_metadata.uid() != 0
+    {
+        return Err("user scan runtime directory ownership rejected".into());
+    }
+    fs::set_permissions(scan_parent, fs::Permissions::from_mode(0o755))?;
+    let _ = fs::remove_file(&scan_socket);
+    let scan_listener = UnixListener::bind(&scan_socket)
+        .map_err(|error| std::io::Error::other(format!("user scan IPC bind: {error}")))?;
+    fs::set_permissions(&scan_socket, fs::Permissions::from_mode(0o666))
+        .map_err(|error| std::io::Error::other(format!("user scan IPC permissions: {error}")))?;
+    let scan_worker = scanner.clone();
+    std::thread::Builder::new()
+        .name("gedefense-user-scan".to_owned())
+        .spawn(move || {
+            for incoming in scan_listener.incoming() {
+                match incoming {
+                    Ok(stream) => {
+                        if let Err(error) = handle_user_scan(stream, &scan_worker) {
+                            eprintln!("GeDefense user scan IPC rejected: {error}");
+                        }
+                    }
+                    Err(error) => {
+                        eprintln!("GeDefense user scan IPC fatal: {error}");
+                        std::process::abort();
+                    }
+                }
+            }
+        })?;
     eprintln!("GeDefense core startup phase=ipc-socket");
     if let Some(parent) = Path::new(&socket).parent() {
         fs::create_dir_all(parent)
@@ -885,12 +1320,13 @@ fn main() -> Result<(), BoxError> {
         }
     }
     eprintln!("GeDefense core startup phase=xdp-load interface={iface}");
-    let mut core = KernelCore::load(&object, &iface)
-        .map_err(|error| std::io::Error::other(format!("XDP load/attach: {error}")))?;
+    let mut core = KernelCore::load(&object, &iface, require_cell_lsm)
+        .map_err(|error| std::io::Error::other(format!("kernel data-plane load/attach: {error}")))?;
     let mut replay = ReplayGuard::new();
     eprintln!(
-        "GeDefense Rust core online: interface={iface} xdp={} authenticated_ipc=VGT3 socket={socket}",
-        core.mode
+        "GeDefense Rust core online: interface={iface} ingress={} cgroup_egress=attached cell_lsm={} on_access=fanotify-exec user_scan=peercred-jail authenticated_ipc=VGT3 socket={socket}",
+        core.mode,
+        if core.cell_lsm_attached { "attached" } else { "optional-unavailable" }
     );
     for incoming in listener.incoming() {
         match incoming {
@@ -898,6 +1334,7 @@ fn main() -> Result<(), BoxError> {
                 stream,
                 &mut core,
                 &quarantine,
+                &scanner,
                 control_uid,
                 &auth_key,
                 &mut replay,
@@ -949,6 +1386,29 @@ mod tests {
     }
 
     #[test]
+    fn cell_lsm_policy_tokens_are_strict() {
+        assert_eq!(parse_cell_cgroup_id("42").unwrap(), 42);
+        assert!(parse_cell_cgroup_id("0").is_err());
+        assert!(parse_cell_cgroup_id("-1").is_err());
+        assert_eq!(
+            parse_cell_policy_flags("1").unwrap(),
+            CELL_LSM_DENY_NON_UNIX_SOCKET
+        );
+        assert!(parse_cell_policy_flags("0").is_err());
+        assert!(parse_cell_policy_flags("3").is_err());
+    }
+
+    #[test]
+    fn interface_names_reject_path_and_control_characters() {
+        assert!(valid_interface_name("enp0s3"));
+        assert!(valid_interface_name("veth.secure-1"));
+        assert!(!valid_interface_name("../eth0"));
+        assert!(!valid_interface_name("eth0/peer"));
+        assert!(!valid_interface_name("eth0\n"));
+        assert!(!valid_interface_name(""));
+    }
+
+    #[test]
     fn replay_guard_rejects_duplicates_and_expires_old_entries() {
         let mut guard = ReplayGuard::new();
         assert!(guard.accept("0123456789abcdef0123456789abcdef", 100));
@@ -968,5 +1428,27 @@ mod tests {
         assert_eq!(ternary, &["0", "1", "2"]);
         assert!(sysctl_spec("kernel.core_pattern").is_none());
         assert!(sysctl_spec("../kernel/kptr_restrict").is_none());
+    }
+
+    #[test]
+    fn custom_hardening_profiles_are_deterministic_and_bounded() {
+        let profile = hardening_content("astraeaos-custom-0083").expect("valid custom profile");
+        assert!(profile.contains("# Profile: astraeaos-custom-0083\n"));
+        assert!(profile.contains("kernel.randomize_va_space = 2\n"));
+        assert!(profile.contains("kernel.kptr_restrict = 2\n"));
+        assert!(profile.contains("net.ipv4.tcp_syncookies = 1\n"));
+        assert_eq!(
+            recognized_hardening_state(&profile).as_deref(),
+            Some("astraeaos-custom-0083")
+        );
+        for invalid in [
+            "astraeaos-custom-0000",
+            "astraeaos-custom-0400",
+            "astraeaos-custom-ffff",
+            "astraeaos-custom-xyz1",
+            "astraeaos-custom-001",
+        ] {
+            assert!(hardening_content(invalid).is_none(), "accepted {invalid}");
+        }
     }
 }
