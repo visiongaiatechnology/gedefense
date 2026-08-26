@@ -33,10 +33,10 @@
 - run the authenticated Gaia Cells mock runtime and verify UUID/generation/
   cgroup-ID mismatch and replay/MAC failures are rejected.
 
-## GaiaOS
+## AstraeaOS
 
-- build `gedefense` and `gaiaos-gedefense-integration` from the byte-verified
-  `GaiaOS/gedefense` mirror;
+- build `gedefense` and `astraeaos-gedefense-integration` from the byte-verified
+  `AstraeaOS/gedefense` mirror;
 - verify the ISO package list contains no `gaiasentinel` runtime package;
 - verify provision → bpffs → core → control → access ordering;
 - set the operator password through the first-launch flow and open the local

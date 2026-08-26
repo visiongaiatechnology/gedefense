@@ -1,4 +1,4 @@
-# GeDefense 1.0.0-beta.5 — Architecture
+# GeDefense Beta v2 (2.0.0-beta.1) — Architecture
 
 ## Trust domains
 
@@ -11,8 +11,11 @@
 3. **Response core — Rust, privileged and capability-bounded**  
    Loads XDP, owns maps, authenticates VGT3 IPC with HMAC/replay protection, verifies peer UID with `SO_PEERCRED`, rechecks process identity and performs narrowly typed kernel/process actions.
 
-4. **Kernel data plane — Rust no_std eBPF/XDP**  
-   Bounded Ethernet/VLAN/IPv4/IPv6 parsing, management allowlist before blocklist, longest-prefix CIDR matching and fail-open handling of malformed/truncated headers.
+4. **Kernel data plane — Rust no_std eBPF/XDP + cgroup skb**  
+   Bounded Ethernet/VLAN/IPv4/IPv6 parsing, management allowlist before blocklist,
+   longest-prefix CIDR matching, root-cgroup outbound enforcement and bounded
+   drop telemetry. Malformed or truncated headers remain fail-open while signed
+   CIDR matches are enforced in-kernel.
 
 ## Runtime flow
 
@@ -65,6 +68,29 @@ Baselines are stored as AES-256-GCM envelopes bound to node, path, purpose and
 generation. Authentication failure quarantines the baseline. Baseline creation
 and manual scanning are authenticated operator mutations and therefore commit
 an Evidence Ledger intent before execution.
+
+## Malware execution plane
+
+The privileged Rust core owns a memory-safe content scanner and a
+`FAN_OPEN_EXEC_PERM` guard for executable opens under `/home`. SHA-256
+reputation matches, EICAR, bounded archive expansion, MIME conflicts and
+executable polyglots are decided before the first instruction. A scan failure
+is fail-closed. The signature database is root-owned, non-writable by services
+and enrolled in the AstraeaOS fs-verity critical-file set.
+
+Blocked decisions enter a 512-record bounded queue. The Go XDR plane retrieves
+at most four records per HMAC-authenticated `MALWARE_EVENTS` request, validates
+every scalar, digest and encoded path, then commits an Evidence Ledger record,
+XDR incident and correlated case. Queue overflow degrades active XDR response
+while the kernel permission guard continues denying execution.
+
+The separate mode-0666 user scan socket grants no general scanner authority.
+`SO_PEERCRED`, exact UID ownership, restrictive file mode and an exact browser
+quarantine jail restrict it to releasing the calling user's GaiaCell download.
+The browser rechecks content digest and size while copying after a clean
+verdict. Operator scans use the private authenticated core socket and positive
+verdicts become incidents; quarantine remains a separately authorized
+transaction.
 
 ## Durable security transactions
 
@@ -119,22 +145,22 @@ The same transaction gates startup Observe before the node becomes ready. No int
 
 Built-in command, lineage, masquerading, origin and threat-intelligence evaluators are isolated modules selected by signed runtime settings. Operator-defined RE2 rules are bounded by count, expression length and score, compiled once per settings revision and evaluated as alert-only signals. Their scores are deliberately excluded from the independently calculated response score, so configuration cannot manufacture process-kill authority.
 
-## GaiaOS integration
+## AstraeaOS integration
 
-GeDefense is the single security authority on generic Linux and GaiaOS. GaiaOS
+GeDefense is the single security authority on generic Linux and AstraeaOS. AstraeaOS
 adds optional platform evidence and, once a real versioned runtime exists, Gaia
 Cells metadata. The integration never introduces a second firewall or response
 daemon. Cell lifecycle remains owned by Gaia Cells; GeDefense policy and
 response bind to immutable cell generations and kernel cgroup IDs.
 
 The current host-trust collector reports evidence only. Secure Boot variables,
-kernel lockdown, TPM device presence, cgroup v2, GaiaOS identity and a kernel
+kernel lockdown, TPM device presence, cgroup v2, AstraeaOS identity and a kernel
 image digest are observations rather than an unsupported claim of a complete
 measured-boot chain.
 
-See `GEDEFENSE-GAIAOS-INTEGRATION.md` for the capability migration matrix,
+See `GEDEFENSE-ASTRAEAOS-INTEGRATION.md` for the capability migration matrix,
 trust boundaries and delivery sequence.
 
 ## Deferred layer
 
-Swarm/Mesh federation and QUIC offloading are intentionally outside 1.0.0-beta.5.
+Swarm/Mesh federation and QUIC offloading are intentionally outside 2.0.0-beta.1.

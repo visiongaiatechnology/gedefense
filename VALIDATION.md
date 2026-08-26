@@ -1,8 +1,10 @@
-# Validation — GeDefense 1.0.0-beta.5
+# Validation — GeDefense Beta v2 (2.0.0-beta.1)
 
 ## Scope
 
-Beta 5 validates the branded multilingual interface, Argon2id gateway authentication, AES-256-GCM operational storage, browser/backend hardening and the retained full-stack Rust/XDP activation path.
+Beta v2 validates the branded multilingual interface, universal Linux
+integration, Argon2id gateway authentication, AES-256-GCM operational storage,
+browser/backend hardening and the retained full-stack Rust/XDP activation path.
 
 ## Automated validation
 
@@ -21,6 +23,10 @@ The release pipeline runs:
 - deterministic source ZIP and self-extracting RUN packaging;
 - embedded payload and binary digest verification;
 - XDP source guard against attacker-controlled length-derived packet pointers.
+- pinned GitHub Actions and container-image supply-chain identities;
+- Ubuntu/Debian, Fedora/RHEL-compatible, Arch and openSUSE integration contracts;
+- post-install systemd, Polkit, authenticated readiness, bpffs and concrete NIC
+  XDP attachment through the privileged host qualification workflow.
 
 ## Security cases covered
 

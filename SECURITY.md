@@ -1,6 +1,6 @@
 # Security Policy
 
-GeDefense 1.0.0-beta.5 is a security-sensitive full-stack beta. It starts in Observe and requires explicit, gated operator action before Canary or Enforce.
+GeDefense 2.0.0-beta.1 is a security-sensitive universal Linux beta. It starts in Observe and requires explicit, gated operator action before Canary or Enforce.
 
 ## Security invariants
 

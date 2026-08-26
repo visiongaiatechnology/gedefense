@@ -1,7 +1,32 @@
 # Changelog
 
+## 2.0.0-beta.1 — Beta v2 universal Linux integration
+
+- Promoted portable AstraeaOS readiness, desktop and privilege-boundary
+  contracts into the generic Linux release payload.
+- Added APT, DNF/YUM, pacman and Zypper installer coverage.
+- Added a local SPKI-pinned Chromium application profile without changing the
+  global trust store.
+- Preserved AstraeaOS-only SDDM, ArchISO and Gaia Cells behavior as conditional
+  adapters instead of imposing those assumptions on other distributions.
+- Added mandatory Go race/fuzz/security, pinned Rust/eBPF release-build and
+  cryptographic artifact gates to the Beta v2 CI.
+- Added containerized Ubuntu, Fedora, Arch and openSUSE integration contracts.
+- Added a privileged installed-host gate for systemd, authenticated readiness,
+  bpffs, verifier-visible eBPF programs, concrete NIC XDP attachment, polkit and
+  desktop metadata.
+- Added loopback and localhost SAN identities to generated gateway certificates
+  so the local pinned desktop application and the configured remote identity
+  share one explicitly scoped leaf certificate.
+
 ## 1.0.0-beta.5 Complete Beta
 
+- Added root-cgroup IPv4/IPv6 egress enforcement and bounded, authenticated
+  XDR drop telemetry for signed CIDR policy targets.
+- Added a real `sched_process_exec` eBPF sensor, bounded Ring Buffer,
+  authenticated event retrieval and procfs identity enrichment/fallback.
+- Added bounded local Pacman `.MTREE` SHA-256 package integrity scanning with
+  asynchronous API, hardening-posture integration and dedicated UI findings.
 - Installer 3.5.1 korrigiert die DAC-Kette des verschlüsselten
   Quarantäne-Vaults bei Upgrades: `/var/lib/vgt/gedefense` ist nun `0710`
   (`gedefense:gedefense`). Der privilegierte Core kann dadurch mit seiner
@@ -16,9 +41,9 @@
   Evidence Ledger-gated status transitions.
 - Added authenticated Gaia Cells v1 discovery and reversible isolation
   transactions bound to UUID, generation and kernel cgroup ID.
-- Added atomically persisted server/GaiaOS hardening profiles with runtime and
+- Added atomically persisted server/AstraeaOS hardening profiles with runtime and
   boot-state rollback.
-- Replaced the GaiaOS Sentinel runtime package path with native GeDefense
+- Replaced the AstraeaOS Sentinel runtime package path with native GeDefense
   packages, provisioning, systemd activation and a pinned local TLS launcher.
 - Added privacy-safe installer prompts and actionable activation diagnostics.
 
@@ -26,15 +51,15 @@
 
 - added the encrypted durable Transaction Engine with exact preview binding, confirmation-gated apply/reverse, crash recovery, reboot reconciliation and runtime-drift quarantine;
 - added typed Rust broker commands for allowlisted sysctl reads and compare-and-set writes with post-state verification;
-- added reversible generic Linux server and GaiaOS workstation hardening profiles without a shell or generic privileged file-write primitive;
+- added reversible generic Linux server and AstraeaOS workstation hardening profiles without a shell or generic privileged file-write primitive;
 - added the hardened Prometheus FIM successor with bounded traversal, race-aware regular-file hashing, SHA-256 content and mode verification, encrypted authenticated baselines and tamper quarantine;
 - added authenticated FIM status, scan and baseline APIs whose operator mutations pass through the mandatory Evidence Ledger gate;
-- added a complete manifest-verified GeDefense source mirror under `GaiaOS/gedefense` plus local Arch package builds without developer-path dependencies;
+- added a complete manifest-verified GeDefense source mirror under `AstraeaOS/gedefense` plus local Arch package builds without developer-path dependencies;
 - added Evidence Ledger v2 with per-record Ed25519 signatures, AES-256-GCM record encryption, sequence-bound AAD, durable head checkpoints, truncation detection, bounded replay and fail-closed mutation gates;
 - added mandatory pre-action evidence intents for authenticated operator mutations and automated XDR response;
-- added a versioned GaiaOS integration contract, strict GaiaOS runtime profile and byte-level cross-repository synchronization verifier;
-- established the GaiaOS/Sentinel fusion architecture with GeDefense as the single security authority for generic Linux and GaiaOS;
-- added an authenticated evidence-only Boot Trust API covering GaiaOS identity, Secure Boot state, kernel lockdown, redacted boot-parameter evidence, TPM presence, cgroup v2, Gaia Cells runtime presence and bounded kernel-image hashing;
+- added a versioned AstraeaOS integration contract, strict AstraeaOS runtime profile and byte-level cross-repository synchronization verifier;
+- established the AstraeaOS/Sentinel fusion architecture with GeDefense as the single security authority for generic Linux and AstraeaOS;
+- added an authenticated evidence-only Boot Trust API covering AstraeaOS identity, Secure Boot state, kernel lockdown, redacted boot-parameter evidence, TPM presence, cgroup v2, Gaia Cells runtime presence and bounded kernel-image hashing;
 - added strict bounds, non-symlink evidence reads, kernel command-line secret redaction, cache isolation and Linux regression tests for host-trust collection;
 - fixed authenticated runtime-settings upgrades by omitting absent post-upgrade rule fields from the legacy MAC input;
 - removed public-host and management-CIDR values from installer prompts and the final console summary;

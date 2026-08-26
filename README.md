@@ -13,15 +13,16 @@
 ### Linux Security Fabric
 
 [![License](https://img.shields.io/badge/License-AGPL--3.0--only-blue?style=for-the-badge)](https://www.gnu.org/licenses/agpl-3.0)
-[![Version](https://img.shields.io/badge/Version-1.0.0--beta.5-orange?style=for-the-badge)](#)
-[![Status](https://img.shields.io/badge/Status-CompleteBeta-yellow?style=for-the-badge)](#)
-[![Installer](https://img.shields.io/badge/Installer-3.5.1_CompleteBeta-green?style=for-the-badge)](#-quick-start)
+[![Version](https://img.shields.io/badge/Version-2.0.0--beta.1-orange?style=for-the-badge)](#)
+[![Status](https://img.shields.io/badge/Status-Beta_v2-yellow?style=for-the-badge)](#)
+[![Installer](https://img.shields.io/badge/Installer-4.0.0_Universal_Linux-green?style=for-the-badge)](#-quick-start)
 [![Platform](https://img.shields.io/badge/Platform-Linux_x86__64-lightgrey?style=for-the-badge&logo=linux)](#)
 [![Data Plane](https://img.shields.io/badge/Data_Plane-Rust_eBPF%2FXDP-red?style=for-the-badge&logo=rust)](#-architecture)
 [![Control Plane](https://img.shields.io/badge/Control_Plane-Go-00ADD8?style=for-the-badge&logo=go)](#-architecture)
 [![Crypto](https://img.shields.io/badge/Evidence-Ed25519%2FAES--256--GCM-gold?style=for-the-badge)](#-cryptography)
 [![Sovereign](https://img.shields.io/badge/Control_Plane-Local%2FSovereign-brightgreen?style=for-the-badge)](#)
-[![GaiaOS](https://img.shields.io/badge/GaiaOS-Native_Ready-cyan?style=for-the-badge)](#-gaiaos-integration)
+[![Linux](https://img.shields.io/badge/Linux-APT%20%7C%20DNF%20%7C%20pacman%20%7C%20Zypper-cyan?style=for-the-badge&logo=linux)](#-universal-linux-integration)
+[![AstraeaOS](https://img.shields.io/badge/AstraeaOS-Native_Ready-7de3ff?style=for-the-badge)](#-astraeaos-integration)
 [![VGT](https://img.shields.io/badge/VGT-VisionGaiaTechnology-cyan?style=for-the-badge)](https://visiongaiatechnology.de)
 
 **KERNEL-NEAR NETWORK DEFENSE · HOST XDR · ENCRYPTED EVIDENCE · REVERSIBLE HARDENING · NO CLOUD CONTROL PLANE**
@@ -30,9 +31,9 @@
 
 ---
 
-## ⚠️ BETA SOFTWARE — COMPLETE BETA · APPLICABLE AND TESTABLE
+## ⚠️ BETA SOFTWARE — BETA v2 · UNIVERSAL LINUX RELEASE CANDIDATE
 
-VGT GeDefense 1.0.0-beta.5 is a **Complete Beta** — the defense chain is functionally complete and testable. It is **not** a certified or production-ready product.
+VGT GeDefense 2.0.0-beta.1 is **Beta v2** — the Beta 5 defense chain plus a universal Linux integration, hardened release pipeline and concrete kernel/NIC qualification gate. It is **not** a certified or generally production-cleared product.
 
 **Production clearance is deliberately a property of the concretely audited target host — not just the source code.**
 
@@ -47,7 +48,7 @@ Found a vulnerability or have an improvement? **Open an issue or contact us.**
 
 ## 🔍 What is VGT GeDefense?
 
-GeDefense is not a firewall rule manager. It is a **local sovereign Linux Security Fabric** — kernel-near network defense, Host XDR, encrypted evidence ledger, reversible system hardening and GaiaOS-native isolation in one system, operated without any cloud control plane.
+GeDefense is not a firewall rule manager. It is a **local sovereign Linux Security Fabric** — kernel-near network defense, Host XDR, encrypted evidence ledger, reversible system hardening and optional AstraeaOS-native isolation in one system, operated without any cloud control plane.
 
 ```
 Conventional Linux Security Stacks:
@@ -67,7 +68,8 @@ VGT GeDefense:
   Reversible hardening                    → compare-and-set, atomic persist, auto-reverse
   Encrypted Response Vault (AES-256-GCM) → quarantine with SHA-256 identity
   No cloud control plane                  → sensitive state never leaves the host
-  GaiaOS-native                           → 147 byte-identical source files, same security chain
+  Universal Linux                        → APT · DNF/YUM · pacman · Zypper integration
+  AstraeaOS-native                       → verified source mirror, same security chain
 ```
 
 A single regex, feed, behavioral or masquerading hit **cannot authorize process termination**. Enforce requires at minimum two independent authorized categories, objective broker evidence and a non-degraded system state.
@@ -111,9 +113,9 @@ A single regex, feed, behavioral or masquerading hit **cannot authorize process 
 
 ### Deployment Modes
 
-**Standalone** — One-click install on systemd Linux. Rust Core and eBPF compiled for target kernel and target NIC, verified before atomic activation.
+**Universal Linux** — One-click install on x86_64 systemd Linux with APT, DNF/YUM, pacman or Zypper. Rust Core and eBPF are compiled for the target kernel and NIC, then verified before atomic activation.
 
-**GaiaOS-native** — Identical core binaries, native provisioning, GaiaOS hardening profile, boot trust evidence, optional Gaia Cells integration. GeDefense is the **single security authority** in GaiaOS. Sentinel serves exclusively as migration and audit source — no competing runtime daemon.
+**AstraeaOS-native** — Identical core binaries, native provisioning, AstraeaOS hardening profile, boot trust evidence and optional Gaia Cells integration. GeDefense is the **single security authority** in AstraeaOS. Sentinel serves exclusively as migration and audit source — no competing runtime daemon.
 
 ---
 
@@ -241,7 +243,7 @@ Legacy PBKDF2 accepted only for migration — atomically upgraded to Argon2id on
 
 ## 🔧 Reversible Hardening
 
-Profiles: `Generic Linux Server` and `GaiaOS Workstation` — fixed key/value allowlist.
+Profiles: `Generic Linux Server` and `AstraeaOS Workstation` — fixed key/value allowlist.
 
 Kernel values are changed via compare-and-set, read back and atomically persisted to `/etc/sysctl.d/90-vgt-gedefense.conf`.
 
@@ -261,25 +263,44 @@ The Rust Core has **no generic shell, filesystem or sysctl interface**. Partial 
 
 ---
 
-## 🌐 GaiaOS Integration
+## 🐧 Universal Linux Integration
+
+| Layer | Beta v2 integration |
+|---|---|
+| Package managers | APT · DNF/YUM · pacman · Zypper |
+| Init | Hardened systemd units with syntax and runtime gates |
+| Privilege boundary | Polkit-scoped readiness helper — no generic root shell |
+| Desktop | Local Chromium application profile with exact SPKI pinning |
+| TLS identity | Public host plus `localhost`, `127.0.0.1` and `::1` SANs |
+| Release CI | Go race/fuzz/security · Rust Core · eBPF · artifact digests |
+| Distribution contracts | Ubuntu/Debian · Fedora/RHEL · Arch · openSUSE |
+| Concrete host gate | bpffs · verifier-visible eBPF · NIC XDP · IPC · TLS |
+
+Distribution containers validate portable packaging and integration contracts.
+They do not claim to qualify their host kernel. Every binary release still
+requires the privileged test on the concrete kernel, driver and network device.
+
+---
+
+## 🌐 AstraeaOS Integration
 
 | Feature | Status |
 |---|---|
 | Native provisioning / systemd | ✅ Implemented — same security chain as Standalone |
-| GeDefense source mirror | ✅ Implemented — 147 byte-identical source files |
-| GaiaOS hardening profile | ✅ Implemented — reversible and persistent |
+| GeDefense source mirror | ✅ Implemented — SHA-256 manifest verified |
+| AstraeaOS hardening profile | ✅ Implemented — reversible and persistent |
 | Boot trust evidence | ✅ Implemented — Evidence-only, no false attestation claim |
 | Gaia Cells VGTGC1 Adapter | ✅ Implemented — Runtime optional |
 | UUID / Generation / cgroup ID binding | ✅ Implemented — immutable action binding |
 | Freeze / Network Reverse | ✅ Implemented — evidence-bound transaction |
-| Gaia Cells Lifecycle Daemon | — Not included — GaiaOS-owned runtime |
+| Gaia Cells Lifecycle Daemon | — Not included — AstraeaOS-owned runtime |
 | Isolated Deception Service | — Deferred — outside Beta authority |
 
 Cell actions are bound to UUID, lifecycle generation and kernel cgroup ID. Peer UID, HMAC, time window and nonce are verified.
 
 If the Gaia Cells runtime is **not present**, the adapter reports `runtime_not_installed`. Generic host defense remains active and is **not degraded**.
 
-> **Single Authority:** In GaiaOS, GeDefense is the only security authority. Sentinel serves exclusively as migration and audit source.
+> **Single Authority:** In AstraeaOS, GeDefense is the only security authority. Sentinel serves exclusively as migration and audit source.
 
 ---
 
@@ -293,7 +314,7 @@ If the Gaia Cells runtime is **not present**, the adapter reports `runtime_not_i
 | **Architecture** | x86_64 / amd64 |
 | **Init** | systemd |
 | **Kernel** | BPF/XDP + pidfd |
-| **Package Manager** | apt-get, dnf or yum |
+| **Package Manager** | apt-get, dnf/yum, pacman or zypper |
 | **Install** | Root + build internet access |
 | **Gateway Runtime** | libargon2.so.1 |
 
@@ -338,16 +359,18 @@ If the Gaia Cells runtime is **not present**, the adapter reports `runtime_not_i
 
 ```bash
 # Download installer
-wget https://releases.visiongaiatechnology.de/gedefense/VGT_GeDefense_Beta_1.0.0-beta.5_OneClick_CompleteBeta.run
+wget https://github.com/visiongaiatechnology/gedefense/releases/download/v2.0.0-beta.1/VGT_GeDefense_Beta_v2_2.0.0-beta.1_OneClick.run
 
 # Verify SHA-256
-sha256sum VGT_GeDefense_Beta_1.0.0-beta.5_OneClick_CompleteBeta.run
-# ba32a441804f1ef1d25232ababcc781b35b2bfbfd8701ff95ca8f3dc5d9b7e8c
+sha256sum --check VGT_GeDefense_Beta_v2_2.0.0-beta.1_OneClick.run.sha256
 
 # Install (root required)
-chmod +x VGT_GeDefense_Beta_1.0.0-beta.5_OneClick_CompleteBeta.run
-sudo ./VGT_GeDefense_Beta_1.0.0-beta.5_OneClick_CompleteBeta.run
+chmod 700 VGT_GeDefense_Beta_v2_2.0.0-beta.1_OneClick.run
+sudo ./VGT_GeDefense_Beta_v2_2.0.0-beta.1_OneClick.run
 ```
+
+> The installer and checksum are published only after all GitHub CI and concrete
+> Linux host qualification gates pass. Never execute an unverified RUN file.
 
 The installer succeeds only after passing: **Build → Kernel Verifier → XDP Attachment → IPC → Backend → TLS Gates**.
 
@@ -357,32 +380,29 @@ The firewall rule for the HTTPS gateway port (TCP 9843) can be configured via UF
 
 ---
 
-## ✅ Validation Matrix (Complete Beta)
+## ✅ Beta v2 Release Gates
 
-| Test | Status |
-|---|---|
-| Go Unit & Integration Tests | ✅ |
-| go vet (Control + Gateway) | ✅ |
-| Go Race Detector | ✅ |
-| JavaScript Syntax Check | ✅ |
-| Static Security Regression Audit | ✅ |
-| Native Rust Common/Core Tests | ✅ |
-| Rust Core Release Build | ✅ |
-| eBPF Release Build | ✅ |
-| Arch Package Build — GeDefense | ✅ |
-| Arch Package Build — GaiaOS Integration | ✅ |
-| Isolated systemd Validation | ✅ |
-| GaiaOS Installer / Hardening Tests | ✅ |
-| DAC Test without Bypass Capabilities | ✅ |
-| 147-File Mirror Verification | ✅ |
-| Installer Payload Verification | ✅ |
-| SHA-256 Artifact Check | ✅ |
+| Gate | State | Release rule |
+|---|---:|---|
+| Source and upload manifests | ✅ Implemented | Zero digest drift |
+| Secret/private-key marker scan | ✅ Implemented | Zero findings |
+| GitHub Actions and container digest pinning | ✅ Implemented | Immutable identities only |
+| Go unit, integration and vet | 🔒 Required CI | Must pass |
+| Go race detector and security fuzz smoke | 🔒 Required CI | Must pass |
+| JavaScript and shell syntax | ✅ Local + CI | Must pass |
+| Static security regression audit | 🔒 Required CI | Must pass |
+| Native Rust Common/Core tests | 🔒 Required CI | Must pass |
+| Rust Core and eBPF release builds | 🔒 Required CI | Must pass |
+| Ubuntu, Fedora, Arch and openSUSE contracts | 🔒 Required CI | All matrix jobs pass |
+| Installer payload and SHA-256 verification | 🔒 Required CI | Must pass |
+| Concrete kernel verifier and NIC XDP attach | ⏳ Host qualification | Required per release host |
+| systemd, IPC, backend, TLS, Polkit and desktop | ⏳ Host qualification | Required per release host |
 
 **Remaining release gate:** real target host smoke test for the concrete kernel, kernel verifier, XDP mode, network interface and network driver.
 
 ---
 
-## 🚧 Known Limitations (1.0.0-beta.5)
+## 🚧 Known Limitations (2.0.0-beta.1)
 
 - No Swarm / Mesh support
 - No QUIC offloading
@@ -391,14 +411,53 @@ The firewall rule for the HTTPS gateway port (TCP 9843) can be configured via UF
 - No Feed Auto-Enforce
 - No guarantee against root compromise
 - No complete Measured Boot attestation
-- Gaia Cells Lifecycle Daemon external (GaiaOS runtime)
+- Gaia Cells Lifecycle Daemon external (AstraeaOS runtime)
 - Isolated Deception Service deferred
 
 ---
 
 ## 📋 Changelog
 
-### v1.0.0-beta.5 — Complete Beta *(Current)*
+### v2.0.0-beta.1 — Universal Linux Integration *(Current)*
+
+**Integration and deployment**
+
+- Promoted the portable AstraeaOS readiness and privilege contracts into the
+  generic Linux release instead of keeping them OS-specific.
+- Added installer dependency resolution for APT, DNF/YUM, pacman and Zypper.
+- Added a generic Polkit authorization boundary and systemd readiness helper.
+- Added a desktop launcher using a dedicated Chromium application profile and
+  an exact certificate SPKI pin without changing the global trust store.
+- Kept SDDM, ArchISO and Gaia Cells behavior conditional to AstraeaOS hosts.
+
+**Security and correctness**
+
+- Added `localhost`, `127.0.0.1` and `::1` to generated gateway certificate SANs
+  while retaining the configured public host identity.
+- Added the malware reputation hash database to source staging, release payload
+  generation, protected installer configuration and rollback state.
+- Added fail-closed source/upload manifests, forbidden-secret marker scanning,
+  symlink rejection and strict source size boundaries.
+- Added LF normalization and explicit Unix executable modes for Linux scripts.
+
+**Release engineering**
+
+- Added mandatory Go unit/vet/race/fuzz and static security gates.
+- Added pinned Rust userspace tests, Rust Core release build and no_std eBPF build.
+- Added digest-pinned Ubuntu, Fedora, Arch and openSUSE integration jobs.
+- Pinned GitHub Actions to immutable 40-character commit identities.
+- Added a privileged host workflow for bpffs, kernel-visible eBPF programs,
+  concrete NIC XDP attachment, authenticated IPC/TLS, systemd, Polkit and desktop.
+- Added deterministic Beta v2 source/installer artifact names and SHA-256 checks.
+
+**Unchanged security foundation**
+
+- The separated Go Control Plane, Rust Response Core and Rust eBPF/XDP Data
+  Plane remain the Beta 5 security foundation.
+- Observe → Canary → Enforce, Evidence Ledger, encrypted Response Vault,
+  reversible hardening and evidence-gated response semantics remain intact.
+
+### v1.0.0-beta.5 — Complete Beta
 
 Complete Beta designation — defense chain functionally complete and testable. Installer 3.5.1 with full gate sequence (build, kernel verifier, XDP attachment, IPC, backend, TLS). 147-file byte-identical GaiaOS source mirror. Full validation matrix passed. Production clearance remains a per-host property.
 
@@ -447,6 +506,6 @@ Enterprise deployments, TIER-0 audits (VGT SafetySys™) and commercial exceptio
 
 [![VGT](https://img.shields.io/badge/VisionGaia-Technology-cyan?style=for-the-badge)](https://visiongaiatechnology.de)
 
-*VGT GeDefense 1.0.0-beta.5 — Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // GaiaOS-Native // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
+*VGT GeDefense 2.0.0-beta.1 — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
 
 </div>
