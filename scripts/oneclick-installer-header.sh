@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# VGT GeDefense 1.0.0-beta.5 Full-Stack One-Click Installer
+# VGT GeDefense 2.0.0-beta.1 Universal Linux One-Click Installer
 set -Eeuo pipefail
 umask 0077
 
-readonly SETUP_VERSION="3.5.1"
-readonly PRODUCT_VERSION="1.0.0-beta.5"
+readonly SETUP_VERSION="4.0.0"
+readonly PRODUCT_VERSION="2.0.0-beta.1"
 readonly PAYLOAD_SHA256="__PAYLOAD_SHA256__"
 readonly CONTROL_SHA256="__CONTROL_SHA256__"
 readonly ACCESS_SHA256="__ACCESS_SHA256__"
@@ -22,6 +22,7 @@ readonly QUARANTINE_OBJECT_DIR="${QUARANTINE_DIR}/objects"
 readonly CONFIG_DIR="/etc/vgt/gedefense"
 readonly CONFIG_FILE="${CONFIG_DIR}/gedefense.toml"
 readonly BASELINE_FILE="${CONFIG_DIR}/xdr-baseline.json"
+readonly MALWARE_HASH_FILE="${CONFIG_DIR}/malware-hashes.sha256"
 readonly PASSWORD_FILE="${CONFIG_DIR}/access-password"
 readonly TLS_DIR="${CONFIG_DIR}/tls"
 readonly SECRETS_DIR="${CONFIG_DIR}/secrets"
@@ -123,6 +124,7 @@ rollback(){
 
     restore_backup_path "$CONFIG_FILE" config.toml
     restore_backup_path "$BASELINE_FILE" xdr-baseline.json
+    restore_backup_path "$MALWARE_HASH_FILE" malware-hashes.sha256
     restore_backup_path "$CERT_FILE" access.crt
     restore_backup_path "$TLS_KEY_FILE" access.key
     restore_backup_path "$CORE_KEY_FILE" core-ipc.key
@@ -186,6 +188,10 @@ install_build_dependencies(){
     dnf install -y ca-certificates curl gcc gcc-c++ make pkgconf-pkg-config clang llvm elfutils-libelf-devel zlib-devel libargon2 git python3 iproute coreutils tar gzip openssl >>"$LOG_FILE" 2>&1
   elif have yum; then
     yum install -y ca-certificates curl gcc gcc-c++ make pkgconfig clang llvm elfutils-libelf-devel zlib-devel libargon2 git python3 iproute coreutils tar gzip openssl >>"$LOG_FILE" 2>&1
+  elif have pacman; then
+    pacman -Sy --needed --noconfirm ca-certificates curl base-devel pkgconf clang llvm libelf zlib argon2 git python iproute2 coreutils tar gzip openssl polkit >>"$LOG_FILE" 2>&1
+  elif have zypper; then
+    zypper --non-interactive install ca-certificates curl gcc gcc-c++ make pkg-config clang llvm-devel libelf-devel zlib-devel libargon2-1 git python3 iproute2 coreutils tar gzip openssl polkit >>"$LOG_FILE" 2>&1
   else
     fail "Kein unterstützter Paketmanager gefunden."
   fi
@@ -193,7 +199,7 @@ install_build_dependencies(){
 }
 
 extract_payload(){
-  WORK=$(mktemp -d /var/tmp/vgt-gedefense-beta1.XXXXXX)
+  WORK=$(mktemp -d /var/tmp/vgt-gedefense-beta2.XXXXXX)
   local line archive actual
   line=$(awk '/^__VGT_PAYLOAD_BELOW__$/{print NR+1; exit}' "$SELF")
   [[ $line =~ ^[0-9]+$ ]] || fail "Payload-Marker fehlt."
@@ -447,6 +453,7 @@ build_rust_stack(){
 }
 
 write_config_and_baseline(){
+  install -o root -g gedefense -m 0640 "$PAYLOAD/templates/malware-hashes.sha256" "$MALWARE_HASH_FILE"
   python3 - "$PAYLOAD/templates/gedefense.toml" "$CONFIG_FILE" "$INTERFACE" "$MANAGEMENT_ALLOWLIST" "$(hostname -s)" <<'PY'
 import pathlib, re, sys
 template,out,iface,allowlist,hostname=sys.argv[1:]
@@ -503,17 +510,34 @@ stage_release(){
   NEW_RELEASE_STAGED=1
 }
 
+tls_identity_compatible(){
+  [[ -f $CERT_FILE && -f $TLS_KEY_FILE && ! -L $CERT_FILE && ! -L $TLS_KEY_FILE ]] || return 1
+  openssl x509 -in "$CERT_FILE" -noout -checkend 86400 >/dev/null 2>&1 || return 1
+  local details certificate_public key_public
+  details=$(openssl x509 -in "$CERT_FILE" -noout -text 2>/dev/null) || return 1
+  [[ "$details" == *'Public Key Algorithm: id-ecPublicKey'* ]] || return 1
+  [[ "$details" == *'ASN1 OID: secp384r1'* || "$details" == *'NIST CURVE: P-384'* ]] || return 1
+  if [[ $PUBLIC_HOST == *:* || $PUBLIC_HOST =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
+    openssl x509 -in "$CERT_FILE" -noout -checkip "$PUBLIC_HOST" >/dev/null 2>&1 || return 1
+  else
+    openssl x509 -in "$CERT_FILE" -noout -checkhost "$PUBLIC_HOST" >/dev/null 2>&1 || return 1
+  fi
+  certificate_public=$(openssl x509 -in "$CERT_FILE" -pubkey -noout | sha256sum | cut -d' ' -f1) || return 1
+  key_public=$(openssl pkey -in "$TLS_KEY_FILE" -pubout 2>/dev/null | sha256sum | cut -d' ' -f1) || return 1
+  [[ -n $certificate_public && $certificate_public == "$key_public" ]]
+}
+
 generate_tls(){
-  if [[ -f $CERT_FILE && -f $TLS_KEY_FILE && ! -L $CERT_FILE && ! -L $TLS_KEY_FILE ]]; then
-    log "Bestehendes TLS-Zertifikat wird übernommen."
+  if tls_identity_compatible; then
+    log "Bestehende kompatible TLS-IdentitÃ¤t wird Ã¼bernommen."
   else
     rm -f -- "$CERT_FILE" "$TLS_KEY_FILE"
     "$RELEASE/bin/gedefense-access" --generate-self-signed --public-host="${PUBLIC_HOST}:${PUBLIC_PORT}" --tls-cert="$CERT_FILE" --tls-key="$TLS_KEY_FILE"
+    tls_identity_compatible || fail "Neu erzeugte TLS-IdentitÃ¤t ist ungÃ¼ltig."
   fi
   chown root:gedefense "$CERT_FILE"; chmod 0644 "$CERT_FILE"
   chown gedefense:gedefense "$TLS_KEY_FILE"; chmod 0600 "$TLS_KEY_FILE"
 }
-
 backup_activation_state(){
   BACKUP_DIR="$WORK/activation-backup"
   mkdir -p "$BACKUP_DIR"
@@ -530,6 +554,7 @@ backup_activation_state(){
   systemctl is-active --quiet gedefense-bpffs.service && OLD_BPFFS_ACTIVE=1 || true
   backup_path "$CONFIG_FILE" config.toml
   backup_path "$BASELINE_FILE" xdr-baseline.json
+  backup_path "$MALWARE_HASH_FILE" malware-hashes.sha256
   backup_path "$CERT_FILE" access.crt
   backup_path "$TLS_KEY_FILE" access.key
   backup_path "$CORE_KEY_FILE" core-ipc.key
@@ -636,6 +661,30 @@ MANAGER
   chmod 0755 /usr/local/sbin/vgt-gedefense
 }
 
+install_linux_integration(){
+  local integration="$PAYLOAD/integration/linux"
+  [[ -d $integration && ! -L $integration ]] || fail "Universal-Linux-Integration fehlt im Payload."
+  for file in gedefense-app gedefense-ensure-ready gedefense.desktop org.vgt.gedefense.policy; do
+    [[ -f "$integration/$file" && ! -L "$integration/$file" ]] || fail "Ungültige Integrationsdatei: $file"
+  done
+
+  install -d -o root -g root -m 0755 /usr/lib/gedefense /usr/local/bin /usr/share/applications
+  install -o root -g root -m 0755 "$integration/gedefense-app" /usr/local/bin/gedefense-app
+  install -o root -g root -m 0755 "$integration/gedefense-ensure-ready" /usr/lib/gedefense/gedefense-ensure-ready
+  install -o root -g root -m 0644 "$integration/gedefense.desktop" /usr/share/applications/gedefense.desktop
+
+  if [[ -d /usr/share/polkit-1/actions ]]; then
+    install -o root -g root -m 0644 "$integration/org.vgt.gedefense.policy" /usr/share/polkit-1/actions/org.vgt.gedefense.policy
+  else
+    log "Polkit-Aktionsverzeichnis fehlt; Desktop-Elevation bleibt deaktiviert."
+  fi
+
+  if have update-desktop-database; then
+    update-desktop-database /usr/share/applications >/dev/null 2>&1 || true
+  fi
+  log "Universal-Linux-Integration installiert."
+}
+
 archive_old_latch(){
   local stamp latch backup archive
   stamp=$(date +%s)
@@ -675,6 +724,7 @@ main(){
   activate_release
   open_firewall
   install_manager
+  install_linux_integration
   log "Installation und Zielhost-Validierung erfolgreich. Persistente Betriebsdaten nutzen AES-256-GCM mit AAD-Bindung; neue Passwörter Argon2id."
   printf '\n============================================================\n'
   printf 'VGT GeDefense %s läuft vollständig.\n' "$PRODUCT_VERSION"

@@ -26,7 +26,7 @@ tar \
   -cf - -C "$ROOT" . |
   tar -xf - -C "$SOURCE_MIRROR"
 install -m 0644 "$SOURCE_MIRROR/packaging/arch/PKGBUILD" "$GEDEFENSE_JOB/PKGBUILD"
-cp -a "$SOURCE_MIRROR/integration/gaiaos/." "$INTEGRATION_JOB/"
+cp -a "$SOURCE_MIRROR/integration/astraeaos/." "$INTEGRATION_JOB/"
 chown -R nobody:nobody "$WORK"
 
 run_builder() {
@@ -53,10 +53,10 @@ compgen -G "$GEDEFENSE_JOB/gedefense-*.pkg.tar.*" >/dev/null ||
     printf 'GeDefense Arch package was not produced.\n' >&2
     exit 1
   }
-compgen -G "$INTEGRATION_JOB/gaiaos-gedefense-integration-*.pkg.tar.*" >/dev/null ||
+compgen -G "$INTEGRATION_JOB/astraeaos-gedefense-integration-*.pkg.tar.*" >/dev/null ||
   {
-    printf 'GaiaOS integration package was not produced.\n' >&2
+    printf 'AstraeaOS integration package was not produced.\n' >&2
     exit 1
   }
 
-printf 'GeDefense and GaiaOS integration Arch packages validated.\n'
+printf 'GeDefense and AstraeaOS integration Arch packages validated.\n'
