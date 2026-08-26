@@ -1,0 +1,144 @@
+# STATUS: DIAMANT VGT SUPREME
+# Maintainer: VisionGaia Technology
+
+pkgname=astraeaos-gedefense-integration
+pkgver=1.0.0_beta.5
+pkgrel=27
+pkgdesc='Native AstraeaOS profile and authority contract for GeDefense'
+arch=('x86_64')
+url='https://github.com/VisionGaiaTechnology'
+license=('AGPL-3.0-only')
+depends=("gedefense=${pkgver}" 'curl' 'kdialog' 'openssl' 'polkit' 'qt6-webengine')
+makedepends=('gcc' 'pkgconf')
+conflicts=('gaiasentinel' 'gaiaos-gedefense-integration')
+replaces=('gaiasentinel' 'gaiaos-gedefense-integration')
+provides=('astraeaos-security-control-plane' "gaiaos-gedefense-integration=${pkgver}")
+source=(
+  'contract.json'
+  'astraeaos-profile.toml'
+  'README.md'
+  'build-local-packages.sh'
+  'verify_sync.py'
+  'gedefense-astraeaos-provision'
+  'gedefense-astraeaos-provision.service'
+  'gedefense-core-astraeaos.conf'
+  'gedefense-core-launch'
+  'gedefense-control-astraeaos.conf'
+  'gedefense-access-astraeaos.conf'
+  'gedefense-access-ready'
+  'gedefense-ensure-ready'
+  'gedefense-set-password'
+  'gedefense-app'
+  'gedefense-shell.cpp'
+  'org.astraeaos.gedefense.policy'
+  '50-astraeaos-gedefense.rules'
+  'firefox-policies.json'
+  'astraeaos-boot-attestation'
+  'astraeaos-boot-attestation.service'
+  'astraeaos-runtime.conf'
+  'astraeaos-security-login-gate'
+  'astraeaos-security-login-gate.service'
+  'astraeaos-security-boot-failure'
+  'astraeaos-security-boot-failure.service'
+  'sddm-gedefense-login-gate.conf'
+)
+# Local monorepo sources are content-addressed here and independently checked
+# by the AstraeaOS/GeDefense semantic mirror verifier.
+sha256sums=(
+  'a78f8ce2983468fed979999bc45d7dd63807754154bc12cc61899d4f040bbfe1'
+  'b10c2ff91f4a154e5ccaea75827403501597dc04312cff824cecdd1912f5408a'
+  '5c93d325e49dc74c1ef9bc5180c1ea36b411b71c92bfd9e5a0ab52e2442e958f'
+  '73cbb359fc414355adc1cf5371e93f0deaa2ac16eb404067254c9f5986f25e1c'
+  'b80281302426e2c533edc603bb101a47994303ff60269b3107a1271b0bada018'
+  'b2d21d4406529c11bb7ce8ca3dc4f753e0a6b6b733726eccbb3c6678c2452ef2'
+  '39ab83ebe4abafd27416239bd9484115658689e64fe772828188c198e4cb159b'
+  'ba800218dc639a1d635e7523d706508b331d8153dec3ce1f937a6dfbb6d2075c'
+  '7e36e3cbfbff9cdbb375daa7e2bab93c82c9f18c39d47adab600e715acdc0efd'
+  '082bd35f6278d69e3b900580b35500e6be69c5e2f47820ae31cf5fe6aee839f8'
+  '9d9b1b3e942da390fb937e9c6781130a80280735fab792e97267a0db79c0181d'
+  '8a3371fd94cfe1df2ef6aa328276c71ee6fc7527756a3e97b8aa81670bfd8241'
+  'ea77c26c5122b3bd27608a0c83a834d72cba68ef97e99cca3cc7260730ba6704'
+  '09c9599881c82a02df97064a1c13b44418b306d35a9b60773d4a04270b1cc7bb'
+  '36dc3c9fa25801e4fa890e0af35869924d02cf255d6a62fe276542d61d6c5607'
+  '867d04d9dba1554844af1c5ff843dd6a3fbebc362588233047b026ff66fb5fe1'
+  '6edc95a1926ac3bdd74805852bd6b222efef59e67b717c9f7b352022fee4860d'
+  'a643436669f0e4ff71b49e1a5e9a6843c829932bae4d1bec3b09e2cb4f896fa2'
+  '47252aaf8b3b275d46a1f3709752bdbe8459767dd840fb80d43ef3c5ee8ef43b'
+  '63cc14ef9977796252230913935c825787ea1e7c66ccf62b64eb40b0faf52026'
+  '499c2a91200248e372bceef9d4b9f03effced021f35272913ade7d3ab57eb285'
+  'f618451a084236b9bf77faae131504bde00a83effa503fc1ef53c4d5664e25ec'
+  'c3c7bf864d8ec85502ef33e9ff8ae310895ff430e1f19b65eb7da79530d86052'
+  'ac847fc35311975372a87e6d14150fbc951f2b10f5c17c8a58f40211b3a764a8'
+  '8f375f6a8ba039552b551e3558941efb2ff591cf49b2106f177054dd828ddd5b'
+  '803bc9806c68a6c64a9830b614662e74143ddae3f005c938af57e8f41cfa0259'
+  'e67b57aeefc226fd69990ae18f9496187ebcccac86b0694252417fff3cd5ff91'
+)
+
+build() {
+  # pkg-config values are supplied exclusively by signed Arch Qt packages.
+  # shellcheck disable=SC2046
+  g++ ${CXXFLAGS} ${CPPFLAGS} \
+    -std=c++20 -fPIC -Wformat -Werror=format-security \
+    $(pkg-config --cflags Qt6Widgets Qt6Network Qt6WebEngineWidgets) \
+    "${srcdir}/gedefense-shell.cpp" \
+    -o "${srcdir}/gedefense-shell" \
+    ${LDFLAGS} -Wl,-z,relro,-z,now,-z,noexecstack -pie \
+    $(pkg-config --libs Qt6Widgets Qt6Network Qt6WebEngineWidgets)
+}
+
+package() {
+  install -Dm644 "${srcdir}/contract.json" \
+    "${pkgdir}/usr/share/astraeaos/security/gedefense-contract.json"
+  install -Dm640 "${srcdir}/astraeaos-profile.toml" \
+    "${pkgdir}/usr/share/gedefense/profiles/astraeaos.toml"
+  install -Dm644 "${srcdir}/README.md" \
+    "${pkgdir}/usr/share/doc/astraeaos-gedefense-integration/README.md"
+  install -Dm755 "${srcdir}/build-local-packages.sh" \
+    "${pkgdir}/usr/lib/astraeaos/build-local-gedefense-packages"
+  install -Dm755 "${srcdir}/verify_sync.py" \
+    "${pkgdir}/usr/lib/astraeaos/verify-gedefense-sync"
+  install -Dm755 "${srcdir}/gedefense-astraeaos-provision" \
+    "${pkgdir}/usr/lib/astraeaos/gedefense-astraeaos-provision"
+  install -Dm644 "${srcdir}/gedefense-astraeaos-provision.service" \
+    "${pkgdir}/usr/lib/systemd/system/gedefense-astraeaos-provision.service"
+  install -Dm644 "${srcdir}/gedefense-core-astraeaos.conf" \
+    "${pkgdir}/usr/lib/systemd/system/gedefense-core.service.d/10-astraeaos-provision.conf"
+  install -Dm755 "${srcdir}/gedefense-core-launch" \
+    "${pkgdir}/usr/lib/astraeaos/gedefense-core-launch"
+  install -Dm644 "${srcdir}/gedefense-control-astraeaos.conf" \
+    "${pkgdir}/usr/lib/systemd/system/gedefense-control.service.d/10-astraeaos-provision.conf"
+  install -Dm644 "${srcdir}/gedefense-access-astraeaos.conf" \
+    "${pkgdir}/usr/lib/systemd/system/gedefense-access.service.d/10-astraeaos-loopback.conf"
+  install -Dm755 "${srcdir}/gedefense-access-ready" \
+    "${pkgdir}/usr/lib/astraeaos/gedefense-access-ready"
+  install -Dm755 "${srcdir}/gedefense-ensure-ready" \
+    "${pkgdir}/usr/lib/astraeaos/gedefense-ensure-ready"
+  install -Dm755 "${srcdir}/gedefense-set-password" \
+    "${pkgdir}/usr/lib/astraeaos/gedefense-set-password"
+  install -Dm755 "${srcdir}/gedefense-app" \
+    "${pkgdir}/usr/bin/gedefense-app"
+  install -Dm755 "${srcdir}/gedefense-shell" \
+    "${pkgdir}/usr/lib/astraeaos/gedefense-shell"
+  install -Dm644 "${srcdir}/org.astraeaos.gedefense.policy" \
+    "${pkgdir}/usr/share/polkit-1/actions/org.astraeaos.gedefense.policy"
+  install -Dm644 "${srcdir}/50-astraeaos-gedefense.rules" \
+    "${pkgdir}/usr/share/polkit-1/rules.d/50-astraeaos-gedefense.rules"
+  install -Dm644 "${srcdir}/firefox-policies.json" \
+    "${pkgdir}/etc/firefox/policies/policies.json"
+  install -Dm755 "${srcdir}/astraeaos-boot-attestation" \
+    "${pkgdir}/usr/lib/astraeaos/astraeaos-boot-attestation"
+  install -Dm644 "${srcdir}/astraeaos-boot-attestation.service" \
+    "${pkgdir}/usr/lib/systemd/system/astraeaos-boot-attestation.service"
+  install -Dm644 "${srcdir}/astraeaos-runtime.conf" \
+    "${pkgdir}/usr/lib/tmpfiles.d/astraeaos-runtime.conf"
+  install -Dm755 "${srcdir}/astraeaos-security-login-gate" \
+    "${pkgdir}/usr/lib/astraeaos/astraeaos-security-login-gate"
+  install -Dm644 "${srcdir}/astraeaos-security-login-gate.service" \
+    "${pkgdir}/usr/lib/systemd/system/astraeaos-security-login-gate.service"
+  install -Dm755 "${srcdir}/astraeaos-security-boot-failure" \
+    "${pkgdir}/usr/lib/astraeaos/astraeaos-security-boot-failure"
+  install -Dm644 "${srcdir}/astraeaos-security-boot-failure.service" \
+    "${pkgdir}/usr/lib/systemd/system/astraeaos-security-boot-failure.service"
+  install -Dm644 "${srcdir}/sddm-gedefense-login-gate.conf" \
+    "${pkgdir}/usr/lib/systemd/system/sddm.service.d/20-gedefense-login-gate.conf"
+}

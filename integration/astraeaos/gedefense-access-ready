@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# STATUS: DIAMANT VGT SUPREME
+set -Eeuo pipefail
+
+readonly health_url=https://127.0.0.1:9843/gateway/livez
+readonly cert=/etc/vgt/gedefense/tls/access.crt
+readonly deadline=$((SECONDS + 15))
+
+[[ -f "$cert" && ! -L "$cert" ]] || {
+  printf 'GeDefense TLS certificate is unavailable\n' >&2
+  exit 1
+}
+
+while (( SECONDS < deadline )); do
+  if curl --fail --silent --show-error --connect-timeout 1 --max-time 1 \
+      --cacert "$cert" "$health_url" >/dev/null; then
+    exit 0
+  fi
+  sleep 0.25
+done
+
+printf 'GeDefense access gateway readiness deadline exceeded\n' >&2
+exit 1

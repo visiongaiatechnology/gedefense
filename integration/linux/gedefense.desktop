@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Version=1.5
+Name=GeDefense Beta v2
+GenericName=Linux Security Center
+Comment=Kernel-integrated XDR, firewall and host defense
+Exec=gedefense-app
+Icon=security-high
+Terminal=false
+Categories=System;Security;
+Keywords=Security;GeDefense;XDR;Firewall;Quarantine;Linux;
+StartupNotify=true

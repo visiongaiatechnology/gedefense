@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# STATUS: DIAMANT VGT SUPREME
+set -Eeuo pipefail
+umask 0077
+ulimit -c 0
+
+readonly core='/opt/vgt/gedefense/current/libexec/gedefense-core'
+[[ -x "$core" && ! -L "$core" ]] || {
+  printf 'GeDefense core integrity check failed.\n' >&2
+  exit 126
+}
+
+readonly cmdline="$(tr -s '[:space:]' ' ' </proc/cmdline)"
+declare -a arguments=(
+  '--interface=auto'
+  '--bpf-object=/opt/vgt/gedefense/current/lib/gedefense/gedefense-ebpf'
+  '--socket=/run/vgt-gedefense/core.sock'
+  '--scan-socket=/run/gedefense-scan/scan.sock'
+  '--auth-key=/etc/vgt/gedefense/secrets/core-ipc.key'
+  '--storage-key=/etc/vgt/gedefense/secrets/storage-master.key'
+  '--quarantine-dir=/var/lib/vgt/gedefense/quarantine/objects'
+  '--control-user=gedefense'
+  '--malware-hashes=/etc/vgt/gedefense/malware-hashes.sha256'
+)
+
+case " $cmdline " in
+  *' astraeaos.mode=runtime '*)
+    # Installed systems must provide the GaiaCells BPF-LSM reinforcement.
+    arguments+=('--require-bpf-lsm')
+    ;;
+  *' astraeaos.mode=live '*)
+    # Recovery media still requires XDP/TC, cgroup egress, exec telemetry,
+    # fanotify and malware enforcement. Only the VM-sensitive BPF-LSM socket
+    # reinforcement may degrade; GaiaCells retains AppArmor and Landlock.
+    ;;
+  *)
+    printf 'GeDefense refused an unknown AstraeaOS boot identity.\n' >&2
+    exit 78
+    ;;
+esac
+
+exec "$core" "${arguments[@]}"

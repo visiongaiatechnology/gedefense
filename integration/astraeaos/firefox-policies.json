@@ -1,0 +1,10 @@
+{
+  "policies": {
+    "ImportEnterpriseRoots": true,
+    "Certificates": {
+      "Install": [
+        "/etc/vgt/gedefense/tls/access.crt"
+      ]
+    }
+  }
+}

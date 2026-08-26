@@ -1,0 +1,13 @@
+# STATUS: DIAMANT VGT SUPREME
+[Desktop Entry]
+Name=VGT GeDefense
+GenericName=AstraeaOS Security Center
+Comment=Kernel defense, XDR, integrity, cases, quarantine and Gaia Cells
+Exec=gedefense-app
+Icon=astraeaos-security
+Terminal=false
+Type=Application
+Categories=System;Security;Settings;
+Keywords=Security;GeDefense;XDR;Firewall;Quarantine;AstraeaOS;
+StartupNotify=true
+StartupWMClass=VGT-GeDefense

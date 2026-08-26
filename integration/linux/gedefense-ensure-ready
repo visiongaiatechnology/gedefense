@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# STATUS: DIAMANT VGT SUPREME
+set -Eeuo pipefail
+
+readonly cert=/etc/vgt/gedefense/tls/access.crt
+readonly gateway_url=https://127.0.0.1:9843/gateway/livez
+readonly control_url=http://127.0.0.1:9844/bootz
+readonly -a units=(gedefense-bpffs.service gedefense-core.service gedefense-control.service gedefense-access.service)
+
+fail() {
+  printf 'GeDefense readiness failed: %s\n' "$1" >&2
+  systemctl --no-pager --full status "${units[@]}" >&2 || true
+  journalctl --no-pager -n 80 "${units[@]/#/-u}" >&2 || true
+  exit 1
+}
+
+[[ $(id -u) -eq 0 ]] || fail 'root privileges are required'
+[[ -f "$cert" && ! -L "$cert" ]] || fail 'TLS certificate is unavailable'
+
+for unit in "${units[@]}"; do
+  if ! systemctl --quiet is-active "$unit"; then
+    systemctl reset-failed "$unit" 2>/dev/null || true
+    systemctl start "$unit" || fail "unit failed to start: $unit"
+  fi
+done
+
+for _attempt in $(seq 1 80); do
+  if curl --fail --silent --show-error --max-time 2 "$control_url" >/dev/null 2>&1 &&
+     curl --fail --silent --show-error --max-time 2 --cacert "$cert" "$gateway_url" >/dev/null 2>&1; then
+    printf 'GeDefense Beta v2 is ready.\n'
+    exit 0
+  fi
+  sleep 0.25
+done
+
+fail 'authenticated readiness deadline exceeded'

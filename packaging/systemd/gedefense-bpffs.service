@@ -1,11 +1,16 @@
 [Unit]
 Description=VGT GeDefense BPF Filesystem Preparation
-ConditionPathIsMountPoint=!/sys/fs/bpf
 Before=gedefense-core.service
+DefaultDependencies=no
+After=local-fs.target
+Wants=sys-kernel-tracing.mount sys-fs-bpf.mount
+After=sys-kernel-tracing.mount sys-fs-bpf.mount
 
 [Service]
 Type=oneshot
-ExecStart=/bin/mount -t bpf -o nodev,nosuid,noexec bpf /sys/fs/bpf
+# Must remain active even when bpffs is already mounted. A ConditionPathIsMountPoint
+# skip would leave Requires=gedefense-bpffs.service unsatisfied for core/login-gate.
+ExecStart=/usr/bin/bash -c 't=$(findmnt --noheadings --target /sys/fs/bpf --output FSTYPE 2>/dev/null || true); [[ "$t" == bpf ]] || /usr/bin/mount -t bpf -o nodev,nosuid,noexec bpf /sys/fs/bpf; tt=$(findmnt --noheadings --target /sys/kernel/tracing --output FSTYPE 2>/dev/null || true); [[ "$tt" == tracefs ]] || { /usr/bin/mkdir -p /sys/kernel/tracing && /usr/bin/mount -t tracefs -o nodev,nosuid tracefs /sys/kernel/tracing 2>/dev/null || true; }'
 RemainAfterExit=yes
 User=root
 Group=root

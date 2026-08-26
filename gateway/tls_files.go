@@ -10,6 +10,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"syscall"
 	"time"
 )
 
@@ -31,10 +32,33 @@ func validateTLSFiles(certPath, keyPath string) error {
 	if certInfo.Mode().Perm()&0o022 != 0 {
 		return errors.New("TLS certificate must not be group/world writable")
 	}
-	if keyInfo.Mode().Perm()&0o077 != 0 {
-		return errors.New("TLS key must be 0600 or stricter")
+	if !secureTLSKeyMode(keyPath, keyInfo) {
+		return errors.New("TLS key must be private or a root-owned systemd credential")
 	}
 	return nil
+}
+
+func secureTLSKeyMode(keyPath string, keyInfo os.FileInfo) bool {
+	if keyInfo.Mode().Perm()&0o077 == 0 {
+		return true
+	}
+	credentialDir := filepath.Clean(os.Getenv("CREDENTIALS_DIRECTORY"))
+	if credentialDir == "." || !filepath.IsAbs(credentialDir) ||
+		filepath.Clean(keyPath) != filepath.Join(credentialDir, "tls-key") ||
+		keyInfo.Mode().Perm() != 0o440 {
+		return false
+	}
+	keyStat, keyOK := keyInfo.Sys().(*syscall.Stat_t)
+	if !keyOK || keyStat.Uid != 0 || keyStat.Gid != 0 {
+		return false
+	}
+	dirInfo, err := os.Lstat(credentialDir)
+	if err != nil || !dirInfo.IsDir() || dirInfo.Mode()&os.ModeSymlink != 0 ||
+		dirInfo.Mode().Perm()&0o022 != 0 {
+		return false
+	}
+	dirStat, dirOK := dirInfo.Sys().(*syscall.Stat_t)
+	return dirOK && dirStat.Uid == 0 && dirStat.Gid == 0
 }
 
 func generateSelfSigned(publicHost, certPath, keyPath string) error {
@@ -53,17 +77,27 @@ func generateSelfSigned(publicHost, certPath, keyPath string) error {
 		NotBefore:    time.Now().Add(-5 * time.Minute), NotAfter: time.Now().AddDate(1, 0, 0),
 		KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		BasicConstraintsValid: true,
+		IsCA:                  false,
 	}
+	// The universal desktop application terminates exclusively at loopback,
+	// while remote operators use the configured public identity. Both names
+	// therefore belong to the same local leaf certificate.
+	templateCert.IPAddresses = []net.IP{net.ParseIP("127.0.0.1"), net.ParseIP("::1")}
+	templateCert.DNSNames = []string{"localhost"}
 	if ip := net.ParseIP(host); ip != nil {
-		templateCert.IPAddresses = []net.IP{ip}
-	} else {
-		templateCert.DNSNames = []string{host}
+		if !ip.IsLoopback() {
+			templateCert.IPAddresses = append(templateCert.IPAddresses, ip)
+		}
+	} else if host != "localhost" {
+		templateCert.DNSNames = append(templateCert.DNSNames, host)
 	}
-	pub, priv, err := generateEd25519()
+	priv, err := ecdsaP384GenerateKey(rand.Reader)
 	if err != nil {
 		return err
 	}
-	der, err := x509.CreateCertificate(rand.Reader, &templateCert, &templateCert, pub, priv)
+	der, err := x509.CreateCertificate(
+		rand.Reader, &templateCert, &templateCert, &priv.PublicKey, priv,
+	)
 	if err != nil {
 		return err
 	}
@@ -80,11 +114,6 @@ func generateSelfSigned(publicHost, certPath, keyPath string) error {
 		return err
 	}
 	return writeAtomic(keyPath, keyPEM, 0o600)
-}
-
-func generateEd25519() (any, any, error) {
-	pub, priv, err := ed25519GenerateKey(rand.Reader)
-	return pub, priv, err
 }
 
 func pemEncode(kind string, der []byte) []byte { return pemEncodeBlock(kind, der) }

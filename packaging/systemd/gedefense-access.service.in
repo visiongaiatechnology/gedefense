@@ -1,16 +1,16 @@
 [Unit]
 Description=VGT GeDefense HTTPS Password Gateway
-After=network-online.target gedefense-control.service
-Wants=network-online.target
+After=gedefense-control.service
 Requires=gedefense-control.service
 StartLimitIntervalSec=120
 StartLimitBurst=4
 
 [Service]
-Type=simple
+Type=exec
 User=gedefense
 Group=gedefense
-ExecStart=@RELEASE@/bin/gedefense-access --listen=0.0.0.0:@PUBLIC_PORT@ --backend=http://127.0.0.1:9844 --public-host=@PUBLIC_HOST@ --password-file=/etc/vgt/gedefense/access-password --session-key-file=/var/lib/vgt/gedefense/access-session.key --backend-token-file=/var/lib/vgt/gedefense/dashboard.token --tls-cert=/etc/vgt/gedefense/tls/access.crt --tls-key=/etc/vgt/gedefense/tls/access.key
+LoadCredential=tls-key:/etc/vgt/gedefense/tls/access.key
+ExecStart=@RELEASE@/bin/gedefense-access --listen=0.0.0.0:@PUBLIC_PORT@ --backend=http://127.0.0.1:9844 --public-host=@PUBLIC_HOST@ --password-file=/etc/vgt/gedefense/access-password --session-key-file=/var/lib/vgt/gedefense/access-session.key --backend-token-file=/var/lib/vgt/gedefense/dashboard.token --tls-cert=/etc/vgt/gedefense/tls/access.crt --tls-key=%d/tls-key
 Restart=on-failure
 RestartSec=3s
 TimeoutStartSec=30s

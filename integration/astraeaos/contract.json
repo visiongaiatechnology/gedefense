@@ -1,0 +1,27 @@
+{
+  "schema": "vgt-gedefense-astraeaos-integration-v1",
+  "gedefense_version": "2.0.0-beta.1",
+  "minimum_astraeaos_version": "0.1",
+  "security_authority": "gedefense",
+  "sentinel_runtime_mode": "migration-source-only",
+  "generic_linux_supported": true,
+  "astraeaos_supported": true,
+  "universal_linux_integration": "implemented-v2-systemd-polkit-desktop",
+  "supported_package_managers": ["apt", "dnf", "yum", "pacman", "zypper"],
+  "capabilities": {
+    "boot_trust_evidence": "implemented",
+    "encrypted_signed_evidence_ledger": "implemented",
+    "xdp_network_enforcement": "implemented",
+    "bounded_xdr": "implemented",
+    "fanotify_on_access_malware": "implemented-exec-permission-v1",
+    "browser_quarantine_release_scan": "implemented-peercred-v1",
+    "gaia_cells_runtime_adapter": "implemented-v1-runtime-optional",
+    "gaia_cells_bpf_lsm": "implemented-mandatory-astraeaos",
+    "transaction_engine_v2": "implemented",
+    "integrity_v2": "implemented",
+    "persistent_hardening_profiles": "implemented",
+    "encrypted_quarantine": "implemented",
+    "case_engine": "implemented",
+    "isolated_deception_service": "deferred-outside-beta-authority"
+  }
+}
