@@ -4,7 +4,44 @@ pub const MAX_BLOCKLIST_ENTRIES_V4: u32 = 250_000;
 pub const MAX_BLOCKLIST_ENTRIES_V6: u32 = 250_000;
 pub const ACTION_DROP: u8 = 1;
 pub const L2_PREFIX_BYTES: usize = 22;
+pub const EXEC_COMM_BYTES: usize = 16;
+pub const NETWORK_ADDRESS_BYTES: usize = 16;
+pub const NETWORK_FAMILY_V4: u8 = 4;
+pub const NETWORK_FAMILY_V6: u8 = 6;
+pub const CELL_LSM_DENY_NON_UNIX_SOCKET: u8 = 1;
 
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ExecEvent {
+    pub pid: u32,
+    pub uid: u32,
+    pub gid: u32,
+    pub comm: [u8; EXEC_COMM_BYTES],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct EgressDropEvent {
+    pub pid: u32,
+    pub uid: u32,
+    pub family: u8,
+    pub protocol: u8,
+    pub action: u8,
+    pub reserved: u8,
+    pub destination: [u8; NETWORK_ADDRESS_BYTES],
+    pub comm: [u8; EXEC_COMM_BYTES],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CellLsmDenyEvent {
+    pub cgroup_id: u64,
+    pub pid: u32,
+    pub uid: u32,
+    pub family: i32,
+    pub action: u8,
+    pub reserved: [u8; 3],
+}
 const ETH_P_IP: u16 = 0x0800;
 const ETH_P_IPV6: u16 = 0x86dd;
 const ETH_P_8021Q: u16 = 0x8100;

@@ -52,8 +52,6 @@ checksum = "9b34d609dfbaf33d6889b2b7106d3ca345eacad44200913df5ba02bfd31d2ba9"
 [[package]]
 name = "aya"
 version = "0.14.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "66e644424fada9fff4fdc63848db1732fb69b626e8328202ef55c03df1f4d939"
 dependencies = [
  "assert_matches",
  "aya-obj",
@@ -274,11 +272,11 @@ checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 
 [[package]]
 name = "gedefense-common"
-version = "1.0.0-beta.5"
+version = "2.0.0-beta.1"
 
 [[package]]
 name = "gedefense-core"
-version = "1.0.0-beta.5"
+version = "2.0.0-beta.1"
 dependencies = [
  "aes-gcm",
  "aya",
@@ -292,7 +290,7 @@ dependencies = [
 
 [[package]]
 name = "gedefense-ebpf"
-version = "1.0.0-beta.5"
+version = "2.0.0-beta.1"
 dependencies = [
  "aya-ebpf",
  "gedefense-common",
