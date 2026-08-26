@@ -5,14 +5,14 @@ umask 0022
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
 OUT=${1:-"$ROOT/dist/release"}
 VERSION=$(tr -d '\r\n' < "$ROOT/VERSION")
-SOURCE_NAME="VGT_GeDefense_Beta_1.0.0-beta.5_Source.zip"
-RUN_NAME="VGT_GeDefense_Beta_1.0.0-beta.5_OneClick.run"
+SOURCE_NAME="VGT_GeDefense_Beta_v2_2.0.0-beta.1_Source.zip"
+RUN_NAME="VGT_GeDefense_Beta_v2_2.0.0-beta.1_OneClick.run"
 EPOCH=${SOURCE_DATE_EPOCH:-1785110400}
 
 for cmd in go node python3 tar gzip sha256sum sed awk ldd grep; do
   command -v "$cmd" >/dev/null 2>&1 || { echo "missing build tool: $cmd" >&2; exit 1; }
 done
-[[ $VERSION == "1.0.0-beta.5" ]] || { echo "unexpected VERSION: $VERSION" >&2; exit 1; }
+[[ $VERSION == "2.0.0-beta.1" ]] || { echo "unexpected VERSION: $VERSION" >&2; exit 1; }
 mkdir -p "$OUT" "$ROOT/dist"
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/vgt-gedefense-package.XXXXXX")
 cleanup(){ rm -rf -- "$WORK"; }
@@ -47,7 +47,7 @@ if ldd "$ROOT/dist/gedefense-access" | grep -q 'not found'; then
 fi
 
 # Source archive: no binaries, build products, keys, tokens, logs or local VCS state.
-SOURCE_STAGE="$WORK/VGT_GeDefense_Beta_1.0.0-beta.5"
+SOURCE_STAGE="$WORK/VGT_GeDefense_Beta_v2_2.0.0-beta.1"
 mkdir -p "$SOURCE_STAGE"
 python3 - "$ROOT" "$SOURCE_STAGE" <<'PY'
 from pathlib import Path
@@ -64,7 +64,7 @@ for path in sorted(src.rglob('*')):
     if (
         any(part in excluded_dirs for part in rel.parts)
         or path.name in excluded_names
-        or path.suffix.lower() in {'.run', '.zip', '.sha256'}
+        or (path.suffix.lower() in {'.run', '.zip', '.sha256'} and path.name != 'malware-hashes.sha256')
     ):
         continue
     target=dst/rel
@@ -100,7 +100,7 @@ PY
 # Self-extracting installer payload. Go binaries are prebuilt; Rust/eBPF source is
 # intentionally compiled and verified on the destination kernel/NIC.
 PAYLOAD="$WORK/payload"
-mkdir -p "$PAYLOAD/bin" "$PAYLOAD/rust" "$PAYLOAD/share" "$PAYLOAD/systemd" "$PAYLOAD/templates"
+mkdir -p "$PAYLOAD/bin" "$PAYLOAD/rust" "$PAYLOAD/share" "$PAYLOAD/systemd" "$PAYLOAD/templates" "$PAYLOAD/integration/linux"
 install -m 0755 "$ROOT/dist/gedefense-control" "$PAYLOAD/bin/gedefense-control"
 install -m 0755 "$ROOT/dist/gedefense-access" "$PAYLOAD/bin/gedefense-access"
 cp -a "$ROOT/rust/." "$PAYLOAD/rust/"
@@ -112,6 +112,11 @@ install -m 0644 "$ROOT/CRYPTOGRAPHY.md" "$PAYLOAD/share/CRYPTOGRAPHY.md"
 install -m 0644 "$ROOT/TOOLCHAINS.lock" "$PAYLOAD/share/TOOLCHAINS.lock"
 install -m 0644 "$ROOT"/packaging/systemd/* "$PAYLOAD/systemd/"
 install -m 0644 "$ROOT/gedefense.toml" "$PAYLOAD/templates/gedefense.toml"
+install -m 0644 "$ROOT/malware-hashes.sha256" "$PAYLOAD/templates/malware-hashes.sha256"
+install -m 0755 "$ROOT/integration/linux/gedefense-app" "$PAYLOAD/integration/linux/gedefense-app"
+install -m 0755 "$ROOT/integration/linux/gedefense-ensure-ready" "$PAYLOAD/integration/linux/gedefense-ensure-ready"
+install -m 0644 "$ROOT/integration/linux/gedefense.desktop" "$PAYLOAD/integration/linux/gedefense.desktop"
+install -m 0644 "$ROOT/integration/linux/org.vgt.gedefense.policy" "$PAYLOAD/integration/linux/org.vgt.gedefense.policy"
 
 find "$PAYLOAD" -exec touch -h -d "@$EPOCH" {} +
 TAR_RAW="$WORK/payload.tar"

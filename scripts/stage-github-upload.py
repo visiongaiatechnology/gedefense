@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # STATUS: DIAMANT VGT SUPREME
-"""Build a reviewable GitHub repository tree and separate release assets."""
+"""Build a reviewable GitHub repository tree and optional release assets."""
 
 from __future__ import annotations
 
@@ -30,6 +30,7 @@ SOURCE_DIRECTORIES = (
 )
 
 SOURCE_FILES = (
+    ".gitattributes",
     ".gitignore",
     "ARCHITECTURE.md",
     "BETA-TEST-PLAN.md",
@@ -39,9 +40,10 @@ SOURCE_FILES = (
     "CRYPTOGRAPHY.md",
     "DEPENDENCIES.md",
     "gedefense.toml",
-    "GEDEFENSE-GAIAOS-INTEGRATION.md",
+    "GEDEFENSE-ASTRAEAOS-INTEGRATION.md",
     "GITHUB-UPLOAD-ANLEITUNG.md",
     "LICENSE",
+    "malware-hashes.sha256",
     "Makefile",
     "MIGRATION-NOTES.md",
     "OPERATIONS.md",
@@ -87,12 +89,10 @@ EXCLUDED_SUFFIXES = (
 )
 
 RELEASE_ASSETS = (
-    "VGT_GeDefense_Beta_1.0.0-beta.5_OneClick_CompleteBeta.run",
-    "VGT_GeDefense_Beta_1.0.0-beta.5_OneClick_CompleteBeta.run.sha256",
-    "VGT_GeDefense_Beta_1.0.0-beta.5_CompleteBeta_Source.zip",
-    "VGT_GeDefense_Beta_1.0.0-beta.5_CompleteBeta_Source.zip.sha256",
-    "VGT_GeDefense_1.0.0-beta.5_Technisches_Datenblatt.pdf",
-    "VGT_GeDefense_1.0.0-beta.5_Technisches_Datenblatt.pdf.sha256",
+    "VGT_GeDefense_Beta_v2_2.0.0-beta.1_OneClick.run",
+    "VGT_GeDefense_Beta_v2_2.0.0-beta.1_OneClick.run.sha256",
+    "VGT_GeDefense_Beta_v2_2.0.0-beta.1_Source.zip",
+    "VGT_GeDefense_Beta_v2_2.0.0-beta.1_Source.zip.sha256",
 )
 
 FORBIDDEN_BYTE_MARKERS = (
@@ -160,9 +160,15 @@ def copy_sources(selected: dict[PurePosixPath, Path], repository: Path) -> None:
 def write_manifest(directory: Path, manifest_name: str) -> None:
     entries: list[str] = []
     for path in sorted(directory.rglob("*")):
-        if not path.is_file() or path.is_symlink() or path.name == manifest_name:
+        relative_path = path.relative_to(directory)
+        if (
+            not path.is_file()
+            or path.is_symlink()
+            or path.name == manifest_name
+            or ".git" in relative_path.parts
+        ):
             continue
-        relative = path.relative_to(directory).as_posix()
+        relative = relative_path.as_posix()
         entries.append(f"{sha256_file(path)}  {relative}\n")
     (directory / manifest_name).write_text("".join(entries), encoding="utf-8", newline="\n")
 
@@ -173,7 +179,10 @@ def verify_manifest(directory: Path, manifest_name: str) -> None:
     actual_files = {
         path.relative_to(directory).as_posix()
         for path in directory.rglob("*")
-        if path.is_file() and not path.is_symlink() and path.name != manifest_name
+        if path.is_file()
+        and not path.is_symlink()
+        and path.name != manifest_name
+        and ".git" not in path.relative_to(directory).parts
     }
     recorded_files: set[str] = set()
     for line in lines:
@@ -214,7 +223,7 @@ def scan_forbidden_markers(directory: Path) -> None:
                 overlap = data[-64:]
 
 
-def main() -> int:
+def main(include_release_assets: bool = False) -> int:
     root = Path(__file__).resolve(strict=True).parent.parent
     upload = root / UPLOAD_DIRECTORY
     if upload.exists() or upload.is_symlink():
@@ -241,7 +250,16 @@ def main() -> int:
         write_manifest(repository, SOURCE_MANIFEST)
         verify_manifest(repository, SOURCE_MANIFEST)
 
-        copy_release_assets(root, release)
+        if include_release_assets:
+            copy_release_assets(root, release)
+        else:
+            (release / "README.md").write_text(
+                "# Release assets pending Linux CI\n\n"
+                "The source repository is ready for GitHub. Create and attach the signed "
+                "Beta v2 artifacts only after all GitHub CI and concrete Linux host gates pass.\n",
+                encoding="utf-8",
+                newline="\n",
+            )
         shutil.copy2(
             root / "GITHUB-UPLOAD-ANLEITUNG.md",
             temporary / "README ZUERST.md",
@@ -266,7 +284,10 @@ def main() -> int:
 
 if __name__ == "__main__":
     try:
-        raise SystemExit(main())
+        arguments = set(sys.argv[1:])
+        if arguments - {"--with-release-assets"}:
+            raise StageError("usage: stage-github-upload.py [--with-release-assets]")
+        raise SystemExit(main(include_release_assets="--with-release-assets" in arguments))
     except (OSError, StageError) as error:
         print(f"ERROR: {error}", file=sys.stderr)
         raise SystemExit(1)
