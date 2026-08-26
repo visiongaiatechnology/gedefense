@@ -1,0 +1,16 @@
+/* STATUS: DIAMANT VGT SUPREME
+ * Allow active local wheel users to elevate the GeDefense desktop helpers.
+ * Without this, some live sessions show a polkit prompt that aborts immediately
+ * because no usable admin identity is offered to the agent.
+ */
+polkit.addRule(function (action, subject) {
+    if (
+        (action.id === "org.astraeaos.gedefense.set-password" ||
+            action.id === "org.astraeaos.gedefense.ensure-ready") &&
+        subject.local &&
+        subject.active &&
+        subject.isInGroup("wheel")
+    ) {
+        return polkit.Result.AUTH_ADMIN_KEEP;
+    }
+});

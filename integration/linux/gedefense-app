@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# STATUS: DIAMANT VGT SUPREME
+set -Eeuo pipefail
+
+readonly url=https://127.0.0.1:9843/
+readonly livez=https://127.0.0.1:9843/gateway/livez
+readonly cert=/etc/vgt/gedefense/tls/access.crt
+readonly helper=/usr/lib/gedefense/gedefense-ensure-ready
+
+notify_error() {
+  if command -v kdialog >/dev/null 2>&1; then
+    kdialog --title 'VGT GeDefense Beta v2' --error "$1"
+  elif command -v zenity >/dev/null 2>&1; then
+    zenity --error --title='VGT GeDefense Beta v2' --text="$1"
+  else
+    printf 'GeDefense: %s\n' "$1" >&2
+  fi
+}
+
+gateway_ready() {
+  [[ -f "$cert" && ! -L "$cert" ]] &&
+    curl --fail --silent --show-error --max-time 2 --cacert "$cert" "$livez" >/dev/null 2>&1
+}
+
+if ! gateway_ready; then
+  command -v pkexec >/dev/null 2>&1 || {
+    notify_error 'GeDefense ist nicht bereit und polkit/pkexec ist nicht installiert.'
+    exit 1
+  }
+  pkexec "$helper" || {
+    notify_error 'GeDefense konnte nicht sicher gestartet werden. Prüfen Sie systemctl status gedefense-control gedefense-access.'
+    exit 1
+  }
+fi
+
+gateway_ready || { notify_error 'Die authentifizierte TLS-Bereitschaftsprüfung ist fehlgeschlagen.'; exit 1; }
+
+spki=$(openssl x509 -in "$cert" -pubkey -noout |
+  openssl pkey -pubin -outform DER 2>/dev/null |
+  openssl dgst -sha256 -binary |
+  openssl base64 -A)
+[[ -n "$spki" ]] || { notify_error 'Der lokale TLS-Pin konnte nicht erzeugt werden.'; exit 1; }
+
+for browser in chromium chromium-browser google-chrome-stable google-chrome; do
+  if command -v "$browser" >/dev/null 2>&1; then
+    profile="${XDG_RUNTIME_DIR:-/tmp}/gedefense-browser-$(id -u)"
+    install -d -m 0700 -- "$profile"
+    exec "$browser" --app="$url" --user-data-dir="$profile" \
+      --ignore-certificate-errors-spki-list="$spki" --no-first-run --disable-sync
+  fi
+done
+
+notify_error 'Für die zertifikatgepinnte Anwendung wird Chromium oder Google Chrome benötigt.'
+exit 1

@@ -1,0 +1,118 @@
+#!/usr/bin/env bash
+# STATUS: DIAMANT VGT SUPREME
+set -Eeuo pipefail
+
+readonly control_health=http://127.0.0.1:9844/bootz
+readonly access_health=https://127.0.0.1:9843/gateway/livez
+readonly access_cert=/etc/vgt/gedefense/tls/access.crt
+readonly attestation=/run/astraeaos/boot-attestation.json
+readonly bpffs_path=/sys/fs/bpf
+readonly deadline=$((SECONDS + 60))
+readonly -a required_active_units=(
+  astraeaos-boot-attestation.service
+  gedefense-astraeaos-provision.service
+  gedefense-core.service
+  gedefense-control.service
+  gedefense-access.service
+)
+readonly -a diagnostic_units=(
+  "${required_active_units[@]}"
+  gedefense-bpffs.service
+)
+
+fail_closed() {
+  printf 'AstraeaOS login denied: %s\n' "$1" >&2
+  systemctl --no-pager --full status "${diagnostic_units[@]}" >&2 || true
+  exit 1
+}
+
+[[ $(id -u) -eq 0 ]] || fail_closed 'security gate requires root'
+[[ -f "$access_cert" && ! -L "$access_cert" ]] || fail_closed 'GeDefense TLS trust anchor is unavailable'
+[[ -f "$attestation" && ! -L "$attestation" ]] || fail_closed 'boot trust evidence is unavailable'
+python3 - "$attestation" <<'PY' || fail_closed 'boot trust evidence is invalid'
+# STATUS: DIAMANT VGT SUPREME
+import json
+import pathlib
+import re
+import sys
+
+path = pathlib.Path(sys.argv[1])
+raw = path.read_bytes()
+if len(raw) > 1024 * 1024:
+    raise SystemExit(1)
+value = json.loads(raw)
+if value.get("schema") != "astraeaos.boot-attestation.v1":
+    raise SystemExit(1)
+if re.fullmatch(r"[0-9a-f-]{36}", str(value.get("boot_id"))) is None:
+    raise SystemExit(1)
+identity = value.get("boot_identity")
+integrity = value.get("filesystem_integrity")
+if not isinstance(integrity, dict):
+    raise SystemExit(1)
+
+hardware_verified = (
+    value.get("status") == "verified"
+    and value.get("secure_boot") is True
+    and value.get("hardware_attestation") == "verified"
+    and value.get("attestation_reason") is None
+    and value.get("pcr_selection") == [0, 2, 4, 7, 9, 11, 12]
+    and isinstance(value.get("pcr_readout"), str)
+    and bool(value.get("pcr_readout"))
+    and re.fullmatch(r"[0-9a-f]{64}", str(value.get("pcr_signature_sha256"))) is not None
+)
+
+if identity in ("runtime-A", "runtime-B"):
+    if not hardware_verified:
+        raise SystemExit(1)
+    if integrity.get("status") != "verified":
+        raise SystemExit(1)
+    if re.fullmatch(r"[0-9a-f]{64}", str(integrity.get("evidence_sha256"))) is None:
+        raise SystemExit(1)
+elif identity == "live":
+    if integrity.get("status") != "not-applicable" or integrity.get("evidence_sha256") is not None:
+        raise SystemExit(1)
+    live_recovery = (
+        value.get("status") == "live-recovery"
+        and isinstance(value.get("secure_boot"), bool)
+        and value.get("hardware_attestation") == "unavailable"
+        and value.get("attestation_reason") == "platform-attestation-unavailable"
+        and value.get("pcr_selection") == []
+        and value.get("pcr_readout") == ""
+        and value.get("pcr_signature_sha256") is None
+    )
+    if not hardware_verified and not live_recovery:
+        raise SystemExit(1)
+else:
+    raise SystemExit(1)
+PY
+[[ -d "$bpffs_path" && ! -L "$bpffs_path" ]] || fail_closed 'GeDefense BPF filesystem path is unavailable'
+
+if ! bpffs_type=$(findmnt --noheadings --output FSTYPE --target "$bpffs_path"); then
+  fail_closed 'GeDefense BPF filesystem is not mounted'
+fi
+[[ "$bpffs_type" == bpf ]] || fail_closed 'GeDefense BPF filesystem has an invalid type'
+
+while (( SECONDS < deadline )); do
+  all_units_active=true
+  for unit in "${required_active_units[@]}"; do
+    if ! systemctl --quiet is-active "$unit"; then
+      all_units_active=false
+      break
+    fi
+  done
+
+  if [[ "$all_units_active" == true ]]; then
+    if curl --fail --silent --show-error --connect-timeout 1 --max-time 1 "$control_health" >/dev/null &&
+      curl --fail --silent --show-error --connect-timeout 1 --max-time 1 --cacert "$access_cert" "$access_health" >/dev/null; then
+      printf 'AstraeaOS login gate verified: GeDefense protection is active.\n'
+      exit 0
+    fi
+  fi
+  sleep 0.25
+done
+
+for unit in "${required_active_units[@]}"; do
+  systemctl --quiet is-active "$unit" || fail_closed "required security unit remained inactive: $unit"
+done
+
+fail_closed 'GeDefense failed the authenticated local health gate'

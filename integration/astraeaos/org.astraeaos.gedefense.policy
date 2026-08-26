@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC
+ "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<policyconfig>
+  <vendor>VisionGaia Technology</vendor>
+  <vendor_url>https://visiongaia.local</vendor_url>
+  <icon_name>security-high</icon_name>
+
+  <action id="org.astraeaos.gedefense.set-password">
+    <description>Set the GeDefense operator password</description>
+    <description xml:lang="de">GeDefense-Operator-Passwort setzen</description>
+    <message>Authentication is required to set the GeDefense operator password</message>
+    <message xml:lang="de">Authentifizierung erforderlich, um das GeDefense-Operator-Passwort zu setzen</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/lib/astraeaos/gedefense-set-password</annotate>
+    <annotate key="org.freedesktop.policykit.exec.allow_gui">true</annotate>
+  </action>
+
+  <action id="org.astraeaos.gedefense.ensure-ready">
+    <description>Start the GeDefense security stack and wait until the access gateway is ready</description>
+    <description xml:lang="de">GeDefense-Sicherheitsstack starten und warten, bis der Zugang bereit ist</description>
+    <message>Authentication is required to start GeDefense</message>
+    <message xml:lang="de">Authentifizierung erforderlich, um GeDefense zu starten</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/lib/astraeaos/gedefense-ensure-ready</annotate>
+    <annotate key="org.freedesktop.policykit.exec.allow_gui">true</annotate>
+  </action>
+</policyconfig>

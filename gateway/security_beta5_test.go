@@ -224,7 +224,7 @@ func TestBrandedLoginHasVersionLanguagesSupportAndNonceCSP(t *testing.T) {
 		}
 		body := rr.Body.String()
 		for _, expected := range []string{
-			"GeDefense", "VisionGaiaTechnology", "1.0.0-beta.5", tc.text,
+			"GeDefense", "VisionGaiaTechnology", "2.0.0-beta.1", tc.text,
 			"paypal.me/dergoldenelotus", "bc1q3ue5gq822tddmkdrek79adlkm36fatat3lz0dm",
 			"0xD37DEfb09e07bD775EaaE9ccDaFE3a5b2348Fe85",
 		} {

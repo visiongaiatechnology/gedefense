@@ -1,0 +1,164 @@
+#!/usr/bin/env bash
+# STATUS: DIAMANT VGT SUPREME
+set -Eeuo pipefail
+
+readonly url=https://127.0.0.1:9843/
+readonly health_url=https://127.0.0.1:9843/gateway/livez
+readonly marker=/var/lib/vgt/gedefense-password-setup-required
+readonly cert=/etc/vgt/gedefense/tls/access.crt
+readonly ensure_ready=/usr/lib/astraeaos/gedefense-ensure-ready
+readonly set_password=/usr/lib/astraeaos/gedefense-set-password
+
+show_error() {
+  if command -v kdialog >/dev/null 2>&1; then
+    kdialog --title 'VGT GeDefense' --error "$1"
+  else
+    notify-send --urgency=critical 'VGT GeDefense' "$1"
+  fi
+}
+
+show_info() {
+  if command -v notify-send >/dev/null 2>&1; then
+    notify-send --expire-timeout=8000 'VGT GeDefense' "$1" || true
+  fi
+}
+
+gateway_ready() {
+  [[ -f "$cert" && ! -L "$cert" ]] &&
+    curl --fail --silent --show-error --max-time 2 \
+      --cacert "$cert" "$health_url" >/dev/null
+}
+
+# The ArchISO account has no system password. It may use only the exact
+# passwordless helpers granted by /etc/sudoers.d/astraea-live. Installed systems
+# deliberately stay on polkit and require a real administrator identity.
+is_archiso_live() {
+  [[ $(id -u) -ne 0 ]] &&
+    [[ $(id -un) == astraea ]] &&
+    [[ -d /run/archiso/bootmnt ]]
+}
+
+run_installed_helper() {
+  pkexec "$@"
+}
+
+run_ensure_ready() {
+  if is_archiso_live; then
+    sudo -n -- "$ensure_ready"
+  else
+    run_installed_helper "$ensure_ready"
+  fi
+}
+
+if [[ -e "$marker" ]]; then
+  if ! command -v kdialog >/dev/null 2>&1; then
+    show_error 'Für die Ersteinrichtung wird kdialog benötigt.'
+    exit 1
+  fi
+  first=$(kdialog --title 'VGT GeDefense' --password \
+    'Neues Operator-Passwort (mindestens 12 Zeichen):') || exit 0
+  second=$(kdialog --title 'VGT GeDefense' --password \
+    'Operator-Passwort wiederholen:') || exit 0
+  if [[ ${#first} -lt 12 || "$first" != "$second" ]]; then
+    unset first second
+    show_error 'Die Passwörter stimmen nicht überein oder sind zu kurz.'
+    exit 1
+  fi
+
+  if is_archiso_live; then
+    # The operator secret is consumed directly by the exact root helper. No
+    # Arch password prompt and no password-bearing file exists in the live ISO.
+    show_info 'Operator-Passwort wird gespeichert und GeDefense gestartet…'
+    if ! printf '%s' "$first" | sudo -n -- "$set_password"; then
+      unset first second
+      show_error \
+        'GeDefense konnte in der Live-Sitzung nicht sicher initialisiert werden.
+
+Prüfen Sie im Terminal:
+  sudo -n /usr/lib/astraeaos/gedefense-ensure-ready
+  systemctl status gedefense-control.service gedefense-access.service'
+      exit 1
+    fi
+    unset first second
+  else
+    # Never pipe the secret through pkexec stdin: polkit may consume or close
+    # stdin while displaying the administrator authentication dialog.
+    pwfile=$(mktemp -- "${TMPDIR:-/tmp}/gedefense-op-pw.XXXXXX")
+    cleanup_pw() {
+      if [[ -n "${pwfile:-}" && -f "$pwfile" ]]; then
+        if command -v shred >/dev/null 2>&1; then
+          shred -u -- "$pwfile" 2>/dev/null || rm -f -- "$pwfile"
+        else
+          rm -f -- "$pwfile"
+        fi
+      fi
+      unset first second
+    }
+    trap cleanup_pw EXIT
+    printf '%s' "$first" >"$pwfile"
+    chmod 0600 "$pwfile"
+    unset first second
+
+    show_info 'Passwort wird gespeichert und GeDefense gestartet… Bitte die System-Authentifizierung bestätigen und warten.'
+    # One polkit authorization sets the password and ensures readiness.
+    if ! run_installed_helper "$set_password" --password-file "$pwfile"; then
+      show_error \
+        'Das Operator-Passwort konnte nicht gesetzt werden oder der sichere Zugang startete nicht.
+
+Prüfen Sie im Terminal:
+  systemctl status gedefense-control.service gedefense-access.service
+  journalctl -u gedefense-control.service -u gedefense-access.service -b --no-pager
+  sudo /usr/lib/astraeaos/gedefense-ensure-ready'
+      exit 1
+    fi
+    trap - EXIT
+    cleanup_pw
+  fi
+elif ! gateway_ready; then
+  if is_archiso_live; then
+    show_info 'GeDefense wird gestartet…'
+  else
+    show_info 'GeDefense wird gestartet… Bitte die Authentifizierung bestätigen und kurz warten.'
+  fi
+  if ! run_ensure_ready; then
+    show_error \
+      'GeDefense ist installiert, aber der sichere Zugang konnte nicht gestartet werden.
+
+Prüfen Sie im Terminal:
+  systemctl status gedefense-control.service gedefense-access.service
+  journalctl -u gedefense-control.service -u gedefense-access.service -b --no-pager
+  sudo /usr/lib/astraeaos/gedefense-ensure-ready'
+    exit 1
+  fi
+fi
+
+if ! gateway_ready; then
+  logger --tag gedefense-app --priority user.err \
+    'GeDefense access gateway did not pass its authenticated TLS readiness check'
+  show_error \
+    'GeDefense ist aktiv, aber der sichere Zugang ist nicht bereit.
+
+Im Terminal:
+  sudo /usr/lib/astraeaos/gedefense-ensure-ready
+  systemctl status gedefense-control.service gedefense-access.service --no-pager'
+  exit 1
+fi
+
+readonly native_shell=/usr/lib/astraeaos/gedefense-shell
+if [[ ! -x "$native_shell" || -L "$native_shell" ]]; then
+  show_error 'Die native GeDefense-Anwendung ist nicht installiert.'
+  exit 1
+fi
+readonly cell_launcher=/usr/bin/gaia-cell
+if [[ ! -x "$cell_launcher" || -L "$cell_launcher" ]]; then
+  show_error 'Die GaiaCells-Sicherheitsgrenze ist nicht verfügbar.'
+  exit 1
+fi
+exec "$cell_launcher" run \
+  --profile gedefense-ui \
+  --label 'VGT GeDefense Security Center' \
+  --network normal \
+  --memory 1G \
+  --tasks 256 \
+  --notifications on \
+  -- "$native_shell"

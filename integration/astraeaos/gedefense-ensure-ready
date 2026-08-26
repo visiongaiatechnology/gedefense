@@ -1,0 +1,150 @@
+#!/usr/bin/env bash
+# STATUS: DIAMANT VGT SUPREME
+# Privileged helper: bring GeDefense to authenticated TLS livez without
+# restarting a healthy stack (restarts used to cascade into SDDM via Requires=).
+set -Eeuo pipefail
+
+readonly cert=/etc/vgt/gedefense/tls/access.crt
+readonly health_url=https://127.0.0.1:9843/gateway/livez
+readonly control_bootz=http://127.0.0.1:9844/bootz
+readonly -a units=(
+  gedefense-astraeaos-provision.service
+  gedefense-bpffs.service
+  gedefense-core.service
+  gedefense-control.service
+  gedefense-access.service
+)
+
+fail() {
+  printf 'GeDefense ensure-ready failed: %s\n' "$1" >&2
+  systemctl --no-pager --full status "${units[@]}" >&2 || true
+  journalctl --no-pager -n 60 \
+    -u gedefense-astraeaos-provision.service \
+    -u gedefense-bpffs.service \
+    -u gedefense-core.service \
+    -u gedefense-control.service \
+    -u gedefense-access.service >&2 || true
+  exit 1
+}
+
+require_root() {
+  [[ $(id -u) -eq 0 ]] || fail "root is required"
+}
+
+bpffs_ready() {
+  local fstype
+  fstype=$(findmnt --noheadings --target /sys/fs/bpf --output FSTYPE 2>/dev/null || true)
+  [[ "$fstype" == bpf ]]
+}
+
+gateway_ready() {
+  [[ -f "$cert" && ! -L "$cert" ]] &&
+    curl --fail --silent --show-error --max-time 2 \
+      --cacert "$cert" "$health_url" >/dev/null 2>&1
+}
+
+control_responding() {
+  curl --fail --silent --show-error --max-time 2 "$control_bootz" >/dev/null 2>&1
+}
+
+ensure_bpffs() {
+  if bpffs_ready; then
+    return 0
+  fi
+  systemctl start gedefense-bpffs.service 2>/dev/null || true
+  if bpffs_ready; then
+    return 0
+  fi
+  /usr/bin/mount -t bpf -o nodev,nosuid,noexec bpf /sys/fs/bpf 2>/dev/null || true
+  bpffs_ready || fail "BPF filesystem is not mounted at /sys/fs/bpf"
+}
+
+# Start a unit if inactive. Never restart an already-active unit here.
+ensure_started() {
+  local unit=$1
+  local required=${2:-1}
+  if systemctl --quiet is-active "$unit"; then
+    return 0
+  fi
+  systemctl reset-failed "$unit" 2>/dev/null || true
+  if systemctl start "$unit"; then
+    return 0
+  fi
+  if [[ "$required" -eq 0 ]]; then
+    printf 'GeDefense ensure-ready: optional unit failed to start: %s\n' "$unit" >&2
+    return 0
+  fi
+  fail "required unit failed to start: $unit"
+}
+
+# Restart only access. Safe after login-gate/SDDM use Wants= for GeDefense.
+restart_access() {
+  systemctl reset-failed gedefense-access.service 2>/dev/null || true
+  systemctl restart gedefense-access.service
+}
+
+poll_ready() {
+  local attempts=$1
+  local _i
+  for _i in $(seq 1 "$attempts"); do
+    if gateway_ready; then
+      return 0
+    fi
+    sleep 0.25
+  done
+  return 1
+}
+
+poll_control() {
+  local attempts=$1
+  local _i
+  for _i in $(seq 1 "$attempts"); do
+    if control_responding; then
+      return 0
+    fi
+    sleep 0.25
+  done
+  return 1
+}
+
+require_root
+
+reload_access=0
+if [[ $# -eq 1 && "$1" == --reload-access ]]; then
+  reload_access=1
+elif [[ $# -ne 0 ]]; then
+  fail "unsupported argument"
+fi
+
+if [[ "$reload_access" -eq 0 ]] && gateway_ready; then
+  printf 'GeDefense access gateway is already ready.\n'
+  exit 0
+fi
+
+ensure_bpffs
+ensure_started gedefense-astraeaos-provision.service 1
+ensure_started gedefense-bpffs.service 0
+ensure_started gedefense-core.service 0
+ensure_started gedefense-control.service 1
+poll_control 120 || fail "control plane /bootz readiness deadline exceeded"
+if [[ "$reload_access" -eq 1 ]]; then
+  printf 'GeDefense ensure-ready: reloading access credentials\n' >&2
+  restart_access || fail "access credential reload failed"
+else
+  ensure_started gedefense-access.service 1
+fi
+
+if poll_ready 80; then
+  printf 'GeDefense access gateway is ready.\n'
+  exit 0
+fi
+
+[[ "$reload_access" -eq 0 ]] || fail "reloaded access gateway did not become ready"
+
+# Access may be up but stuck (e.g. password file rotated under a running process).
+printf 'GeDefense ensure-ready: restarting access gateway only\n' >&2
+restart_access || fail "access restart failed"
+poll_ready 80 || fail "authenticated TLS livez did not become ready"
+
+printf 'GeDefense access gateway is ready.\n'
+exit 0

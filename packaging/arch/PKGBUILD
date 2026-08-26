@@ -3,8 +3,8 @@
 
 pkgname=gedefense
 pkgver=1.0.0_beta.5
-_release=1.0.0-beta.5
-pkgrel=1
+_release=2.0.0-beta.1
+pkgrel=19
 pkgdesc='GeDefense Linux security platform: XDP, XDR, evidence and response plane'
 arch=('x86_64')
 url='https://github.com/VisionGaiaTechnology'
@@ -28,6 +28,7 @@ prepare() {
     control/go.mod \
     gateway/go.mod \
     rust/Cargo.lock \
+    malware-hashes.sha256 \
     packaging/systemd/gedefense-control.service; do
     [[ -f "${_source_root}/${required}" ]] || {
       printf 'Missing local GeDefense source: %s\n' "${required}" >&2
@@ -46,7 +47,24 @@ build() {
 }
 
 check() {
+  local ebpf_sections ebpf_symbols
+
   make -C "${_source_root}" test
+  grep -aFq -- 'using TC ingress kernel enforcement' \
+    "${_source_root}/dist/gedefense-core"
+  grep -aFq -- 'AstraeaOS eBPF compatibility: using legacy perf-event attach' \
+    "${_source_root}/dist/gedefense-core"
+  grep -aFq -- 'AstraeaOS eBPF compatibility: using legacy cgroup attach' \
+    "${_source_root}/dist/gedefense-core"
+
+  ebpf_sections="$(llvm-objdump -h "${_source_root}/dist/gedefense-ebpf")"
+  grep -Eq '[[:space:]]classifier[[:space:]]' <<<"${ebpf_sections}"
+  grep -Eq '[[:space:]]lsm/socket_create[[:space:]]' <<<"${ebpf_sections}"
+
+  ebpf_symbols="$(llvm-objdump -t "${_source_root}/dist/gedefense-ebpf")"
+  for symbol in gedefense_cell_socket_create CELL_LSM_POLICIES CELL_LSM_EVENTS; do
+    grep -Fq -- "${symbol}" <<<"${ebpf_symbols}"
+  done
 }
 
 package() {
@@ -73,8 +91,12 @@ package() {
 
   install -Dm640 "${_source_root}/gedefense.toml" \
     "${pkgdir}/etc/vgt/gedefense/gedefense.toml"
+  install -Dm640 "${_source_root}/gedefense.toml" \
+    "${pkgdir}/usr/share/gedefense/profiles/generic.toml"
   install -Dm644 "${_source_root}/xdr-baseline.example.json" \
     "${pkgdir}/etc/vgt/gedefense/xdr-baseline.json"
+  install -Dm600 "${_source_root}/malware-hashes.sha256" \
+    "${pkgdir}/etc/vgt/gedefense/malware-hashes.sha256"
 
   install -Dm644 \
     "${_source_root}/packaging/systemd/gedefense-bpffs.service" \
