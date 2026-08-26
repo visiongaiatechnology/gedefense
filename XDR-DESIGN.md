@@ -8,7 +8,18 @@ Das XDR soll Prozess-, Netzwerk-, Integritäts-, Lineage-, Baseline-, Threat-Int
 
 ### Prozesssensor
 
-Aktueller Beta-Fallback:
+Aktueller lokaler Sensor:
+
+- eBPF-Tracepoint `sched_process_exec`;
+- 1 MiB groÃŸer, strikt begrenzter BPF Ring Buffer;
+- PID, UID, GID und `comm` direkt aus Kernel-Helpern;
+- Abholung ausschlieÃŸlich Ã¼ber das HMAC-authentifizierte VGT3-IPC;
+- IdentitÃ¤tsabgleich und Anreicherung aus `/proc` unmittelbar nach dem
+  Kernelereignis;
+- 100-ms-Abholung mit 24 Ereignissen pro authentifizierter Antwort;
+- transparenter, sichtbarer Fallback bei nicht verfÃ¼gbarem Tracepoint.
+
+Recovery- und Anreicherungsquelle:
 
 - `/proc/<pid>/stat` für PID-Startidentität und PPID;
 - `/proc/<pid>/status` für UID/GID;
@@ -29,6 +40,18 @@ Aktueller Beta-Fallback:
 - Inotify auf Linux für ereignisgetriebene Änderungen;
 - periodischer SHA-256-Fallback;
 - Pfad, Größe, Modus und Digest als Ausgangszustand.
+
+### Malware- und Ausführungssensor
+
+- `fanotify` mit `FAN_OPEN_EXEC_PERM` für Ausführungen unter `/home`;
+- Scanentscheidung und Antwort vor dem ersten Benutzerbefehl;
+- fail-closed bei unlesbarer, wachsender, zu großer oder anderweitig nicht sicher prüfbarer Datei;
+- SHA-256-Reputation, EICAR, Dateiart, Polyglot- und Archivgrenzen;
+- 512 Einträge große, begrenzte Core-Queue und maximal vier Ereignisse pro VGT3-Antwort;
+- Eventfelder werden im Go-Control-Plane erneut typisiert und begrenzt;
+- jeder Block erzeugt Evidence, Incident und Case;
+- Queueverlust degradiert aktive XDR-Response, während Fanotify weiter sperrt;
+- Browserfreigaben verwenden zusätzlich `SO_PEERCRED`, UID-/Modusprüfung und Hash-/Größen-Revalidierung.
 
 ## KillerDOM-Linux
 
@@ -54,7 +77,11 @@ Jede Regel besitzt ID, Kategorie, Score, Erklärung und Kill-Eignung. Regeln wer
 - `XDR.NAME_PATH_MISMATCH`;
 - `XDR.THREAT_INTEL_C2`;
 - Baseline-Hash-, UID-, Parent- und Netzwerkabweichungen;
-- `XDR.SELF_TAMPER`.
+- `XDR.SELF_TAMPER`;
+- `MALWARE.CONTENT_MATCH`;
+- `MALWARE.CONTENT_SUSPICIOUS`;
+- `MALWARE.SCAN_FAILURE`;
+- `MALWARE.EVENT_QUEUE_OVERFLOW`.
 
 ## Adaptive Signale
 
@@ -150,8 +177,7 @@ Das Log ist append-only innerhalb des vertrauenswürdigen Loggers, größenbegre
 
 Die Beta-Procfs-Erkennung soll durch Kernelereignisse ergänzt werden:
 
-- `sched_process_exec`;
-- BPF Ring Buffer;
+- Fork-/Exit-Ereignisse und langlebige PID-Lifecycle-Korrelation;
 - cgroup connect hooks;
 - ausgewählte BPF-LSM-Hooks;
 - Namespace-/Container-Metadaten.

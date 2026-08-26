@@ -2,7 +2,7 @@
 
 **Produkt:** VGT GeDefense  
 **Hersteller:** VisionGaia Technology  
-**Version:** 1.0.0-beta.5 Complete Beta  
+**Version:** 2.0.0-beta.1 — Beta v2 Universal Linux  
 **Installer-Revision:** 3.5.1  
 **Dokumentstand:** 28. Juli 2026  
 **Produktstatus:** Anwendbare und testbare Full-Stack-Beta  
@@ -19,8 +19,8 @@ Das Produkt ist für zwei Betriebsmodelle ausgelegt:
 
 1. **Standalone:** eigenständige Installation auf einem kompatiblen
    x86_64-Linux-Server mit systemd und BPF/XDP-Unterstützung.
-2. **GaiaOS-native:** dieselben Control-, Broker- und eBPF-Komponenten mit
-   GaiaOS-Provisionierung, GaiaOS-Härtungsprofil, Boot-Trust-Evidenz und
+2. **AstraeaOS-native:** dieselben Control-, Broker- und eBPF-Komponenten mit
+   AstraeaOS-Provisionierung, AstraeaOS-Härtungsprofil, Boot-Trust-Evidenz und
    optionaler Gaia-Cells-Laufzeitanbindung.
 
 GeDefense benötigt keinen Cloud-Control-Plane-Dienst. Dashboard,
@@ -128,7 +128,7 @@ Preview → Authorize → Apply → Verify → Audit → Reverse
 Enthaltene Profile:
 
 - Generic Linux Server;
-- GaiaOS Workstation.
+- AstraeaOS Workstation.
 
 Die Profile verwenden eine feste Sysctl-Key-/Wert-Allowlist, prüfen den
 Live-Kernel, schreiben atomar nach
@@ -148,23 +148,23 @@ keine generische Sysctl- oder Shell-Schnittstelle bereit.
 - Traversierung ohne `CAP_DAC_OVERRIDE` über den geprüften
   `gedefense:gedefense`-State-Pfad mit Modus `0710`.
 
-## 4. GaiaOS-Integration
+## 4. AstraeaOS-Integration
 
-GeDefense ist die einzige Security Authority in GaiaOS. Sentinel bleibt nur
+GeDefense ist die einzige Security Authority in AstraeaOS. Sentinel bleibt nur
 Migrations- und Auditquelle; es läuft kein zweiter konkurrierender
 Security-Daemon.
 
-| GaiaOS-Funktion | Status |
+| AstraeaOS-Funktion | Status |
 |---|---|
 | native Provisionierung und systemd-Aktivierung | implementiert |
 | identische GeDefense-Binaries wie Standalone | implementiert |
 | byteverifizierter GeDefense-Quellspiegel | implementiert, 147 Dateien |
-| GaiaOS-Härtungsprofil | implementiert |
+| AstraeaOS-Härtungsprofil | implementiert |
 | Boot-Trust-Evidenz | implementiert, Evidence-only |
 | Gaia Cells VGTGC1 Adapter | implementiert, Runtime optional |
 | UUID-/Generation-/cgroup-ID-Bindung | implementiert |
 | reversible Cell-Freeze-/Netzwerktransaktionen | implementiert |
-| Gaia-Cells-Lifecycle-Daemon | GaiaOS-verantwortlich, aktuell nicht enthalten |
+| Gaia-Cells-Lifecycle-Daemon | AstraeaOS-verantwortlich, aktuell nicht enthalten |
 | isolierter Deception Service | außerhalb der Beta zurückgestellt |
 
 Fehlt die Gaia-Cells-Runtime, meldet der Adapter
@@ -251,10 +251,10 @@ Eine feste minimale Kernelversion und garantierte NIC-Liste sind für diese Beta
 nicht pauschal deklariert. Kompatibilität wird deshalb auf dem Zielsystem durch
 Build, Kernel-Verifier, XDP-Attachment und Health-Gates geprüft.
 
-### GaiaOS
+### AstraeaOS
 
-- Arch-Pakete `gedefense` und `gaiaos-gedefense-integration`;
-- GaiaOS mindestens Version 0.1 gemäß Integrationsvertrag;
+- Arch-Pakete `gedefense` und `astraeaos-gedefense-integration`;
+- AstraeaOS mindestens Version 0.1 gemäß Integrationsvertrag;
 - cgroup v2 für Gaia-Cells-Identitätsbindung;
 - Gaia-Cells-Runtime nur für Cell-spezifische Funktionen erforderlich.
 
@@ -320,16 +320,16 @@ Zum Dokumentstand erfolgreich ausgeführt:
 - native Rust-Tests für Common und Core;
 - Rust-Core-Release-Build;
 - eBPF-Release-Build;
-- Arch-Paketbuild für GeDefense und GaiaOS-Integration;
+- Arch-Paketbuild für GeDefense und AstraeaOS-Integration;
 - systemd-Unit-Validierung in isolierter Root;
-- GaiaOS-Installer-/Hardening-Tests;
+- AstraeaOS-Installer-/Hardening-Tests;
 - Quarantäne-DAC-Laufzeittest ohne DAC-Bypass-Capabilities;
-- Quellspiegel-Verifikation zwischen Standalone und GaiaOS;
+- Quellspiegel-Verifikation zwischen Standalone und AstraeaOS;
 - eingebetteter Installer-Payload und SHA-256-Prüfsummen.
 
 Aktueller Installer:
 
-`VGT_GeDefense_Beta_1.0.0-beta.5_OneClick_CompleteBeta.run`
+`VGT_GeDefense_Beta_v2_2.0.0-beta.1_OneClick.run`
 
 SHA-256:
 
@@ -337,7 +337,7 @@ SHA-256:
 
 ## 13. Explizite Produktgrenzen
 
-Nicht Bestandteil der Version 1.0.0-beta.5:
+Nicht Bestandteil der Version 2.0.0-beta.1:
 
 - Swarm-/Mesh-Föderation;
 - QUIC-Offloading oder verteilte Angriffsabsorption;
@@ -358,4 +358,4 @@ Aktivierungs- und Health-Gates auf diesem Zielhost bestanden sind.
 ---
 
 **VisionGaia Technology — GeDefense powered by VisionGaiaTechnology**  
-Technisches Datenblatt für VGT GeDefense 1.0.0-beta.5 Complete Beta.
+Technisches Datenblatt für VGT GeDefense Beta v2, Version 2.0.0-beta.1.
