@@ -20,4 +20,4 @@ jobs:
       - name: Qualify concrete kernel, NIC and installed Beta v3
         env:
           GEDEFENSE_TEST_INTERFACE: ${{ inputs.interface }}
-        run: sudo ./scripts/validate-installed-linux-host.sh "$GEDEFENSE_TEST_INTERFACE"
+        run: sudo bash ./scripts/validate-installed-linux-host.sh "$GEDEFENSE_TEST_INTERFACE"
