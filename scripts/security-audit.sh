@@ -57,7 +57,7 @@ for language in ('en','ru'):
         raise SystemExit(f'{language} translation coverage missing: '+', '.join(missing))
 html=(root/'control'/'web'/'index.html').read_text(encoding='utf-8')
 for value in [
-    'GeDefense', 'VisionGaiaTechnology', '2.0.0-beta.1', 'paypal.me/dergoldenelotus',
+    'GeDefense', 'VisionGaiaTechnology', '3.0.0-beta.1', 'paypal.me/dergoldenelotus',
     'bc1q3ue5gq822tddmkdrek79adlkm36fatat3lz0dm', '0xD37DEfb09e07bD775EaaE9ccDaFE3a5b2348Fe85',
 ]:
     if value not in html:

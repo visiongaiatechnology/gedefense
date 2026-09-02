@@ -5,14 +5,14 @@ umask 0022
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
 OUT=${1:-"$ROOT/dist/release"}
 VERSION=$(tr -d '\r\n' < "$ROOT/VERSION")
-SOURCE_NAME="VGT_GeDefense_Beta_v2_2.0.0-beta.1_Source.zip"
-RUN_NAME="VGT_GeDefense_Beta_v2_2.0.0-beta.1_OneClick.run"
+SOURCE_NAME="VGT_GeDefense_Beta_v3_3.0.0-beta.1_Source.zip"
+RUN_NAME="VGT_GeDefense_Beta_v3_3.0.0-beta.1_OneClick.run"
 EPOCH=${SOURCE_DATE_EPOCH:-1785110400}
 
 for cmd in go node python3 tar gzip sha256sum sed awk ldd grep; do
   command -v "$cmd" >/dev/null 2>&1 || { echo "missing build tool: $cmd" >&2; exit 1; }
 done
-[[ $VERSION == "2.0.0-beta.1" ]] || { echo "unexpected VERSION: $VERSION" >&2; exit 1; }
+[[ $VERSION == "3.0.0-beta.1" ]] || { echo "unexpected VERSION: $VERSION" >&2; exit 1; }
 mkdir -p "$OUT" "$ROOT/dist"
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/vgt-gedefense-package.XXXXXX")
 cleanup(){ rm -rf -- "$WORK"; }
@@ -47,7 +47,7 @@ if ldd "$ROOT/dist/gedefense-access" | grep -q 'not found'; then
 fi
 
 # Source archive: no binaries, build products, keys, tokens, logs or local VCS state.
-SOURCE_STAGE="$WORK/VGT_GeDefense_Beta_v2_2.0.0-beta.1"
+SOURCE_STAGE="$WORK/VGT_GeDefense_Beta_v3_3.0.0-beta.1"
 mkdir -p "$SOURCE_STAGE"
 python3 - "$ROOT" "$SOURCE_STAGE" <<'PY'
 from pathlib import Path

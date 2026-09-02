@@ -3,7 +3,10 @@
 
 use aya_ebpf::{
     bindings::{xdp_action, BPF_F_NO_PREALLOC, TC_ACT_OK, TC_ACT_SHOT},
-    helpers::{bpf_get_current_cgroup_id, bpf_get_current_comm, bpf_get_current_pid_tgid, bpf_get_current_uid_gid},
+    helpers::{
+        bpf_get_current_cgroup_id, bpf_get_current_comm, bpf_get_current_pid_tgid,
+        bpf_get_current_uid_gid,
+    },
     macros::{cgroup_skb, classifier, lsm, map, tracepoint, xdp},
     maps::{lpm_trie::Key, HashMap, LpmTrie, RingBuf},
     programs::{LsmContext, SkBuffContext, TcContext, TracePointContext, XdpContext},
@@ -11,9 +14,8 @@ use aya_ebpf::{
 use core::mem;
 use gedefense_common::{
     parse_network_header, CellLsmDenyEvent, EgressDropEvent, ExecEvent, NetworkHeader, ACTION_DROP,
-    CELL_LSM_DENY_NON_UNIX_SOCKET,
-    EXEC_COMM_BYTES, L2_PREFIX_BYTES, MAX_BLOCKLIST_ENTRIES_V4, MAX_BLOCKLIST_ENTRIES_V6,
-    NETWORK_ADDRESS_BYTES, NETWORK_FAMILY_V4, NETWORK_FAMILY_V6,
+    CELL_LSM_DENY_NON_UNIX_SOCKET, EXEC_COMM_BYTES, L2_PREFIX_BYTES, MAX_BLOCKLIST_ENTRIES_V4,
+    MAX_BLOCKLIST_ENTRIES_V6, NETWORK_ADDRESS_BYTES, NETWORK_FAMILY_V4, NETWORK_FAMILY_V6,
 };
 
 const MAX_ALLOWLIST_ENTRIES: u32 = 65_536;
@@ -71,7 +73,8 @@ static EXEC_EVENTS: RingBuf = RingBuf::with_byte_size(EXEC_EVENT_RING_BYTES, 0);
 static EGRESS_EVENTS: RingBuf = RingBuf::with_byte_size(EGRESS_EVENT_RING_BYTES, 0);
 
 #[map]
-static CELL_LSM_POLICIES: HashMap<u64, u8> = HashMap::with_max_entries(MAX_CELL_LSM_POLICIES, BPF_F_NO_PREALLOC);
+static CELL_LSM_POLICIES: HashMap<u64, u8> =
+    HashMap::with_max_entries(MAX_CELL_LSM_POLICIES, BPF_F_NO_PREALLOC);
 #[map]
 static CELL_LSM_EVENTS: RingBuf = RingBuf::with_byte_size(CELL_LSM_EVENT_RING_BYTES, 0);
 
@@ -220,8 +223,22 @@ fn inspect_egress_v4(ctx: &SkBuffContext) -> Result<bool, ()> {
                 NETWORK_FAMILY_V4,
                 header.protocol,
                 [
-                    header.dst[0], header.dst[1], header.dst[2], header.dst[3], 0, 0, 0, 0, 0,
-                    0, 0, 0, 0, 0, 0, 0,
+                    header.dst[0],
+                    header.dst[1],
+                    header.dst[2],
+                    header.dst[3],
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
                 ],
             );
             return Ok(true);

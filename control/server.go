@@ -93,6 +93,14 @@ func NewAPIServer(cfg Config, state *State, core *CoreClient, feeds *FeedManager
 	mux.HandleFunc("DELETE /api/v1/blocks/{id}", s.auth(s.deleteBlock))
 	mux.HandleFunc("POST /api/v1/feeds/sync", s.auth(s.syncFeeds))
 	mux.HandleFunc("POST /api/v1/xdr/incidents/{id}/ack", s.auth(s.ackIncident))
+	mux.HandleFunc("GET /api/v1/xdr/attack-stories", s.auth(s.attackStories))
+	mux.HandleFunc("GET /api/v1/platform/caps", s.auth(s.platformCapabilities))
+	mux.HandleFunc("GET /api/v1/responses", s.auth(s.activeResponses))
+	mux.HandleFunc("POST /api/v1/deception/test-access", s.auth(s.deceptionTestAccess))
+	mux.HandleFunc("GET /api/v1/styx/rules", s.auth(s.styxRules))
+	mux.HandleFunc("POST /api/v1/styx/rules", s.auth(s.addStyxRule))
+	mux.HandleFunc("POST /api/v1/airlock/inspect", s.auth(s.airlockInspect))
+	mux.HandleFunc("GET /api/v1/chronos/status", s.auth(s.chronosStatus))
 	mux.HandleFunc("GET /metrics", s.metrics)
 	mux.HandleFunc("GET /livez", s.liveness)
 	mux.HandleFunc("GET /readyz", s.readiness)
@@ -307,7 +315,16 @@ func apiError(w http.ResponseWriter, status int, publicMessage string, internal 
 	if internal != nil {
 		log.Printf("api fault id=%s status=%d: %v", id, status, internal)
 	}
-	writeJSON(w, status, map[string]string{"error": publicMessage, "error_id": id})
+	// Sanitize public message if it contains security-sensitive patterns or internal path indicators (Pattern 1.5.A)
+	sanitizedMsg := publicMessage
+	msgLower := strings.ToLower(publicMessage)
+	if strings.Contains(msgLower, "injection") || strings.Contains(msgLower, "path") ||
+		strings.Contains(msgLower, "traversal") || strings.Contains(msgLower, "token") ||
+		strings.Contains(msgLower, "secret") || strings.Contains(msgLower, "key") ||
+		strings.Contains(msgLower, "password") {
+		sanitizedMsg = "request rejected for security reasons"
+	}
+	writeJSON(w, status, map[string]string{"error": sanitizedMsg, "error_id": id})
 }
 
 func decodeStrictJSON(w http.ResponseWriter, r *http.Request, max int64, dst any) error {
@@ -1135,3 +1152,143 @@ func (s *APIServer) metrics(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "# TYPE gedefense_release_ready gauge\ngedefense_release_ready %d\n", releaseReady)
 	fmt.Fprintf(w, "# TYPE gedefense_release_core_misses gauge\ngedefense_release_core_misses %d\n", snap.Release.CoreMisses)
 }
+
+func (s *APIServer) platformCapabilities(w http.ResponseWriter, r *http.Request) {
+	if s.xdr == nil {
+		writeJSON(w, http.StatusOK, DetectPlatformCapabilities("/"))
+		return
+	}
+	writeJSON(w, http.StatusOK, s.xdr.PlatformCaps())
+}
+
+func (s *APIServer) activeResponses(w http.ResponseWriter, r *http.Request) {
+	if s.xdr == nil || s.xdr.Responses() == nil {
+		writeJSON(w, http.StatusOK, []ResponseRecord{})
+		return
+	}
+	writeJSON(w, http.StatusOK, s.xdr.Responses().ActiveResponses())
+}
+
+func (s *APIServer) deceptionTestAccess(w http.ResponseWriter, r *http.Request) {
+	if s.xdr == nil || s.xdr.Deception() == nil {
+		apiError(w, http.StatusServiceUnavailable, "deception engine offline", nil)
+		return
+	}
+	var req struct {
+		CanaryPath string `json:"canary_path"`
+		PID        int    `json:"pid"`
+		Comm       string `json:"comm"`
+		RemoteIP   string `json:"remote_ip"`
+	}
+	if err := decodeStrictJSON(w, r, 64*1024, &req); err != nil {
+		apiError(w, http.StatusBadRequest, "invalid request body", err)
+		return
+	}
+	evt := DeceptionAccessEvent{
+		CanaryPath:   req.CanaryPath,
+		AccessorPID:  req.PID,
+		AccessorUID:  1000,
+		AccessorComm: req.Comm,
+		RemoteIP:     req.RemoteIP,
+		Timestamp:    time.Now().UTC(),
+	}
+	inc, resp, err := s.xdr.Deception().HandleCanaryAccess(r.Context(), evt)
+	if err != nil {
+		apiError(w, http.StatusBadRequest, err.Error(), err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"incident": inc,
+		"response": resp,
+	})
+}
+
+func (s *APIServer) attackStories(w http.ResponseWriter, r *http.Request) {
+	if s.xdr == nil || s.xdr.Correlator() == nil {
+		writeJSON(w, http.StatusOK, []any{})
+		return
+	}
+	stories := s.xdr.Correlator().GetAllStories()
+	type storySummary struct {
+		ChainID      string            `json:"chain_id"`
+		RootNodes    []string          `json:"root_nodes"`
+		EvidenceRoot string            `json:"evidence_root"`
+		NodeCount    int               `json:"node_count"`
+		Nodes        []AttackStoryNode `json:"nodes"`
+	}
+	out := make([]storySummary, 0, len(stories))
+	for _, g := range stories {
+		out = append(out, storySummary{
+			ChainID:      g.ChainID,
+			RootNodes:    g.RootNodes,
+			EvidenceRoot: g.EvidenceRoot(),
+			NodeCount:    len(g.Nodes),
+			Nodes:        g.CloneNodes(),
+		})
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *APIServer) styxRules(w http.ResponseWriter, r *http.Request) {
+	if s.xdr == nil || s.xdr.Styx() == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"rules": []EgressRule{}, "drops": 0, "metadata_hits": 0})
+		return
+	}
+	drops, hits := s.xdr.Styx().Stats()
+	writeJSON(w, http.StatusOK, map[string]any{
+		"rules":         s.xdr.Styx().Rules(),
+		"drops":         drops,
+		"metadata_hits": hits,
+	})
+}
+
+func (s *APIServer) addStyxRule(w http.ResponseWriter, r *http.Request) {
+	if s.xdr == nil || s.xdr.Styx() == nil {
+		apiError(w, http.StatusServiceUnavailable, "styx engine offline", nil)
+		return
+	}
+	var rule EgressRule
+	if err := decodeStrictJSON(w, r, 64*1024, &rule); err != nil {
+		apiError(w, http.StatusBadRequest, "invalid rule payload", err)
+		return
+	}
+	if err := s.xdr.Styx().AddRule(rule); err != nil {
+		apiError(w, http.StatusBadRequest, err.Error(), err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"ok": true, "rule": rule})
+}
+
+func (s *APIServer) airlockInspect(w http.ResponseWriter, r *http.Request) {
+	if s.xdr == nil || s.xdr.Airlock() == nil {
+		apiError(w, http.StatusServiceUnavailable, "airlock inspector offline", nil)
+		return
+	}
+	var req struct {
+		FilePath string `json:"file_path"`
+	}
+	if err := decodeStrictJSON(w, r, 64*1024, &req); err != nil {
+		apiError(w, http.StatusBadRequest, "invalid inspect request", err)
+		return
+	}
+	res, err := s.xdr.Airlock().InspectFile(req.FilePath)
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]any{"clean": false, "error": err.Error(), "result": res})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"clean": true, "result": res})
+}
+
+func (s *APIServer) chronosStatus(w http.ResponseWriter, r *http.Request) {
+	if s.xdr == nil || s.xdr.Chronos() == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"status": "offline"})
+		return
+	}
+	cp, err := s.xdr.Chronos().LoadCheckpoint()
+	if err != nil || cp == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"status": "idle", "checkpoint": nil})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"status": cp.Phase, "checkpoint": cp})
+}
+

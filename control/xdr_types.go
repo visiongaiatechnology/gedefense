@@ -27,8 +27,21 @@ type XDRIncident struct {
 	Decision       string    `json:"decision"`
 	Action         string    `json:"action"`
 	Outcome        string    `json:"outcome"`
-	Acknowledged   bool      `json:"acknowledged"`
-	RecordHash     string    `json:"record_hash,omitempty"`
+	Acknowledged     bool              `json:"acknowledged"`
+	RecordHash       string            `json:"record_hash,omitempty"`
+	ExecutionChainID string            `json:"execution_chain_id,omitempty"`
+	AttackStory      []AttackStoryNode `json:"attack_story,omitempty"`
+}
+
+type BehaviorSummary struct {
+	Profiles            int        `json:"profiles"`
+	WarmProfiles        int        `json:"warm_profiles"`
+	MaxProfiles         int        `json:"max_profiles"`
+	Saturated           bool       `json:"saturated"`
+	DroppedObservations uint64     `json:"dropped_observations"`
+	LastSaved           *time.Time `json:"last_saved,omitempty"`
+	IntegrityOK         bool       `json:"integrity_ok"`
+	Error               string     `json:"error,omitempty"`
 }
 
 type XDRStatus struct {

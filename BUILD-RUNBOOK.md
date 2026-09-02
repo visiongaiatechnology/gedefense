@@ -1,4 +1,4 @@
-# Build Runbook — VGT GeDefense Beta v2 (2.0.0-beta.1)
+# Build Runbook — VGT GeDefense Beta v3 (3.0.0-beta.1)
 
 ## Go and frontend validation
 
@@ -23,7 +23,7 @@ cargo +1.97.1 build --locked --manifest-path rust/Cargo.toml -p gedefense-core -
 
 The eBPF verifier and NIC attach result can only be qualified on the destination Linux host. The RUN installer performs that qualification transactionally and rolls back before replacing a working installation when any gate fails.
 
-## Beta v2 mandatory release gates
+## Beta v3 mandatory release gates
 
 The default CI workflow blocks release unless all Go unit/vet/race gates,
 security fuzz smoke tests, the static security audit, Rust userspace tests, the

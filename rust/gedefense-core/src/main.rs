@@ -4,25 +4,24 @@ use aya::{
         HashMap as AyaHashMap, MapData, MapError, RingBuf,
     },
     programs::{
-        tc, CgroupAttachMode, CgroupSkb, CgroupSkbAttachType, Lsm, SchedClassifier,
-        TcAttachType, TracePoint, Xdp, XdpMode,
+        tc, CgroupAttachMode, CgroupSkb, CgroupSkbAttachType, Lsm, SchedClassifier, TcAttachType,
+        TracePoint, Xdp, XdpMode,
     },
     Btf, Ebpf,
 };
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use gedefense_common::{
-    CellLsmDenyEvent, EgressDropEvent, ExecEvent, ACTION_DROP,
-    CELL_LSM_DENY_NON_UNIX_SOCKET, EXEC_COMM_BYTES, NETWORK_ADDRESS_BYTES, NETWORK_FAMILY_V4,
-    NETWORK_FAMILY_V6,
+    CellLsmDenyEvent, EgressDropEvent, ExecEvent, ACTION_DROP, CELL_LSM_DENY_NON_UNIX_SOCKET,
+    EXEC_COMM_BYTES, NETWORK_ADDRESS_BYTES, NETWORK_FAMILY_V4, NETWORK_FAMILY_V6,
 };
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
 mod malware;
 mod process_control;
 mod quarantine;
+use malware::{handle_user_scan, MalwareScanner};
 #[cfg(test)]
 use process_control::valid_rule_token;
-use malware::{handle_user_scan, MalwareScanner};
 use process_control::{lookup_identity, peer_uid, pidfd_signal};
 use quarantine::{FileIdentity, QuarantineBroker};
 use std::{
@@ -57,7 +56,8 @@ const HARDENING_FILE: &str = "/etc/sysctl.d/90-vgt-gedefense.conf";
 const RENAME_NOREPLACE: u32 = 1;
 const RENAME_EXCHANGE: u32 = 2;
 
-const HARDENING_SERVER: &str = "# Managed atomically by VGT GeDefense. Manual edits are rejected.\n\
+const HARDENING_SERVER: &str =
+    "# Managed atomically by VGT GeDefense. Manual edits are rejected.\n\
 fs.protected_fifos = 2\n\
 fs.protected_regular = 2\n\
 fs.suid_dumpable = 0\n\
@@ -72,7 +72,8 @@ net.ipv4.tcp_syncookies = 1\n\
 net.ipv6.conf.all.accept_redirects = 0\n\
 net.ipv6.conf.default.accept_redirects = 0\n";
 
-const HARDENING_ASTRAEAOS: &str = "# Managed atomically by VGT GeDefense. Manual edits are rejected.\n\
+const HARDENING_ASTRAEAOS: &str =
+    "# Managed atomically by VGT GeDefense. Manual edits are rejected.\n\
 fs.protected_fifos = 2\n\
 fs.protected_regular = 2\n\
 fs.suid_dumpable = 0\n\
@@ -117,7 +118,10 @@ fn custom_hardening_content(profile: &str) -> Option<String> {
         (1 << 2, &[("kernel.dmesg_restrict", "1")]),
         (1 << 3, &[("kernel.yama.ptrace_scope", "2")]),
         (1 << 4, &[("kernel.unprivileged_bpf_disabled", "1")]),
-        (1 << 5, &[("fs.protected_fifos", "2"), ("fs.protected_regular", "2")]),
+        (
+            1 << 5,
+            &[("fs.protected_fifos", "2"), ("fs.protected_regular", "2")],
+        ),
         (1 << 6, &[("fs.suid_dumpable", "0")]),
         (1 << 7, &[("net.ipv4.tcp_syncookies", "1")]),
         (
@@ -239,12 +243,16 @@ fn compare_set_hardening_file(expected: &str, desired: &str) -> Result<String, B
     let directory_fd = std::os::fd::AsRawFd::as_raw_fd(&directory);
     let target_name = CString::new("90-vgt-gedefense.conf")?;
     let temporary_name = hardening_temp_name()?;
-    let temporary_path = Path::new("/etc/sysctl.d").join(
-        std::ffi::OsStr::from_bytes(temporary_name.as_bytes()),
-    );
+    let temporary_path =
+        Path::new("/etc/sysctl.d").join(std::ffi::OsStr::from_bytes(temporary_name.as_bytes()));
 
     if desired == "absent" {
-        renameat2_names(directory_fd, &target_name, &temporary_name, RENAME_NOREPLACE)?;
+        renameat2_names(
+            directory_fd,
+            &target_name,
+            &temporary_name,
+            RENAME_NOREPLACE,
+        )?;
         let captured = hardening_file_state_at(&temporary_path)?;
         if captured != expected {
             let _ = renameat2_names(
@@ -273,7 +281,12 @@ fn compare_set_hardening_file(expected: &str, desired: &str) -> Result<String, B
     }
     let result = (|| {
         if expected == "absent" {
-            renameat2_names(directory_fd, &temporary_name, &target_name, RENAME_NOREPLACE)?;
+            renameat2_names(
+                directory_fd,
+                &temporary_name,
+                &target_name,
+                RENAME_NOREPLACE,
+            )?;
             if hardening_file_state().ok().as_deref() != Some(desired) {
                 if hardening_file_state_at(Path::new(HARDENING_FILE))
                     .ok()
@@ -293,21 +306,13 @@ fn compare_set_hardening_file(expected: &str, desired: &str) -> Result<String, B
             renameat2_names(directory_fd, &temporary_name, &target_name, RENAME_EXCHANGE)?;
             let captured = hardening_file_state_at(&temporary_path)?;
             if captured != expected {
-                let _ = renameat2_names(
-                    directory_fd,
-                    &temporary_name,
-                    &target_name,
-                    RENAME_EXCHANGE,
-                );
+                let _ =
+                    renameat2_names(directory_fd, &temporary_name, &target_name, RENAME_EXCHANGE);
                 return Err("persistent hardening source changed during replacement".into());
             }
             if hardening_file_state().ok().as_deref() != Some(desired) {
-                let _ = renameat2_names(
-                    directory_fd,
-                    &temporary_name,
-                    &target_name,
-                    RENAME_EXCHANGE,
-                );
+                let _ =
+                    renameat2_names(directory_fd, &temporary_name, &target_name, RENAME_EXCHANGE);
                 return Err("persistent hardening post-state verification failed".into());
             }
             fs::remove_file(&temporary_path)?;
@@ -501,17 +506,17 @@ impl KernelCore {
         let cell_lsm_attached = match attach_cell_socket_lsm(&mut ebpf) {
             Ok(()) => true,
             Err(error) if !require_cell_lsm => {
-                eprintln!("BPF LSM unavailable ({error}); Gaia Cell host socket reinforcement disabled");
+                eprintln!(
+                    "BPF LSM unavailable ({error}); Gaia Cell host socket reinforcement disabled"
+                );
                 false
             }
             Err(error) => {
                 return Err(format!("required Gaia Cell BPF LSM attach failed: {error}").into())
             }
         };
-        let exec_events = RingBuf::try_from(
-            ebpf.take_map("EXEC_EVENTS")
-                .ok_or("EXEC_EVENTS missing")?,
-        )?;
+        let exec_events =
+            RingBuf::try_from(ebpf.take_map("EXEC_EVENTS").ok_or("EXEC_EVENTS missing")?)?;
         let egress_events = RingBuf::try_from(
             ebpf.take_map("EGRESS_EVENTS")
                 .ok_or("EGRESS_EVENTS missing")?,
@@ -1007,23 +1012,24 @@ fn process_command(
         ["HARDENING_SET", expected, desired] => compare_set_hardening_file(expected, desired),
         ["MALWARE_SCAN", path] => scanner.inspect_token(path),
         ["QUARANTINE_INSPECT", path] => quarantine.inspect_token(path),
-        ["QUARANTINE_APPLY", path, object_id, identity] => quarantine.quarantine_token(
-            path,
-            object_id,
-            &parse_quarantine_identity(identity)?,
-        ),
+        ["QUARANTINE_APPLY", path, object_id, identity] => {
+            quarantine.quarantine_token(path, object_id, &parse_quarantine_identity(identity)?)
+        }
         ["QUARANTINE_VERIFY", object_id, identity] => {
             quarantine.verify_object(object_id, &parse_quarantine_identity(identity)?)
         }
-        ["QUARANTINE_RESTORE", path, object_id, identity] => quarantine.restore_token(
-            path,
-            object_id,
-            &parse_quarantine_identity(identity)?,
-        ),
+        ["QUARANTINE_RESTORE", path, object_id, identity] => {
+            quarantine.restore_token(path, object_id, &parse_quarantine_identity(identity)?)
+        }
         ["XDR_STOP", pid, start, rule] => {
             let pid = pid.parse::<i32>()?;
             let start = start.parse::<u64>()?;
             pidfd_signal(pid, start, libc::SIGSTOP, rule).map(|_| "stopped".into())
+        }
+        ["XDR_CONT", pid, start, rule] | ["XDR_RESUME", pid, start, rule] => {
+            let pid = pid.parse::<i32>()?;
+            let start = start.parse::<u64>()?;
+            pidfd_signal(pid, start, libc::SIGCONT, rule).map(|_| "resumed".into())
         }
         ["XDR_KILL", pid, start, rule] => {
             let pid = pid.parse::<i32>()?;
@@ -1179,9 +1185,7 @@ fn fallback_interface() -> Result<String, BoxError> {
     }
     candidates.sort_unstable();
     if let Some((_, name)) = candidates.into_iter().next() {
-        eprintln!(
-            "no active default route yet; attaching XDP to validated interface {name}"
-        );
+        eprintln!("no active default route yet; attaching XDP to validated interface {name}");
         return Ok(name);
     }
     if interface_exists("lo") {
@@ -1320,8 +1324,9 @@ fn main() -> Result<(), BoxError> {
         }
     }
     eprintln!("GeDefense core startup phase=xdp-load interface={iface}");
-    let mut core = KernelCore::load(&object, &iface, require_cell_lsm)
-        .map_err(|error| std::io::Error::other(format!("kernel data-plane load/attach: {error}")))?;
+    let mut core = KernelCore::load(&object, &iface, require_cell_lsm).map_err(|error| {
+        std::io::Error::other(format!("kernel data-plane load/attach: {error}"))
+    })?;
     let mut replay = ReplayGuard::new();
     eprintln!(
         "GeDefense Rust core online: interface={iface} ingress={} cgroup_egress=attached cell_lsm={} on_access=fanotify-exec user_scan=peercred-jail authenticated_ipc=VGT3 socket={socket}",

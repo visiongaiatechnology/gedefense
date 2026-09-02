@@ -13,8 +13,8 @@
 ### Linux Security Fabric
 
 [![License](https://img.shields.io/badge/License-AGPL--3.0--only-blue?style=for-the-badge)](https://www.gnu.org/licenses/agpl-3.0)
-[![Version](https://img.shields.io/badge/Version-2.0.0--beta.1-orange?style=for-the-badge)](#)
-[![Status](https://img.shields.io/badge/Status-Beta_v2-yellow?style=for-the-badge)](#)
+[![Version](https://img.shields.io/badge/Version-3.0.0--beta.1-orange?style=for-the-badge)](#)
+[![Status](https://img.shields.io/badge/Status-Beta_v3-yellow?style=for-the-badge)](#)
 [![Installer](https://img.shields.io/badge/Installer-4.0.0_Universal_Linux-green?style=for-the-badge)](#-quick-start)
 [![Platform](https://img.shields.io/badge/Platform-Linux_x86__64-lightgrey?style=for-the-badge&logo=linux)](#)
 [![Data Plane](https://img.shields.io/badge/Data_Plane-Rust_eBPF%2FXDP-red?style=for-the-badge&logo=rust)](#-architecture)
@@ -31,15 +31,37 @@
 
 ---
 
-## ⚠️ BETA SOFTWARE — BETA v2 · UNIVERSAL LINUX RELEASE CANDIDATE
+## ⚠️ BETA SOFTWARE — BETA v3 · UNIVERSAL LINUX RELEASE CANDIDATE
 
-VGT GeDefense 2.0.0-beta.1 is **Beta v2** — the Beta 5 defense chain plus a universal Linux integration, hardened release pipeline and concrete kernel/NIC qualification gate. It is **not** a certified or generally production-cleared product.
+VGT GeDefense 3.0.0-beta.1 is **Beta v3** — the Beta 5 defense chain plus a universal Linux integration, hardened release pipeline and concrete kernel/NIC qualification gate. It is **not** a certified or generally production-cleared product.
 
 **Production clearance is deliberately a property of the concretely audited target host — not just the source code.**
 
 Initial deployment: **Observe mode only.** Canary and Enforce exclusively after documented gates have been passed.
 
 Found a vulnerability or have an improvement? **Open an issue or contact us.**
+
+---
+
+## 📋 Changelog: Von V2 Beta 1 zu V3 Beta 1 (`3.0.0-beta.1`)
+
+VGT GeDefense 3.0.0-beta.1 transformiert die Architektur von einem reinen Host-/Netzwerk-Sensor mit statischer Regelausführung zu einer **vollständig autonomen, reversiblen Linux Security Fabric mit Defense-in-Depth**.
+
+### 🌟 Neue Kernmodule & Architektur-Upgrades
+* **Dual-Mode-Doktrin (Identical Binaries, Dynamic Capability Detection):** Einheitliche Binärdateien für AstraeaOS (native Ring-1-GaiaCells, BPF-LSM, Key-Broker) und generische Linux-Systeme (Ubuntu, Debian, RHEL, Fedora, Arch, Alpine) mit dynamischer Enclave-Erkennung beim Booten (`platform_caps.go`).
+* **Trinity Dynamic Attack Story DAG & Incident Correlator:** Kausale Rekonstruktion ganzer Angriffsgraphen (`CANARY_TRIGGERED`, `PRIVILEGE_ESCALATED`, `EGRESS_ATTEMPTED`) mit deterministischer Merkle-Root-Evidence statt isolierter Log-Zeilen.
+* **Autonome Reversible Response Engine:** Multistufige Quarantäne (`CONTAIN_IP`, `FREEZE_EXECUTION`, `CONTAIN_CELL`) mit semantischen TTLs und automatischem, auditsicherem Rollback bei Nicht-Bestätigung durch den Operator.
+* **Nemesis Cyber Deception Grid:** Physische Canary-Fallen auf Disk (`0600`) mit dynamischer Schlüsselableitung via `StorageCipher` und kalibrierter RASP-Erkennung (85% System/Backup vs. 98% unberechtigte Entitäten).
+* **Styx Zero-Trust Egress & SSRF Shield:** Cgroup-/Cell-basiertes Egress-Whitelisting mit integriertem Filter gegen Cloud-Metadaten-Exfiltration (AWS, GCP, Azure, Alibaba, OCI, IPv6 IMDSv2).
+* **Airlock Ingress & Polyglot Inspector:** Strikte Magic-Byte-Prüfung, SVG-Sanitization (Neutralisierung von Skripten, ForeignObjects, Embeds, Iframes und DTDs) und Quarantäne-Staging mit harten Größenbegrenzungen und Symlink-Jail.
+* **Morpheus Linux RASP & Credential Scrubber:** Schutz geschützter Daemons vor Memory-Scraping (`/proc/<pid>/mem`, `ptrace`) und automatische Schwärzung von API-Keys/Tokens in Prozessargumenten.
+* **Chronos Resumable FIM:** I/O-schonender File-Integrity-Scanner mit atomaren Checkpoints, Descriptor-Leak-Beseitigung und Merkle-Tree-Integritätswurzel.
+
+### 🛡️ Real-World Kernel- & IPC-Härtungen (No Dead Architecture)
+* **Reversibler Process-Freeze:** Echte `/proc/<pid>/stat`-StartTicks-Validierung gegen PID-Reuse-Races; Rust Core unterstützt nun `libc::SIGCONT` (`XDR_CONT`) zur echten Prozesswiederaufnahme nach TTL-Ablauf.
+* **Evasion-Resistente SSRF-Validierung:** Normalisierung und Abfangen von Dezimal-Dword-, Hex-, Oktal- und IPv4-in-IPv6-Darstellungen sowie strikte Sperrung interner Loopback-Ziele.
+* **API-Härtung (Pattern 1.5.A):** Alle sekundären API-Endpunkte nutzen striktes `decodeStrictJSON` (64 KiB Limit, Content-Type, Unbekannte Felder abweisen); Fehlermeldungen mit sensiblen Begriffen werden clientseitig opak maskiert.
+* **Zero-Trust Memory Zeroization:** `StorageCipher.Destroy()` überschreibt Master-Keys beim Herunterfahren sicher im Arbeitsspeicher.
 
 ---
 
@@ -265,7 +287,7 @@ The Rust Core has **no generic shell, filesystem or sysctl interface**. Partial 
 
 ## 🐧 Universal Linux Integration
 
-| Layer | Beta v2 integration |
+| Layer | Beta v3 integration |
 |---|---|
 | Package managers | APT · DNF/YUM · pacman · Zypper |
 | Init | Hardened systemd units with syntax and runtime gates |
@@ -359,14 +381,14 @@ If the Gaia Cells runtime is **not present**, the adapter reports `runtime_not_i
 
 ```bash
 # Download installer
-wget https://github.com/visiongaiatechnology/gedefense/releases/download/v2.0.0-beta.1/VGT_GeDefense_Beta_v2_2.0.0-beta.1_OneClick.run
+wget https://github.com/visiongaiatechnology/gedefense/releases/download/v3.0.0-beta.1/VGT_GeDefense_Beta_v3_3.0.0-beta.1_OneClick.run
 
 # Verify SHA-256
-sha256sum --check VGT_GeDefense_Beta_v2_2.0.0-beta.1_OneClick.run.sha256
+sha256sum --check VGT_GeDefense_Beta_v3_3.0.0-beta.1_OneClick.run.sha256
 
 # Install (root required)
-chmod 700 VGT_GeDefense_Beta_v2_2.0.0-beta.1_OneClick.run
-sudo ./VGT_GeDefense_Beta_v2_2.0.0-beta.1_OneClick.run
+chmod 700 VGT_GeDefense_Beta_v3_3.0.0-beta.1_OneClick.run
+sudo ./VGT_GeDefense_Beta_v3_3.0.0-beta.1_OneClick.run
 ```
 
 > The installer and checksum are published only after all GitHub CI and concrete
@@ -380,7 +402,7 @@ The firewall rule for the HTTPS gateway port (TCP 9843) can be configured via UF
 
 ---
 
-## ✅ Beta v2 Release Gates
+## ✅ Beta v3 Release Gates
 
 | Gate | State | Release rule |
 |---|---:|---|
@@ -402,7 +424,7 @@ The firewall rule for the HTTPS gateway port (TCP 9843) can be configured via UF
 
 ---
 
-## 🚧 Known Limitations (2.0.0-beta.1)
+## 🚧 Known Limitations (3.0.0-beta.1)
 
 - No Swarm / Mesh support
 - No QUIC offloading
@@ -418,7 +440,7 @@ The firewall rule for the HTTPS gateway port (TCP 9843) can be configured via UF
 
 ## 📋 Changelog
 
-### v2.0.0-beta.1 — Universal Linux Integration *(Current)*
+### v3.0.0-beta.1 — Universal Linux Integration *(Current)*
 
 **Integration and deployment**
 
@@ -448,7 +470,7 @@ The firewall rule for the HTTPS gateway port (TCP 9843) can be configured via UF
 - Pinned GitHub Actions to immutable 40-character commit identities.
 - Added a privileged host workflow for bpffs, kernel-visible eBPF programs,
   concrete NIC XDP attachment, authenticated IPC/TLS, systemd, Polkit and desktop.
-- Added deterministic Beta v2 source/installer artifact names and SHA-256 checks.
+- Added deterministic Beta v3 source/installer artifact names and SHA-256 checks.
 
 **Unchanged security foundation**
 
@@ -506,6 +528,6 @@ Enterprise deployments, TIER-0 audits (VGT SafetySys™) and commercial exceptio
 
 [![VGT](https://img.shields.io/badge/VisionGaia-Technology-cyan?style=for-the-badge)](https://visiongaiatechnology.de)
 
-*VGT GeDefense 2.0.0-beta.1 — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
+*VGT GeDefense 3.0.0-beta.1 — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
 
 </div>

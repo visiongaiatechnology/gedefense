@@ -4,7 +4,7 @@
   <vendor>VisionGaiaTechnology</vendor>
   <vendor_url>https://github.com/VisionGaiaTechnology</vendor_url>
   <action id="org.vgt.gedefense.ensure-ready">
-    <description>Start and verify GeDefense Beta v2</description>
+    <description>Start and verify GeDefense Beta v3</description>
     <message>Administrator authentication is required to start GeDefense.</message>
     <defaults>
       <allow_any>no</allow_any>

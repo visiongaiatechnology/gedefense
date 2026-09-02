@@ -89,10 +89,10 @@ EXCLUDED_SUFFIXES = (
 )
 
 RELEASE_ASSETS = (
-    "VGT_GeDefense_Beta_v2_2.0.0-beta.1_OneClick.run",
-    "VGT_GeDefense_Beta_v2_2.0.0-beta.1_OneClick.run.sha256",
-    "VGT_GeDefense_Beta_v2_2.0.0-beta.1_Source.zip",
-    "VGT_GeDefense_Beta_v2_2.0.0-beta.1_Source.zip.sha256",
+    "VGT_GeDefense_Beta_v3_3.0.0-beta.1_OneClick.run",
+    "VGT_GeDefense_Beta_v3_3.0.0-beta.1_OneClick.run.sha256",
+    "VGT_GeDefense_Beta_v3_3.0.0-beta.1_Source.zip",
+    "VGT_GeDefense_Beta_v3_3.0.0-beta.1_Source.zip.sha256",
 )
 
 FORBIDDEN_BYTE_MARKERS = (
@@ -256,7 +256,7 @@ def main(include_release_assets: bool = False) -> int:
             (release / "README.md").write_text(
                 "# Release assets pending Linux CI\n\n"
                 "The source repository is ready for GitHub. Create and attach the signed "
-                "Beta v2 artifacts only after all GitHub CI and concrete Linux host gates pass.\n",
+                "Beta v3 artifacts only after all GitHub CI and concrete Linux host gates pass.\n",
                 encoding="utf-8",
                 newline="\n",
             )

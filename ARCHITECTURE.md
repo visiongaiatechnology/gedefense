@@ -1,17 +1,17 @@
-# GeDefense Beta v2 (2.0.0-beta.1) — Architecture
+# GeDefense Beta v3 (3.0.0-beta.1) — Architecture
 
 ## Trust domains
 
-1. **Public access gateway — Go, unprivileged**  
+1. **Public access gateway — Go, unprivileged**
    TLS 1.3, Argon2id password verification, synchronizer-token login CSRF, strict session/origin policy, Host allowlist and reverse-proxy trust-boundary cleanup. Browser credentials and forwarding headers never reach the backend.
 
-2. **Control plane — Go, unprivileged**  
+2. **Control plane — Go, unprivileged**
    Command Center, telemetry, encrypted operational state, signed policy generations, XDR, behavior profiles, feed staging, forensic exports, evidence-only boot trust and release gates. It binds to loopback and requires a private bearer token injected by the gateway.
 
-3. **Response core — Rust, privileged and capability-bounded**  
+3. **Response core — Rust, privileged and capability-bounded**
    Loads XDP, owns maps, authenticates VGT3 IPC with HMAC/replay protection, verifies peer UID with `SO_PEERCRED`, rechecks process identity and performs narrowly typed kernel/process actions.
 
-4. **Kernel data plane — Rust no_std eBPF/XDP + cgroup skb**  
+4. **Kernel data plane — Rust no_std eBPF/XDP + cgroup skb**
    Bounded Ethernet/VLAN/IPv4/IPv6 parsing, management allowlist before blocklist,
    longest-prefix CIDR matching, root-cgroup outbound enforcement and bounded
    drop telemetry. Malformed or truncated headers remain fail-open while signed
@@ -163,4 +163,4 @@ trust boundaries and delivery sequence.
 
 ## Deferred layer
 
-Swarm/Mesh federation and QUIC offloading are intentionally outside 2.0.0-beta.1.
+Swarm/Mesh federation and QUIC offloading are intentionally outside 3.0.0-beta.1.

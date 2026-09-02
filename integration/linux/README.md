@@ -1,4 +1,4 @@
-# GeDefense Beta v2 universal Linux integration
+# GeDefense Beta v3 universal Linux integration
 
 This adapter installs the authenticated local application, polkit privilege
 boundary and transactional systemd readiness helper on systemd-based x86_64

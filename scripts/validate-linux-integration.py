@@ -26,7 +26,7 @@ if missing:
     fail(f"missing files: {', '.join(missing)}")
 
 version = (root / "VERSION").read_text(encoding="utf-8").strip()
-if version != "2.0.0-beta.1":
+if version != "3.0.0-beta.1":
     fail(f"unexpected version: {version}")
 
 contract = json.loads((root / "integration" / "astraeaos" / "contract.json").read_text(encoding="utf-8"))

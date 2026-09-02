@@ -9,6 +9,18 @@ pub const NETWORK_ADDRESS_BYTES: usize = 16;
 pub const NETWORK_FAMILY_V4: u8 = 4;
 pub const NETWORK_FAMILY_V6: u8 = 6;
 pub const CELL_LSM_DENY_NON_UNIX_SOCKET: u8 = 1;
+pub const CANARY_PATH_BYTES: usize = 64;
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct DeceptionAccessEvent {
+    pub pid: u32,
+    pub uid: u32,
+    pub canary_type: u8,
+    pub reserved: [u8; 7],
+    pub comm: [u8; EXEC_COMM_BYTES],
+    pub path_prefix: [u8; CANARY_PATH_BYTES],
+}
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

@@ -1,0 +1,39 @@
+# Build outputs
+/dist/
+/GitHub Upload/
+**/target/
+*.exe
+*.run
+*.zip
+
+# Language caches
+__pycache__/
+*.pyc
+*.pyo
+*.test
+*.out
+
+# Local packaging worktrees
+**/pkg/
+*.pkg.tar.*
+*.pkg.tar.*.sig
+
+# Tooling / IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+*~
+*.swp
+
+# Secrets and local state (never commit)
+*.pem
+*.key
+.env
+.env.*
+.local-state/
+
+# Agent / editor debris
+.manifest-regen-status.txt
+.agents/
+.codex/
