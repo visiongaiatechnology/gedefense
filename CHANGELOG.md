@@ -1,6 +1,13 @@
 # Changelog
 
-## 2.0.0-beta.1 — Beta v2 universal Linux integration
+## 3.0.0-beta.1 — Beta v3 Universal Linux & AstraeaOS Deep Integration (VGT Doktrin DIAMANT)
+
+- Integrated TRINITY XDR 2.0 Directed Acyclic Graph (DAG) for causal attack stories with Merkle-root cryptographic proof chaining.
+- Integrated Reversible Response Engine with semantic TTL presets (300s, 900s, 3600s), 4x repeat offender escalation, and automatic background rollback.
+- Integrated Nemesis & Ghost Trap Linux Deception Grid with canary file placement, path jailing, and zero-false-positive process freeze.
+- Added Dynamic Capability Detection (Dual-Mode) for transparent runtime detection of AstraeaOS native enclaves vs. generic Linux distributions.
+
+## 3.0.0-beta.1 — Beta v3 universal Linux integration
 
 - Promoted portable AstraeaOS readiness, desktop and privilege-boundary
   contracts into the generic Linux release payload.
@@ -10,7 +17,7 @@
 - Preserved AstraeaOS-only SDDM, ArchISO and Gaia Cells behavior as conditional
   adapters instead of imposing those assumptions on other distributions.
 - Added mandatory Go race/fuzz/security, pinned Rust/eBPF release-build and
-  cryptographic artifact gates to the Beta v2 CI.
+  cryptographic artifact gates to the Beta v3 CI.
 - Added containerized Ubuntu, Fedora, Arch and openSUSE integration contracts.
 - Added a privileged installed-host gate for systemd, authenticated readiness,
   bpffs, verifier-visible eBPF programs, concrete NIC XDP attachment, polkit and

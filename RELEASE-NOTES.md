@@ -1,4 +1,4 @@
-# VGT GeDefense Beta v2 — 2.0.0-beta.1
+# VGT GeDefense Beta v3 — 3.0.0-beta.1
 
 **GeDefense powered by VisionGaiaTechnology** promotes the encrypted full-stack
 security fabric into a universal systemd Linux integration. The Go control
@@ -20,4 +20,4 @@ The release still reports full-stack installation success only after the target 
 
 Swarm/Mesh remains intentionally outside this beta. A public source tag is not
 a host qualification: the concrete kernel, verifier, NIC/XDP mode and systemd
-activation must pass the privileged Beta v2 host gate before binary release.
+activation must pass the privileged Beta v3 host gate before binary release.

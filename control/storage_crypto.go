@@ -212,3 +212,13 @@ func readBoundedPrivateFile(path string, max int64) ([]byte, error) {
 	defer f.Close()
 	return io.ReadAll(io.LimitReader(f, max+1))
 }
+
+// Destroy securely zeroizes the master root key in memory (Pattern RS-001 / Zero-Trust Lifetime).
+func (c *StorageCipher) Destroy() {
+	if c != nil && c.rootKey != nil {
+		clear(c.rootKey)
+		c.rootKey = nil
+		c.nodeName = ""
+	}
+}
+

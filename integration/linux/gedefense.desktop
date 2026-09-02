@@ -1,7 +1,7 @@
 [Desktop Entry]
 Type=Application
 Version=1.5
-Name=GeDefense Beta v2
+Name=GeDefense Beta v3
 GenericName=Linux Security Center
 Comment=Kernel-integrated XDR, firewall and host defense
 Exec=gedefense-app

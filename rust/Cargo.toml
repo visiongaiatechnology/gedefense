@@ -6,7 +6,7 @@ members = ["gedefense-common", "gedefense-ebpf", "gedefense-core"]
 aya = { path = "vendor/aya" }
 
 [workspace.package]
-version = "2.0.0-beta.1"
+version = "3.0.0-beta.1"
 edition = "2021"
 license = "AGPL-3.0-only"
 authors = ["VisionGaia Technology"]

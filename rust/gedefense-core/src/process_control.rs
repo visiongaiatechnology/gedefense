@@ -63,6 +63,9 @@ pub(super) fn pidfd_signal(
     if !valid_rule_token(rule) {
         return Err("invalid rule token".into());
     }
+    if signal != libc::SIGSTOP && signal != libc::SIGKILL && signal != libc::SIGCONT {
+        return Err("unsupported signal".into());
+    }
     if proc_start_ticks(pid)? != expected_start {
         return Err("PID identity mismatch before pidfd_open".into());
     }
@@ -79,7 +82,7 @@ pub(super) fn pidfd_signal(
             return Err("kill rejected: objective evidence missing".into());
         }
         // SAFETY: pidfd is identity-checked, signal is caller-restricted to
-        // SIGSTOP/SIGKILL, and a null siginfo is supported by the syscall.
+        // SIGSTOP/SIGKILL/SIGCONT, and a null siginfo is supported by the syscall.
         let rc = unsafe {
             libc::syscall(
                 libc::SYS_pidfd_send_signal,

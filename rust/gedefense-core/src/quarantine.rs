@@ -388,8 +388,7 @@ impl QuarantineBroker {
         if metadata.file_type().is_symlink() || !metadata.is_file() {
             return Err("quarantine object must be a regular non-symlink file".into());
         }
-        if metadata.len() > MAX_FILE_BYTES + (MAX_FILE_BYTES / CHUNK_BYTES as u64 + 1) * 24 + 4096
-        {
+        if metadata.len() > MAX_FILE_BYTES + (MAX_FILE_BYTES / CHUNK_BYTES as u64 + 1) * 24 + 4096 {
             return Err("quarantine object exceeds encrypted size boundary".into());
         }
         let mut input = OpenOptions::new()
@@ -616,12 +615,7 @@ fn path_exists_at(parent_fd: RawFd, name: &CStr) -> Result<bool, BoxError> {
     Err(error.into())
 }
 
-fn rename_noreplace(
-    from_fd: RawFd,
-    from: &CStr,
-    to_fd: RawFd,
-    to: &CStr,
-) -> Result<(), BoxError> {
+fn rename_noreplace(from_fd: RawFd, from: &CStr, to_fd: RawFd, to: &CStr) -> Result<(), BoxError> {
     let result = unsafe {
         libc::syscall(
             libc::SYS_renameat2,
@@ -825,11 +819,9 @@ mod tests {
         fs::write(&source, &payload).expect("source write");
         fs::set_permissions(&source, fs::Permissions::from_mode(0o640)).expect("source mode");
 
-        let broker = QuarantineBroker::new(
-            object_dir.to_str().expect("object directory"),
-            &[0x33; 32],
-        )
-        .expect("broker");
+        let broker =
+            QuarantineBroker::new(object_dir.to_str().expect("object directory"), &[0x33; 32])
+                .expect("broker");
         let encoded_path = path_token(&source);
         let identity =
             identity_from_token(&broker.inspect_token(&encoded_path).expect("inspect source"));
@@ -859,11 +851,9 @@ mod tests {
         fs::create_dir_all(&source_dir).expect("source directory");
         let source = source_dir.join("threat.bin");
         fs::write(&source, b"hostile payload").expect("source write");
-        let broker = QuarantineBroker::new(
-            object_dir.to_str().expect("object directory"),
-            &[0x44; 32],
-        )
-        .expect("broker");
+        let broker =
+            QuarantineBroker::new(object_dir.to_str().expect("object directory"), &[0x44; 32])
+                .expect("broker");
         let encoded_path = path_token(&source);
         let identity =
             identity_from_token(&broker.inspect_token(&encoded_path).expect("inspect source"));

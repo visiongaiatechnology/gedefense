@@ -2,7 +2,7 @@
 # Maintainer: VisionGaia Technology
 
 pkgname=astraeaos-gedefense-integration
-pkgver=1.0.0_beta.5
+pkgver=3.0.0_beta.1
 pkgrel=27
 pkgdesc='Native AstraeaOS profile and authority contract for GeDefense'
 arch=('x86_64')

@@ -1,6 +1,6 @@
 'use strict';
 
-const VERSION = '2.0.0-beta.1';
+const VERSION = '3.0.0-beta.1';
 const SUPPORTED = new Set(['de', 'en', 'ru']);
 const LOCALES = { de: 'de-DE', en: 'en-US', ru: 'ru-RU' };
 

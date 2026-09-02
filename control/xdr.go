@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"log"
@@ -9,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -47,6 +50,14 @@ type XDREngine struct {
 	protected       map[string]protectedObject
 	cellPolicyEpoch string
 	cellPolicies    map[uint64]uint8
+	platformCaps    PlatformCapabilities
+	correlator      *IncidentCorrelator
+	responses       *ResponseEngine
+	deception       *DeceptionEngine
+	styx            *StyxEngine
+	morpheus        *MorpheusRASP
+	airlock         *AirlockInspector
+	chronos         *ChronosScanner
 	degraded        bool
 	degradeWhy      string
 	mu              sync.RWMutex
@@ -107,7 +118,121 @@ func NewXDREngine(cfg Config, state *State, core *CoreClient, feeds *FeedManager
 	}
 	paths = append(paths, baselineExecutables(baseline)...)
 	e.captureProtected(paths)
+
+	e.platformCaps = DetectPlatformCapabilities("/")
+	e.correlator = NewIncidentCorrelator(30 * time.Minute)
+	respCfg := DefaultResponseConfig()
+	e.responses = NewResponseEngine(respCfg, core, func(action, target, details string, ts time.Time) error {
+		if state.EvidenceLedger() != nil {
+			return state.RecordEvidence(EvidenceRecord{
+				Severity: "high",
+				Kind:     "xdr.response",
+				Source:   "response-engine",
+				Message:  fmt.Sprintf("Action=%s Target=%s Details=%s", action, target, details),
+				Target:   target,
+				Time:     ts,
+			})
+		}
+		return nil
+	})
+	storageDir := filepath.Dir(cfg.XDR.IncidentLog)
+	if storageDir == "" || storageDir == "." {
+		storageDir = "/var/lib/vgt-gedefense"
+	}
+
+	// Derive deception master key using storage key cipher purposeKey("deception-master-key")
+	// or fallback to deterministic HMAC bound to storageDir and node identity.
+	var deceptionKey []byte
+	storageKeyPath := cfg.XDR.StorageKeyFile
+	if storageKeyPath == "" {
+		storageKeyPath = cfg.Runtime.StorageKeyFile
+	}
+	if storageKeyPath == "" {
+		storageKeyPath = cfg.Policy.StorageKeyFile
+	}
+	if storageKeyPath != "" {
+		if cipher, err := NewStorageCipher(storageKeyPath, cfg.Node.Name); err == nil && cipher != nil {
+			if k, err := cipher.purposeKey("deception-master-key"); err == nil && len(k) >= 16 {
+				deceptionKey = k
+			}
+		}
+	}
+	if len(deceptionKey) < 16 {
+		mac := hmac.New(sha256.New, []byte("VGT-DECEPTION-STORAGE-ROOT-v1"))
+		mac.Write([]byte(cfg.Node.Name + "|"))
+		mac.Write([]byte(filepath.Clean(storageDir)))
+		deceptionKey = mac.Sum(nil)
+	}
+
+	if dec, err := NewDeceptionEngine(deceptionKey, e.responses, e.correlator, func(inc XDRIncident) error {
+		e.appendIncident(inc)
+		return nil
+	}); err == nil {
+		canaries := []struct {
+			path string
+			t    CanaryType
+			uid  uint32
+			mode uint32
+		}{
+			{"/tmp/.aws_credentials", CanaryCloudCred, 1000, 0600},
+			{"/etc/shadow.bak", CanaryShadow, 0, 0600},
+		}
+		for _, c := range canaries {
+			if _, regErr := dec.RegisterCanary(c.path, c.t, c.uid, c.mode); regErr == nil {
+				_ = dec.DeployCanaryFile(c.path, c.t)
+			}
+		}
+		e.deception = dec
+	}
+
+	e.styx = NewStyxEngine(EgressModeMonitored, e.correlator, func(inc XDRIncident) error {
+		e.appendIncident(inc)
+		return nil
+	})
+	e.morpheus = NewMorpheusRASP("", e.correlator, func(inc XDRIncident) error {
+		e.appendIncident(inc)
+		return nil
+	})
+	if airlock, err := NewAirlockInspector(filepath.Join(storageDir, "airlock_quarantine"), 100<<20); err == nil {
+		e.airlock = airlock
+	}
+	if chronos, err := NewChronosScanner([]string{"/usr/bin", "/etc"}, filepath.Join(storageDir, "chronos_checkpoint.json"), 100, time.Millisecond); err == nil {
+		e.chronos = chronos
+	}
+
 	return e, nil
+}
+
+func (e *XDREngine) Responses() *ResponseEngine {
+	return e.responses
+}
+
+func (e *XDREngine) Deception() *DeceptionEngine {
+	return e.deception
+}
+
+func (e *XDREngine) Styx() *StyxEngine {
+	return e.styx
+}
+
+func (e *XDREngine) Morpheus() *MorpheusRASP {
+	return e.morpheus
+}
+
+func (e *XDREngine) Airlock() *AirlockInspector {
+	return e.airlock
+}
+
+func (e *XDREngine) Chronos() *ChronosScanner {
+	return e.chronos
+}
+
+func (e *XDREngine) PlatformCaps() PlatformCapabilities {
+	return e.platformCaps
+}
+
+func (e *XDREngine) Correlator() *IncidentCorrelator {
+	return e.correlator
 }
 
 func (e *XDREngine) runtimeSettings() RuntimeSettings {
@@ -267,6 +392,7 @@ func (e *XDREngine) Run(ctx context.Context) {
 	cleanupTick := time.NewTicker(time.Minute)
 	behaviorSaveTick := time.NewTicker(5 * time.Minute)
 	statusTick := time.NewTicker(time.Second)
+	rollbackTick := time.NewTicker(15 * time.Second)
 	defer scanTick.Stop()
 	defer execTick.Stop()
 	defer netTick.Stop()
@@ -275,6 +401,7 @@ func (e *XDREngine) Run(ctx context.Context) {
 	defer cleanupTick.Stop()
 	defer behaviorSaveTick.Stop()
 	defer statusTick.Stop()
+	defer rollbackTick.Stop()
 
 	integrityEvents, stopIntegrityWatch, watchErr := watchIntegrityChanges(ctx, e.protectedPaths())
 	defer stopIntegrityWatch()
@@ -493,6 +620,10 @@ func (e *XDREngine) Run(ctx context.Context) {
 					e.markDegraded("behavior profile persistence failed: " + err.Error())
 				}
 			}
+		case now := <-rollbackTick.C:
+			if e.responses != nil {
+				_, _ = e.responses.RollbackExpired(ctx, now)
+			}
 		case now := <-cleanupTick.C:
 			e.cleanupDedupe(now)
 		case now := <-statusTick.C:
@@ -671,12 +802,53 @@ func (e *XDREngine) evaluate(p ProcessSample, conns []NetConnection, source stri
 	if decision.Decision == "kill" {
 		severity = "critical"
 	}
+	now := time.Now().UTC()
+	incidentID := randomID()
+	storyNode := AttackStoryNode{
+		NodeID:     fmt.Sprintf("node-%d-%d", p.PID, now.UnixNano()),
+		Timestamp:  now,
+		Sensor:     source,
+		Category:   strings.Join(decision.Categories, ","),
+		EventType:  "PROCESS_EXEC",
+		EntityID:   fmt.Sprintf("PID:%d", p.PID),
+		Actor:      fmt.Sprintf("UID:%d", p.UID),
+		Severity:   severity,
+		Confidence: decision.ResponseScore,
+		CausalEdge: EdgeForkedFrom,
+		EventUUID:  incidentID,
+		Metadata: map[string]string{
+			"comm":   p.Comm,
+			"exe":    p.Exe,
+			"remote": decision.Remote,
+		},
+	}
+	var storyNodes []AttackStoryNode
+	recordHash := storyNode.ComputeNodeDigest()
+	execChainID := storyNode.NodeID
+	if e.correlator != nil {
+		actorStr := fmt.Sprintf("UID:%d", p.UID)
+		categoryStr := "EXEC"
+		if len(decision.Categories) > 0 {
+			categoryStr = decision.Categories[0]
+		}
+		graph, _, err := e.correlator.IngestEvent(now, actorStr, p.Comm, categoryStr, storyNode)
+		if err == nil && graph != nil {
+			storyNodes = graph.CloneNodes()
+			recordHash = graph.EvidenceRoot()
+			execChainID = graph.ChainID
+		}
+	}
+	if len(storyNodes) == 0 {
+		storyNodes = []AttackStoryNode{storyNode}
+	}
+
 	incident := XDRIncident{
-		ID: randomID(), Time: time.Now().UTC(), Severity: severity, Score: decision.Score, ResponseScore: decision.ResponseScore, KillSignals: decision.KillSignals,
+		ID: incidentID, Time: now, Severity: severity, Score: decision.Score, ResponseScore: decision.ResponseScore, KillSignals: decision.KillSignals,
 		PID: p.PID, PPID: p.PPID, StartTicks: p.StartTicks, UID: p.UID, Process: p.Comm, Executable: p.Exe,
 		Parent: p.ParentExe, Remote: decision.Remote, CommandPreview: e.rules.RedactCommand(p.Cmdline, e.cfg.XDR.CommandPreviewBytes),
 		CommandSHA256: p.CmdSHA256, RuleIDs: decision.RuleIDs, Categories: decision.Categories, Summary: decision.Summary,
 		Decision: decision.Decision, Action: "none", Outcome: "observed",
+		ExecutionChainID: execChainID, AttackStory: storyNodes, RecordHash: recordHash,
 	}
 	incident.Action, incident.Outcome = e.respond(incident)
 	e.appendIncident(incident)
@@ -795,6 +967,23 @@ func (e *XDREngine) respond(i XDRIncident) (string, string) {
 	}
 	rule := responseRule(i.RuleIDs)
 	if xdrMode == "contain" || i.Decision == "contain" {
+		if e.responses != nil && i.PID > 0 {
+			respRec, err := e.responses.ApplyResponse(
+				context.Background(),
+				time.Now().UTC(),
+				i.ID,
+				ActionFreezeExecution,
+				"PID",
+				strconv.Itoa(i.PID),
+				i.Score,
+				rule,
+				i.RecordHash,
+			)
+			if err != nil {
+				return actionName(quarantined, "stop"), "failed: " + err.Error()
+			}
+			return actionName(quarantined, "stop"), fmt.Sprintf("process frozen through reversible response engine (TTL=%s)", respRec.ExpiresAt.Sub(respRec.StartedAt))
+		}
 		if err := e.core.Stop(i.PID, i.StartTicks, rule); err != nil {
 			return actionName(quarantined, "stop"), "failed: " + err.Error()
 		}

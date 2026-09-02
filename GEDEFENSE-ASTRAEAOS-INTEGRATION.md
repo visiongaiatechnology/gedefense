@@ -1,6 +1,6 @@
 # GeDefense × AstraeaOS — Master Integration Architecture
 
-**Status:** DIAMANT VGT SUPREME architecture baseline  
+**Status:** DIAMANT VGT SUPREME architecture baseline
 **Decision:** GeDefense becomes the single Linux security platform. AstraeaOS consumes it as a native operating-system service; generic Linux servers use the same engine without AstraeaOS dependencies.
 
 ## 0. Repository topology and source ownership

@@ -269,9 +269,38 @@ func (c *CoreClient) Stop(pid int, startTicks uint64, rule string) error {
 	_, err := c.command("XDR_STOP", strconv.Itoa(pid), strconv.FormatUint(startTicks, 10), rule)
 	return err
 }
+func (c *CoreClient) Resume(pid int, startTicks uint64, rule string) error {
+	_, err := c.command("XDR_CONT", strconv.Itoa(pid), strconv.FormatUint(startTicks, 10), rule)
+	return err
+}
 func (c *CoreClient) Kill(pid int, startTicks uint64, rule string) error {
 	_, err := c.command("XDR_KILL", strconv.Itoa(pid), strconv.FormatUint(startTicks, 10), rule)
 	return err
+}
+
+// CoreActionDispatcher implementation
+func (c *CoreClient) BlockIP(ip string) error {
+	return c.Add(ip)
+}
+
+func (c *CoreClient) UnblockIP(ip string) error {
+	return c.Delete(ip)
+}
+
+func (c *CoreClient) FreezeProcess(pid int, startTicks uint64, reason string) error {
+	return c.Stop(pid, startTicks, reason)
+}
+
+func (c *CoreClient) UnfreezeProcess(pid int, startTicks uint64) error {
+	return c.Resume(pid, startTicks, "RESPONSE_TTL_ROLLBACK")
+}
+
+func (c *CoreClient) SetCellPolicy(cgroupID uint64, flags uint8) error {
+	return c.CellPolicySet(cgroupID, flags)
+}
+
+func (c *CoreClient) DeleteCellPolicy(cgroupID uint64) error {
+	return c.CellPolicyDelete(cgroupID)
 }
 
 func (c *CoreClient) ExecEvents() ([]CoreExecEvent, error) {

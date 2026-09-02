@@ -1,11 +1,11 @@
 # Technisches Datenblatt — VGT GeDefense
 
-**Produkt:** VGT GeDefense  
-**Hersteller:** VisionGaia Technology  
-**Version:** 2.0.0-beta.1 — Beta v2 Universal Linux  
-**Installer-Revision:** 3.5.1  
-**Dokumentstand:** 28. Juli 2026  
-**Produktstatus:** Anwendbare und testbare Full-Stack-Beta  
+**Produkt:** VGT GeDefense
+**Hersteller:** VisionGaia Technology
+**Version:** 3.0.0-beta.1 — Beta v3 Universal Linux
+**Installer-Revision:** 3.5.1
+**Dokumentstand:** 28. Juli 2026
+**Produktstatus:** Anwendbare und testbare Full-Stack-Beta
 **Lizenz:** AGPL-3.0-only
 
 ## 1. Produktdefinition
@@ -329,7 +329,7 @@ Zum Dokumentstand erfolgreich ausgeführt:
 
 Aktueller Installer:
 
-`VGT_GeDefense_Beta_v2_2.0.0-beta.1_OneClick.run`
+`VGT_GeDefense_Beta_v3_3.0.0-beta.1_OneClick.run`
 
 SHA-256:
 
@@ -337,7 +337,7 @@ SHA-256:
 
 ## 13. Explizite Produktgrenzen
 
-Nicht Bestandteil der Version 2.0.0-beta.1:
+Nicht Bestandteil der Version 3.0.0-beta.1:
 
 - Swarm-/Mesh-Föderation;
 - QUIC-Offloading oder verteilte Angriffsabsorption;
@@ -357,5 +357,5 @@ Aktivierungs- und Health-Gates auf diesem Zielhost bestanden sind.
 
 ---
 
-**VisionGaia Technology — GeDefense powered by VisionGaiaTechnology**  
-Technisches Datenblatt für VGT GeDefense Beta v2, Version 2.0.0-beta.1.
+**VisionGaia Technology — GeDefense powered by VisionGaiaTechnology**
+Technisches Datenblatt für VGT GeDefense Beta v3, Version 3.0.0-beta.1.

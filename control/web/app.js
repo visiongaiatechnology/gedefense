@@ -870,7 +870,7 @@ function updateSnapshot(data) {
   const policy = data.policy || {};
   const behavior = xdr.behavior || {};
   const release = data.release || {};
-  text('versionText', data.version || '2.0.0-beta.1');
+  text('versionText', data.version || '3.0.0-beta.1');
   if (data.settings) applySettings(data.settings);
   text('nodeName', data.node_name || 'VGT Node');
   text('uptime', formatUptime(data.uptime_seconds));
