@@ -15,7 +15,7 @@ case "$expected" in
   ubuntu) [[ $actual == ubuntu || $actual == debian ]] || fail "expected Debian family, got $actual"; command -v apt-get >/dev/null ;;
   fedora) [[ $actual == fedora || $actual == rhel || $actual == centos || $actual == rocky || $actual == almalinux ]] || fail "expected RPM family, got $actual"; command -v dnf >/dev/null ;;
   arch) [[ $actual == arch ]] || fail "expected Arch, got $actual"; command -v pacman >/dev/null ;;
-  opensuse) [[ $actual == opensuse-tumbleweed || $actual == opensuse-leap || $actual == sles ]] || fail "expected SUSE family, got $actual"; command -v zypper >/dev/null ;;
+  opensuse) [[ $actual == opensuse-tumbleweed || $actual == opensuse-leap || $actual == sles || $actual == opensuse ]] || fail "expected SUSE family, got $actual"; command -v zypper >/dev/null ;;
   *) fail "unsupported EXPECTED_DISTRO: $expected" ;;
 esac
 

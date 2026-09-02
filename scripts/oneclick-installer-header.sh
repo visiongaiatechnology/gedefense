@@ -191,7 +191,7 @@ install_build_dependencies(){
   elif have pacman; then
     pacman -Sy --needed --noconfirm ca-certificates curl base-devel pkgconf clang llvm libelf zlib argon2 git python iproute2 coreutils tar gzip openssl polkit >>"$LOG_FILE" 2>&1
   elif have zypper; then
-    zypper --non-interactive install ca-certificates curl gcc gcc-c++ make pkg-config clang llvm-devel libelf-devel zlib-devel libargon2-1 git python3 iproute2 coreutils tar gzip openssl polkit >>"$LOG_FILE" 2>&1
+    zypper --non-interactive install ca-certificates curl gcc gcc-c++ make pkg-config clang llvm-devel libelf-devel zlib-devel libargon2-1 git python3 iproute2 coreutils tar gzip openssl polkit pkexec >>"$LOG_FILE" 2>&1
   else
     fail "Kein unterstützter Paketmanager gefunden."
   fi
