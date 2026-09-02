@@ -15,10 +15,10 @@ test:
 	node --check control/web/i18n.js
 	node --check control/web/charts.js
 	node --check control/web/app.js
-	./scripts/security-audit.sh
+	bash ./scripts/security-audit.sh
 
 security-audit:
-	./scripts/security-audit.sh
+	bash ./scripts/security-audit.sh
 
 test-race:
 	cd control && $(GO) test -race ./...

@@ -91,7 +91,7 @@ jobs:
           docker run --rm \
             -e EXPECTED_DISTRO="${{ matrix.name }}" \
             -v "$GITHUB_WORKSPACE:/src:ro" \
-            "$IMAGE" bash -lc "$BOOTSTRAP && /src/scripts/validate-distro-integration.sh /src"
+            "$IMAGE" bash -lc "$BOOTSTRAP && bash /src/scripts/validate-distro-integration.sh /src"
 
   release-artifacts:
     runs-on: ubuntu-24.04
@@ -111,10 +111,10 @@ jobs:
       - name: Install release dependencies
         run: sudo apt-get update && sudo apt-get install -y libargon2-1 libargon2-dev clang llvm libelf-dev zlib1g-dev python3
       - name: Build and cryptographically verify release artifacts
-        run: ./scripts/package-artifacts.sh ./release
+        run: bash ./scripts/package-artifacts.sh ./release
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: gedefense-beta-v2-${{ env.PRODUCT_VERSION }}
+          name: gedefense-beta-v3-${{ env.PRODUCT_VERSION }}
           path: |
             release/VGT_GeDefense_Beta_v3_3.0.0-beta.1_Source.zip
             release/VGT_GeDefense_Beta_v3_3.0.0-beta.1_Source.zip.sha256
