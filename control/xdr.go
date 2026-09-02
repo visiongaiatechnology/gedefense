@@ -2,8 +2,6 @@ package main
 
 import (
 	"context"
-	"crypto/hmac"
-	"crypto/sha256"
 	"errors"
 	"fmt"
 	"log"
@@ -158,31 +156,28 @@ func NewXDREngine(cfg Config, state *State, core *CoreClient, feeds *FeedManager
 		}
 	}
 	if len(deceptionKey) < 16 {
-		mac := hmac.New(sha256.New, []byte("VGT-DECEPTION-STORAGE-ROOT-v1"))
-		mac.Write([]byte(cfg.Node.Name + "|"))
-		mac.Write([]byte(filepath.Clean(storageDir)))
-		deceptionKey = mac.Sum(nil)
-	}
-
-	if dec, err := NewDeceptionEngine(deceptionKey, e.responses, e.correlator, func(inc XDRIncident) error {
-		e.appendIncident(inc)
-		return nil
-	}); err == nil {
-		canaries := []struct {
-			path string
-			t    CanaryType
-			uid  uint32
-			mode uint32
-		}{
-			{"/tmp/.aws_credentials", CanaryCloudCred, 1000, 0600},
-			{"/etc/shadow.bak", CanaryShadow, 0, 0600},
-		}
-		for _, c := range canaries {
-			if _, regErr := dec.RegisterCanary(c.path, c.t, c.uid, c.mode); regErr == nil {
-				_ = dec.DeployCanaryFile(c.path, c.t)
+		log.Printf("[VGT-DECEPTION] Fail-closed: authenticated storage root key unavailable, deception engine offline")
+	} else {
+		if dec, err := NewDeceptionEngine(deceptionKey, e.responses, e.correlator, func(inc XDRIncident) error {
+			e.appendIncident(inc)
+			return nil
+		}); err == nil {
+			canaries := []struct {
+				path string
+				t    CanaryType
+				uid  uint32
+				mode uint32
+			}{
+				{"/tmp/.aws_credentials", CanaryCloudCred, 1000, 0600},
+				{"/etc/shadow.bak", CanaryShadow, 0, 0600},
 			}
+			for _, c := range canaries {
+				if _, regErr := dec.RegisterCanary(c.path, c.t, c.uid, c.mode); regErr == nil {
+					_ = dec.DeployCanaryFile(c.path, c.t)
+				}
+			}
+			e.deception = dec
 		}
-		e.deception = dec
 	}
 
 	e.styx = NewStyxEngine(EgressModeMonitored, e.correlator, func(inc XDRIncident) error {
@@ -193,6 +188,9 @@ func NewXDREngine(cfg Config, state *State, core *CoreClient, feeds *FeedManager
 		e.appendIncident(inc)
 		return nil
 	})
+	if e.selfPID > 0 {
+		e.morpheus.RegisterProtectedPID(e.selfPID)
+	}
 	if airlock, err := NewAirlockInspector(filepath.Join(storageDir, "airlock_quarantine"), 100<<20); err == nil {
 		e.airlock = airlock
 	}
@@ -388,6 +386,11 @@ func (e *XDREngine) Run(ctx context.Context) {
 	execTick := time.NewTicker(100 * time.Millisecond)
 	netTick := time.NewTicker(time.Duration(runtime.NetworkIntervalSeconds) * time.Second)
 	integrityTick := time.NewTicker(time.Duration(e.cfg.XDR.IntegrityIntervalSeconds) * time.Second)
+	chronosInterval := time.Duration(e.cfg.XDR.IntegrityIntervalSeconds) * time.Second
+	if chronosInterval < 30*time.Second {
+		chronosInterval = 30 * time.Second
+	}
+	chronosTick := time.NewTicker(chronosInterval)
 	logVerifyTick := time.NewTicker(30 * time.Second)
 	cleanupTick := time.NewTicker(time.Minute)
 	behaviorSaveTick := time.NewTicker(5 * time.Minute)
@@ -397,6 +400,7 @@ func (e *XDREngine) Run(ctx context.Context) {
 	defer execTick.Stop()
 	defer netTick.Stop()
 	defer integrityTick.Stop()
+	defer chronosTick.Stop()
 	defer logVerifyTick.Stop()
 	defer cleanupTick.Stop()
 	defer behaviorSaveTick.Stop()
@@ -573,6 +577,26 @@ func (e *XDREngine) Run(ctx context.Context) {
 				if processName == "" {
 					processName = "unknown"
 				}
+
+				// REAL SENSOR -> STYX ENGINE -> DECISION -> RESPONSE ENGINE ENFORCEMENT
+				if e.styx != nil {
+					protoStr := "TCP"
+					if event.Protocol == 17 {
+						protoStr = "UDP"
+					}
+					allowed, reason, styxErr := e.styx.EvaluateEgress(ctx, "HOST", "DEFAULT", target, 0, protoStr, event.PID, processName)
+					if !allowed || styxErr != nil {
+						if e.responses != nil {
+							_, _ = e.responses.ApplyResponse(
+								ctx, now,
+								fmt.Sprintf("egress-%d", now.UnixNano()),
+								ActionContainIP, "IP", target,
+								95, reason, "",
+							)
+						}
+					}
+				}
+
 				e.state.AddEvent(Event{
 					Severity: "high",
 					Kind:     "xdr.egress_blocked",
@@ -608,6 +632,21 @@ func (e *XDREngine) Run(ctx context.Context) {
 			}
 		case <-integrityTick.C:
 			e.checkProtected()
+		case <-chronosTick.C:
+			if e.chronos != nil && runtime.XDREnabled {
+				cp, err := e.chronos.Scan(ctx, true)
+				if err != nil && !errors.Is(err, context.Canceled) {
+					e.state.AddEvent(Event{
+						Severity: "warning", Kind: "chronos.scan_failed", Source: "fim",
+						Message: fmt.Sprintf("Chronos FIM scan error: %v", err),
+					})
+				} else if cp != nil && cp.Phase == "COMPLETED" {
+					e.state.AddEvent(Event{
+						Severity: "info", Kind: "chronos.merkle_verified", Source: "fim",
+						Message: fmt.Sprintf("Chronos Merkle tree integrity verified: root=%s files=%d bytes=%d", cp.MerkleRoot, cp.FilesScanned, cp.BytesScanned),
+					})
+				}
+			}
 		case <-logVerifyTick.C:
 			if e.logger != nil {
 				if err := e.logger.Verify(); err != nil {
@@ -765,6 +804,49 @@ func (e *XDREngine) evaluate(p ProcessSample, conns []NetConnection, source stri
 		return
 	}
 	e.evaluated.Add(1)
+
+	// Morpheus RASP: Active Memory-Scraping / Ptrace Inspection in Data Path
+	if e.morpheus != nil {
+		if raspEvt, raspErr := e.morpheus.InspectProcess(p); raspErr != nil && raspEvt != nil {
+			now := time.Now().UTC()
+			e.state.AddEvent(Event{
+				Severity: "critical", Kind: "morpheus.memory_scraping_blocked", Source: "rasp",
+				Message: fmt.Sprintf("Morpheus RASP blocked memory scraping by PID %d (%s)", p.PID, p.Comm),
+			})
+			if e.responses != nil {
+				freezeTarget := fmt.Sprintf("%d:%d", p.PID, p.StartTicks)
+				evDigest := raspEvt.EventID
+				if raspEvt.AttackNode != nil {
+					evDigest = raspEvt.AttackNode.ComputeNodeDigest()
+				}
+				_, _ = e.responses.ApplyResponse(
+					context.Background(), now,
+					raspEvt.EventID, ActionFreezeExecution, "PID", freezeTarget,
+					100, "MORPHEUS_RASP_MEMORY_SCRAPING", evDigest,
+				)
+			}
+		}
+	}
+
+	// Styx Egress Engine: Live Socket Connection Evaluation in Data Path
+	if e.styx != nil && len(conns) > 0 {
+		for _, c := range conns {
+			if ip := net.ParseIP(c.RemoteIP); ip != nil {
+				now := time.Now().UTC()
+				if allowed, reason, styxErr := e.styx.EvaluateEgress(context.Background(), "CGROUP", p.Cgroup, c.RemoteIP, c.RemotePort, c.Protocol, p.PID, p.Comm); !allowed || styxErr != nil {
+					if e.responses != nil {
+						_, _ = e.responses.ApplyResponse(
+							context.Background(), now,
+							fmt.Sprintf("egress-conn-%d", now.UnixNano()),
+							ActionContainIP, "IP", c.RemoteIP,
+							95, reason, "",
+						)
+					}
+				}
+			}
+		}
+	}
+
 	var extra []RuleMatch
 	if runtime.BehaviorEnabled && e.behavior != nil {
 		now := time.Now().UTC()
