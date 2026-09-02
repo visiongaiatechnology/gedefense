@@ -80,7 +80,7 @@ jobs:
             bootstrap: pacman -Sy --needed --noconfirm bash python ca-certificates curl openssl polkit desktop-file-utils
           - name: opensuse
             image: opensuse/tumbleweed@sha256:d833ad1f857a057030cdc83b5ca77fdfdce9ae109e8891bf5b47e5f591725c66
-            bootstrap: zypper --non-interactive refresh && zypper --non-interactive install bash python3 ca-certificates curl openssl polkit desktop-file-utils
+            bootstrap: zypper --non-interactive refresh && zypper --non-interactive install bash python3 ca-certificates curl openssl polkit pkexec desktop-file-utils
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Validate ${{ matrix.name }} integration contract
