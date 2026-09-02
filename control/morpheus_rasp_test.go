@@ -134,3 +134,43 @@ func TestMorpheusRASP_SSRFDestinationValidation(t *testing.T) {
 		t.Fatalf("unexpected error on legitimate destination: %v", err)
 	}
 }
+
+func TestMorpheusRASP_InspectProcess(t *testing.T) {
+	correlator := NewIncidentCorrelator(1800 * time.Second)
+	var capturedIncident *XDRIncident
+
+	rasp := NewMorpheusRASP("", correlator, func(inc XDRIncident) error {
+		capturedIncident = &inc
+		return nil
+	})
+
+	rasp.RegisterProtectedPID(5000)
+
+	// 1. Innocent process
+	innocent := ProcessSample{
+		PID:     2001,
+		Comm:    "nginx",
+		Cmdline: "nginx -g daemon off;",
+	}
+	evt, err := rasp.InspectProcess(innocent)
+	if err != nil || evt != nil {
+		t.Fatalf("expected innocent process to pass, got err=%v evt=%v", err, evt)
+	}
+
+	// 2. GDB targeting protected vault PID 5000
+	scraper := ProcessSample{
+		PID:     3333,
+		Comm:    "gdb",
+		Cmdline: "gdb -p 5000",
+	}
+	evt, err = rasp.InspectProcess(scraper)
+	if err == nil {
+		t.Fatal("expected scraping attempt to be blocked, got nil")
+	}
+	if evt == nil || evt.ThreatType != "PROCESS_MEMORY_SCRAPING" {
+		t.Fatalf("expected PROCESS_MEMORY_SCRAPING, got %v", evt)
+	}
+	if capturedIncident == nil || capturedIncident.PID != 3333 {
+		t.Fatalf("expected incident for scraper PID 3333, got %v", capturedIncident)
+	}
+}

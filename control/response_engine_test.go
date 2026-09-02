@@ -38,6 +38,9 @@ func (m *mockActionDispatcher) BlockIP(ip string) error {
 }
 
 func (m *mockActionDispatcher) UnblockIP(ip string) error {
+	if m.failNextAction {
+		return errors.New("kernel trie unblock failed")
+	}
 	delete(m.blockedIPs, ip)
 	return nil
 }
@@ -315,5 +318,79 @@ func TestResolveProcessTargetAndStartTicks(t *testing.T) {
 	}
 	if _, _, err := ResolveProcessTarget("1234:badticks"); err == nil {
 		t.Fatal("expected error for bad ticks, got nil")
+	}
+}
+
+func TestResponseEngine_RollbackFailureEntersDegradedState(t *testing.T) {
+	dispatcher := newMockDispatcher()
+	cfg := DefaultResponseConfig()
+	cfg.ActorBanTTL = 1 * time.Second
+	engine := NewResponseEngine(cfg, dispatcher, nil)
+
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	// Apply response
+	rec, err := engine.ApplyResponse(ctx, now, "inc-deg-1", ActionContainIP, "IP", "192.0.2.1", 90, "TEST_DEGRADED", "")
+	if err != nil {
+		t.Fatalf("apply failed: %v", err)
+	}
+	if rec.Status != StatusApplied {
+		t.Fatalf("expected APPLIED, got %s", rec.Status)
+	}
+
+	// Make dispatcher fail rollback mutation
+	dispatcher.failNextAction = true
+
+	// Run RollbackExpired after TTL
+	future := now.Add(2 * time.Second)
+	rolledBack, err := engine.RollbackExpired(ctx, future)
+	if err != nil {
+		t.Fatalf("rollback expired failed: %v", err)
+	}
+	if len(rolledBack) != 0 {
+		t.Fatalf("expected 0 successfully rolled back records, got %d", len(rolledBack))
+	}
+
+	// Target MUST remain active in active responses with DEGRADED status (No False Assurance!)
+	active := engine.ActiveResponses()
+	if len(active) != 1 {
+		t.Fatalf("expected 1 active degraded response remaining, got %d", len(active))
+	}
+	if active[0].Status != StatusDegraded {
+		t.Fatalf("expected status DEGRADED, got %s", active[0].Status)
+	}
+	if !strings.Contains(active[0].FailureReason, "failed") {
+		t.Fatalf("expected failure reason recorded, got %q", active[0].FailureReason)
+	}
+}
+
+func TestResponseEngine_DistinctActionsOnSameTarget(t *testing.T) {
+	dispatcher := newMockDispatcher()
+	cfg := DefaultResponseConfig()
+	engine := NewResponseEngine(cfg, dispatcher, nil)
+
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	// Apply ActionFreezeExecution on PID 1234:555
+	r1, err1 := engine.ApplyResponse(ctx, now, "inc-act-1", ActionFreezeExecution, "PID", "1234:555", 95, "SUSPICIOUS_EXEC", "")
+	if err1 != nil {
+		t.Fatalf("freeze apply failed: %v", err1)
+	}
+
+	// Apply ActionRestrictProcess on the same PID 1234:555
+	r2, err2 := engine.ApplyResponse(ctx, now, "inc-act-2", ActionRestrictProcess, "PID", "1234:555", 85, "RESOURCE_CONTAINMENT", "")
+	if err2 != nil {
+		t.Fatalf("restrict apply failed: %v", err2)
+	}
+
+	// Both actions must be active simultaneously (no premature deduplication across distinct actions)
+	active := engine.ActiveResponses()
+	if len(active) != 2 {
+		t.Fatalf("expected 2 distinct active actions on same PID, got %d", len(active))
+	}
+	if r1.UUID == r2.UUID {
+		t.Fatal("expected distinct response UUIDs for distinct actions")
 	}
 }

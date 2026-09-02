@@ -216,6 +216,58 @@ func (m *MorpheusRASP) InspectMemoryAccess(
 	return nil, nil
 }
 
+// InspectProcess inspects live process telemetry for memory scraping, unauthorized ptrace, or /proc/<pid>/mem reads against protected daemons.
+func (m *MorpheusRASP) InspectProcess(p ProcessSample) (*RASPEvent, error) {
+	if p.PID <= 1 {
+		return nil, nil
+	}
+
+	cmdLower := strings.ToLower(p.Cmdline)
+	commLower := strings.ToLower(p.Comm)
+
+	// Check if this process is an inspection or memory-scraping tool
+	isScraper := strings.Contains(commLower, "gdb") ||
+		strings.Contains(commLower, "strace") ||
+		strings.Contains(commLower, "frida") ||
+		strings.Contains(commLower, "procdump") ||
+		strings.Contains(commLower, "scanmem") ||
+		strings.Contains(cmdLower, "/mem") ||
+		strings.Contains(cmdLower, "ptrace") ||
+		strings.Contains(cmdLower, "process_vm_readv")
+
+	if !isScraper {
+		return nil, nil
+	}
+
+	m.mu.RLock()
+	protectedNamesCopy := make([]string, 0, len(m.protectedNames))
+	for name := range m.protectedNames {
+		protectedNamesCopy = append(protectedNamesCopy, name)
+	}
+	protectedPIDsCopy := make([]int, 0, len(m.protectedPIDs))
+	for pid := range m.protectedPIDs {
+		protectedPIDsCopy = append(protectedPIDsCopy, pid)
+	}
+	m.mu.RUnlock()
+
+	// 1. Match against protected daemon names in cmdline / args
+	for _, protectedName := range protectedNamesCopy {
+		if strings.Contains(cmdLower, protectedName) {
+			return m.InspectMemoryAccess(p.PID, p.Comm, 0, protectedName, false)
+		}
+	}
+
+	// 2. Match against protected PIDs explicitly targeted (e.g. gdb -p 1234, strace -p 1234)
+	for _, protectedPID := range protectedPIDsCopy {
+		pidStr := strconv.Itoa(protectedPID)
+		if strings.Contains(cmdLower, pidStr) {
+			return m.InspectMemoryAccess(p.PID, p.Comm, protectedPID, "protected-vault", false)
+		}
+	}
+
+	return nil, nil
+}
+
 // ValidateSSRFDestination inspects a target URL or destination string for cloud metadata, link-local or loopback evasion.
 func ValidateSSRFDestination(targetURL string) error {
 	raw := strings.TrimSpace(targetURL)

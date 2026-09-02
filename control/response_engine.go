@@ -62,10 +62,12 @@ const (
 type ResponseStatus string
 
 const (
-	StatusApplied          ResponseStatus = "APPLIED"
-	StatusAlreadyContained ResponseStatus = "ALREADY_CONTAINED"
-	StatusRolledBack       ResponseStatus = "ROLLED_BACK"
-	StatusFailed           ResponseStatus = "FAILED"
+	StatusApplied           ResponseStatus = "APPLIED"
+	StatusAlreadyContained  ResponseStatus = "ALREADY_CONTAINED"
+	StatusRollbackRequested ResponseStatus = "ROLLBACK_REQUESTED"
+	StatusRolledBack        ResponseStatus = "ROLLED_BACK"
+	StatusDegraded          ResponseStatus = "DEGRADED"
+	StatusFailed            ResponseStatus = "FAILED"
 )
 
 const (
@@ -90,20 +92,22 @@ type ResponseEvidenceSink func(action string, target string, details string, tim
 
 // ResponseRecord represents a durable, auditable and reversible mitigation transaction.
 type ResponseRecord struct {
-	UUID         string             `json:"uuid"`
-	IncidentUUID string             `json:"incident_uuid"`
-	Owner        string             `json:"owner"`
-	ActionType   ResponseActionType `json:"action_type"`
-	TargetType   string             `json:"target_type"` // IP, PID, CGROUP, CELL
-	TargetID     string             `json:"target_id"`
-	StartedAt    time.Time          `json:"started_at"`
-	ExpiresAt    time.Time          `json:"expires_at"`
-	Status       ResponseStatus     `json:"status"`
-	Confidence   int                `json:"confidence"`
-	ReasonCode   string             `json:"reason_code"`
-	AuthorizedBy string             `json:"authorized_by"`
-	RollbackJSON string             `json:"rollback_json"`
-	EvidenceRef  string             `json:"evidence_ref"`
+	UUID          string             `json:"uuid"`
+	IncidentUUID  string             `json:"incident_uuid"`
+	Owner         string             `json:"owner"`
+	ActionType    ResponseActionType `json:"action_type"`
+	TargetType    string             `json:"target_type"` // IP, PID, CGROUP, CELL
+	TargetID      string             `json:"target_id"`
+	StartedAt     time.Time          `json:"started_at"`
+	ExpiresAt     time.Time          `json:"expires_at"`
+	Status        ResponseStatus     `json:"status"`
+	Confidence    int                `json:"confidence"`
+	ReasonCode    string             `json:"reason_code"`
+	AuthorizedBy  string             `json:"authorized_by"`
+	RollbackJSON  string             `json:"rollback_json"`
+	EvidenceRef   string             `json:"evidence_ref"`
+	FailureReason string             `json:"failure_reason,omitempty"`
+	RolledBackAt  *time.Time         `json:"rolled_back_at,omitempty"`
 }
 
 // ResponseConfig holds TTL presets and escalation policies.
@@ -276,14 +280,15 @@ func (e *ResponseEngine) ApplyResponse(
 	ttl := e.CalculateTTL(now, action, targetID)
 	expiresAt := now.Add(ttl)
 
-	targetKey := fmt.Sprintf("%s:%s", targetType, targetID)
+	targetKey := targetActionKey("VGT_TRINITY_RESPONSE", action, targetType, targetID)
 
-	// Idempotency: If already actively contained, update expiration without redundant kernel mutation
+	// Idempotency: If already actively contained for this specific action, update expiration without redundant kernel mutation
 	if existingUUID, active := e.activeByTgt[targetKey]; active {
-		if existing, found := e.responses[existingUUID]; found && existing.Status == StatusApplied {
+		if existing, found := e.responses[existingUUID]; found && (existing.Status == StatusApplied || existing.Status == StatusRollbackRequested) {
 			existing.StartedAt = now
 			existing.ExpiresAt = expiresAt
 			existing.Confidence = confidence
+			existing.Status = StatusApplied
 			e.responses[existingUUID] = existing
 			return &existing, nil
 		}
@@ -339,12 +344,14 @@ func (e *ResponseEngine) ApplyResponse(
 			}
 			if err := e.dispatcher.BlockIP(targetID); err != nil {
 				record.Status = StatusFailed
+				record.FailureReason = fmt.Sprintf("core IP containment failed: %v", err)
 				e.responses[respUUID] = record
 				return nil, NewResponseSecurityException("core IP containment failed", err)
 			}
 		case ActionFreezeExecution:
 			if err := e.dispatcher.FreezeProcess(freezePID, freezeStartTicks, reasonCode); err != nil {
 				record.Status = StatusFailed
+				record.FailureReason = fmt.Sprintf("core process freeze failed: %v", err)
 				e.responses[respUUID] = record
 				return nil, NewResponseSecurityException("core process freeze failed", err)
 			}
@@ -356,6 +363,7 @@ func (e *ResponseEngine) ApplyResponse(
 			// Flags: deny non-unix socket (1)
 			if err := e.dispatcher.SetCellPolicy(cgroupID, 1); err != nil {
 				record.Status = StatusFailed
+				record.FailureReason = fmt.Sprintf("core cell containment failed: %v", err)
 				e.responses[respUUID] = record
 				return nil, NewResponseSecurityException("core cell containment failed", err)
 			}
@@ -376,7 +384,16 @@ func (e *ResponseEngine) ApplyResponse(
 	return &record, nil
 }
 
+// targetActionKey returns a unique composite ownership key distinguishing target and mitigation action.
+func targetActionKey(owner string, action ResponseActionType, targetType, targetID string) string {
+	if owner == "" {
+		owner = "VGT_TRINITY_RESPONSE"
+	}
+	return fmt.Sprintf("%s:%s:%s:%s", owner, action, targetType, targetID)
+}
+
 // RollbackExpired scans and atomic-reverts all applied responses that have surpassed their TTL.
+// Enforces a strict 3-phase verification flow: ROLLBACK_REQUESTED -> Kernel Mutation -> Read-Back/Verify (ROLLED_BACK or DEGRADED).
 func (e *ResponseEngine) RollbackExpired(ctx context.Context, now time.Time) ([]ResponseRecord, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -391,13 +408,18 @@ func (e *ResponseEngine) RollbackExpired(ctx context.Context, now time.Time) ([]
 			continue
 		}
 
-		targetKey := fmt.Sprintf("%s:%s", rec.TargetType, rec.TargetID)
+		targetKey := targetActionKey(rec.Owner, rec.ActionType, rec.TargetType, rec.TargetID)
 
-		// Dispatch atomic rollback to dispatcher
+		// State transition 1: ROLLBACK_REQUESTED
+		rec.Status = StatusRollbackRequested
+		e.responses[uuid] = rec
+
+		// State transition 2: Dispatch kernel mutation
+		var mutationErr error
 		if e.dispatcher != nil {
 			switch rec.ActionType {
 			case ActionContainIP:
-				_ = e.dispatcher.UnblockIP(rec.TargetID)
+				mutationErr = e.dispatcher.UnblockIP(rec.TargetID)
 			case ActionFreezeExecution:
 				var pid int
 				var startTicks uint64
@@ -423,34 +445,49 @@ func (e *ResponseEngine) RollbackExpired(ctx context.Context, now time.Time) ([]
 						}
 					}
 				}
-				_ = e.dispatcher.UnfreezeProcess(pid, startTicks)
+				mutationErr = e.dispatcher.UnfreezeProcess(pid, startTicks)
 			case ActionContainCell:
 				cgroupID, _ := strconv.ParseUint(rec.TargetID, 10, 64)
-				_ = e.dispatcher.DeleteCellPolicy(cgroupID)
+				mutationErr = e.dispatcher.DeleteCellPolicy(cgroupID)
 			}
 		}
 
+		// State transition 3: Read-back / verify
+		if mutationErr != nil {
+			// Verification FAILED -> DEGRADED (Retain in activeByTgt to eliminate false assurance!)
+			rec.Status = StatusDegraded
+			rec.FailureReason = fmt.Sprintf("kernel rollback mutation failed: %v", mutationErr)
+			e.responses[uuid] = rec
+			if e.evidenceSink != nil {
+				_ = e.evidenceSink("ROLLBACK_DEGRADED", fmt.Sprintf("%s:%s", rec.TargetType, rec.TargetID), rec.FailureReason, now)
+			}
+			continue
+		}
+
+		// Verification VERIFIED -> ROLLED_BACK
 		rec.Status = StatusRolledBack
+		rec.RolledBackAt = &now
+		rec.FailureReason = ""
 		e.responses[uuid] = rec
 		delete(e.activeByTgt, targetKey)
 		rolledBack = append(rolledBack, rec)
 
 		if e.evidenceSink != nil {
-			_ = e.evidenceSink("ROLLBACK", fmt.Sprintf("%s:%s", rec.TargetType, rec.TargetID), fmt.Sprintf("Auto-Rollback UUID=%s", uuid), now)
+			_ = e.evidenceSink("ROLLBACK_VERIFIED", fmt.Sprintf("%s:%s", rec.TargetType, rec.TargetID), fmt.Sprintf("Auto-Rollback UUID=%s verified", uuid), now)
 		}
 	}
 
 	return rolledBack, nil
 }
 
-// ActiveResponses returns an immutable snapshot of all currently enforced responses.
+// ActiveResponses returns an immutable snapshot of all currently enforced or degraded responses.
 func (e *ResponseEngine) ActiveResponses() []ResponseRecord {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 
 	out := make([]ResponseRecord, 0, len(e.activeByTgt))
 	for _, uuid := range e.activeByTgt {
-		if rec, found := e.responses[uuid]; found && rec.Status == StatusApplied {
+		if rec, found := e.responses[uuid]; found && (rec.Status == StatusApplied || rec.Status == StatusDegraded || rec.Status == StatusRollbackRequested) {
 			out = append(out, rec)
 		}
 	}
