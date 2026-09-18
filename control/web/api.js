@@ -1,5 +1,7 @@
 'use strict';
 
+import { t } from './i18n.js';
+
 // Direct loopback operation may use a bearer token, but it remains only in
 // this module's volatile memory. Public gateway sessions never expose the
 // backend token to the browser, and a reload intentionally clears manual keys.
@@ -80,7 +82,7 @@ export async function api(path, options = {}) {
     if (error instanceof DOMException && error.name === 'AbortError') throw error;
     const normalized = error instanceof APIError
       ? error
-      : new APIError('GeDefense Control Plane nicht erreichbar.', 0, '');
+      : new APIError(t('api.controlUnavailable'), 0, '');
     if (tracked) {
       emitOperation('gedefense:operation-error', {
         id: operationID,
@@ -107,7 +109,7 @@ export async function streamSnapshots({ onSnapshot, onEvent, signal }) {
     signal
   });
   if (!response.ok || !response.body) {
-    throw new APIError(response.status === 401 ? 'authorization required' : 'event stream unavailable', response.status);
+    throw new APIError(response.status === 401 ? t('api.authorizationRequired') : t('api.streamUnavailable'), response.status);
   }
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
@@ -154,6 +156,16 @@ export const getEvidence = () => api('/api/v1/evidence?limit=100');
 export const verifyEvidence = () => api('/api/v1/evidence/verify', { feedback: true });
 export const getPolicy = () => api('/api/v1/policy');
 export const getProfiles = () => api('/api/v1/xdr/profiles', { feedback: true });
+export const getXDRIntegrity = () => api('/api/v1/xdr/integrity');
+export const verifyXDRIntegrity = () => api('/api/v1/xdr/integrity/verify', { method: 'POST', json: {} });
+export const recoverXDRIntegrity = reason => api('/api/v1/xdr/recovery', {
+  method: 'POST',
+  json: {
+    action: 'archive_and_reinitialize',
+    confirmation: 'ARCHIVE_AND_REINITIALIZE_XDR',
+    reason
+  }
+});
 export const exportForensics = () => api('/api/v1/forensics/export', { feedback: true });
 export const addBlock = input => api('/api/v1/blocks', { method: 'POST', json: input });
 export const deleteBlock = id => api(`/api/v1/blocks/${encodeURIComponent(id)}`, { method: 'DELETE' });

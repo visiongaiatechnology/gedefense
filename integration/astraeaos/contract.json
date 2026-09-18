@@ -1,6 +1,6 @@
 {
   "schema": "vgt-gedefense-astraeaos-integration-v1",
-  "gedefense_version": "4.0.0-beta.1",
+  "gedefense_version": "4.0.1",
   "minimum_astraeaos_version": "0.1",
   "security_authority": "gedefense",
   "sentinel_runtime_mode": "migration-source-only",

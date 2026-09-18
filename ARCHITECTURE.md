@@ -1,4 +1,4 @@
-# Architecture Map: VGT GeDefense (4.0.0-beta.1)
+# Architecture Map: VGT GeDefense (4.0.1)
 
 // STATUS: DIAMANT VGT SUPREME
 // CLASSIFICATION: TECHNICAL ARCHITECTURE SPECIFICATION & DATA TREE
@@ -61,7 +61,7 @@
 ## 1. Global Architecture Tree
 
 ```text
-VGT GeDefense System (v4.0.0-beta.1)
+VGT GeDefense System (v4.0.1)
 │
 ├── 1. PUBLIC ACCESS GATEWAY (Go · Unprivileged)
 │   ├── TLS 1.3 Termination & Post-Quantum ML-KEM Curve Preferences
@@ -369,7 +369,7 @@ Top-Level Project Assets:
   xdr-baseline.example.json                    Configuration Template         Reference baseline specification for core system binaries
   malware-hashes.sha256                        Threat Data                    Known bad SHA-256 signature database for offline malware detection
   TOOLCHAINS.lock                              Toolchain Pinning              Strict version lock for Go, Rust, and Clang toolchains
-  VERSION                                      Version Identifier             Semantic version string (4.0.0-beta.1)
+  VERSION                                      Version Identifier             Semantic version string (4.0.1)
   Makefile                                     Build Automation               Make targets for build, test, package, and clean
   README.md                                    Documentation                  Project overview, architectural tenets, and deployment guide
   ARCHITECTURE.md                              Documentation                  Technical architecture map (this document)
@@ -382,7 +382,7 @@ Top-Level Project Assets:
   SECURITY-AUDIT-BETA5.md                      Documentation                  Third-party security audit report and remediation proof
   SECURITY-RELEASE-CHECKLIST.md                Documentation                  Mandatory release sign-off gates
   SECURITY.md                                  Documentation                  Vulnerability disclosure policy and security contacts
-  RELEASE-NOTES.md                             Documentation                  Changelog and release notes for v4.0.0-beta.1
+  RELEASE-NOTES.md                             Documentation                  Changelog and release notes for v4.0.1
   CHANGELOG.md                                 Documentation                  Historical change log across all beta versions
   BETA-TEST-PLAN.md                            Documentation                  Formal test cases and verification matrix
   BUILD-RUNBOOK.md                             Documentation                  Step-by-step compilation and deployment runbook

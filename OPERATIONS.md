@@ -122,3 +122,22 @@ Der Scriptlauf prüft das vorherige Release erneut kryptografisch. Bei fehlgesch
 - Vendor-, Lock- und Release-Manifeste pro Version archivieren;
 - Feed-Quellen bleiben `auto_apply=false`;
 - Enforce nach Kernel-, NIC- oder Distribution-Upgrade erneut über Observe und Canary qualifizieren.
+
+## XDR Incident-Ledger Recovery
+
+Ein kryptografischer Fehler der XDR-Incident-Kette ist ein Fail-Closed-Ereignis. GeDefense blockiert Canary/Enforce und lässt die Incident-Kette nicht automatisch reparieren oder abschneiden.
+
+Der unterstützte Recovery-Pfad ist ausschließlich für den Fall vorgesehen, dass das Incident Ledger selbst die einzige XDR-Degradation ist. Er verlangt Observe-Enforcement, Operator-Authentifizierung, Replay-Schutz, einen expliziten Recovery-Dialog und eine Audit-Begründung.
+
+Ablauf:
+
+1. Forensik-Export erstellen.
+2. Unter **GeDefense XDR** die Incident-Integrität erneut prüfen.
+3. **XDR sicher wiederherstellen** auswählen.
+4. GeDefense archiviert Incident Log und Head-Checkpoint unverändert unter dem privaten XDR-Recovery-Bereich, erstellt ein SHA-256-Manifest und verifiziert unmittelbar vor der Umschaltung nochmals, dass sich die Quelle nicht verändert hat.
+5. Eine neue leere Incident-Kette wird crash-sicher initialisiert und direkt vom Datenträger verifiziert.
+6. Die vorhandenen XDR-/Storage-Schlüssel bleiben unverändert.
+7. Erst nach erfolgreichen Evidence-Ledger-Commits wird die Incident-Ledger-Degradation entfernt. Andere XDR-Degradationsursachen bleiben unangetastet.
+8. Canary/Enforce werden niemals automatisch aktiviert; Promotion bleibt eine getrennte Operator-Entscheidung.
+
+Unzulässig sind manuelles Editieren, Truncaten oder Löschen des aktiven Incident Logs sowie automatische Key-Rotation als Teil dieser Recovery.

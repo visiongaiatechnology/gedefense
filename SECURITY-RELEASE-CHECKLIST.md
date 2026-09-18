@@ -1,4 +1,4 @@
-# Security Release Checklist — 4.0.0-beta.1
+# Security Release Checklist — 4.0.1
 
 - [x] Go control and gateway tests pass.
 - [x] Go race detector and vet pass.

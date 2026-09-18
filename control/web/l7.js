@@ -2,7 +2,7 @@
 'use strict';
 
 import { getL7Findings, getStatus } from './api.js';
-import { t } from './i18n.js';
+import { locale, t } from './i18n.js';
 import { byID, el, formatTime, text } from './render.js';
 
 let selectedFinding = null;
@@ -58,14 +58,14 @@ export async function loadL7View(snap) {
 function renderL7StatusHeader(snapshot) {
   const l7 = snapshot.l7 || {};
 
-  text('l7StatusEngine', l7.healthy ? 'HEALTHY' : (l7.enabled ? 'DEGRADED' : 'DISABLED'));
+  text('l7StatusEngine', l7.healthy ? t('dynamic.healthy') : (l7.enabled ? t('dynamic.degraded') : t('dynamic.disabled')));
   const enginePill = byID('l7StatusEnginePill');
   if (enginePill) {
     enginePill.className = `status-pill ${l7.healthy ? 'good' : (l7.enabled ? 'danger' : 'muted')}`;
   }
 
   text('l7StatusMode', (l7.mode || 'observe').toUpperCase());
-  text('l7StatusInline', l7.inline_enabled ? (l7.inline_healthy ? 'ACTIVE' : 'ERROR') : 'INACTIVE');
+  text('l7StatusInline', l7.inline_enabled ? (l7.inline_healthy ? t('dynamic.active') : t('dynamic.error')) : t('dynamic.inactive'));
   const inlinePill = byID('l7StatusInlinePill');
   if (inlinePill) {
     inlinePill.className = `status-pill ${l7.inline_enabled ? (l7.inline_healthy ? 'good' : 'danger') : 'muted'}`;
@@ -85,24 +85,24 @@ function renderL7EffectiveBlocking(snapshot) {
   const pillEl = byID('l7EffectivePill');
 
   if (!l7.enabled) {
-    if (titleEl) titleEl.textContent = 'Application Defense deaktiviert';
-    if (descEl) descEl.textContent = 'L7-Inspektion ist in der Konfiguration deaktiviert.';
-    if (pillEl) { pillEl.textContent = 'DISABLED'; pillEl.className = 'status-pill muted'; }
+    if (titleEl) titleEl.textContent = t('l7.effective.disabledTitle');
+    if (descEl) descEl.textContent = t('l7.effective.disabledDesc');
+    if (pillEl) { pillEl.textContent = t('dynamic.disabled'); pillEl.className = 'status-pill muted'; }
     return;
   }
 
   if (l7.mode === 'block') {
     if (globalPhase === 'canary' || globalPhase === 'enforce') {
-      if (titleEl) titleEl.textContent = 'Effektives Blockieren: AKTIV';
+      if (titleEl) titleEl.textContent = t('l7.effective.activeTitle');
       if (descEl) descEl.textContent = t('l7.effective.active');
-      if (pillEl) { pillEl.textContent = 'ACTIVE'; pillEl.className = 'status-pill good'; }
+      if (pillEl) { pillEl.textContent = t('dynamic.active'); pillEl.className = 'status-pill good'; }
     } else {
-      if (titleEl) titleEl.textContent = 'Effektives Blockieren: SUSPENDIERT (Observe)';
+      if (titleEl) titleEl.textContent = t('l7.effective.suspendedTitle');
       if (descEl) descEl.textContent = t('l7.effective.observe');
       if (pillEl) { pillEl.textContent = 'OBSERVE'; pillEl.className = 'status-pill warn'; }
     }
   } else {
-    if (titleEl) titleEl.textContent = 'Effektives Blockieren: DEAKTIVIERT (Observe Modus)';
+    if (titleEl) titleEl.textContent = t('l7.effective.observeTitle');
     if (descEl) descEl.textContent = t('l7.effective.observeConfig');
     if (pillEl) { pillEl.textContent = 'OBSERVE'; pillEl.className = 'status-pill muted'; }
   }
@@ -111,21 +111,21 @@ function renderL7EffectiveBlocking(snapshot) {
 function renderL7KPIs(snapshot) {
   const l7 = snapshot.l7 || {};
 
-  text('l7KpiInspected', Number(l7.requests_total || 0).toLocaleString());
-  text('l7KpiFindings', Number(l7.findings_total || 0).toLocaleString());
-  text('l7KpiBlocked', Number(l7.blocked_total || 0).toLocaleString());
-  text('l7KpiRateLimited', Number(l7.rate_limited_total || 0).toLocaleString());
-  text('l7KpiRejected', Number(l7.rejected_total || 0).toLocaleString());
-  text('l7KpiResponseFindings', Number(l7.response_findings_total || 0).toLocaleString());
+  text('l7KpiInspected', Number(l7.requests_total || 0).toLocaleString(locale()));
+  text('l7KpiFindings', Number(l7.findings_total || 0).toLocaleString(locale()));
+  text('l7KpiBlocked', Number(l7.blocked_total || 0).toLocaleString(locale()));
+  text('l7KpiRateLimited', Number(l7.rate_limited_total || 0).toLocaleString(locale()));
+  text('l7KpiRejected', Number(l7.rejected_total || 0).toLocaleString(locale()));
+  text('l7KpiResponseFindings', Number(l7.response_findings_total || 0).toLocaleString(locale()));
 
   text('l7SecActiveConnections', String(l7.active_connections || 0));
   text('l7SecUpstreamErrors', String(l7.inline_upstream_errors_total || 0));
   text('l7SecResponseErrors', String(l7.response_inspection_errors_total || 0));
 
   // Overview quick-card metrics
-  text('overviewL7Inspected', Number(l7.requests_total || 0).toLocaleString());
-  text('overviewL7Findings', Number(l7.findings_total || 0).toLocaleString());
-  text('overviewL7Blocked', Number(l7.blocked_total || 0).toLocaleString());
+  text('overviewL7Inspected', Number(l7.requests_total || 0).toLocaleString(locale()));
+  text('overviewL7Findings', Number(l7.findings_total || 0).toLocaleString(locale()));
+  text('overviewL7Blocked', Number(l7.blocked_total || 0).toLocaleString(locale()));
 }
 
 function renderL7ThreatCategories(findings = []) {
@@ -141,7 +141,7 @@ function renderL7ThreatCategories(findings = []) {
   }
 
   if (counts.size === 0) {
-    const empty = el('span', 'empty-tag', 'Noch keine Bedrohungen festgestellt');
+    const empty = el('span', 'empty-tag', t('l7.categories.empty'));
     root.replaceChildren(empty);
     return;
   }
@@ -174,7 +174,7 @@ function renderL7FindingsTable(findings = []) {
     const tr = el('tr', 'clickable-row');
     tr.tabIndex = 0;
     tr.setAttribute('role', 'button');
-    tr.setAttribute('aria-label', `Finding ${f.rule_ids?.[0] || 'L7'} at ${f.path || '/'}`);
+    tr.setAttribute('aria-label', t('l7.findings.aria', { rule: f.rule_ids?.[0] || 'L7', path: f.path || '/' }));
 
     const tdTime = el('td', 'mono', formatTime(f.time));
     const tdSev = el('td');
@@ -196,7 +196,7 @@ function renderL7FindingsTable(findings = []) {
     tdAction.append(actionPill);
 
     const tdDetail = el('td');
-    const btn = el('button', 'button button-quiet compact', 'Details');
+    const btn = el('button', 'button button-quiet compact', t('common.details'));
     btn.type = 'button';
     btn.addEventListener('click', evt => {
       evt.stopPropagation();
@@ -227,7 +227,7 @@ export function openFindingDrawer(finding) {
 
   // Header & Severity
   text('drawerFindingRule', finding.rule_ids?.[0] || 'L7.THREAT.DETECTED');
-  text('drawerFindingSummary', finding.summary || 'Bedrohung im HTTP-Datenstrom identifiziert.');
+  text('drawerFindingSummary', finding.summary || t('l7.drawer.defaultSummary'));
 
   const sevEl = byID('drawerFindingSeverity');
   if (sevEl) {
@@ -249,7 +249,7 @@ export function openFindingDrawer(finding) {
   // Decision & Action
   text('drawerDecision', finding.decision || 'observed');
   text('drawerAction', finding.action || 'none');
-  text('drawerOutcome', finding.outcome || 'Keine destruktive Aktion ausgeführt.');
+  text('drawerOutcome', finding.outcome || t('l7.drawer.noDestructiveAction'));
 
   // Attack Story / Correlation
   renderDrawerAttackStory(finding.attack_story || []);
@@ -267,7 +267,7 @@ function renderDrawerAttackStory(nodes = []) {
   if (!root) return;
 
   if (!nodes.length) {
-    const empty = el('div', 'empty-node', 'Keine zusätzliche Host-Korrelation erfasst (L7 Root Cause Isolation).');
+    const empty = el('div', 'empty-node', t('l7.drawer.noCorrelation'));
     root.replaceChildren(empty);
     return;
   }

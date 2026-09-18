@@ -39,31 +39,59 @@ if findings:
 PY
 pass 'no unsafe DOM HTML sinks, eval, javascript URLs or inline handlers'
 
-python3 - "$ROOT" <<'PY'
+python3 - "$ROOT" <<'PYI18N'
 from pathlib import Path
-import re, sys
+import json, re, sys
 root=Path(sys.argv[1])
 i18n=(root/'control'/'web'/'i18n.js').read_text(encoding='utf-8')
+marker='export const catalogs = Object.freeze('
+end_marker=');\nconst messages = catalogs;'
+start=i18n.find(marker)
+end=i18n.find(end_marker,start+len(marker))
+if start < 0 or end < 0:
+    raise SystemExit('i18n catalog structure missing')
+try:
+    catalogs=json.loads(i18n[start+len(marker):end])
+except json.JSONDecodeError as exc:
+    raise SystemExit(f'i18n catalog JSON invalid: {exc}')
+expected=('de','en','ru','zh-CN')
+if tuple(catalogs) != expected:
+    raise SystemExit('i18n languages mismatch: '+', '.join(catalogs))
+base=set(catalogs['de'])
+for language in expected:
+    keys=set(catalogs[language])
+    if keys != base:
+        raise SystemExit(f'{language} catalog parity mismatch')
+    for key,value in catalogs[language].items():
+        if not isinstance(value,str) or not value.strip():
+            raise SystemExit(f'{language} empty translation: {key}')
+        expected_tokens=sorted(re.findall(r'\{([a-zA-Z0-9_]+)\}',catalogs['de'][key]))
+        actual_tokens=sorted(re.findall(r'\{([a-zA-Z0-9_]+)\}',value))
+        if actual_tokens != expected_tokens:
+            raise SystemExit(f'{language} placeholder mismatch: {key}')
 used=set()
-for rel in ['control/web/index.html','control/web/app.js','control/web/render.js','control/web/api.js','control/web/charts.js']:
-    text=(root/rel).read_text(encoding='utf-8')
+web=root/'control'/'web'
+for file in [web/'index.html', *sorted(web.glob('*.js'))]:
+    if file.name == 'i18n.js':
+        continue
+    text=file.read_text(encoding='utf-8')
     used.update(re.findall(r'data-i18n(?:-placeholder|-aria|-title)?=["\']([^"\']+)',text))
     used.update(re.findall(r"\bt\(\s*['\"]([^'\"]+)['\"]",text))
-for language in ('en','ru'):
-    blocks='\n'.join(re.findall(rf'Object\.assign\(messages\.{language}, \{{(.*?)\n\}}\);',i18n,re.S))
-    overrides=set(re.findall(r"['\"]([a-zA-Z0-9_.-]+)['\"]\s*:",blocks))
-    missing=sorted(used-overrides)
+for language in expected:
+    missing=sorted(used-set(catalogs[language]))
     if missing:
         raise SystemExit(f'{language} translation coverage missing: '+', '.join(missing))
-html=(root/'control'/'web'/'index.html').read_text(encoding='utf-8')
+html=(web/'index.html').read_text(encoding='utf-8')
+if '<option value="zh-CN">简体中文</option>' not in html:
+    raise SystemExit('Simplified Chinese selector option missing')
 for value in [
-    'GeDefense', 'VisionGaiaTechnology', '4.0.0-beta.1', 'paypal.me/dergoldenelotus',
+    'GeDefense', 'VisionGaiaTechnology', '4.0.1', 'paypal.me/dergoldenelotus',
     'bc1q3ue5gq822tddmkdrek79adlkm36fatat3lz0dm', '0xD37DEfb09e07bD775EaaE9ccDaFE3a5b2348Fe85',
 ]:
     if value not in html:
         raise SystemExit('dashboard branding/support anchor missing: '+value)
-PY
-pass 'German, English and Russian translation coverage plus branding/support anchors'
+PYI18N
+pass 'DE/EN/RU/zh-CN catalog parity, translation coverage and branding/support anchors'
 
 python3 - "$ROOT" <<'PY'
 from pathlib import Path

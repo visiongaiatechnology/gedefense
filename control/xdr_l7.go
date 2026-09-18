@@ -275,7 +275,7 @@ func (e *XDREngine) RecordL7Inspection(req l7NormalizedRequest, response L7Inspe
 		ID: incidentID, Time: now, Severity: severity, Score: response.Score, ResponseScore: 0,
 		PID: req.ServerPID, Process: req.ServerProcess, Remote: req.RemoteIP,
 		RuleIDs: ruleIDs, Categories: categories, Summary: summary, Decision: decision, Action: action, Outcome: outcome,
-		ExecutionChainID: chainID, AttackStory: story, RecordHash: recordHash,
+		ExecutionChainID: chainID, AttackStory: story, EvidenceRoot: recordHash,
 		RequestID: req.RequestID, HTTPMethod: req.Method, HTTPHost: req.Host, HTTPPath: req.Path, BodySHA256: req.BodySHA256,
 	}
 	e.appendIncident(incident)
@@ -332,7 +332,7 @@ func (e *XDREngine) RecordL7ResponseInspection(req l7NormalizedRequest, statusCo
 		RequestID: req.RequestID, HTTPMethod: req.Method, HTTPHost: req.Host, HTTPPath: req.Path, BodySHA256: req.BodySHA256,
 		RuleIDs: ruleIDs, Categories: categories, Summary: l7FindingSummary(unique),
 		Decision: "alert", Action: "none", Outcome: "response observed; no destructive authority granted",
-		AttackStory: []AttackStoryNode{node}, RecordHash: node.Digest,
+		AttackStory: []AttackStoryNode{node}, EvidenceRoot: node.Digest,
 	}
 	e.appendIncident(incident)
 	e.state.AddEvent(Event{Severity: severity, Kind: "l7.response", Source: "l7", Message: incident.Summary, Target: req.Host + req.Path})

@@ -1,4 +1,4 @@
-# Validation — GeDefense Beta v4 (4.0.0-beta.1)
+# Validation — GeDefense Beta v4 (4.0.1)
 
 ## Scope
 

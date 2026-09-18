@@ -350,7 +350,7 @@ func (d *DeceptionEngine) HandleCanaryAccess(
 		Acknowledged:     false,
 		ExecutionChainID: storyNode.NodeID,
 		AttackStory:      storyNodes,
-		RecordHash:       evidenceRoot,
+		EvidenceRoot:     evidenceRoot,
 	}
 
 	// Notify sink

@@ -33,6 +33,7 @@ type XDRIncident struct {
 	Action           string            `json:"action"`
 	Outcome          string            `json:"outcome"`
 	Acknowledged     bool              `json:"acknowledged"`
+	EvidenceRoot     string            `json:"evidence_root,omitempty"`
 	RecordHash       string            `json:"record_hash,omitempty"`
 	ExecutionChainID string            `json:"execution_chain_id,omitempty"`
 	AttackStory      []AttackStoryNode `json:"attack_story,omitempty"`

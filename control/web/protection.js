@@ -201,7 +201,7 @@ async function renderProtectionStepper(snapshot) {
   const currentBadge = byID('protectionCurrentBadge');
   if (currentBadge) {
     if (isEmergency) {
-      currentBadge.textContent = 'EMERGENCY STOP';
+      currentBadge.textContent = t('emergency.topBtn');
       currentBadge.className = 'status-pill danger pulse-danger';
     } else if (phase === 'enforce') {
       currentBadge.textContent = 'ENFORCE';
@@ -441,7 +441,7 @@ async function handleActivationSubmit(evt) {
   const reason = String(reasonInput?.value || '').trim();
 
   if (reason.length < 8) {
-    toast('Begründung muss mindestens 8 Zeichen lang sein.', 'warning');
+    toast(t('validation.reasonMin8'), 'warning');
     return;
   }
 
@@ -489,7 +489,7 @@ async function handleEmergencySubmit(evt) {
   const reason = String(reasonInput?.value || '').trim();
 
   if (reason.length < 8) {
-    toast('Grund für den Notfall-Stopp muss mindestens 8 Zeichen lang sein.', 'warning');
+    toast(t('validation.emergencyReasonMin8'), 'warning');
     return;
   }
 
@@ -521,7 +521,7 @@ async function handleEmergencyClearSubmit(evt) {
   const reason = String(reasonInput?.value || '').trim();
 
   if (reason.length < 8) {
-    toast('Begründung für die Aufhebung muss mindestens 8 Zeichen lang sein.', 'warning');
+    toast(t('validation.clearReasonMin8'), 'warning');
     return;
   }
 

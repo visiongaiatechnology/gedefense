@@ -40,25 +40,25 @@ func NewMorpheusSecurityException(msg string, err error) *MorpheusSecurityExcept
 }
 
 type RASPEvent struct {
-	EventID     string            `json:"event_id"`
-	Timestamp   time.Time         `json:"timestamp"`
-	ThreatType  string            `json:"threat_type"`
-	Severity    string            `json:"severity"`
-	SourcePID   int               `json:"source_pid"`
-	TargetPID   int               `json:"target_pid"`
-	SourceComm  string            `json:"source_comm"`
-	TargetComm  string            `json:"target_comm"`
-	Details     map[string]string `json:"details"`
-	AttackNode  *AttackStoryNode  `json:"attack_node,omitempty"`
+	EventID    string            `json:"event_id"`
+	Timestamp  time.Time         `json:"timestamp"`
+	ThreatType string            `json:"threat_type"`
+	Severity   string            `json:"severity"`
+	SourcePID  int               `json:"source_pid"`
+	TargetPID  int               `json:"target_pid"`
+	SourceComm string            `json:"source_comm"`
+	TargetComm string            `json:"target_comm"`
+	Details    map[string]string `json:"details"`
+	AttackNode *AttackStoryNode  `json:"attack_node,omitempty"`
 }
 
 type MorpheusRASP struct {
-	mu               sync.RWMutex
-	protectedNames   map[string]bool
-	protectedPIDs    map[int]bool
-	yamaScopePath    string
-	correlator       *IncidentCorrelator
-	incidentSink     func(XDRIncident) error
+	mu             sync.RWMutex
+	protectedNames map[string]bool
+	protectedPIDs  map[int]bool
+	yamaScopePath  string
+	correlator     *IncidentCorrelator
+	incidentSink   func(XDRIncident) error
 }
 
 func NewMorpheusRASP(
@@ -173,22 +173,22 @@ func (m *MorpheusRASP) InspectMemoryAccess(
 
 		if m.incidentSink != nil {
 			_ = m.incidentSink(XDRIncident{
-				ID:             eventID,
-				Time:           now,
-				Severity:       "CRITICAL",
-				Score:          250,
-				ResponseScore:  250,
-				PID:            sourcePID,
-				Process:        sourceComm,
-				Remote:         targetStr,
-				Summary:        fmt.Sprintf("Process memory scraping blocked: PID %d (%s) attempted memory access on %s (PID %d)", sourcePID, sourceComm, targetComm, targetPID),
-				RuleIDs:        []string{"MORPHEUS.RASP.MEM_SCRAPE", "MORPHEUS.PTRACE_PROTECTED"},
-				Categories:     []string{"privilege_escalation", "credential_access"},
-				Decision:       "block",
-				Action:         "freeze-execution",
-				Outcome:        "intercepted and reported by morpheus rasp",
-				AttackStory:    storyNodes,
-				RecordHash:     recordHash,
+				ID:            eventID,
+				Time:          now,
+				Severity:      "CRITICAL",
+				Score:         250,
+				ResponseScore: 250,
+				PID:           sourcePID,
+				Process:       sourceComm,
+				Remote:        targetStr,
+				Summary:       fmt.Sprintf("Process memory scraping blocked: PID %d (%s) attempted memory access on %s (PID %d)", sourcePID, sourceComm, targetComm, targetPID),
+				RuleIDs:       []string{"MORPHEUS.RASP.MEM_SCRAPE", "MORPHEUS.PTRACE_PROTECTED"},
+				Categories:    []string{"privilege_escalation", "credential_access"},
+				Decision:      "block",
+				Action:        "freeze-execution",
+				Outcome:       "intercepted and reported by morpheus rasp",
+				AttackStory:   storyNodes,
+				EvidenceRoot:  recordHash,
 			})
 		}
 

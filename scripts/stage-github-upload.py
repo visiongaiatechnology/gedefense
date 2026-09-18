@@ -89,10 +89,10 @@ EXCLUDED_SUFFIXES = (
 )
 
 RELEASE_ASSETS = (
-    "VGT_GeDefense_Beta_v4_4.0.0-beta.1_OneClick.run",
-    "VGT_GeDefense_Beta_v4_4.0.0-beta.1_OneClick.run.sha256",
-    "VGT_GeDefense_Beta_v4_4.0.0-beta.1_Source.zip",
-    "VGT_GeDefense_Beta_v4_4.0.0-beta.1_Source.zip.sha256",
+    "VGT_GeDefense_Beta_v4_4.0.1_OneClick.run",
+    "VGT_GeDefense_Beta_v4_4.0.1_OneClick.run.sha256",
+    "VGT_GeDefense_Beta_v4_4.0.1_Source.zip",
+    "VGT_GeDefense_Beta_v4_4.0.1_Source.zip.sha256",
 )
 
 FORBIDDEN_BYTE_MARKERS = (

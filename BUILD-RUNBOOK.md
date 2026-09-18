@@ -1,4 +1,4 @@
-# Build Runbook — VGT GeDefense Beta v4 (4.0.0-beta.1)
+# Build Runbook — VGT GeDefense Beta v4 (4.0.1)
 
 ## Go and frontend validation
 

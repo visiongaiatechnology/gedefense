@@ -80,6 +80,9 @@ func NewAPIServer(cfg Config, state *State, core *CoreClient, feeds *FeedManager
 	mux.HandleFunc("GET /api/v1/stream", s.auth(s.stream))
 	mux.HandleFunc("GET /api/v1/policy", s.auth(s.policyStatus))
 	mux.HandleFunc("GET /api/v1/xdr/profiles", s.auth(s.behaviorProfiles))
+	mux.HandleFunc("GET /api/v1/xdr/integrity", s.auth(s.xdrIntegrityStatus))
+	mux.HandleFunc("POST /api/v1/xdr/integrity/verify", s.auth(s.xdrIntegrityVerify))
+	mux.HandleFunc("POST /api/v1/xdr/recovery", s.auth(s.xdrRecovery))
 	mux.HandleFunc("GET /api/v1/forensics/export", s.auth(s.forensicsExport))
 	mux.HandleFunc("GET /api/v1/release", s.auth(s.releaseStatus))
 	mux.HandleFunc("GET /api/v1/release/readiness", s.auth(s.releaseReadiness))
@@ -332,7 +335,8 @@ func apiError(w http.ResponseWriter, status int, publicMessage string, internal 
 }
 
 func decodeStrictJSON(w http.ResponseWriter, r *http.Request, max int64, dst any) error {
-	if ct := r.Header.Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
+	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil || mediaType != "application/json" {
 		return errors.New("Content-Type must be application/json")
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, max)

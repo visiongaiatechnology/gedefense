@@ -2,7 +2,7 @@
 
 **Produkt:** VGT GeDefense
 **Hersteller:** VisionGaia Technology
-**Version:** 4.0.0-beta.1 — Beta v4 Universal Linux
+**Version:** 4.0.1 — Beta v4 Universal Linux
 **Installer-Revision:** 3.5.1
 **Dokumentstand:** 28. Juli 2026
 **Produktstatus:** Anwendbare und testbare Full-Stack-Beta
@@ -329,7 +329,7 @@ Zum Dokumentstand erfolgreich ausgeführt:
 
 Aktueller Installer:
 
-`VGT_GeDefense_Beta_v4_4.0.0-beta.1_OneClick.run`
+`VGT_GeDefense_Beta_v4_4.0.1_OneClick.run`
 
 SHA-256:
 
@@ -337,7 +337,7 @@ SHA-256:
 
 ## 13. Explizite Produktgrenzen
 
-Nicht Bestandteil der Version 4.0.0-beta.1:
+Nicht Bestandteil der Version 4.0.1:
 
 - Swarm-/Mesh-Föderation;
 - QUIC-Offloading oder verteilte Angriffsabsorption;
@@ -358,4 +358,4 @@ Aktivierungs- und Health-Gates auf diesem Zielhost bestanden sind.
 ---
 
 **VisionGaia Technology — GeDefense powered by VisionGaiaTechnology**
-Technisches Datenblatt für VGT GeDefense Beta v4, Version 4.0.0-beta.1.
+Technisches Datenblatt für VGT GeDefense Beta v4, Version 4.0.1.

@@ -219,22 +219,22 @@ func (s *StyxEngine) EvaluateEgress(
 
 		if s.incidentSink != nil {
 			_ = s.incidentSink(XDRIncident{
-				ID:             incidentID,
-				Time:           now,
-				Severity:       "CRITICAL",
-				Score:          250,
-				ResponseScore:  250,
-				PID:            pid,
-				Process:        comm,
-				Remote:         remoteIPStr,
-				Summary:        fmt.Sprintf("Cloud metadata exfiltration attempt blocked: PID %d (%s) attempted connecting to %s", pid, comm, remoteIPStr),
-				RuleIDs:        []string{"STYX.EGRESS.METADATA_BLOCKED", "MORPHEUS.SSRF_IMDS"},
-				Categories:     []string{"exfiltration", "credential_access"},
-				Decision:       "drop",
-				Action:         "block-egress",
-				Outcome:        "dropped by kernel styx egress shield",
-				AttackStory:    storyNodes,
-				RecordHash:     recordHash,
+				ID:            incidentID,
+				Time:          now,
+				Severity:      "CRITICAL",
+				Score:         250,
+				ResponseScore: 250,
+				PID:           pid,
+				Process:       comm,
+				Remote:        remoteIPStr,
+				Summary:       fmt.Sprintf("Cloud metadata exfiltration attempt blocked: PID %d (%s) attempted connecting to %s", pid, comm, remoteIPStr),
+				RuleIDs:       []string{"STYX.EGRESS.METADATA_BLOCKED", "MORPHEUS.SSRF_IMDS"},
+				Categories:    []string{"exfiltration", "credential_access"},
+				Decision:      "drop",
+				Action:        "block-egress",
+				Outcome:       "dropped by kernel styx egress shield",
+				AttackStory:   storyNodes,
+				EvidenceRoot:  recordHash,
 			})
 		}
 

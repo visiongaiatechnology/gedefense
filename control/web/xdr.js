@@ -1,9 +1,19 @@
 // STATUS: DIAMANT VGT SUPREME
 'use strict';
 
-import { acknowledgeIncident, getProfiles, getStatus } from './api.js';
+import {
+  acknowledgeIncident,
+  getProfiles,
+  getStatus,
+  getXDRIntegrity,
+  recoverXDRIntegrity,
+  verifyXDRIntegrity
+} from './api.js';
 import { t } from './i18n.js';
 import { byID, el, formatTime, text, toast } from './render.js';
+
+let integrityReport = null;
+let lastIntegrityFetch = 0;
 
 export function initXDRModule() {
   const loadProfilesBtn = byID('loadProfiles');
@@ -18,6 +28,48 @@ export function initXDRModule() {
       }
     });
   }
+
+  byID('verifyXDRIntegrity')?.addEventListener('click', async () => {
+    try {
+      integrityReport = await verifyXDRIntegrity();
+      lastIntegrityFetch = Date.now();
+      renderIntegrityReport(integrityReport);
+      toast(integrityReport.ledger?.healthy ? t('xdr.integrity.verifyHealthy') : t('xdr.integrity.verifyDegraded'), integrityReport.ledger?.healthy ? 'good' : 'danger');
+    } catch (err) {
+      toast(err.message, 'danger', err.errorID);
+    }
+  });
+
+  byID('recoverXDRIntegrity')?.addEventListener('click', () => {
+    if (!integrityReport?.recovery_allowed) return;
+    const reason = byID('xdrRecoveryReason');
+    if (reason) reason.value = '';
+    byID('xdrRecoveryDialog')?.showModal();
+  });
+
+  byID('xdrRecoveryForm')?.addEventListener('submit', async event => {
+    event.preventDefault();
+    if (!integrityReport?.recovery_allowed) return;
+    const reason = String(byID('xdrRecoveryReason')?.value || '').trim();
+    if (reason.length < 8 || reason.length > 240) {
+      toast(t('xdr.recovery.reasonInvalid'), 'danger');
+      return;
+    }
+    const button = byID('xdrRecoveryConfirm');
+    if (button) button.disabled = true;
+    try {
+      const result = await recoverXDRIntegrity(reason);
+      byID('xdrRecoveryDialog')?.close();
+      integrityReport = await getXDRIntegrity();
+      lastIntegrityFetch = Date.now();
+      renderIntegrityReport(integrityReport);
+      toast(t('xdr.recovery.success', { archive: result.archive_id || '---' }), 'good');
+    } catch (err) {
+      toast(err.message, 'danger', err.errorID);
+    } finally {
+      if (button) button.disabled = false;
+    }
+  });
 }
 
 export async function loadXDRView(snap) {
@@ -35,11 +87,60 @@ export async function loadXDRView(snap) {
   text('xdrConnections', String(xdr.open_connections || 0));
   text('evaluationCount', Number(xdr.evaluations_total || 0).toLocaleString());
   text('queueDepth', `${xdr.queue_depth || 0} / ${xdr.queue_capacity || 0}`);
-  text('queueDrops', `${xdr.evaluation_drops || 0} Drops`);
+  text('queueDrops', t('dynamic.drops', { value: xdr.evaluation_drops || 0 }));
   text('profileCount', String(xdr.profiles_total || 0));
-  text('warmProfiles', `${xdr.profiles_warm || 0} warm`);
+  text('warmProfiles', t('dynamic.warm', { value: xdr.profiles_warm || 0 }));
+
+  const modeBadge = byID('xdrModeBadge');
+  if (modeBadge) {
+    modeBadge.className = `status-pill ${xdr.degraded ? 'danger' : (xdr.mode === 'observe' ? 'warn' : 'good')}`;
+    modeBadge.textContent = xdr.degraded ? 'DEGRADED' : String(xdr.mode || 'observe').toUpperCase();
+  }
+
+  if (xdr.degraded || integrityReport?.ledger?.quarantined) {
+    await refreshIntegrityReport();
+  } else {
+    integrityReport = null;
+    renderIntegrityReport(null);
+  }
 
   renderModernIncidents(snapshot.incidents || []);
+}
+
+async function refreshIntegrityReport(force = false) {
+  const now = Date.now();
+  if (!force && integrityReport && now - lastIntegrityFetch < 5000) {
+    renderIntegrityReport(integrityReport);
+    return integrityReport;
+  }
+  integrityReport = await getXDRIntegrity();
+  lastIntegrityFetch = now;
+  renderIntegrityReport(integrityReport);
+  return integrityReport;
+}
+
+function renderIntegrityReport(report) {
+  const panel = byID('xdrIntegrityPanel');
+  if (!panel) return;
+  const ledger = report?.ledger || null;
+  const unhealthy = Boolean(report && (!ledger?.healthy || report.xdr_degraded));
+  panel.hidden = !unhealthy;
+  if (!unhealthy) return;
+
+  const badge = byID('xdrIntegrityBadge');
+  if (badge) {
+    badge.className = 'status-pill danger';
+    badge.textContent = ledger?.quarantined ? 'QUARANTINED' : 'DEGRADED';
+  }
+  text('xdrIntegritySummary', ledger?.recoverable ? t('xdr.integrity.recoverable') : t('xdr.integrity.manual'));
+  const code = String(ledger?.reason_code || 'INTEGRITY_FAILURE');
+  const translated = t(`xdr.integrity.code.${code}`);
+  text('xdrIntegrityReason', translated.startsWith('xdr.integrity.code.') ? code : translated);
+  text('xdrIntegrityRecord', ledger?.failure_record ? String(ledger.failure_record) : '---');
+  text('xdrIntegrityVerified', String(ledger?.verified_records || 0));
+
+  const recover = byID('recoverXDRIntegrity');
+  if (recover) recover.disabled = !report?.recovery_allowed;
 }
 
 export function renderModernIncidents(incidents = []) {
@@ -74,7 +175,7 @@ export function renderModernIncidents(incidents = []) {
     const tdSignals = el('td');
     const signals = inc.categories || inc.rule_ids || [];
     if (signals.length > 0) {
-      const pill = el('span', 'signal-badge', `${signals.length} categories (${signals.slice(0, 2).join(', ')})`);
+      const pill = el('span', 'signal-badge', t('xdr.signalCategories', { count: signals.length, preview: signals.slice(0, 2).join(', ') }));
       tdSignals.append(pill);
     } else {
       tdSignals.textContent = '---';
@@ -132,7 +233,7 @@ function renderBehaviorProfiles(profiles = []) {
   const rows = profiles.map(p => {
     const tr = el('tr');
     tr.append(
-      el('td', 'mono', p.executable || 'unknown'),
+      el('td', 'mono', p.executable || t('dynamic.unknown')),
       el('td', 'mono', String(p.connection_count?.samples || 0)),
       el('td', 'mono', Number(p.connection_count?.mean || 0).toFixed(1)),
       el('td', 'mono', Number(p.unique_remotes?.mean || 0).toFixed(1)),

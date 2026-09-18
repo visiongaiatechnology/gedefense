@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 env:
-  PRODUCT_VERSION: 4.0.0-beta.1
+  PRODUCT_VERSION: 4.0.1
 
 jobs:
   go-frontend-security:
@@ -118,8 +118,8 @@ jobs:
         with:
           name: gedefense-beta-v4-${{ env.PRODUCT_VERSION }}
           path: |
-            release/VGT_GeDefense_Beta_v4_4.0.0-beta.1_Source.zip
-            release/VGT_GeDefense_Beta_v4_4.0.0-beta.1_Source.zip.sha256
-            release/VGT_GeDefense_Beta_v4_4.0.0-beta.1_OneClick.run
-            release/VGT_GeDefense_Beta_v4_4.0.0-beta.1_OneClick.run.sha256
+            release/VGT_GeDefense_Beta_v4_4.0.1_Source.zip
+            release/VGT_GeDefense_Beta_v4_4.0.1_Source.zip.sha256
+            release/VGT_GeDefense_Beta_v4_4.0.1_OneClick.run
+            release/VGT_GeDefense_Beta_v4_4.0.1_OneClick.run.sha256
           if-no-files-found: error
