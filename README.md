@@ -13,8 +13,8 @@
 ### Linux Security Fabric
 
 [![License](https://img.shields.io/badge/License-AGPL--3.0--only-blue?style=for-the-badge)](https://www.gnu.org/licenses/agpl-3.0)
-[![Version](https://img.shields.io/badge/Version-3.0.0--beta.1-orange?style=for-the-badge)](#)
-[![Status](https://img.shields.io/badge/Status-Beta_v3-yellow?style=for-the-badge)](#)
+[![Version](https://img.shields.io/badge/Version-4.0.0--beta.1-orange?style=for-the-badge)](#)
+[![Status](https://img.shields.io/badge/Status-Beta_v4-yellow?style=for-the-badge)](#)
 [![Installer](https://img.shields.io/badge/Installer-4.0.0_Universal_Linux-green?style=for-the-badge)](#-quick-start)
 [![Platform](https://img.shields.io/badge/Platform-Linux_x86__64-lightgrey?style=for-the-badge&logo=linux)](#)
 [![Data Plane](https://img.shields.io/badge/Data_Plane-Rust_eBPF%2FXDP-red?style=for-the-badge&logo=rust)](#-architecture)
@@ -23,6 +23,8 @@
 [![Sovereign](https://img.shields.io/badge/Control_Plane-Local%2FSovereign-brightgreen?style=for-the-badge)](#)
 [![Linux](https://img.shields.io/badge/Linux-APT%20%7C%20DNF%20%7C%20pacman%20%7C%20Zypper-cyan?style=for-the-badge&logo=linux)](#-universal-linux-integration)
 [![AstraeaOS](https://img.shields.io/badge/AstraeaOS-Native_Ready-7de3ff?style=for-the-badge)](#-astraeaos-integration)
+[![Architecture](https://img.shields.io/badge/Architecture-Specification-9cf?style=for-the-badge&logo=blueprint)](ARCHITECTURE.md)
+[![Security Audit](https://img.shields.io/badge/Security-Audit_Beta_5-success?style=for-the-badge&logo=shield)](SECURITY-AUDIT-BETA5.md)
 [![VGT](https://img.shields.io/badge/VGT-VisionGaiaTechnology-cyan?style=for-the-badge)](https://visiongaiatechnology.de)
 
 **KERNEL-NEAR NETWORK DEFENSE · HOST XDR · ENCRYPTED EVIDENCE · REVERSIBLE HARDENING · NO CLOUD CONTROL PLANE**
@@ -31,9 +33,9 @@
 
 ---
 
-## ⚠️ BETA SOFTWARE — BETA v3 · UNIVERSAL LINUX RELEASE CANDIDATE
+## ⚠️ BETA SOFTWARE — BETA v4 · UNIVERSAL LINUX RELEASE CANDIDATE
 
-VGT GeDefense 3.0.0-beta.1 is **Beta v3** — the Beta 5 defense chain plus a universal Linux integration, hardened release pipeline and concrete kernel/NIC qualification gate. It is **not** a certified or generally production-cleared product.
+VGT GeDefense 4.0.0-beta.1 is **Beta v4** — the Beta 5 defense chain plus a universal Linux integration, hardened release pipeline and concrete kernel/NIC qualification gate. It is **not** a certified or generally production-cleared product.
 
 **Production clearance is deliberately a property of the concretely audited target host — not just the source code.**
 
@@ -43,25 +45,105 @@ Found a vulnerability or have an improvement? **Open an issue or contact us.**
 
 ---
 
-## 📋 Changelog: Von V2 Beta 1 zu V3 Beta 1 (`3.0.0-beta.1`)
+## 🏛️ Security Architecture & Technical Specification
 
-VGT GeDefense 3.0.0-beta.1 transformiert die Architektur von einem reinen Host-/Netzwerk-Sensor mit statischer Regelausführung zu einer **vollständig autonomen, reversiblen Linux Security Fabric mit Defense-in-Depth**.
+> [!IMPORTANT]
+> **For Security Researchers, System Architects & Auditors:**
+> GeDefense maintains an exhaustive, formal technical architecture specification, trust boundary model, and symbol data tree:
+> 
+> ### ➔ [📘 ARCHITECTURE.md — Complete Technical Architecture & Specification](ARCHITECTURE.md)
+> 
+> *Over 2,200 lines specifying the 7-tier architecture tree, kernel eBPF/XDP data plane, Go control plane, typed Rust response core, native L7 WAF engine, cryptographic evidence ledger, and reversible posture engine.*
 
-### 🌟 Neue Kernmodule & Architektur-Upgrades
-* **Dual-Mode-Doktrin (Identical Binaries, Dynamic Capability Detection):** Einheitliche Binärdateien für AstraeaOS (native Ring-1-GaiaCells, BPF-LSM, Key-Broker) und generische Linux-Systeme (Ubuntu, Debian, RHEL, Fedora, Arch, Alpine) mit dynamischer Enclave-Erkennung beim Booten (`platform_caps.go`).
-* **Trinity Dynamic Attack Story DAG & Incident Correlator:** Kausale Rekonstruktion ganzer Angriffsgraphen (`CANARY_TRIGGERED`, `PRIVILEGE_ESCALATED`, `EGRESS_ATTEMPTED`) mit deterministischer Merkle-Root-Evidence statt isolierter Log-Zeilen.
-* **Autonome Reversible Response Engine:** Multistufige Quarantäne (`CONTAIN_IP`, `FREEZE_EXECUTION`, `CONTAIN_CELL`) mit semantischen TTLs und automatischem, auditsicherem Rollback bei Nicht-Bestätigung durch den Operator.
-* **Nemesis Cyber Deception Grid:** Physische Canary-Fallen auf Disk (`0600`) mit dynamischer Schlüsselableitung via `StorageCipher` und kalibrierter RASP-Erkennung (85% System/Backup vs. 98% unberechtigte Entitäten).
-* **Styx Zero-Trust Egress & SSRF Shield:** Cgroup-/Cell-basiertes Egress-Whitelisting mit integriertem Filter gegen Cloud-Metadaten-Exfiltration (AWS, GCP, Azure, Alibaba, OCI, IPv6 IMDSv2).
-* **Airlock Ingress & Polyglot Inspector:** Strikte Magic-Byte-Prüfung, SVG-Sanitization (Neutralisierung von Skripten, ForeignObjects, Embeds, Iframes und DTDs) und Quarantäne-Staging mit harten Größenbegrenzungen und Symlink-Jail.
-* **Morpheus Linux RASP & Credential Scrubber:** Schutz geschützter Daemons vor Memory-Scraping (`/proc/<pid>/mem`, `ptrace`) und automatische Schwärzung von API-Keys/Tokens in Prozessargumenten.
-* **Chronos Resumable FIM:** I/O-schonender File-Integrity-Scanner mit atomaren Checkpoints, Descriptor-Leak-Beseitigung und Merkle-Tree-Integritätswurzel.
+### 7-Tier Sovereign Defense Fabric Overview
 
-### 🛡️ Real-World Kernel- & IPC-Härtungen (No Dead Architecture)
-* **Reversibler Process-Freeze:** Echte `/proc/<pid>/stat`-StartTicks-Validierung gegen PID-Reuse-Races; Rust Core unterstützt nun `libc::SIGCONT` (`XDR_CONT`) zur echten Prozesswiederaufnahme nach TTL-Ablauf.
-* **Evasion-Resistente SSRF-Validierung:** Normalisierung und Abfangen von Dezimal-Dword-, Hex-, Oktal- und IPv4-in-IPv6-Darstellungen sowie strikte Sperrung interner Loopback-Ziele.
-* **API-Härtung (Pattern 1.5.A):** Alle sekundären API-Endpunkte nutzen striktes `decodeStrictJSON` (64 KiB Limit, Content-Type, Unbekannte Felder abweisen); Fehlermeldungen mit sensiblen Begriffen werden clientseitig opak maskiert.
-* **Zero-Trust Memory Zeroization:** `StorageCipher.Destroy()` überschreibt Master-Keys beim Herunterfahren sicher im Arbeitsspeicher.
+```text
+1. PUBLIC ACCESS GATEWAY       Go · Port 9843 (TLS 1.3, ML-KEM PQ hybrid, Argon2id, CSRF sync-tokens)
+2. COMMAND CENTER DASHBOARD   ESNext / Vanilla JS / Native CSS · 0 dependencies · CSP-hardened
+3. CONTROL PLANE               Go · Port 9844 (Loopback only · XDR, L7 WAF, FIM, Evidence Ledger, Cases)
+4. PRIVILEGED RESPONSE CORE   Rust · /run/vgt-gedefense/core.sock (HMAC VGT3, pidfd_open, sysctl CAS, fanotify)
+5. KERNEL DATA PLANE           Rust no_std eBPF/XDP + cgroup-skb + LSM (LPM Trie 250k rules, RingBuf EDR)
+6. INTEGRATION FABRIC          Universal Linux (APT/DNF/pacman/Zypper) · AstraeaOS Native Ring-1 Cells
+7. RELEASE ENGINEERING         Toolchains.lock · Reproducible Builds · Cryptographic Mirror Manifests
+```
+
+### Core Security Invariants
+- **No Cloud Control Plane:** Threat intelligence, behavioral baselines, operational keys, and forensic evidence remain 100% on the local host.
+- **Kernel-Speed Data Plane:** Ingress network attacks are dropped at the NIC driver level via Rust eBPF/XDP before socket buffer (`sk_buff`) allocation.
+- **Native L7 Plane (Go Standard Library Only):** Bounded HTTP normalization, anti-evasion decoding, and RE2 regex scanning with zero third-party dependencies, zero CGO, and zero scripting runtimes.
+- **Web-Evidence Isolation Barrier:** Web findings carry `AlertOnly: true` (`ResponseScore: 0`). A web-tier finding can never autonomously trigger host-level process termination (`SIGKILL`/`SIGSTOP`); destructive containment strictly requires independent host/kernel evidence.
+- **Cryptographic Evidence Ledger:** Tamper-evident, monotone sequence with predecessor hashing (`AES-256-GCM` + `Ed25519`).
+- **Reversible Sysctl Hardening:** Atomic compare-and-set with kernel readback and automatic rollback on partial failure.
+
+---
+
+## 🚀 What's New in GeDefense 4.0.0-beta.1: Native L7 Application Defense & Sovereign Hardening
+
+VGT GeDefense 4.0.0-beta.1 expands the prior L3/L4/kernel architecture with a **fully integrated, native L7 Application Security Plane (WAF & Reverse Proxy Gate)**. The system inspects and shields web applications and APIs directly ahead of application logic — implemented entirely with Go standard library primitives, zero third-party dependencies, zero CGO, and zero external scripting runtimes.
+
+### 🌟 Core Capabilities & L7 Application Security (WAF)
+* **Native L7 Plane (Go Stdlib Only):** Fully integrated WAF compiled directly into the `gedefense-control` daemon. Zero external packages in `go.mod`, zero Lua/WASM/Node.js overhead, minimal latency, and minimal memory footprint.
+* **Dual-Mode Deployment Architecture:**
+  * *Advisory / Standalone Socket (`inspect.sock`):* Mode `0660` local Unix socket for arbitrary web servers (nginx, Apache, Caddy, Envoy) via a standardized JSON inspection protocol (`POST /v1/inspect`) with strict envelope validation (`DisallowUnknownFields`).
+  * *Native Inline Reverse-Proxy Gate (`edge.sock`):* Operates transparently between TLS termination and the upstream application. Features bounded concurrency, fail-closed admission budgets, and strict upstream jailing (strictly clean absolute Unix sockets or explicit loopback IP literals; no runtime DNS resolution, no request-directed routing).
+* **Bounded Normalization & Anti-Evasion Engine:**
+  * Multi-pass recursive decoding (URL path/query unescaping, HTML entities, escape sequences `\uXXXX` and `\xXX`).
+  * Unicode Fullwidth Fold (`\uff01`–`\uff5e` folded into ASCII), eliminating evasion attempts using wide Asian glyphs.
+  * Automatic detection and decoding of unpadded and URL-safe Base64 strings in parameters.
+  * Streaming JSON parser with strict recursion depth limits (`max_json_depth = 32`) and token budgeting.
+  * Bounded Decompression: Gzip/Deflate through `io.LimitReader` (protecting against decompression / zip-bomb DoS).
+  * Overlapping chunking (256-byte overlap) for unstructured text bodies, preventing signature evasion across chunk boundaries.
+* **Exhaustive Attack Detection Suite (Linear RE2, Zero ReDoS):**
+  * *SQL Injection (SQLi):* UNION SELECT syntax, boolean tautologies (`' OR 1=1`), time delays (`pg_sleep`, `benchmark`), and stacked query statements.
+  * *Cross-Site Scripting (XSS):* Script tags, inline event handlers (`onerror=`, `onload=`), dangerous browser schemes (`javascript:`, `data:text/html`), and `iframe srcdoc`.
+  * *Command Injection / RCE:* Shell chaining (`;`, `&&`, `||`, `|`), substitution syntax (`$(...)`, backticks), and PowerShell / CMD payloads.
+  * *Path Traversal & LFI:* Traversal sequences (`../`, `..\`), sensitive Linux paths (`/etc/passwd`, `/proc/self/environ`), and stream wrappers (`php://`, `phar://`, `data://`).
+  * *SSTI, XXE & Deserialization:* Template syntax (Jinja, Twig, Smarty, Spring), external XML entity declarations, PHP object serialization, Java magic bytes (`rO0AB`), and JNDI/Log4j lookups.
+  * *HTTP Protocol Smuggling & Anomalies:* Duplicate or invalid `Content-Length`, CL.TE / TE.CL ambiguity, invalid transfer encodings, and blocked methods (`TRACE`).
+* **Evasive SSRF Detection with Flexible IP Normalization:**
+  * Normalizes and blocks alternative IPv4 representations: hexadecimal (`0x7f.1`), octal (`0177.1`), decimal DWORD integers (`2130706433`), and 2-/3-part shorthand notations.
+  * Comprehensive jails for cloud metadata endpoints (AWS/OpenStack IMDSv2 `169.254.169.254`, GCP `metadata.google.internal`, Azure `168.63.129.16`, Alibaba `100.100.100.200`, Oracle `192.0.0.192`).
+* **In-Memory Airlock Multipart Inspection (`InspectBytes`):**
+  * Multipart file uploads are inspected directly in RAM — **never staged on persistent disk**.
+  * Bounded part-count and file-size limits; validates Magic Bytes (ELF, PNG, JPEG, GIF, PDF, ZIP), MIME consistency, double extensions (`.php.jpg`), null-byte injections, and malware hash blacklists.
+* **3-Tier Sharded Token-Bucket Rate Limiting:**
+  * 64 independent shards using FNV-1a hashing to eliminate global mutex contention under high concurrent load.
+  * Per-client volume limits (smoothing volumetric traffic bursts).
+  * Per-route sensitive endpoint limits (protecting `/login`, `/wp-login.php`, `/api/login` against brute force).
+  * Global sensitive route limits (mitigating distributed botnets and credential stuffing over rotating IPs).
+* **Response Data-Leak Prevention (DLP):**
+  * Monitors upstream response bodies for database errors (`SQLSTATE`), source code disclosures (`<?php`, `<jsp:`), application stack traces (Python, Java, Go), and private key exposures (`BEGIN RSA PRIVATE KEY`).
+  * Bounded prefix inspection with guaranteed wire-byte preservation (`FuzzL7ResponseInspectionPreservesWireBytes`).
+* **Web-Evidence Isolation in XDR (Anti-False-Positive Barrier):**
+  * L7 events are recorded with `AlertOnly: true` and `ResponseScore: 0`.
+  * **Safety Guarantee:** A web attack can **never autonomously** trigger destructive host containment (SIGKILL/SIGSTOP) against local server processes. Destructive containment strictly requires independent host/kernel evidence.
+  * L7 events are ingested as nodes (`HTTP_REQUEST`, `HTTP_RESPONSE`) into the Trinity XDR 2.0 causal DAG with Merkle-root cryptographic proofs.
+* **Linux DAC & Operating System Hardening:**
+  * Dedicated system group `gedefense-l7`.
+  * Runtime directory `/run/vgt-gedefense-l7` (mode `0750`, `gedefense:gedefense-l7`) via `systemd-tmpfiles`.
+  * Sockets configured with mode `0660` and kernel-level peer credentials (`SO_PEERCRED` via `syscall.GetsockoptUcred`).
+  * Hardened systemd services with `SupplementaryGroups=gedefense-l7` and restricted `ReadWritePaths`.
+* **Continuous Fuzzing & Quality Gates:**
+  * 3 new CI fuzz targets (`FuzzL7NormalizerNeverPanics`, `FuzzL7ResponseInspectionPreservesWireBytes`, `FuzzL7InlineUpstreamParserNeverEscapesLocalHost`).
+  * Go 1.26.8 toolchain pinning with automated AST security regression audit in `scripts/security-audit.sh`.
+
+---
+
+## 🌟 Architecture Breakthroughs from V2 Beta 1 to V3 Beta 1 (`3.0.0-beta.1`)
+
+VGT GeDefense 3.0.0-beta.1 transformed the architecture from a static host/network sensor into a **fully autonomous, reversible Linux Security Fabric with Defense-in-Depth**.
+
+* **Dual-Mode Doctrine (Identical Binaries, Dynamic Capability Detection):** Unified binaries for AstraeaOS (native Ring-1 GaiaCells, BPF-LSM, Key-Broker) and generic Linux distributions (Ubuntu, Debian, RHEL, Fedora, Arch, Alpine) with dynamic runtime enclave detection (`platform_caps.go`).
+* **Trinity Dynamic Attack Story DAG & Incident Correlator:** Causal reconstruction of entire attack graphs (`CANARY_TRIGGERED`, `PRIVILEGE_ESCALATED`, `EGRESS_ATTEMPTED`) with deterministic Merkle-root evidence rather than isolated log lines.
+* **Autonomous Reversible Response Engine:** Multi-stage quarantine (`CONTAIN_IP`, `FREEZE_EXECUTION`, `CONTAIN_CELL`) with semantic TTL presets and automated, audit-proven rollback if unconfirmed by an operator.
+* **Nemesis Cyber Deception Grid:** Physical on-disk canary traps (`0600`) with dynamic key derivation via `StorageCipher` and calibrated RASP detection (85% system/backup vs. 98% unauthorized entities).
+* **Styx Zero-Trust Egress & SSRF Shield:** Cgroup/Cell-based outbound whitelisting with built-in filtering against cloud metadata exfiltration (AWS, GCP, Azure, Alibaba, OCI, IPv6 IMDSv2).
+* **Airlock Ingress & Polyglot Inspector:** Strict magic-byte verification, SVG sanitization (neutralizing embedded scripts, foreignObjects, embeds, iframes, and DTDs), and quarantine staging with hard size bounds and symlink jailing.
+* **Morpheus Linux RASP & Credential Scrubber:** Shields protected daemons against memory scraping (`/proc/<pid>/mem`, `ptrace`) and automatically redacts API keys and tokens in process command-line arguments.
+* **Chronos Resumable FIM:** Resource-efficient file integrity scanner with atomic checkpoints, descriptor leak elimination, and Merkle tree integrity roots.
+* **Reversible Process Freeze:** Validates `/proc/<pid>/stat` start ticks against PID reuse races; the Rust Core utilizes `libc::SIGCONT` (`XDR_CONT`) to safely resume processes upon TTL expiration.
+* **Evasion-Resistant SSRF Validation:** Canonicalizes and intercepts decimal DWORD, hexadecimal, octal, and IPv4-in-IPv6 representations while strictly blocking internal loopback destinations.
+* **Zero-Trust Memory Zeroization:** `StorageCipher.Destroy()` securely overwrites master keys in RAM during shutdown.
 
 ---
 
@@ -256,6 +338,8 @@ Legacy PBKDF2 accepted only for migration — atomically upgraded to Argon2id on
 | Server-side Bearer injection | ✓ |
 | Request-ID, TTL and replay protection | ✓ |
 | HTTPS feeds with DNS/SSRF defense | ✓ |
+| Native L7/AppSec plane with bounded normalization | ✓ |
+| L7 implementation adds zero Go/runtime dependencies | ✓ |
 | No runtime command execution in Go services | ✓ |
 | Backend exclusively on loopback | ✓ |
 
@@ -287,7 +371,7 @@ The Rust Core has **no generic shell, filesystem or sysctl interface**. Partial 
 
 ## 🐧 Universal Linux Integration
 
-| Layer | Beta v3 integration |
+| Layer | Beta v4 integration |
 |---|---|
 | Package managers | APT · DNF/YUM · pacman · Zypper |
 | Init | Hardened systemd units with syntax and runtime gates |
@@ -346,7 +430,7 @@ If the Gaia Cells runtime is **not present**, the adapter reports `runtime_not_i
 
 | Component | Version |
 |---|---|
-| **Go** | 1.23.2 |
+| **Go** | 1.26.8 |
 | **Rust Core** | 1.97.1 |
 | **Rust eBPF** | nightly-2026-07-16 |
 | **Rust Component** | rust-src |
@@ -360,6 +444,8 @@ If the Gaia Cells runtime is **not present**, the adapter reports `runtime_not_i
 | **HTTPS Gateway** | TCP 9843 | Administrative / public — configurable 1024–65535 |
 | **Go Control Backend** | TCP 9844 | Loopback only |
 | **Rust Core IPC** | `/run/vgt-gedefense/core.sock` | HMAC-VGT3 + SO_PEERCRED |
+| **L7 Inspection API** | `/run/vgt-gedefense-l7/inspect.sock` | Local Unix socket · bounded · optional SO_PEERCRED |
+| **L7 Inline Edge** | `/run/vgt-gedefense-l7/edge.sock` | Optional local Unix reverse-proxy boundary |
 | **Gaia Cells** | `/run/gaia-cells/control.sock` | Optional — VGTGC1 |
 | **Threat Feeds** | HTTPS outbound | Optional — public IP only |
 
@@ -372,6 +458,7 @@ If the Gaia Cells runtime is **not present**, the adapter reports `runtime_not_i
 | `/etc/vgt/gedefense/` | Configuration, TLS and secrets |
 | `/var/lib/vgt/gedefense/` | Encrypted operational state |
 | `/var/lib/vgt/gedefense/quarantine/objects` | Encrypted Response Vault |
+| `/run/vgt-gedefense-l7/` | Ephemeral L7 Unix sockets only |
 | `/sys/fs/bpf` | BPF filesystem |
 | `/var/log/vgt-gedefense-install.log` | Install diagnostics — mode 0600 |
 
@@ -381,14 +468,14 @@ If the Gaia Cells runtime is **not present**, the adapter reports `runtime_not_i
 
 ```bash
 # Download installer
-wget https://github.com/visiongaiatechnology/gedefense/releases/download/v3.0.0-beta.1/VGT_GeDefense_Beta_v3_3.0.0-beta.1_OneClick.run
+wget https://github.com/visiongaiatechnology/gedefense/releases/download/v4.0.0-beta.1/VGT_GeDefense_Beta_v4_4.0.0-beta.1_OneClick.run
 
 # Verify SHA-256
-sha256sum --check VGT_GeDefense_Beta_v3_3.0.0-beta.1_OneClick.run.sha256
+sha256sum --check VGT_GeDefense_Beta_v4_4.0.0-beta.1_OneClick.run.sha256
 
 # Install (root required)
-chmod 700 VGT_GeDefense_Beta_v3_3.0.0-beta.1_OneClick.run
-sudo ./VGT_GeDefense_Beta_v3_3.0.0-beta.1_OneClick.run
+chmod 700 VGT_GeDefense_Beta_v4_4.0.0-beta.1_OneClick.run
+sudo ./VGT_GeDefense_Beta_v4_4.0.0-beta.1_OneClick.run
 ```
 
 > The installer and checksum are published only after all GitHub CI and concrete
@@ -402,7 +489,7 @@ The firewall rule for the HTTPS gateway port (TCP 9843) can be configured via UF
 
 ---
 
-## ✅ Beta v3 Release Gates
+## ✅ Beta v4 Release Gates
 
 | Gate | State | Release rule |
 |---|---:|---|
@@ -424,7 +511,7 @@ The firewall rule for the HTTPS gateway port (TCP 9843) can be configured via UF
 
 ---
 
-## 🚧 Known Limitations (3.0.0-beta.1)
+## 🚧 Known Limitations (4.0.0-beta.1)
 
 - No Swarm / Mesh support
 - No QUIC offloading
@@ -440,7 +527,59 @@ The firewall rule for the HTTPS gateway port (TCP 9843) can be configured via UF
 
 ## 📋 Changelog
 
-### v3.0.0-beta.1 — Universal Linux Integration *(Current)*
+### v4.0.0-beta.1 — Native L7 Application Security & Correlation Hardening *(Current)*
+
+**L7 Application Security Plane (WAF & API Gateway)**
+
+- **Go Standard Library Implementation:** Built-in L7 inspection engine integrated directly inside the unprivileged Go control plane (`gedefense-control`). 100% CGO-free, zero third-party dependencies, and zero auxiliary scripting engines (no Lua, WASM, or Node.js runtime).
+- **Dual-Mode Deployment Architecture:**
+  - *Advisory / Standalone Socket:* Mode `0660` Unix socket (`/run/vgt-gedefense-l7/inspect.sock`) providing a structured JSON evaluation API (`POST /v1/inspect`) with strict envelope validation (`DisallowUnknownFields`) for external reverse proxies (nginx, Caddy, Envoy, Apache).
+  - *Native Inline Reverse-Proxy Gate:* Transparent inline filter (`/run/vgt-gedefense-l7/edge.sock`) positioned directly between TLS termination and backend applications with bounded concurrency and fail-closed admission budgets.
+- **Strict Upstream Confinement (Anti-SSRF):** Inline forwarding target is restricted strictly to clean absolute Unix sockets or explicit loopback IP literals (`127.0.0.1`, `[::1]`). Request-controlled routing and DNS resolution are architecturally impossible.
+- **Bounded Normalization & Anti-Evasion Engine:**
+  - Multi-pass recursive unescaping (URL path and query unescaping, HTML entities, `\uXXXX` and `\xXX` escape sequences).
+  - Unicode Fullwidth Fold (`\uff01`–`\uff5e` folded into ASCII) eliminating filter bypasses using wide Asian glyphs.
+  - Automatic detection and decoding of unpadded and URL-safe Base64 payloads inside parameter values.
+  - Streaming JSON parser with strict recursion limits (`max_json_depth = 32`) and token budgets.
+  - Bounded Gzip and Deflate decompression via `io.LimitReader` preventing zip-bomb / decompression DoS.
+  - 16 KB overlapping chunking (256-byte overlap) for unstructured text bodies, preventing signature evasion across chunk boundaries without duplicate memory allocations.
+- **Exhaustive Attack Detector Suite (RE2 Linear Execution, Zero ReDoS):**
+  - *SQL Injection (SQLi):* UNION SELECT syntax, boolean tautologies (`' OR 1=1`), time delays (`pg_sleep`, `benchmark`, `waitfor delay`), and stacked query statements.
+  - *Cross-Site Scripting (XSS):* Executable script tags, inline DOM event handlers (`onerror=`, `onload=`), dangerous active schemes (`javascript:`, `data:text/html`), and `iframe srcdoc` payloads.
+  - *Command Injection / RCE:* Shell chaining (`;`, `&&`, `||`, `|`), substitution syntax (`$(...)`, backticks), and Windows/PowerShell execution chains.
+  - *Path Traversal & LFI:* Traversal sequences (`../`, `..\`), sensitive Linux paths (`/etc/passwd`, `/proc/self/environ`), and dangerous stream wrappers (`php://`, `phar://`, `data://`).
+  - *SSTI, XXE & Deserialization:* Server-side template expressions (Jinja, Twig, Smarty, Spring), external XML entity declarations (`SYSTEM`/`PUBLIC`), PHP serialized objects, Java serialization magic (`rO0AB`), and JNDI/Log4j lookups.
+  - *HTTP Request Smuggling & Framing Anomalies:* Duplicate or invalid `Content-Length`, simultaneous `Content-Length` and `Transfer-Encoding` (CL.TE / TE.CL), non-chunked transfer encodings, and `TRACE` method requests.
+- **Evasive SSRF Defense with Flexible IP Normalization:**
+  - Decodes and normalizes alternative IPv4 representations: hexadecimal, octal, decimal DWORD integer, and 2-/3-part dotted notations.
+  - Enforces mandatory jails against loopback, link-local, private, and all major cloud metadata endpoints (AWS IMDSv2, GCP, Azure, Alibaba, Oracle Cloud).
+- **In-Memory Airlock Upload Inspection (`InspectBytes`):**
+  - Multipart file uploads are inspected directly in RAM prior to touching persistent storage.
+  - Enforces strict part count and file size limits; validates Magic Bytes (ELF, PNG, JPEG, GIF, PDF, ZIP), MIME cross-checks, double extensions (`.php.jpg`), null-byte injections, and SHA-256 blacklists.
+- **3-Tier Sharded Token-Bucket Rate Limiter:**
+  - 64 independent shards using FNV-1a hashing, eliminating lock contention under high-volume concurrent traffic.
+  - Per-client volume rate limiting.
+  - Per-route sensitive endpoint protection (`/login`, `/wp-login.php`, `/api/login`) against brute-force attacks.
+  - Global route rate limiting protecting against distributed botnets and credential-stuffing pools.
+- **Response Data-Leak Prevention (DLP):**
+  - Monitors upstream response bodies for database errors (`SQLSTATE`), server-side source code leaks (`<?php`, `<jsp:`), application stack traces, and private key disclosures (`BEGIN RSA PRIVATE KEY`).
+  - Strict wire-byte preservation: responses are inspected via non-destructive prefix buffering while wire bytes are streamed unaltered to the client.
+
+**XDR Correlation & Host Integrity**
+
+- **Web-Evidence Isolation (Anti-False-Positive Barrier):** L7 findings carry `AlertOnly: true` and `ResponseScore: 0`. Web signals alone can **never** trigger autonomous destructive host containment (SIGKILL / SIGSTOP); destructive actions strictly require independent host kernel evidence.
+- **Trinity XDR 2.0 DAG Integration:** L7 events are ingested as causal graph nodes (`HTTP_REQUEST`, `HTTP_RESPONSE`) with Merkle-root cryptographic proof chaining.
+- **Host Network Correlation:** Real-time correlation connects incoming hostile HTTP requests with local Linux socket connections (`SO_PEERCRED` PID/UID/GID and `NetConnection` remote tracking).
+- **Release-Gate Gated Enforcement:** Inline blocking is active only when the release gate reaches `Enforce` with a verified, healthy Core; otherwise, traffic defaults safely to `Observe`.
+
+**Systemd, Linux DAC & Release Hardening**
+
+- Dedicated system group `gedefense-l7` and pre-provisioned runtime directory `/run/vgt-gedefense-l7` (mode `0750`) via `systemd-tmpfiles`.
+- Unix sockets created with mode `0660` and authenticated peer credentials (`SO_PEERCRED`).
+- Pinned Go 1.26.8 release toolchain verified by AST security audit.
+- 3 new continuous fuzzing test suites in CI verifying normalizer safety, response byte preservation, and upstream jail confinement.
+
+### v3.0.0-beta.1 — Universal Linux Integration
 
 **Integration and deployment**
 
@@ -470,7 +609,7 @@ The firewall rule for the HTTPS gateway port (TCP 9843) can be configured via UF
 - Pinned GitHub Actions to immutable 40-character commit identities.
 - Added a privileged host workflow for bpffs, kernel-visible eBPF programs,
   concrete NIC XDP attachment, authenticated IPC/TLS, systemd, Polkit and desktop.
-- Added deterministic Beta v3 source/installer artifact names and SHA-256 checks.
+- Added deterministic Beta v4 source/installer artifact names and SHA-256 checks.
 
 **Unchanged security foundation**
 
@@ -528,6 +667,6 @@ Enterprise deployments, TIER-0 audits (VGT SafetySys™) and commercial exceptio
 
 [![VGT](https://img.shields.io/badge/VisionGaia-Technology-cyan?style=for-the-badge)](https://visiongaiatechnology.de)
 
-*VGT GeDefense 3.0.0-beta.1 — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
+*VGT GeDefense 4.0.0-beta.1 — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
 
 </div>

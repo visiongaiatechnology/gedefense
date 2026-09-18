@@ -26,22 +26,21 @@ done
 curl --fail --silent --show-error --max-time 3 http://127.0.0.1:9844/bootz >/dev/null || fail 'control boot gate failed'
 curl --fail --silent --show-error --max-time 3 --cacert "$cert" https://127.0.0.1:9843/gateway/livez >/dev/null || fail 'TLS gateway gate failed'
 
-status=$(curl --fail --silent --show-error --max-time 3 \
+curl --fail --silent --show-error --max-time 3 \
   -H "Authorization: Bearer $(tr -d '\r\n' < "$token")" \
-  http://127.0.0.1:9844/api/v1/status)
-python3 - "$interface" "$status" <<'PY'
+  http://127.0.0.1:9844/api/v1/status | python3 - "$interface" <<'PY'
 import json, sys
-interface, raw = sys.argv[1:]
-doc = json.loads(raw)
+interface = sys.argv[1]
+doc = json.load(sys.stdin)
 assert doc.get('core_connected') is True, doc
-assert doc.get('core_mode') in {'native', 'generic'}, doc
+assert doc.get('core_mode') in {'native', 'generic', 'native+bpf-lsm-cell', 'generic+bpf-lsm-cell'}, doc
 print(f"core gate: PASS ({doc['core_mode']}, interface={interface})")
 PY
 
-ip -details link show dev "$interface" | grep -Eq 'xdp|prog/xdp' || fail 'no XDP program is attached to the target interface'
+ip -details link show dev "$interface" | grep -E 'xdp|prog/xdp' >/dev/null || fail 'no XDP program is attached to the target interface'
 mountpoint -q /sys/fs/bpf || fail 'bpffs is not mounted'
 command -v bpftool >/dev/null 2>&1 || fail 'bpftool is required for verifier evidence'
-bpftool prog show | grep -q gedefense || fail 'loaded GeDefense eBPF programs are not visible'
+bpftool prog show | grep gedefense >/dev/null || fail 'loaded GeDefense eBPF programs are not visible'
 
 python3 - <<'PY'
 from pathlib import Path

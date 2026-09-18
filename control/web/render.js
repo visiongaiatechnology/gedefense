@@ -202,14 +202,34 @@ export function renderProfiles(profiles = []) {
   root.replaceChildren(...rows);
 }
 
-export function toast(message, kind = 'info') {
+export function el(tag, className = '', textContent = '') {
+  const elem = document.createElement(tag);
+  if (className) elem.className = className;
+  if (textContent) elem.textContent = String(textContent);
+  return elem;
+}
+
+export function toast(message, kind = 'info', errorID = '') {
   const region = byID('toastRegion');
   if (!region) return;
   const node = document.createElement('div');
   node.className = `toast toast-${kind}`;
-  node.textContent = message;
+  const msg = document.createElement('div');
+  msg.className = 'toast-body';
+  msg.textContent = String(message || '');
+  node.append(msg);
+  if (errorID) {
+    const errSpan = document.createElement('div');
+    errSpan.className = 'toast-error-id mono';
+    errSpan.textContent = `Error ID: ${errorID}`;
+    node.append(errSpan);
+  }
   region.append(node);
-  setTimeout(() => node.remove(), 5000);
+  setTimeout(() => {
+    node.style.opacity = '0';
+    node.style.transform = 'translateY(8px)';
+    setTimeout(() => node.remove(), 300);
+  }, 5000);
 }
 
 export function renderReleaseBlockers(blockers = []) {

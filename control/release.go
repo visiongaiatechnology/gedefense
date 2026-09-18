@@ -113,6 +113,12 @@ func (r *ReleaseController) currentBlockersLocked(target string, includeDuration
 	if runtime.XDREnabled && snap.XDR.Degraded {
 		blockers = append(blockers, "XDR is degraded")
 	}
+	if r.cfg.L7.Enabled && target != ReleasePhaseObserve && target != ReleasePhaseDegraded && !snap.L7.Healthy {
+		blockers = append(blockers, "L7 inspection service is unavailable")
+	}
+	if r.cfg.L7.InlineEnabled && target != ReleasePhaseObserve && target != ReleasePhaseDegraded && !snap.L7.InlineHealthy {
+		blockers = append(blockers, "L7 inline service is unavailable")
+	}
 	for _, block := range snap.Blocks {
 		// Enforce promotion performs an atomic best-effort reconciliation below.
 		// Only stale kernel rules while leaving Enforce are a pre-transition blocker.
@@ -486,4 +492,64 @@ func (r *ReleaseController) Ready() (bool, []string) {
 	r.refreshLocked()
 	r.state.SetReleaseStatus(r.status)
 	return r.status.Ready, append([]string(nil), r.status.Blockers...)
+}
+
+type ReleaseReadiness struct {
+	Target               string     `json:"target"`
+	Ready                bool       `json:"ready"`
+	Blockers             []string   `json:"blockers"`
+	CurrentPhase         string     `json:"current_phase"`
+	ReadyAt              *time.Time `json:"ready_at,omitempty"`
+	SoakRemainingSeconds int64      `json:"soak_remaining_seconds"`
+	MinimumSoakSeconds   int64      `json:"minimum_soak_seconds"`
+	ElapsedSoakSeconds   int64      `json:"elapsed_soak_seconds"`
+}
+
+func (r *ReleaseController) Readiness(target string) (ReleaseReadiness, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	target = strings.ToLower(strings.TrimSpace(target))
+	if target == "" {
+		switch r.status.Phase {
+		case ReleasePhaseObserve, ReleasePhaseDegraded:
+			target = ReleasePhaseCanary
+		case ReleasePhaseCanary:
+			target = ReleasePhaseEnforce
+		default:
+			target = ReleasePhaseObserve
+		}
+	}
+	if target != ReleasePhaseObserve && target != ReleasePhaseCanary && target != ReleasePhaseEnforce {
+		return ReleaseReadiness{}, errors.New("target phase must be observe, canary, or enforce")
+	}
+	r.refreshLocked()
+	blockers := r.currentBlockersLocked(target, true)
+	elapsed := time.Since(r.status.Since)
+	var minSoak time.Duration
+	switch target {
+	case ReleasePhaseCanary:
+		minSoak = time.Duration(r.cfg.Release.MinimumObserveSeconds) * time.Second
+	case ReleasePhaseEnforce:
+		minSoak = time.Duration(r.cfg.Release.MinimumCanarySeconds) * time.Second
+	}
+
+	var soakRemaining int64
+	var readyAt *time.Time
+	if minSoak > 0 && elapsed < minSoak {
+		rem := minSoak - elapsed
+		soakRemaining = int64(rem.Seconds())
+		tReady := r.status.Since.Add(minSoak)
+		readyAt = &tReady
+	}
+
+	return ReleaseReadiness{
+		Target:               target,
+		Ready:                len(blockers) == 0,
+		Blockers:             append([]string(nil), blockers...),
+		CurrentPhase:         r.status.Phase,
+		ReadyAt:              readyAt,
+		SoakRemainingSeconds: soakRemaining,
+		MinimumSoakSeconds:   int64(minSoak.Seconds()),
+		ElapsedSoakSeconds:   int64(elapsed.Seconds()),
+	}, nil
 }

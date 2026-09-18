@@ -48,13 +48,13 @@ func NewAirlockStorageException(msg string, err error) *AirlockStorageException 
 
 // Magic Byte Signatures
 var (
-	magicPNG  = []byte{0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A}
-	magicJPEG = []byte{0xFF, 0xD8, 0xFF}
-	magicGIF87 = []byte("GIF87a")
-	magicGIF89 = []byte("GIF89a")
-	magicPDF  = []byte("%PDF-")
-	magicZIP  = []byte{0x50, 0x4B, 0x03, 0x04}
-	magicELF  = []byte{0x7F, 'E', 'L', 'F'}
+	magicPNG     = []byte{0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A}
+	magicJPEG    = []byte{0xFF, 0xD8, 0xFF}
+	magicGIF87   = []byte("GIF87a")
+	magicGIF89   = []byte("GIF89a")
+	magicPDF     = []byte("%PDF-")
+	magicZIP     = []byte{0x50, 0x4B, 0x03, 0x04}
+	magicELF     = []byte{0x7F, 'E', 'L', 'F'}
 	magicShebang = []byte("#!")
 )
 
@@ -85,7 +85,7 @@ type AirlockInspectionResult struct {
 }
 
 type AirlockInspector struct {
-	mu           sync.RWMutex
+	mu            sync.RWMutex
 	quarantineDir string
 	maxFileSize   int64
 }
@@ -170,19 +170,51 @@ func (a *AirlockInspector) InspectFile(filePath string) (*AirlockInspectionResul
 	digest := hex.EncodeToString(hasher.Sum(nil))
 
 	detectedMime := DetectMagicType(prefix)
-	ext := strings.ToLower(filepath.Ext(filePath))
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		return nil, NewAirlockStorageException("failed to rewind inspection target", err)
+	}
+	body := make([]byte, 65536)
+	bodyBytesRead, readErr := io.ReadFull(f, body)
+	if readErr != nil && readErr != io.EOF && readErr != io.ErrUnexpectedEOF {
+		return nil, NewAirlockStorageException("failed to read inspection sample", readErr)
+	}
+	body = body[:bodyBytesRead]
 
+	return a.evaluateContent(filePath, fileSize, digest, detectedMime, body)
+}
+
+// InspectBytes inspects an in-memory object without staging attacker-controlled content on disk.
+func (a *AirlockInspector) InspectBytes(filename string, data []byte) (*AirlockInspectionResult, error) {
+	if len(data) == 0 || int64(len(data)) > a.maxFileSize {
+		return nil, NewAirlockValidationException(fmt.Sprintf("file size boundary violation: %d bytes", len(data)), nil)
+	}
+	digestBytes := sha256.Sum256(data)
+	digest := hex.EncodeToString(digestBytes[:])
+	prefixEnd := len(data)
+	if prefixEnd > 1024 {
+		prefixEnd = 1024
+	}
+	sampleEnd := len(data)
+	if sampleEnd > 65536 {
+		sampleEnd = 65536
+	}
+	detectedMime := DetectMagicType(data[:prefixEnd])
+	return a.evaluateContent(filename, int64(len(data)), digest, detectedMime, data[:sampleEnd])
+}
+
+func (a *AirlockInspector) evaluateContent(filename string, fileSize int64, digest, detectedMime string, body []byte) (*AirlockInspectionResult, error) {
+	ext := strings.ToLower(filepath.Ext(filename))
 	result := &AirlockInspectionResult{
-		IsClean:           true,
-		DetectedMime:      detectedMime,
-		DeclaredExtension: ext,
-		FileSize:          fileSize,
-		SHA256:            digest,
-		RiskScore:         0,
-		Timestamp:         time.Now().UTC(),
+		IsClean: true, DetectedMime: detectedMime, DeclaredExtension: ext, FileSize: fileSize,
+		SHA256: digest, RiskScore: 0, Timestamp: time.Now().UTC(),
 	}
 
-	// 1. Cross-Check MIME vs Extension (Pattern 1.5.D compliance)
+	if detectedMime == "application/x-executable" && (ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".pdf" || ext == ".txt") {
+		result.IsClean = false
+		result.RiskScore = 250
+		result.ThreatType = "DISGUISED_EXECUTABLE_PAYLOAD"
+		return result, NewAirlockSecurityException("ELF executable disguised as user document", nil)
+	}
 	if ext == ".png" && detectedMime != "image/png" {
 		result.IsClean = false
 		result.RiskScore = 150
@@ -201,22 +233,6 @@ func (a *AirlockInspector) InspectFile(filePath string) (*AirlockInspectionResul
 		result.ThreatType = "MIME_EXTENSION_MISMATCH"
 		return result, NewAirlockSecurityException(fmt.Sprintf("file declared %s but magic bytes indicate %s", ext, detectedMime), nil)
 	}
-
-	// 2. Disguised Executable Check
-	if detectedMime == "application/x-executable" && (ext == ".png" || ext == ".jpg" || ext == ".pdf" || ext == ".txt") {
-		result.IsClean = false
-		result.RiskScore = 250
-		result.ThreatType = "DISGUISED_EXECUTABLE_PAYLOAD"
-		return result, NewAirlockSecurityException("ELF executable disguised as user document", nil)
-	}
-
-	// 3. Polyglot Payload Scan
-	// Re-read first 64KB for embedded script vectors
-	_, _ = f.Seek(0, io.SeekStart)
-	bodySample := make([]byte, 65536)
-	bodyBytesRead, _ := f.Read(bodySample)
-	body := bodySample[:bodyBytesRead]
-
 	for _, re := range dangerousPolyglotPatterns {
 		if re.Match(body) {
 			result.IsClean = false
@@ -225,8 +241,6 @@ func (a *AirlockInspector) InspectFile(filePath string) (*AirlockInspectionResul
 			return result, NewAirlockSecurityException("polyglot script payload embedded in binary body", nil)
 		}
 	}
-
-	// 4. SVG Sanitization Validation
 	if ext == ".svg" || detectedMime == "image/svg+xml" {
 		if svgXXEEntity.Match(body) {
 			result.IsClean = false
@@ -241,7 +255,6 @@ func (a *AirlockInspector) InspectFile(filePath string) (*AirlockInspectionResul
 			return result, NewAirlockSecurityException("SVG contains active scripting or inline event handlers", nil)
 		}
 	}
-
 	return result, nil
 }
 

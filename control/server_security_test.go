@@ -250,6 +250,25 @@ func TestEmbeddedAssetsHonorETag(t *testing.T) {
 	}
 }
 
+func TestLocalBrandAssetIsAllowlistedAndTyped(t *testing.T) {
+	cfg := defaultConfig()
+	server := NewAPIServer(cfg, NewState("test", cfg), nil, nil, nil, nil, nil, nil, "0123456789abcdef0123456789abcdef")
+
+	recorder := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "http://127.0.0.1/assets/gedefense-logo.png", nil)
+	req.Host = "127.0.0.1"
+	server.http.Handler.ServeHTTP(recorder, req)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("brand asset status=%d", recorder.Code)
+	}
+	if recorder.Header().Get("Content-Type") != "image/png" {
+		t.Fatalf("brand content-type=%q", recorder.Header().Get("Content-Type"))
+	}
+	if recorder.Body.Len() == 0 {
+		t.Fatal("brand asset body is empty")
+	}
+}
+
 func TestTLSMaterialRejectsUnsafeFiles(t *testing.T) {
 	dir := t.TempDir()
 	cert := filepath.Join(dir, "server.crt")

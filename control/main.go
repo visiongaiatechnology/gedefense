@@ -16,7 +16,7 @@ import (
 	"time"
 )
 
-const version = "3.0.0-beta.1"
+const version = "4.0.0-beta.1"
 
 func detectInterface(requested string) (string, error) {
 	if requested != "" && requested != "auto" {
@@ -360,6 +360,48 @@ func main() {
 		log.Fatalf("xdr initialization: %v", err)
 	}
 	xdr.SetReleaseController(release)
+
+	var l7Service *L7Service
+	var l7EdgeService *L7EdgeService
+	if cfg.L7.Enabled {
+		l7Engine, l7Err := NewL7Engine(cfg.L7, xdr, release)
+		if l7Err != nil {
+			log.Fatalf("l7 engine initialization: %v", l7Err)
+		}
+		l7Service, l7Err = NewL7Service(cfg.L7, l7Engine, state)
+		if l7Err != nil {
+			log.Fatalf("l7 service initialization: %v", l7Err)
+		}
+		if l7Err = l7Service.Start(); l7Err != nil {
+			log.Fatalf("l7 service startup: %v", l7Err)
+		}
+		state.AddEvent(Event{Severity: "info", Kind: "l7.online", Source: "l7", Message: "Bounded L7 inspection service online at " + cfg.L7.Socket})
+		go func() {
+			for serviceErr := range l7Service.Errors() {
+				state.AddEvent(Event{Severity: "critical", Kind: "l7.offline", Source: "l7", Message: "L7 inspection service terminated unexpectedly"})
+				log.Printf("l7 service: %v", serviceErr)
+				release.Evaluate()
+			}
+		}()
+		if cfg.L7.InlineEnabled {
+			l7EdgeService, l7Err = NewL7EdgeService(cfg.L7, l7Engine, state)
+			if l7Err != nil {
+				log.Fatalf("l7 inline initialization: %v", l7Err)
+			}
+			if l7Err = l7EdgeService.Start(); l7Err != nil {
+				log.Fatalf("l7 inline startup: %v", l7Err)
+			}
+			state.AddEvent(Event{Severity: "info", Kind: "l7.inline.online", Source: "l7", Message: "Native inline L7 path online at " + cfg.L7.InlineSocket})
+			go func() {
+				for serviceErr := range l7EdgeService.Errors() {
+					state.AddEvent(Event{Severity: "critical", Kind: "l7.inline.offline", Source: "l7", Message: "Inline L7 service terminated unexpectedly"})
+					log.Printf("l7 inline service: %v", serviceErr)
+					release.Evaluate()
+				}
+			}()
+		}
+	}
+
 	xdrCtx, cancelXDR := context.WithCancel(context.Background())
 	defer cancelXDR()
 	go xdr.Run(xdrCtx)
@@ -513,5 +555,15 @@ func main() {
 	close(stopTelemetry)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+	if l7EdgeService != nil {
+		if err := l7EdgeService.Shutdown(ctx); err != nil {
+			log.Printf("l7 inline shutdown: %v", err)
+		}
+	}
+	if l7Service != nil {
+		if err := l7Service.Shutdown(ctx); err != nil {
+			log.Printf("l7 shutdown: %v", err)
+		}
+	}
 	_ = srv.Shutdown(ctx)
 }

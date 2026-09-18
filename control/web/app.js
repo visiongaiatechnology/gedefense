@@ -1,3 +1,4 @@
+// STATUS: DIAMANT VGT SUPREME
 'use strict';
 
 import {
@@ -43,6 +44,10 @@ import {
 } from './api.js';
 import { appendTraffic, drawTraffic } from './charts.js';
 import { initializeI18n, locale, setLanguage, t } from './i18n.js';
+import { initProtectionCenter, loadProtectionState } from './protection.js';
+import { initL7Module, loadL7View } from './l7.js';
+import { initXDRModule, loadXDRView } from './xdr.js';
+import { initOperationFeedback } from './operations.js';
 import {
   badge,
   byID,
@@ -62,7 +67,24 @@ let snapshot = null;
 let runtimeSettings = null;
 let streamController = null;
 let pollTimer = 0;
+let reconnectTimer = 0;
 let selectedTransaction = null;
+
+function setConnectionState(online, detail = '') {
+  const banner = byID('connectionBanner');
+  const detailNode = byID('connectionDetail');
+  if (!banner) return;
+  if (online) {
+    banner.classList.remove('is-visible');
+    globalThis.setTimeout(() => {
+      if (!banner.classList.contains('is-visible')) banner.hidden = true;
+    }, 180);
+    return;
+  }
+  if (detailNode) detailNode.textContent = detail || t('connection.offlineDetail');
+  banner.hidden = false;
+  requestAnimationFrame(() => banner.classList.add('is-visible'));
+}
 
 const configurableHardeningControls = new Set([
   'kernel.aslr',
@@ -79,6 +101,8 @@ const configurableHardeningControls = new Set([
 
 const viewMeta = {
   overview: ['view.overview.eyebrow', 'view.overview.title'],
+  protection: ['view.protection.eyebrow', 'view.protection.title'],
+  l7: ['view.l7.eyebrow', 'view.l7.title'],
   hardening: ['view.hardening.eyebrow', 'view.hardening.title'],
   integrity: ['view.integrity.eyebrow', 'view.integrity.title'],
   boot: ['view.boot.eyebrow', 'view.boot.title'],
@@ -97,6 +121,12 @@ function number(value) {
 
 function activateView(name) {
   const selected = Object.prototype.hasOwnProperty.call(viewMeta, name) ? name : 'overview';
+  const sidebar = byID('sidebar');
+  const backdrop = byID('sidebarMobileBackdrop');
+  if (sidebar?.classList.contains('mobile-open')) {
+    sidebar.classList.remove('mobile-open');
+    if (backdrop) backdrop.classList.remove('active');
+  }
   document.querySelectorAll('[data-page]').forEach(page => {
     const active = page.getAttribute('data-page') === selected;
     page.hidden = !active;
@@ -112,6 +142,9 @@ function activateView(name) {
   text('viewTitle', t(viewMeta[selected][1]));
   { const url = new URL(location.href); url.hash = selected; history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`); }
   if (selected === 'overview') requestAnimationFrame(() => drawTraffic(byID('trafficChart')));
+  if (selected === 'protection') loadProtectionState(snapshot).catch(handleActionError);
+  if (selected === 'l7') loadL7View(snapshot).catch(handleActionError);
+  if (selected === 'xdr') loadXDRView(snapshot).catch(handleActionError);
   if (selected === 'hardening') Promise.all([loadHardening(), loadTransactions()]).catch(handleActionError);
   if (selected === 'integrity') loadIntegrity().catch(handleActionError);
   if (selected === 'boot') loadBootTrust().catch(handleActionError);
@@ -605,9 +638,15 @@ function renderHardeningSwitches(checks) {
     detail.textContent = configurable
       ? String(check.recommendation || 'Aktiv, live gemessen und durch GeDefense verwaltet.')
       : `${String(check.evidence || 'Nicht messbar')} · ${String(check.recommendation || 'Plattformkontrolle ohne sichere Laufzeitänderung.')}`;
+    const meta = document.createElement('span');
+    meta.className = 'hardening-control-meta';
     const domain = document.createElement('em');
     domain.textContent = configurable ? 'RUNTIME + PERSISTENT' : 'INSTALLATION / BOOT / FIRMWARE';
-    copy.append(title, detail, domain);
+    const state = document.createElement('span');
+    state.className = `hardening-control-state ${protectedState ? 'is-protected' : configurable ? 'is-available' : 'is-platform'}`;
+    state.textContent = protectedState ? 'GESCHÜTZT' : configurable ? 'VERFÜGBAR' : 'PLATTFORM';
+    meta.append(domain, state);
+    copy.append(title, detail, meta);
 
     const input = document.createElement('input');
     input.type = 'checkbox';
@@ -632,7 +671,8 @@ function renderHardening(payload) {
   text('hardeningScoreTitle', String(payload?.level || 'UNAVAILABLE'));
   text('hardeningCollected', payload?.collected_at ? formatTime(payload.collected_at) : 'Keine Messung');
   badge('hardeningLevel', String(payload?.level || 'UNAVAILABLE'), score >= 90 ? 'good' : score >= 50 ? 'warning' : 'danger');
-  byID('hardeningScoreRing').style.setProperty('--score', String(score));
+  const ring = byID('hardeningScoreRing');
+  if (ring) ring.style.setProperty('--score', String(score));
 
   const domains = Array.isArray(payload?.domains) ? payload.domains : [];
   const domainCards = domains.map(domain => {
@@ -654,7 +694,8 @@ function renderHardening(payload) {
     card.append(header, detail, progress);
     return card;
   });
-  byID('hardeningDomains').replaceChildren(...domainCards);
+  const domainsContainer = byID('hardeningDomains');
+  if (domainsContainer) domainsContainer.replaceChildren(...domainCards);
 
   const body = byID('hardeningChecks');
   const checks = Array.isArray(payload?.checks) ? payload.checks : [];
@@ -865,12 +906,13 @@ async function loadBootTrust() {
 }
 
 function updateSnapshot(data) {
+  setConnectionState(true);
   snapshot = data;
   const xdr = data.xdr || {};
   const policy = data.policy || {};
   const behavior = xdr.behavior || {};
   const release = data.release || {};
-  text('versionText', data.version || '3.0.0-beta.1');
+  text('versionText', data.version || '4.0.0-beta.1');
   if (data.settings) applySettings(data.settings);
   text('nodeName', data.node_name || 'VGT Node');
   text('uptime', formatUptime(data.uptime_seconds));
@@ -883,10 +925,13 @@ function updateSnapshot(data) {
   const memory = Number(data.telemetry?.memory_percent || 0);
   text('cpuText', `${cpu.toFixed(1)}%`);
   text('memText', `${memory.toFixed(1)}%`);
-  byID('cpuBar').style.width = `${Math.min(100, Math.max(0, cpu))}%`;
-  byID('memBar').style.width = `${Math.min(100, Math.max(0, memory))}%`;
+  const cpuBar = byID('cpuBar');
+  if (cpuBar) cpuBar.style.width = `${Math.min(100, Math.max(0, cpu))}%`;
+  const memBar = byID('memBar');
+  if (memBar) memBar.style.width = `${Math.min(100, Math.max(0, memory))}%`;
   appendTraffic(Number(data.telemetry?.rx_rate || 0), Number(data.telemetry?.tx_rate || 0));
-  drawTraffic(byID('trafficChart'));
+  const chart = byID('trafficChart');
+  if (chart) drawTraffic(chart);
 
   if (data.core_connected) {
     text('coreMetric', t('dynamic.online'));
@@ -961,6 +1006,26 @@ function updateSnapshot(data) {
   renderEvents(data.events || []);
   renderRules(data.blocks || [], removeRule);
   renderIncidents(data.incidents || [], acknowledge);
+
+  const l7 = data.l7 || {};
+  text('overviewL7Inspected', number(l7.inspected_requests || 0));
+  text('overviewL7Findings', number(l7.findings_total || 0));
+  text('overviewL7Blocked', number(l7.blocked_requests || 0));
+  const overviewL7Pill = byID('overviewL7Pill');
+  if (overviewL7Pill) {
+    overviewL7Pill.className = `status-pill ${l7.healthy ? 'good' : (l7.enabled ? 'danger' : 'muted')}`;
+    overviewL7Pill.textContent = l7.healthy ? 'HEALTHY' : (l7.enabled ? 'DEGRADED' : 'INACTIVE');
+  }
+
+  loadProtectionState(data).catch(() => {});
+
+  const activePage = document.querySelector('[data-page].active')?.getAttribute('data-page');
+  if (activePage === 'l7') {
+    loadL7View(data).catch(() => {});
+  }
+  if (activePage === 'xdr') {
+    loadXDRView(data).catch(() => {});
+  }
 }
 
 async function refresh() {
@@ -975,27 +1040,40 @@ async function refresh() {
     }
     badge('systemBadge', t('dynamic.apiOffline'), 'danger');
     text('sidebarState', t('dynamic.apiOffline'));
-    if (!(error instanceof DOMException && error.name === 'AbortError')) console.error(error);
+    setConnectionState(false, error?.message || t('connection.offlineDetail'));
   }
 }
 
+function scheduleStreamReconnect() {
+  globalThis.clearTimeout(reconnectTimer);
+  reconnectTimer = globalThis.setTimeout(() => connectStream(), 5000);
+}
+
 async function connectStream() {
+  globalThis.clearTimeout(reconnectTimer);
   if (streamController) streamController.abort();
   streamController = new AbortController();
+  const controller = streamController;
   globalThis.clearInterval(pollTimer);
   try {
     await streamSnapshots({
-      signal: streamController.signal,
+      signal: controller.signal,
       onSnapshot: updateSnapshot,
       onEvent: () => refresh()
     });
+    if (controller.signal.aborted) return;
+    setConnectionState(false, t('connection.streamEnded'));
+    pollTimer = globalThis.setInterval(refresh, 3000);
+    scheduleStreamReconnect();
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') return;
     if (error instanceof APIError && error.status === 401) {
       byID('authDialog').showModal();
       return;
     }
+    setConnectionState(false, error?.message || t('connection.offlineDetail'));
     pollTimer = globalThis.setInterval(refresh, 3000);
+    scheduleStreamReconnect();
   }
 }
 
@@ -1041,16 +1119,22 @@ function downloadJSON(name, value) {
   URL.revokeObjectURL(url);
 }
 
+function on(id, event, handler) {
+  const node = byID(id);
+  if (node) node.addEventListener(event, handler);
+}
+
 function bindActions() {
   document.querySelectorAll('[data-view]').forEach(button => {
     button.addEventListener('click', () => activateView(button.getAttribute('data-view')));
   });
-  byID('authButton').addEventListener('click', () => {
-    byID('tokenInput').value = getToken();
-    byID('authDialog').showModal();
+  on('authButton', 'click', () => {
+    const input = byID('tokenInput');
+    if (input) input.value = getToken();
+    byID('authDialog')?.showModal();
   });
-  byID('supportButton').addEventListener('click', () => byID('supportDialog').showModal());
-  byID('languageSelect').addEventListener('change', event => setLanguage(event.currentTarget.value));
+  on('supportButton', 'click', () => byID('supportDialog')?.showModal());
+  on('languageSelect', 'change', event => setLanguage(event.currentTarget.value));
   document.querySelectorAll('.copy-address').forEach(button => {
     button.addEventListener('click', async () => {
       try {
@@ -1061,17 +1145,24 @@ function bindActions() {
       }
     });
   });
-  byID('saveToken').addEventListener('click', () => {
-    setToken(byID('tokenInput').value);
+  on('authForm', 'submit', event => {
+    event.preventDefault();
+    const input = byID('tokenInput');
+    if (input) setToken(input.value);
+    byID('authDialog')?.close();
     toast(t('toast.sessionUpdated'), 'good');
     refresh();
     connectStream();
   });
-  byID('blockForm').addEventListener('submit', async event => {
+  on('connectionRetry', 'click', () => {
+    refresh();
+    connectStream();
+  });
+  on('blockForm', 'submit', async event => {
     event.preventDefault();
-    const target = byID('target').value.trim();
-    const reason = byID('reason').value.trim();
-    const ttlSeconds = Number.parseInt(byID('ttl').value, 10);
+    const target = byID('target')?.value.trim();
+    const reason = byID('reason')?.value.trim();
+    const ttlSeconds = Number.parseInt(byID('ttl')?.value || '3600', 10);
     try {
       await addBlock({ target, reason, ttl_seconds: ttlSeconds });
       text('actionMessage', t('message.policySet'));
@@ -1083,7 +1174,7 @@ function bindActions() {
       handleActionError(error);
     }
   });
-  byID('syncFeeds').addEventListener('click', async () => {
+  on('syncFeeds', 'click', async () => {
     try {
       await syncFeeds();
       toast(t('toast.feedStarted'), 'good');
@@ -1092,7 +1183,7 @@ function bindActions() {
       await refresh();
     }
   });
-  byID('loadProfiles').addEventListener('click', async () => {
+  on('loadProfiles', 'click', async () => {
     try {
       const payload = await getProfiles();
       renderProfiles(Array.isArray(payload) ? payload : payload.profiles || []);
@@ -1101,7 +1192,7 @@ function bindActions() {
       handleActionError(error);
     }
   });
-  byID('exportForensics').addEventListener('click', async () => {
+  on('exportForensics', 'click', async () => {
     try {
       const payload = await exportForensics();
       downloadJSON(`gedefense-forensics-${new Date().toISOString().replaceAll(':', '-')}.json`, payload);
@@ -1110,50 +1201,55 @@ function bindActions() {
       handleActionError(error);
     }
   });
-  byID('releaseForm').addEventListener('submit', async event => {
+  on('releaseForm', 'submit', async event => {
     event.preventDefault();
     try {
-      await transitionRelease({
-        target: byID('releaseTarget').value,
-        reason: byID('releaseReason').value.trim(),
-        confirmation: byID('releaseConfirmation').value.trim()
-      });
+      const target = byID('releaseTarget')?.value;
+      const reason = byID('releaseReason')?.value.trim();
+      const confirmation = byID('releaseConfirmation')?.value.trim();
+      if (!target || !reason || !confirmation) return;
+      await transitionRelease({ target, reason, confirmation });
       toast(t('toast.phaseChanged'), 'good');
       await refresh();
     } catch (error) {
       handleActionError(error);
     }
   });
-  byID('emergencyForm').addEventListener('submit', async event => {
+  on('emergencyForm', 'submit', async event => {
     event.preventDefault();
     try {
-      await emergencyStop(byID('emergencyReason').value.trim());
+      const reason = byID('emergencyReason')?.value.trim();
+      if (!reason) return;
+      await emergencyStop(reason);
       toast(t('toast.emergencyActive'), 'danger');
       await refresh();
     } catch (error) {
       handleActionError(error);
-      // The stop marker is persisted before kernel verification. A failed
-      // request therefore still changes safety state and must be rendered.
       await refresh();
     }
   });
-  byID('emergencyClearForm').addEventListener('submit', async event => {
+  on('emergencyClearForm', 'submit', async event => {
     event.preventDefault();
     try {
-      await clearEmergencyStop(byID('emergencyClearConfirmation').value.trim(), byID('emergencyClearReason').value.trim());
+      const confirmation = byID('emergencyClearConfirmation')?.value.trim();
+      const reason = byID('emergencyClearReason')?.value.trim();
+      if (!confirmation || !reason) return;
+      await clearEmergencyStop(confirmation, reason);
       toast(t('toast.emergencyCleared'), 'good');
       await refresh();
     } catch (error) {
       handleActionError(error);
     }
   });
-  byID('settingFeeds').addEventListener('change', event => {
-    if (!event.currentTarget.checked) byID('settingAutoFeeds').checked = false;
+  on('settingFeeds', 'change', event => {
+    const auto = byID('settingAutoFeeds');
+    if (auto && !event.currentTarget.checked) auto.checked = false;
   });
-  byID('settingAutoFeeds').addEventListener('change', event => {
-    if (event.currentTarget.checked) byID('settingFeeds').checked = true;
+  on('settingAutoFeeds', 'change', event => {
+    const feeds = byID('settingFeeds');
+    if (feeds && event.currentTarget.checked) feeds.checked = true;
   });
-  byID('settingsForm').addEventListener('submit', async event => {
+  on('settingsForm', 'submit', async event => {
     event.preventDefault();
     const payload = settingsPayload();
     try {
@@ -1167,7 +1263,7 @@ function bindActions() {
       handleActionError(error);
     }
   });
-  byID('hardeningSwitchForm').addEventListener('submit', async event => {
+  on('hardeningSwitchForm', 'submit', async event => {
     event.preventDefault();
     try {
       const controls = Array.from(
@@ -1175,10 +1271,11 @@ function bindActions() {
         input => input.dataset.controlId
       ).filter(Boolean);
       if (!controls.length) throw new Error('Mindestens eine aktivierbare Schutzmaßnahme auswählen.');
+      const reason = byID('hardeningReason')?.value.trim() || 'Härtung';
       const transaction = await previewTransaction({
         type: 'hardening.sysctl-profile',
         summary: `${controls.length} ausgewählte AstraeaOS-Härtungskontrollen`,
-        reason: byID('hardeningReason').value.trim(),
+        reason,
         payload: { controls }
       });
       selectTransaction(transaction);
@@ -1188,9 +1285,9 @@ function bindActions() {
       handleActionError(error);
     }
   });
-  byID('refreshHardening').addEventListener('click', () => loadHardening().catch(handleActionError));
-  byID('refreshBoot').addEventListener('click', () => loadBootTrust().catch(handleActionError));
-  byID('fimScan').addEventListener('click', async () => {
+  on('refreshHardening', 'click', () => loadHardening().catch(handleActionError));
+  on('refreshBoot', 'click', () => loadBootTrust().catch(handleActionError));
+  on('fimScan', 'click', async () => {
     try {
       await scanFIM();
       toast('FIM-Prüfung abgeschlossen.', 'good');
@@ -1199,7 +1296,7 @@ function bindActions() {
       handleActionError(error);
     }
   });
-  byID('fimBaseline').addEventListener('click', async () => {
+  on('fimBaseline', 'click', async () => {
     try {
       await createFIMBaseline();
       toast('Verschlüsselte FIM-Baseline wurde neu erstellt.', 'good');
@@ -1208,7 +1305,7 @@ function bindActions() {
       handleActionError(error);
     }
   });
-  byID('evidenceVerify').addEventListener('click', async () => {
+  on('evidenceVerify', 'click', async () => {
     try {
       await verifyEvidence();
       toast('Die Evidence-Kette ist kryptografisch verifiziert.', 'good');
@@ -1217,7 +1314,7 @@ function bindActions() {
       handleActionError(error);
     }
   });
-  byID('packageIntegrityScan').addEventListener('click', async () => {
+  on('packageIntegrityScan', 'click', async () => {
     try {
       await scanPackageIntegrity();
       toast('Paketintegritätsprüfung wurde gestartet.', 'good');
@@ -1226,9 +1323,10 @@ function bindActions() {
       handleActionError(error);
     }
   });
-  byID('malwareScanForm').addEventListener('submit', async event => {
+  on('malwareScanForm', 'submit', async event => {
     event.preventDefault();
-    const path = byID('malwareScanPath').value.trim();
+    const path = byID('malwareScanPath')?.value.trim();
+    if (!path) return;
     try {
       const result = await scanMalware(path);
       renderMalwareResult(result, path);
@@ -1239,14 +1337,14 @@ function bindActions() {
       handleActionError(error);
     }
   });
-  byID('quarantinePreviewForm').addEventListener('submit', async event => {
+  on('quarantinePreviewForm', 'submit', async event => {
     event.preventDefault();
     try {
-      const transaction = await previewQuarantine({
-        path: byID('quarantinePath').value.trim(),
-        reason: byID('quarantineReason').value.trim()
-      });
-      byID('quarantinePreviewForm').reset();
+      const path = byID('quarantinePath')?.value.trim();
+      const reason = byID('quarantineReason')?.value.trim();
+      if (!path || !reason) return;
+      const transaction = await previewQuarantine({ path, reason });
+      byID('quarantinePreviewForm')?.reset();
       await loadQuarantine();
       await selectTransactionByID(transaction.id);
       toast(t('quarantine.previewReady'), 'good');
@@ -1254,85 +1352,124 @@ function bindActions() {
       handleActionError(error);
     }
   });
-  byID('caseStatusForm').addEventListener('submit', async event => {
+  on('caseStatusForm', 'submit', async event => {
     event.preventDefault();
     try {
-      const id = byID('selectedCaseID').value;
+      const id = byID('selectedCaseID')?.value;
       if (!id) throw new Error(t('cases.selectionRequired'));
       await setCaseStatus(
         id,
-        byID('caseStatus').value,
-        byID('caseResolution').value.trim()
+        byID('caseStatus')?.value || 'closed',
+        byID('caseResolution')?.value.trim() || ''
       );
-      byID('caseStatusForm').reset();
+      byID('caseStatusForm')?.reset();
       toast(t('cases.saved'), 'good');
       await Promise.all([loadCases(), refresh()]);
     } catch (error) {
       handleActionError(error);
     }
   });
-  byID('transactionExecuteForm').addEventListener('submit', async event => {
+  on('transactionExecuteForm', 'submit', async event => {
     event.preventDefault();
     if (!selectedTransaction) return;
     try {
-      const confirmation = byID('transactionConfirmation').value.trim();
+      const confirmation = byID('transactionConfirmation')?.value.trim();
       const reverse = selectedTransaction.status === 'applied' || selectedTransaction.status === 'recovery_required';
       const result = reverse
         ? await reverseTransaction(selectedTransaction.id, confirmation)
         : await applyTransaction(selectedTransaction.id, confirmation);
       selectedTransaction = result;
-      byID('transactionSelection').hidden = true;
-      byID('transactionConfirmation').value = '';
+      const selBox = byID('transactionSelection');
+      if (selBox) selBox.hidden = true;
+      const confInput = byID('transactionConfirmation');
+      if (confInput) confInput.value = '';
       toast(t(reverse ? 'hardening.reversed' : 'hardening.applied'), 'good');
       await Promise.all([loadTransactions(), refresh()]);
     } catch (error) {
       handleActionError(error);
     }
   });
-  byID('customRuleForm').addEventListener('submit', async event => {
+  on('customRuleForm', 'submit', async event => {
     event.preventDefault();
     try {
       if (!runtimeSettings) await loadSettings();
+      const id = byID('customRuleId')?.value.trim();
+      const category = byID('customRuleCategory')?.value.trim() || 'custom';
+      const summary = byID('customRuleSummary')?.value.trim() || 'Custom Rule';
+      const pattern = byID('customRulePattern')?.value || '';
+      const score = Number.parseInt(byID('customRuleScore')?.value || '25', 10);
+      if (!id || !pattern) return;
       const customRules = [...(runtimeSettings?.custom_rules || []), {
-        id: byID('customRuleId').value.trim(),
+        id,
         enabled: true,
-        category: byID('customRuleCategory').value.trim(),
-        summary: byID('customRuleSummary').value.trim(),
-        pattern: byID('customRulePattern').value,
-        score: Number.parseInt(byID('customRuleScore').value, 10)
+        category,
+        summary,
+        pattern,
+        score
       }];
       const saved = await updateSettings(settingsPayload({ custom_rules: customRules }));
       applySettings(saved);
-      byID('customRuleForm').reset();
+      byID('customRuleForm')?.reset();
       setValue('customRuleScore', 25);
       toast(t('toast.customRuleSaved'), 'good');
     } catch (error) {
       handleActionError(error);
     }
   });
-  byID('allowlistForm').addEventListener('submit', async event => {
+  on('allowlistForm', 'submit', async event => {
     event.preventDefault();
     try {
-      const result = await addAllowlist(byID('allowlistTarget').value.trim());
+      const target = byID('allowlistTarget')?.value.trim();
+      if (!target) return;
+      const result = await addAllowlist(target);
       applySettings(result.settings || result);
-      byID('allowlistTarget').value = '';
+      const input = byID('allowlistTarget');
+      if (input) input.value = '';
       toast(t('toast.allowlistSynced'), 'good');
       await refresh();
     } catch (error) {
       handleActionError(error);
     }
   });
+  const mobileToggle = byID('mobileMenuToggle');
+  const sidebar = byID('sidebar');
+  const backdrop = byID('sidebarMobileBackdrop');
+  if (mobileToggle && sidebar) {
+    mobileToggle.addEventListener('click', () => {
+      const isOpen = sidebar.classList.toggle('mobile-open');
+      if (backdrop) backdrop.classList.toggle('active', isOpen);
+    });
+  }
+  if (backdrop && sidebar) {
+    backdrop.addEventListener('click', () => {
+      sidebar.classList.remove('mobile-open');
+      backdrop.classList.remove('active');
+    });
+  }
+  on('overviewToL7Btn', 'click', () => activateView('l7'));
+  on('heroProtectionAction', 'click', () => activateView('protection'));
+  document.querySelectorAll('[data-dialog-close]').forEach(button => {
+    button.addEventListener('click', () => button.closest('dialog')?.close());
+  });
+
   document.addEventListener('gedefense:language', () => {
     const currentView = location.hash.replace('#', '') || 'overview';
     activateView(currentView);
     if (snapshot) updateSnapshot(snapshot);
   });
-  globalThis.addEventListener('resize', () => drawTraffic(byID('trafficChart')));
+  globalThis.addEventListener('resize', () => {
+    const chart = byID('trafficChart');
+    if (chart) drawTraffic(chart);
+  });
 }
 
 function initialize() {
-  initializeI18n();
-  bindActions();
+  try { initializeI18n(); } catch (_) {}
+  try { initProtectionCenter(); } catch (_) {}
+  try { initL7Module(); } catch (_) {}
+  try { initXDRModule(); } catch (_) {}
+  try { initOperationFeedback(); } catch (_) {}
+  try { bindActions(); } catch (_) {}
   const requested = location.hash.replace('#', '');
   activateView(requested || 'overview');
   globalThis.setInterval(() => text('clock', new Date().toLocaleTimeString(locale())), 1000);

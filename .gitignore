@@ -1,6 +1,7 @@
 # Build outputs
 /dist/
 /GitHub Upload/
+/V4 Update/
 **/target/
 *.exe
 *.run

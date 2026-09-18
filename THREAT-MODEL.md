@@ -45,6 +45,11 @@ Kann Binärdateien, Schlüssel, Kernelzustand und lokale Persistenz gemeinsam ve
 | IPC-Replay | Zeitfenster + Nonce + fail-closed Cache | Uhrsprünge können legitime Requests vorübergehend ablehnen |
 | PID-Reuse | Start-Ticks vor/nach pidfd_open + pidfd_signal | Kernel ohne pidfd wird nicht unterstützt |
 | Regex-DoS | Go RE2-Semantik, feste Regeln, Command-Limit | sehr viele Prozesse werden über Queuebudgets begrenzt |
+| L7 Parser-/Dekompressions-DoS | gemeinsame Concurrency-, Body-, Decode-, Token-, Kandidaten- und Speicherbudgets; bounded gzip/zlib | legitime Requests oberhalb konfigurierter Budgets werden abgelehnt |
+| L7 Header-/Proxy-Spoofing | lokaler mode-0660 Unix-Socket, optional SO_PEERCRED, interne Header werden überschrieben/entfernt | ein bereits kompromittierter berechtigter Reverse-Proxy-Prozess bleibt innerhalb derselben lokalen Trust Domain |
+| L7 SSRF-Umgehung | URL-Parsing, private/link-local/loopback Sperren, numerische IPv4-Normalisierung, gefährliche Scheme-Erkennung | semantische SSRF in anwendungsspezifischen Protokollen kann zusätzliche Regeln benötigen |
+| L7 False Positive | Observe-Default, Kategorie-Deduplizierung, getrennte Alert-/Block-Schwellen, globales Release-Gate | Signatur-/Heuristiksysteme bleiben definitionsgemäß probabilistisch |
+| L7 Evidenz-Datenschutz | keine Body-Persistenz, SHA-256-Evidenz, Auth/Cookie/API-Key-Header aus Kandidaten entfernt | erkannte ungefährliche Fragmente können als stark begrenzte Regelzusammenfassung erscheinen |
 | XDR-Selbst-DoS | feste Worker/Queues/Budgets/Histories | Evaluationen können sichtbar verworfen werden |
 | Behavior-Cardinality-Angriff | max profiles, max ports, max timestamps | neue Profile werden bei Sättigung nicht gelernt |
 | Model Poisoning | Warmup, hohe Z-Schwelle, nur Zusatzsignal | langsame Manipulation kann Statistik verschieben |
@@ -87,7 +92,7 @@ Im degradierten Zustand bleibt Beobachtung und Dashboard-Zugriff erhalten, aktiv
 ## Explizit nicht versprochen
 
 - keine vollständige Abwehr volumetrischer Angriffe oberhalb der physischen Leitung;
-- keine passive Inhalts-DPI für verschlüsseltes HTTPS;
+- keine passive Inhalts-DPI im TLS-Ciphertext und kein TLS-MITM; L7-Inhalte werden nur nach expliziter lokaler TLS-Terminierung inspiziert;
 - keine Garantie gegen Root;
 - keine autonome Malwareklassifikation durch Statistik;
 - keine Produktionsfreigabe des unkompilierten Rust/eBPF-Pfads.

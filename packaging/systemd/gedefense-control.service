@@ -11,6 +11,7 @@ NotifyAccess=main
 WatchdogSec=20s
 User=gedefense
 Group=gedefense
+SupplementaryGroups=gedefense-l7
 ExecStartPre=/opt/vgt/gedefense/current/bin/gedefense-control --config=/etc/vgt/gedefense/gedefense.toml --preflight
 ExecStart=/opt/vgt/gedefense/current/bin/gedefense-control --config=/etc/vgt/gedefense/gedefense.toml
 Restart=on-failure
@@ -38,7 +39,7 @@ SystemCallArchitectures=native
 SystemCallFilter=@system-service
 SystemCallErrorNumber=EPERM
 ReadOnlyPaths=/opt/vgt/gedefense/current /etc/vgt/gedefense
-ReadWritePaths=/var/lib/vgt/gedefense /run/vgt-gedefense
+ReadWritePaths=/var/lib/vgt/gedefense /run/vgt-gedefense /run/vgt-gedefense-l7
 UMask=0077
 
 [Install]

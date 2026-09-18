@@ -57,7 +57,7 @@ for language in ('en','ru'):
         raise SystemExit(f'{language} translation coverage missing: '+', '.join(missing))
 html=(root/'control'/'web'/'index.html').read_text(encoding='utf-8')
 for value in [
-    'GeDefense', 'VisionGaiaTechnology', '3.0.0-beta.1', 'paypal.me/dergoldenelotus',
+    'GeDefense', 'VisionGaiaTechnology', '4.0.0-beta.1', 'paypal.me/dergoldenelotus',
     'bc1q3ue5gq822tddmkdrek79adlkm36fatat3lz0dm', '0xD37DEfb09e07bD775EaaE9ccDaFE3a5b2348Fe85',
 ]:
     if value not in html:
@@ -85,6 +85,77 @@ if grep -RInE --include='*.rs' '(std::process::Command|Command::new|libc::exec[a
 fi
 pass 'no shell/command execution primitives in Go control/gateway or Rust core/eBPF'
 
+python3 - "$ROOT" <<'PYL7'
+from pathlib import Path
+import re, sys
+root=Path(sys.argv[1])
+control_mod=(root/'control'/'go.mod').read_text(encoding='utf-8')
+for directive in ('require ', 'replace ', 'exclude ', 'retract ', 'tool '):
+    if re.search(rf'(?m)^\s*{re.escape(directive)}', control_mod):
+        raise SystemExit('control-plane dependency directive introduced: '+directive.strip())
+
+l7_sources=[p for p in (root/'control').glob('l7*.go') if not p.name.endswith('_test.go')]
+if not l7_sources:
+    raise SystemExit('native L7 source set missing')
+third_party=[]
+for path in l7_sources:
+    text=path.read_text(encoding='utf-8')
+    if re.search(r'\bpanic\s*\(', text) or 'regexp.MustCompile' in text or 'log.Fatal' in text:
+        raise SystemExit('panic/fatal static initializer found in '+str(path.relative_to(root)))
+    imports=[]
+    import_block=re.search(r'(?ms)^import\s*\((.*?)\)', text)
+    if import_block:
+        imports += re.findall(r'"([^"]+)"', import_block.group(1))
+    imports += re.findall(r'(?m)^import\s+"([^"]+)"', text)
+    for imp in imports:
+        first=imp.split('/',1)[0]
+        if '.' in first:
+            third_party.append(f'{path.relative_to(root)}: {imp}')
+if third_party:
+    raise SystemExit('third-party import in native L7 plane:\n'+'\n'.join(third_party))
+
+integration=root/'integration'/'nginx'
+if not integration.is_dir():
+    raise SystemExit('native nginx integration directory missing')
+for path in integration.rglob('*'):
+    if path.is_file() and path.suffix.lower() in {'.js','.mjs','.cjs','.lua','.wasm'}:
+        raise SystemExit('scripting/runtime artifact present in nginx integration: '+str(path.relative_to(root)))
+conf=(integration/'gedefense-l7.conf.example').read_text(encoding='utf-8')
+for directive in ('js_', 'lua_', 'perl_'):
+    if directive in conf:
+        raise SystemExit('non-native nginx scripting directive present: '+directive)
+
+required={
+    root/'control'/'l7_engine.go': ['admissionSlots', 'inspectionSlots', 'context.Context', 'validateL7EngineConfig'],
+    root/'control'/'l7_normalize.go': ['ErrL7ResourceLimit', 'gzip.NewReader', 'zlib.NewReader'],
+    root/'control'/'l7_candidates.go': ['CandidateBudgetExceeded', 'isL7JSONMediaType', 'isL7XMLMediaType', 'l7FormEntryCount'],
+    root/'control'/'l7_edge.go': ['Proxy: nil', 'X-Gedefense-Client-Ip', 'l7PeerCredentialsFromConn'],
+    root/'control'/'config.go': ['ip == nil || !ip.IsLoopback()', 'u.Scheme != "http"', 'u.Scheme == "unix"'],
+    root/'control'/'xdr_l7.go': ['AlertOnly: true', 'ResponseScore: 0'],
+    root/'control'/'xdr_rules.go': ['!m.OperatorDefined && !m.AlertOnly'],
+}
+for path, anchors in required.items():
+    text=path.read_text(encoding='utf-8')
+    missing=[x for x in anchors if x not in text]
+    if missing:
+        raise SystemExit(f'{path.relative_to(root)} missing L7 hardening anchors: '+', '.join(missing))
+
+arch=(root/'packaging'/'arch'/'PKGBUILD').read_text(encoding='utf-8')
+for token in ('.js"', '.lua"', '.wasm"'):
+    if token in arch and 'integration/nginx/' in arch:
+        raise SystemExit('Arch package references a scripting artifact for the native L7 integration')
+
+installer=(root/'scripts'/'oneclick-installer-header.sh').read_text(encoding='utf-8')
+for anchor in (
+    'groupadd --system gedefense-l7',
+    'install -d -o gedefense -g gedefense-l7 -m 0750 "$L7_RUNTIME_DIR"',
+    'systemd-tmpfiles --create "$L7_TMPFILES_CONFIG"',
+):
+    if anchor not in installer:
+        raise SystemExit('one-click L7 runtime provisioning invariant missing: '+anchor)
+PYL7
+pass 'native L7 plane is stdlib-only, panic-free, runtime-bounded and dependency-free at the integration boundary'
+
 python3 - "$ROOT" <<'PY'
 from pathlib import Path
 import sys
@@ -94,6 +165,7 @@ required={
         'FuzzCoreResponseParser', 'FuzzPolicyDocumentParser', 'FuzzEncryptedEnvelopeParser',
     ],
     root/'control'/'xdr_linux_fuzz_test.go': ['FuzzProcStatParser'],
+    root/'control'/'l7_fuzz_test.go': ['FuzzL7NormalizerNeverPanics', 'FuzzL7ResponseInspectionPreservesWireBytes', 'FuzzL7InlineUpstreamParserNeverEscapesLocalHost'],
     root/'rust'/'gedefense-common'/'src'/'bin'/'xdp_packet_fuzz.rs': ['parse_network_header'],
 }
 for path, anchors in required.items():

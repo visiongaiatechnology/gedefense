@@ -82,6 +82,8 @@ func NewAPIServer(cfg Config, state *State, core *CoreClient, feeds *FeedManager
 	mux.HandleFunc("GET /api/v1/xdr/profiles", s.auth(s.behaviorProfiles))
 	mux.HandleFunc("GET /api/v1/forensics/export", s.auth(s.forensicsExport))
 	mux.HandleFunc("GET /api/v1/release", s.auth(s.releaseStatus))
+	mux.HandleFunc("GET /api/v1/release/readiness", s.auth(s.releaseReadiness))
+	mux.HandleFunc("GET /api/v1/l7/findings", s.auth(s.l7Findings))
 	mux.HandleFunc("POST /api/v1/release/transition", s.auth(s.releaseTransition))
 	mux.HandleFunc("POST /api/v1/release/emergency-stop", s.auth(s.releaseEmergencyStop))
 	mux.HandleFunc("POST /api/v1/release/emergency-stop/clear", s.auth(s.releaseEmergencyStopClear))
@@ -190,7 +192,7 @@ func (s *APIServer) secure(next http.Handler) http.Handler {
 		w.Header().Set("Cross-Origin-Embedder-Policy", "require-corp")
 		w.Header().Set("Origin-Agent-Cluster", "?1")
 		w.Header().Set("X-Permitted-Cross-Domain-Policies", "none")
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; font-src 'none'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; manifest-src 'self'; worker-src 'none'")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src 'none'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; manifest-src 'self'; worker-src 'none'")
 		w.Header().Set("Cache-Control", "no-store")
 		if r.TLS != nil {
 			w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
@@ -271,7 +273,9 @@ func (s *APIServer) asset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	allowed := map[string]bool{
-		"app.css": true, "api.js": true, "charts.js": true, "render.js": true, "i18n.js": true, "app.js": true,
+		"app.css": true, "v4.css": true, "api.js": true, "charts.js": true, "render.js": true, "i18n.js": true, "app.js": true,
+		"protection.js": true, "l7.js": true, "xdr.js": true, "operations.js": true,
+		"gedefense-logo.png": true,
 	}
 	if !allowed[name] {
 		http.NotFound(w, r)
@@ -1057,6 +1061,81 @@ func (s *APIServer) releaseStatus(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, s.release.Status())
 }
 
+func (s *APIServer) releaseReadiness(w http.ResponseWriter, r *http.Request) {
+	target := r.URL.Query().Get("target")
+	readiness, err := s.release.Readiness(target)
+	if err != nil {
+		apiError(w, http.StatusBadRequest, err.Error(), nil)
+		return
+	}
+	writeJSON(w, http.StatusOK, readiness)
+}
+
+func (s *APIServer) l7Findings(w http.ResponseWriter, r *http.Request) {
+	limit := 50
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 && parsed <= 200 {
+			limit = parsed
+		}
+	}
+	snap := s.state.Snapshot()
+	type L7FindingItem struct {
+		ID         string            `json:"id"`
+		Time       time.Time         `json:"time"`
+		Severity   string            `json:"severity"`
+		Score      int               `json:"score"`
+		Confidence int               `json:"confidence"`
+		RequestID  string            `json:"request_id"`
+		Method     string            `json:"method"`
+		Host       string            `json:"host"`
+		Path       string            `json:"path"`
+		RemoteIP   string            `json:"remote_ip"`
+		RuleIDs    []string          `json:"rule_ids"`
+		Categories []string          `json:"categories"`
+		Summary    string            `json:"summary"`
+		Decision   string            `json:"decision"`
+		Action     string            `json:"action"`
+		Outcome    string            `json:"outcome"`
+		BodySHA256 string            `json:"body_sha256,omitempty"`
+		Story      []AttackStoryNode `json:"attack_story,omitempty"`
+	}
+	items := make([]L7FindingItem, 0, limit)
+	for i := len(snap.Incidents) - 1; i >= 0 && len(items) < limit; i-- {
+		inc := snap.Incidents[i]
+		if inc.RequestID != "" || inc.HTTPHost != "" || strings.HasPrefix(inc.Decision, "deny-http") {
+			conf := 95
+			if len(inc.AttackStory) > 0 && inc.AttackStory[0].Confidence > 0 {
+				conf = inc.AttackStory[0].Confidence
+			}
+			items = append(items, L7FindingItem{
+				ID:         inc.ID,
+				Time:       inc.Time,
+				Severity:   inc.Severity,
+				Score:      inc.Score,
+				Confidence: conf,
+				RequestID:  inc.RequestID,
+				Method:     inc.HTTPMethod,
+				Host:       inc.HTTPHost,
+				Path:       inc.HTTPPath,
+				RemoteIP:   inc.Remote,
+				RuleIDs:    inc.RuleIDs,
+				Categories: inc.Categories,
+				Summary:    inc.Summary,
+				Decision:   inc.Decision,
+				Action:     inc.Action,
+				Outcome:    inc.Outcome,
+				BodySHA256: inc.BodySHA256,
+				Story:      inc.AttackStory,
+			})
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"findings": items,
+		"total":    len(items),
+		"status":   snap.L7,
+	})
+}
+
 func (s *APIServer) releaseTransition(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Target       string `json:"target"`
@@ -1145,6 +1224,28 @@ func (s *APIServer) metrics(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "# TYPE gedefense_xdr_anomalies_total counter\ngedefense_xdr_anomalies_total %d\n", snap.XDR.AnomaliesTotal)
 	fmt.Fprintf(w, "# TYPE gedefense_xdr_queue_depth gauge\ngedefense_xdr_queue_depth %d\n", snap.XDR.QueueDepth)
 	fmt.Fprintf(w, "# TYPE gedefense_xdr_behavior_profiles gauge\ngedefense_xdr_behavior_profiles %d\n", snap.XDR.Behavior.Profiles)
+	l7Healthy := 0
+	if snap.L7.Healthy {
+		l7Healthy = 1
+	}
+	fmt.Fprintf(w, "# TYPE gedefense_l7_healthy gauge\ngedefense_l7_healthy %d\n", l7Healthy)
+	fmt.Fprintf(w, "# TYPE gedefense_l7_requests_total counter\ngedefense_l7_requests_total %d\n", snap.L7.RequestsTotal)
+	fmt.Fprintf(w, "# TYPE gedefense_l7_findings_total counter\ngedefense_l7_findings_total %d\n", snap.L7.FindingsTotal)
+	fmt.Fprintf(w, "# TYPE gedefense_l7_blocked_total counter\ngedefense_l7_blocked_total %d\n", snap.L7.BlockedTotal)
+	fmt.Fprintf(w, "# TYPE gedefense_l7_rate_limited_total counter\ngedefense_l7_rate_limited_total %d\n", snap.L7.RateLimitedTotal)
+	fmt.Fprintf(w, "# TYPE gedefense_l7_rejected_total counter\ngedefense_l7_rejected_total %d\n", snap.L7.RejectedTotal)
+	fmt.Fprintf(w, "# TYPE gedefense_l7_active_requests gauge\ngedefense_l7_active_requests %d\n", snap.L7.ActiveConnections)
+	inlineHealthy := 0
+	if snap.L7.InlineHealthy {
+		inlineHealthy = 1
+	}
+	fmt.Fprintf(w, "# TYPE gedefense_l7_inline_healthy gauge\ngedefense_l7_inline_healthy %d\n", inlineHealthy)
+	fmt.Fprintf(w, "# TYPE gedefense_l7_inline_requests_total counter\ngedefense_l7_inline_requests_total %d\n", snap.L7.InlineRequestsTotal)
+	fmt.Fprintf(w, "# TYPE gedefense_l7_inline_blocked_total counter\ngedefense_l7_inline_blocked_total %d\n", snap.L7.InlineBlockedTotal)
+	fmt.Fprintf(w, "# TYPE gedefense_l7_inline_upstream_errors_total counter\ngedefense_l7_inline_upstream_errors_total %d\n", snap.L7.InlineUpstreamErrorsTotal)
+	fmt.Fprintf(w, "# TYPE gedefense_l7_responses_inspected_total counter\ngedefense_l7_responses_inspected_total %d\n", snap.L7.ResponsesInspectedTotal)
+	fmt.Fprintf(w, "# TYPE gedefense_l7_response_findings_total counter\ngedefense_l7_response_findings_total %d\n", snap.L7.ResponseFindingsTotal)
+	fmt.Fprintf(w, "# TYPE gedefense_l7_response_inspection_errors_total counter\ngedefense_l7_response_inspection_errors_total %d\n", snap.L7.ResponseInspectionErrorsTotal)
 	releaseReady := 0
 	if snap.Release.Ready {
 		releaseReady = 1
@@ -1291,4 +1392,3 @@ func (s *APIServer) chronosStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"status": cp.Phase, "checkpoint": cp})
 }
-

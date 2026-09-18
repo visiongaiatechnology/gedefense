@@ -27,7 +27,7 @@ done
 for _attempt in $(seq 1 80); do
   if curl --fail --silent --show-error --max-time 2 "$control_url" >/dev/null 2>&1 &&
      curl --fail --silent --show-error --max-time 2 --cacert "$cert" "$gateway_url" >/dev/null 2>&1; then
-    printf 'GeDefense Beta v3 is ready.\n'
+    printf 'GeDefense Beta v4 is ready.\n'
     exit 0
   fi
   sleep 0.25

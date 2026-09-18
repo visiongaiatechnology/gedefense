@@ -36,7 +36,7 @@ for workflow in workflows:
 
 ci = (root / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
 for anchor in (
-    "PRODUCT_VERSION: 3.0.0-beta.1",
+    "PRODUCT_VERSION: 4.0.0-beta.1",
     "make test-race",
     "make fuzz-smoke",
     "scripts/package-artifacts.sh",
