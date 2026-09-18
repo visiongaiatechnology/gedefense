@@ -147,7 +147,8 @@ VGT GeDefense 3.0.0-beta.1 transformed the architecture from a static host/netwo
 
 ---
 
-<img width="1920" height="911" alt="ge1" src="https://github.com/user-attachments/assets/3b1e8094-7832-499e-ae61-c0d1d535c500" />
+<img width="2560" height="1229" alt="image" src="https://github.com/user-attachments/assets/29413de7-469a-4207-98bf-496ab69ef20a" />
+
 
 
 ## 🔍 What is VGT GeDefense?
@@ -180,7 +181,8 @@ A single regex, feed, behavioral or masquerading hit **cannot authorize process 
 
 ---
 
-<img width="1920" height="911" alt="ge2" src="https://github.com/user-attachments/assets/cf2261d2-fc2a-492b-a79a-4c01b59594d8" />
+<img width="2560" height="1229" alt="image" src="https://github.com/user-attachments/assets/1f5cf6ae-ee59-498d-9c5b-e06e8efc9ef2" />
+
 
 
 ## 🏛️ Architecture
@@ -206,6 +208,10 @@ A single regex, feed, behavioral or masquerading hit **cannot authorize process 
 └──────────────────────────────────────────────────────────────┘
 ```
 
+<img width="2560" height="1229" alt="image" src="https://github.com/user-attachments/assets/0712a990-f3ad-4b4a-8d18-8e0a60395fe1" />
+
+
+
 ### Trust Domain Separation
 
 | Domain | Role | Privilege |
@@ -223,7 +229,8 @@ A single regex, feed, behavioral or masquerading hit **cannot authorize process 
 
 ---
 
-<img width="1920" height="911" alt="ge3" src="https://github.com/user-attachments/assets/b3c316ec-07ba-4b37-a000-558bf690578d" />
+<img width="2560" height="1229" alt="image" src="https://github.com/user-attachments/assets/57feccc5-75ab-46a1-a575-3a5ec3402087" />
+
 
 
 ## 🛡️ Defense Fabric
