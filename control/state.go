@@ -58,6 +58,7 @@ type Snapshot struct {
 	Events         []Event         `json:"events"`
 	Telemetry      Telemetry       `json:"telemetry"`
 	XDR            XDRStatus       `json:"xdr"`
+	L7             L7Status        `json:"l7"`
 	Incidents      []XDRIncident   `json:"incidents"`
 	Policy         PolicyStatus    `json:"policy"`
 	Release        ReleaseStatus   `json:"release"`
@@ -83,6 +84,7 @@ type State struct {
 	eventCap                                 int
 	subscribers                              map[chan Event]struct{}
 	xdr                                      XDRStatus
+	l7                                       L7Status
 	incidents                                []XDRIncident
 	incidentCap                              int
 	policy                                   PolicyStatus
@@ -101,7 +103,11 @@ func NewState(version string, cfg Config) *State {
 	return &State{version: version, nodeName: cfg.Node.Name, nodeMode: cfg.Node.Mode, enforcement: cfg.Defense.Enforcement,
 		started: time.Now().UTC(), coreMode: "offline", blocks: make(map[string]BlockEntry), eventCap: 250,
 		subscribers: make(map[chan Event]struct{}), incidentCap: 250,
-		xdr:     XDRStatus{Enabled: cfg.XDR.Enabled, Mode: cfg.XDR.Mode, Sensor: "initializing", QueueCapacity: cfg.XDR.QueueCapacity},
+		xdr: XDRStatus{Enabled: cfg.XDR.Enabled, Mode: cfg.XDR.Mode, Sensor: "initializing", QueueCapacity: cfg.XDR.QueueCapacity},
+		l7: L7Status{
+			Enabled: cfg.L7.Enabled, Mode: cfg.L7.Mode, Socket: cfg.L7.Socket, Healthy: !cfg.L7.Enabled,
+			InlineEnabled: cfg.L7.InlineEnabled, InlineHealthy: !cfg.L7.InlineEnabled, InlineSocket: cfg.L7.InlineSocket,
+		},
 		release: ReleaseStatus{Channel: cfg.Release.Channel, Phase: ReleasePhaseObserve, Since: time.Now().UTC()}}
 }
 
@@ -561,6 +567,27 @@ func (s *State) Subscribe() (<-chan Event, func()) {
 	}
 }
 
+func (s *State) SetL7Status(status L7Status) {
+	s.mu.Lock()
+	s.l7 = status
+	s.mu.Unlock()
+}
+
+func (s *State) UpdateL7Status(update func(*L7Status)) {
+	if update == nil {
+		return
+	}
+	s.mu.Lock()
+	update(&s.l7)
+	s.mu.Unlock()
+}
+
+func (s *State) L7Status() L7Status {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.l7
+}
+
 func (s *State) Snapshot() Snapshot {
 	s.mu.RLock()
 	blocks := make([]BlockEntry, 0, len(s.blocks))
@@ -585,7 +612,7 @@ func (s *State) Snapshot() Snapshot {
 	snapshot := Snapshot{Version: s.version, NodeName: s.nodeName, NodeMode: s.nodeMode, Enforcement: s.enforcement, StartedAt: s.started,
 		UptimeSeconds: int64(time.Since(s.started).Seconds()), CoreConnected: s.coreConnected, CoreMode: s.coreMode, AllowlistReady: s.allowlistReady,
 		FeedVectors: s.feedVectors, LastFeedSync: s.lastFeedSync, Blocks: blocks, Events: events, Telemetry: s.telemetry,
-		XDR: s.xdr, Incidents: incidents, Policy: s.policy, Release: cloneReleaseStatus(s.release), Settings: cloneRuntimeSettings(s.settings),
+		XDR: s.xdr, L7: s.l7, Incidents: incidents, Policy: s.policy, Release: cloneReleaseStatus(s.release), Settings: cloneRuntimeSettings(s.settings),
 		Evidence: s.evidenceStatus, FIM: fimStatus,
 		Cases: CaseStatus{Healthy: false, Cases: []SecurityCase{}},
 		Cells: GaiaCellsStatus{Enabled: false, Healthy: false, Availability: "disabled", Cells: []GaiaCell{}}}

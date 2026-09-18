@@ -1,4 +1,4 @@
-# GeDefense Beta v3 auf GitHub veröffentlichen
+# GeDefense Beta v4 auf GitHub veröffentlichen
 
 ## Ordnerstruktur
 
@@ -27,7 +27,7 @@ GitHub-Repositorys hochgeladen werden. Nicht den übergeordneten Ordner
    `scripts/package-artifacts.sh` ausführen.
 8. Das Staging mit `python3 scripts/stage-github-upload.py --with-release-assets`
    erneut erzeugen.
-9. Den Tag `v3.0.0-beta.1` erstellen und die vier Dateien aus
+9. Den Tag `v4.0.0-beta.1` erstellen und die vier Dateien aus
    `Release Assets/` am GitHub Release anhängen.
 10. Alle SHA-256-Werte nach dem Upload erneut prüfen.
 
@@ -38,7 +38,7 @@ python3 scripts/stage-github-upload.py
 cd "GitHub Upload/Repository"
 git init -b main
 git add --all
-git commit -m "GeDefense Beta v3 source release candidate"
+git commit -m "GeDefense Beta v4 source release candidate"
 ```
 
 ## Sicherheitsgrenzen

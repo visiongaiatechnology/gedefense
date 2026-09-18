@@ -1,5 +1,18 @@
 # Changelog
 
+## 4.0.0-beta.1 — Native L7 Application Security & Correlation Hardening
+
+- Added a native, standard-library-only L7 application-security plane with bounded HTTP normalization, deterministic candidate extraction and fail-closed resource budgets.
+- Added optional Unix-socket inline enforcement with static local upstreams only; no scripting runtime, plugin engine, dynamic upstream resolution or new third-party dependency is required.
+- Added request detection for SQL injection, XSS, command injection, path traversal/file inclusion, SSTI, XXE, unsafe deserialization/JNDI patterns, scanner probes, protocol ambiguity, SSRF and upload abuse.
+- Added bounded gzip/deflate inspection, encoded-input canonicalization and evasive IPv4/URL representation handling without changing forwarded request bytes.
+- Added response leak inspection that preserves the exact response wire body while emitting bounded, hashed evidence only.
+- Connected L7 findings to XDR attack-story correlation while keeping web-only evidence alert-only for destructive host-response scoring.
+- Added shared global admission, candidate, memory, parser and cardinality budgets across inspection and inline paths.
+- Hardened local trust boundaries with pre-provisioned runtime directories, restrictive Unix-socket DAC, Linux peer credentials, forwarding-header reconstruction and removal of authentication secrets from inspection state.
+- Added route/host canonicalization for policy and rate decisions while retaining original request paths for forensic evidence.
+- Extended release gates with L7 unit, race, fuzz, static-security, packaging and dependency invariants.
+
 ## 3.0.0-beta.1 — Beta v3 Universal Linux & AstraeaOS Deep Integration (VGT Doktrin DIAMANT)
 
 - Integrated TRINITY XDR 2.0 Directed Acyclic Graph (DAG) for causal attack stories with Merkle-root cryptographic proof chaining.

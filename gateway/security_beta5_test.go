@@ -167,12 +167,31 @@ func TestGatewaySecurityHeadersAndHostAllowlist(t *testing.T) {
 			t.Fatalf("missing header %s", header)
 		}
 	}
-	bad := httptest.NewRequest(http.MethodGet, "https://attacker.invalid/", nil)
-	bad.Host = "attacker.invalid"
-	rr = httptest.NewRecorder()
-	h.ServeHTTP(rr, bad)
-	if rr.Code != http.StatusBadRequest {
-		t.Fatalf("host allowlist status=%d", rr.Code)
+	// Loopback identities on the gateway port must also be permitted
+	for _, loopbackHost := range []string{"127.0.0.1:9843", "localhost:9843", "[::1]:9843"} {
+		lbReq := httptest.NewRequest(http.MethodGet, "https://"+loopbackHost+"/", nil)
+		lbReq.Host = loopbackHost
+		rr = httptest.NewRecorder()
+		h.ServeHTTP(rr, lbReq)
+		if rr.Code != http.StatusNoContent {
+			t.Fatalf("loopback host %q rejected, status=%d", loopbackHost, rr.Code)
+		}
+	}
+
+	for _, badHost := range []string{
+		"attacker.invalid",
+		"attacker.invalid:9843",
+		"127.0.0.1:8080",
+		"localhost:8080",
+		"192.168.1.50:9843",
+	} {
+		bad := httptest.NewRequest(http.MethodGet, "https://"+badHost+"/", nil)
+		bad.Host = badHost
+		rr = httptest.NewRecorder()
+		h.ServeHTTP(rr, bad)
+		if rr.Code != http.StatusBadRequest {
+			t.Fatalf("host allowlist accepted unsafe host %q, status=%d", badHost, rr.Code)
+		}
 	}
 }
 
@@ -224,7 +243,7 @@ func TestBrandedLoginHasVersionLanguagesSupportAndNonceCSP(t *testing.T) {
 		}
 		body := rr.Body.String()
 		for _, expected := range []string{
-			"GeDefense", "VisionGaiaTechnology", "3.0.0-beta.1", tc.text,
+			"GeDefense", "VisionGaiaTechnology", "4.0.0-beta.1", tc.text,
 			"paypal.me/dergoldenelotus", "bc1q3ue5gq822tddmkdrek79adlkm36fatat3lz0dm",
 			"0xD37DEfb09e07bD775EaaE9ccDaFE3a5b2348Fe85",
 		} {

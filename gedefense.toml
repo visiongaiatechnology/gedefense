@@ -29,7 +29,52 @@ default_ttl_seconds = 3600
 max_ttl_seconds = 604800
 max_block_entries = 250000
 strict_asn_drop = false
-dpi_enabled = false
+dpi_enabled = true
+
+[l7]
+# Local application-layer inspection over a bounded Unix-socket protocol.
+enabled = true
+# observe = record findings only; block = deny only after the global release gate reaches Enforce.
+mode = "observe"
+socket = "/run/vgt-gedefense-l7/inspect.sock"
+socket_group = "gedefense-l7"
+request_timeout_millis = 750
+max_concurrent = 16
+max_envelope_bytes = 3145728
+max_body_bytes = 2097152
+max_uri_bytes = 16384
+max_header_bytes = 65536
+max_headers = 128
+max_value_bytes = 16384
+max_inspection_bytes = 4194304
+max_decoded_values = 4096
+max_decode_depth = 4
+max_json_depth = 32
+max_form_fields = 512
+max_multipart_parts = 64
+max_upload_bytes = 2097152
+alert_score = 40
+block_score = 90
+client_rate_per_minute = 600
+client_rate_burst = 100
+sensitive_rate_per_minute = 30
+sensitive_rate_burst = 10
+# Shared per-route budget catches distributed pressure that stays below each client budget.
+sensitive_global_rate_per_minute = 300
+sensitive_global_rate_burst = 50
+max_tracked_clients = 65536
+sensitive_paths = "/wp-login.php,/xmlrpc.php,/login,/signin,/api/login"
+# The Unix socket is mode 0660. Enable SO_PEERCRED enforcement when deployment UIDs/GIDs are stable.
+require_peer_credentials = false
+allowed_peer_uids = ""
+allowed_peer_gids = ""
+
+# Optional native inline path. No webserver plugin or external runtime is required.
+# Prefer a local application Unix socket; explicit loopback HTTP is also supported.
+inline_enabled = false
+inline_socket = "/run/vgt-gedefense-l7/edge.sock"
+inline_upstream = "http://127.0.0.1:8080"
+inline_max_response_bytes = 65536
 
 [policy]
 state_file = "/var/lib/vgt/gedefense/policy.json"

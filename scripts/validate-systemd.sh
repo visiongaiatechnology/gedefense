@@ -16,7 +16,7 @@ mkdir -p \
   "$UNIT_DIR/gedefense-core.service.d" \
   "$UNIT_DIR/gedefense-control.service.d" \
   "$RELEASE/libexec" "$RELEASE/bin" \
-  "${TEST_ROOT}/bin" "${TEST_ROOT}/usr/lib/astraeaos"
+  "${TEST_ROOT}/bin" "${TEST_ROOT}/usr/bin" "${TEST_ROOT}/usr/lib/astraeaos"
 
 install -m 0644 "$ROOT/packaging/systemd/gedefense-bpffs.service" "$UNIT_DIR/"
 install -m 0644 "$ROOT/packaging/systemd/gedefense-core.service" "$UNIT_DIR/"
@@ -37,6 +37,8 @@ install -m 0644 "$ROOT/integration/astraeaos/gedefense-access-astraeaos.conf" \
   "$UNIT_DIR/gedefense-access.service.d/10-astraeaos-loopback.conf"
 install -m 0755 "$ROOT/integration/astraeaos/gedefense-access-ready" \
   "${TEST_ROOT}/usr/lib/astraeaos/gedefense-access-ready"
+install -m 0755 "$ROOT/integration/astraeaos/gedefense-core-launch" \
+  "${TEST_ROOT}/usr/lib/astraeaos/gedefense-core-launch"
 
 for path in \
   "$RELEASE/libexec/gedefense-core" \
@@ -47,6 +49,7 @@ for path in \
   chmod 0755 "$path"
 done
 install -m 0755 /usr/bin/mount "${TEST_ROOT}/bin/mount"
+install -m 0755 /usr/bin/bash "${TEST_ROOT}/usr/bin/bash"
 
 systemd-analyze verify --recursive-errors=no --root="$TEST_ROOT" \
   gedefense-bpffs.service \
@@ -61,7 +64,7 @@ gaia_access_dropin=$(
 grep -Fxq 'ExecStart=' <<<"$gaia_access_dropin"
 grep -Fq -- '--listen=127.0.0.1:9843' <<<"$gaia_access_dropin"
 grep -Fq 'Requires=gedefense-astraeaos-provision.service' <<<"$gaia_access_dropin"
-grep -Fq 'TimeoutStartSec=90s' <<<"$gaia_access_dropin"
+grep -Fq 'TimeoutStartSec=20s' <<<"$gaia_access_dropin"
 if grep -Fq -- '--listen=0.0.0.0:9843' <<<"$gaia_access_dropin"; then
   printf 'GeDefense AstraeaOS access service exposes a wildcard listener.\n' >&2
   exit 1

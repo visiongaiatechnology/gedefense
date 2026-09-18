@@ -9,9 +9,9 @@ readonly helper=/usr/lib/gedefense/gedefense-ensure-ready
 
 notify_error() {
   if command -v kdialog >/dev/null 2>&1; then
-    kdialog --title 'VGT GeDefense Beta v3' --error "$1"
+    kdialog --title 'VGT GeDefense Beta v4' --error "$1"
   elif command -v zenity >/dev/null 2>&1; then
-    zenity --error --title='VGT GeDefense Beta v3' --text="$1"
+    zenity --error --title='VGT GeDefense Beta v4' --text="$1"
   else
     printf 'GeDefense: %s\n' "$1" >&2
   fi

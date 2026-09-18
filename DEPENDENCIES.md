@@ -1,18 +1,20 @@
-# Dependency Policy — VGT GeDefense Beta v3 (3.0.0-beta.1)
+# Dependency Policy — VGT GeDefense Beta v4 (4.0.0-beta.1)
 
 ## Go Control Plane
 
 ```text
-Go 1.23.2
+Go 1.26.8
 CGO_ENABLED=0
 ```
 
 The control plane uses only the Go standard library and is emitted as a stripped static Linux/amd64 executable with trim paths, disabled VCS stamping and an empty build ID.
 
+The native L7/AppSec plane, Unix-socket inspection API, inline reverse-proxy path, HTTP normalization, gzip/deflate handling, rate limiting, response inspection and XDR correlation are part of this same stdlib-only control-plane binary. They add no Go module, shared library, SDK, scripting engine or background runtime. Optional web-server examples use only ordinary reverse-proxy directives already provided by the web server.
+
 ## HTTPS Gateway and Argon2id
 
 ```text
-Go 1.23.2
+Go 1.26.8
 CGO_ENABLED=1
 libargon2.so.1
 ```

@@ -29,6 +29,9 @@ fuzz-smoke:
 	cd control && $(GO) test -run=^$$ -fuzz=FuzzPolicyDocumentParser -fuzztime=3s
 	cd control && $(GO) test -run=^$$ -fuzz=FuzzEncryptedEnvelopeParser -fuzztime=3s
 	cd control && $(GO) test -run=^$$ -fuzz=FuzzProcStatParser -fuzztime=3s
+	cd control && $(GO) test -run=^$$ -fuzz=FuzzL7NormalizerNeverPanics -fuzztime=3s
+	cd control && $(GO) test -run=^$$ -fuzz=FuzzL7ResponseInspectionPreservesWireBytes -fuzztime=3s
+	cd control && $(GO) test -run=^$$ -fuzz=FuzzL7InlineUpstreamParserNeverEscapesLocalHost -fuzztime=3s
 
 go:
 	mkdir -p dist

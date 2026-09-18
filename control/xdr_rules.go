@@ -207,7 +207,7 @@ func combineMatches(matches []RuleMatch) XDRDecision {
 		ids = append(ids, m.ID)
 		catsSet[m.Category] = struct{}{}
 		score += m.Score
-		if !m.OperatorDefined {
+		if !m.OperatorDefined && !m.AlertOnly {
 			responseScore += m.Score
 		}
 		summaries = append(summaries, m.Summary)

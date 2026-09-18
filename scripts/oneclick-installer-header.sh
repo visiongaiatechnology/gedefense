@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# VGT GeDefense 3.0.0-beta.1 Universal Linux One-Click Installer
+# VGT GeDefense 4.0.0-beta.1 Universal Linux One-Click Installer
 set -Eeuo pipefail
 umask 0077
 
 readonly SETUP_VERSION="4.0.0"
-readonly PRODUCT_VERSION="3.0.0-beta.1"
+readonly PRODUCT_VERSION="4.0.0-beta.1"
 readonly PAYLOAD_SHA256="__PAYLOAD_SHA256__"
 readonly CONTROL_SHA256="__CONTROL_SHA256__"
 readonly ACCESS_SHA256="__ACCESS_SHA256__"
@@ -41,6 +41,8 @@ readonly INCIDENT_LOG_FILE="${STATE}/incidents.jsonl"
 readonly INCIDENT_HEAD_FILE="${STATE}/incidents.jsonl.head"
 readonly BEHAVIOR_FILE="${STATE}/behavior-profiles.json"
 readonly RUNTIME_SETTINGS_FILE="${STATE}/runtime-settings.json"
+readonly L7_RUNTIME_DIR="/run/vgt-gedefense-l7"
+readonly L7_TMPFILES_CONFIG="/etc/tmpfiles.d/vgt-gedefense-l7.conf"
 readonly PUBLIC_PORT_DEFAULT="9843"
 readonly BACKEND_PORT="9844"
 readonly LOG_FILE="/var/log/vgt-gedefense-install.log"
@@ -332,6 +334,7 @@ create_password_record(){
 }
 ensure_user_and_dirs(){
   getent group gedefense >/dev/null 2>&1 || groupadd --system gedefense
+  getent group gedefense-l7 >/dev/null 2>&1 || groupadd --system gedefense-l7
   id gedefense >/dev/null 2>&1 || useradd --system --gid gedefense --home-dir "$STATE" --shell /usr/sbin/nologin gedefense
   install -d -o root -g root -m 0755 /opt /opt/vgt "$BASE" "$RELEASES"
   # The root core deliberately runs without CAP_DAC_OVERRIDE and with
@@ -340,12 +343,15 @@ ensure_user_and_dirs(){
   install -d -o gedefense -g gedefense -m 0710 "$STATE"
   install -d -o root -g gedefense -m 0700 "$QUARANTINE_DIR" "$QUARANTINE_OBJECT_DIR"
   install -d -o root -g gedefense -m 0750 "$CONFIG_DIR" "$TLS_DIR" "$SECRETS_DIR"
+  install -d -o gedefense -g gedefense-l7 -m 0750 "$L7_RUNTIME_DIR"
   [[ $(stat -c '%U:%G:%a' "$STATE") == 'gedefense:gedefense:710' ]] ||
     fail "Runtime-State-Rechte konnten nicht sicher gesetzt werden."
   [[ $(stat -c '%U:%G:%a' "$QUARANTINE_DIR") == 'root:gedefense:700' ]] ||
     fail "Quarantäne-Vault-Rechte konnten nicht sicher gesetzt werden."
   [[ $(stat -c '%U:%G:%a' "$QUARANTINE_OBJECT_DIR") == 'root:gedefense:700' ]] ||
     fail "Quarantäne-Objektrechte konnten nicht sicher gesetzt werden."
+  [[ $(stat -c '%U:%G:%a' "$L7_RUNTIME_DIR") == 'gedefense:gedefense-l7:750' ]] ||
+    fail "L7-Runtime-Rechte konnten nicht sicher gesetzt werden."
 }
 
 ensure_raw_key(){
@@ -486,13 +492,15 @@ PY
 stage_release(){
   local staging="${RELEASE}.staging.$$" stamp
   rm -rf -- "$staging"
-  install -d -o root -g root -m 0755 "$staging/bin" "$staging/libexec" "$staging/lib/gedefense" "$staging/share"
+  install -d -o root -g root -m 0755 "$staging/bin" "$staging/libexec" "$staging/lib/gedefense" "$staging/share" "$staging/share/integration/nginx"
   install -o root -g root -m 0755 "$PAYLOAD/bin/gedefense-control" "$staging/bin/gedefense-control"
   install -o root -g root -m 0755 "$PAYLOAD/bin/gedefense-access" "$staging/bin/gedefense-access"
   install -o root -g root -m 0755 "$BUILD_ROOT/rust/target/release/gedefense-core" "$staging/libexec/gedefense-core"
   install -o root -g root -m 0644 "$BUILD_ROOT/rust/target/bpfel-unknown-none/release/gedefense-ebpf" "$staging/lib/gedefense/gedefense-ebpf"
   install -o root -g root -m 0644 "$BUILD_ROOT/rust/Cargo.lock" "$staging/share/Cargo.lock"
   install -o root -g root -m 0644 "$PAYLOAD/share/README.md" "$staging/share/README.md"
+  install -o root -g root -m 0644 "$PAYLOAD/integration/nginx/gedefense-l7.conf.example" "$staging/share/integration/nginx/gedefense-l7.conf.example"
+  install -o root -g root -m 0644 "$PAYLOAD/integration/nginx/README.md" "$staging/share/integration/nginx/README.md"
   printf '%s\n' "$PRODUCT_VERSION" > "$staging/share/VERSION"
   (cd "$staging" && find . -type f -print0 | sort -z | xargs -0 sha256sum > share/SHA256SUMS)
   chmod 0644 "$staging/share/VERSION" "$staging/share/SHA256SUMS"
@@ -580,6 +588,9 @@ install_units(){
   install -o root -g root -m 0644 "$PAYLOAD/systemd/gedefense-bpffs.service" /etc/systemd/system/gedefense-bpffs.service
   sed "s#--interface=auto#--interface=${INTERFACE}#" "$PAYLOAD/systemd/gedefense-core.service" > /etc/systemd/system/gedefense-core.service
   install -o root -g root -m 0644 "$PAYLOAD/systemd/gedefense-control.service" /etc/systemd/system/gedefense-control.service
+  install -o root -g root -m 0644 "$PAYLOAD/tmpfiles/vgt-gedefense-l7.conf" "$L7_TMPFILES_CONFIG"
+  systemd-tmpfiles --create "$L7_TMPFILES_CONFIG"
+  [[ $(stat -c '%U:%G:%a' "$L7_RUNTIME_DIR") == 'gedefense:gedefense-l7:750' ]] || fail "L7-Runtime-Provisionierung ist inkonsistent."
   sed -e "s#@RELEASE@#/opt/vgt/gedefense/current#g" -e "s#@PUBLIC_PORT@#${PUBLIC_PORT}#g" -e "s#@PUBLIC_HOST@#${PUBLIC_HOST}:${PUBLIC_PORT}#g" "$PAYLOAD/systemd/gedefense-access.service.in" > /etc/systemd/system/gedefense-access.service
   chmod 0644 /etc/systemd/system/gedefense-core.service /etc/systemd/system/gedefense-access.service
 }
@@ -622,7 +633,7 @@ activate_release(){
   local token status
   token=$(tr -d '\r\n' < "$TOKEN_FILE")
   status=$(curl -fsS -H "Authorization: Bearer $token" http://127.0.0.1:${BACKEND_PORT}/api/v1/status)
-  printf '%s\n' "$status" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["core_connected"] is True, d; assert d["core_mode"] in ("native","generic"), d; print("authenticated core/xdp status:",d["core_mode"])' | tee -a "$LOG_FILE"
+  printf '%s\n' "$status" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["core_connected"] is True, d; assert d["core_mode"] in ("native","generic","native+bpf-lsm-cell","generic+bpf-lsm-cell"), d; print("authenticated core/xdp status:",d["core_mode"])' | tee -a "$LOG_FILE"
   "$CURRENT/bin/gedefense-access" --listen="127.0.0.1:0" --backend="http://127.0.0.1:${BACKEND_PORT}" --public-host="${PUBLIC_HOST}:${PUBLIC_PORT}" --password-file="$PASSWORD_FILE" --session-key-file="$SESSION_KEY_FILE" --backend-token-file="$TOKEN_FILE" --tls-cert="$CERT_FILE" --tls-key="$TLS_KEY_FILE" --self-test-backend | tee -a "$LOG_FILE"
   systemctl start gedefense-access.service
   for _ in $(seq 1 40); do curl -kfsS --resolve "${PUBLIC_HOST}:${PUBLIC_PORT}:127.0.0.1" "https://${PUBLIC_HOST}:${PUBLIC_PORT}/gateway/livez" >/dev/null 2>&1 && break; sleep .5; done

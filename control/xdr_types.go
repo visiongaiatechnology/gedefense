@@ -3,30 +3,35 @@ package main
 import "time"
 
 type XDRIncident struct {
-	ID             string    `json:"id"`
-	Time           time.Time `json:"time"`
-	Severity       string    `json:"severity"`
-	Score          int       `json:"score"`
-	ResponseScore  int       `json:"response_score,omitempty"`
-	KillSignals    int       `json:"kill_signals,omitempty"`
-	PID            int       `json:"pid,omitempty"`
-	PPID           int       `json:"ppid,omitempty"`
-	StartTicks     uint64    `json:"start_ticks,omitempty"`
-	UID            uint32    `json:"uid,omitempty"`
-	CellCgroupID   uint64    `json:"cell_cgroup_id,omitempty"`
-	SocketFamily   int32     `json:"socket_family,omitempty"`
-	Process        string    `json:"process,omitempty"`
-	Executable     string    `json:"executable,omitempty"`
-	Parent         string    `json:"parent,omitempty"`
-	Remote         string    `json:"remote,omitempty"`
-	CommandPreview string    `json:"command_preview,omitempty"`
-	CommandSHA256  string    `json:"command_sha256,omitempty"`
-	RuleIDs        []string  `json:"rule_ids"`
-	Categories     []string  `json:"categories"`
-	Summary        string    `json:"summary"`
-	Decision       string    `json:"decision"`
-	Action         string    `json:"action"`
-	Outcome        string    `json:"outcome"`
+	ID               string            `json:"id"`
+	Time             time.Time         `json:"time"`
+	Severity         string            `json:"severity"`
+	Score            int               `json:"score"`
+	ResponseScore    int               `json:"response_score,omitempty"`
+	KillSignals      int               `json:"kill_signals,omitempty"`
+	PID              int               `json:"pid,omitempty"`
+	PPID             int               `json:"ppid,omitempty"`
+	StartTicks       uint64            `json:"start_ticks,omitempty"`
+	UID              uint32            `json:"uid,omitempty"`
+	CellCgroupID     uint64            `json:"cell_cgroup_id,omitempty"`
+	SocketFamily     int32             `json:"socket_family,omitempty"`
+	Process          string            `json:"process,omitempty"`
+	Executable       string            `json:"executable,omitempty"`
+	Parent           string            `json:"parent,omitempty"`
+	Remote           string            `json:"remote,omitempty"`
+	CommandPreview   string            `json:"command_preview,omitempty"`
+	CommandSHA256    string            `json:"command_sha256,omitempty"`
+	RequestID        string            `json:"request_id,omitempty"`
+	HTTPMethod       string            `json:"http_method,omitempty"`
+	HTTPHost         string            `json:"http_host,omitempty"`
+	HTTPPath         string            `json:"http_path,omitempty"`
+	BodySHA256       string            `json:"body_sha256,omitempty"`
+	RuleIDs          []string          `json:"rule_ids"`
+	Categories       []string          `json:"categories"`
+	Summary          string            `json:"summary"`
+	Decision         string            `json:"decision"`
+	Action           string            `json:"action"`
+	Outcome          string            `json:"outcome"`
 	Acknowledged     bool              `json:"acknowledged"`
 	RecordHash       string            `json:"record_hash,omitempty"`
 	ExecutionChainID string            `json:"execution_chain_id,omitempty"`
@@ -94,6 +99,7 @@ type RuleMatch struct {
 	Summary         string
 	KillEligible    bool
 	OperatorDefined bool
+	AlertOnly       bool
 	Remote          string
 }
 

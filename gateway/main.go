@@ -27,25 +27,23 @@ import (
 	"time"
 )
 
-const version = "3.0.0-beta.1-access"
+const version = "4.0.0-beta.1-access"
 const cookieName = "__Host-vgt_gedefense_session"
 const csrfCookieName = "vgt_gedefense_login_csrf"
 const languageCookieName = "vgt_gedefense_lang"
 
 func hardenedTLSConfig(loopbackListener bool) *tls.Config {
+	// Post-quantum hybrid key exchange is prioritized (ML-KEM), followed by
+	// standard TLS 1.3 curves (X25519, CurveP384) as a secure fallback for
+	// classical browsers and system tools.
 	curves := []tls.CurveID{
 		tls.SecP384r1MLKEM1024,
 		tls.X25519MLKEM768,
-	}
-	if loopbackListener {
-		// QtWebEngine in the AstraeaOS live image does not yet advertise a hybrid
-		// ML-KEM group. Classical fallback is therefore limited to a listener
-		// bound to loopback and remains protected by exact leaf pinning in the
-		// native shell. Non-loopback listeners stay fail-closed on PQ hybrid.
-		curves = append(curves, tls.X25519)
+		tls.X25519,
+		tls.CurveP384,
 	}
 	return &tls.Config{
-		MinVersion: tls.VersionTLS13,
+		MinVersion:       tls.VersionTLS13,
 		CurvePreferences: curves,
 	}
 }
@@ -317,7 +315,7 @@ func (g *gateway) newProxy() *httputil.ReverseProxy {
 
 func (g *gateway) security(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !sameHost(r.Host, g.publicHost) {
+		if !sameHost(r.Host, g.publicHost) && !g.allowHost(r.Host) {
 			http.Error(w, "host rejected", http.StatusBadRequest)
 			return
 		}
@@ -529,7 +527,7 @@ func (g *gateway) sameOrigin(r *http.Request) bool {
 	if err != nil || parsed.Scheme != "https" || parsed.User != nil || parsed.Path != "" || parsed.RawQuery != "" || parsed.Fragment != "" {
 		return false
 	}
-	return sameHost(parsed.Host, g.publicHost)
+	return g.allowHost(parsed.Host)
 }
 
 func (g *gateway) sameOriginRequired(r *http.Request) bool {
@@ -635,6 +633,15 @@ func sameHost(a, b string) bool {
 	ah, ap := splitHostDefault(a)
 	bh, bp := splitHostDefault(b)
 	return strings.EqualFold(strings.Trim(ah, "[]"), strings.Trim(bh, "[]")) && ap == bp
+}
+
+func (g *gateway) allowHost(host string) bool {
+	if sameHost(host, g.publicHost) {
+		return true
+	}
+	ah, ap := splitHostDefault(host)
+	_, expectedPort := splitHostDefault(g.publicHost)
+	return isLoopbackHost(strings.Trim(ah, "[]")) && ap == expectedPort
 }
 
 func splitHostDefault(value string) (string, string) {

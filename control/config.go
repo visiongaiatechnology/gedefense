@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -19,6 +20,7 @@ type Config struct {
 	Policy    PolicyConfig
 	Feeds     FeedConfig
 	XDR       XDRConfig
+	L7        L7Config
 	Release   ReleaseConfig
 	Runtime   RuntimeConfig
 	Cells     CellsConfig
@@ -64,6 +66,45 @@ type PolicyConfig struct {
 	PublicKeyFile  string
 	StorageKeyFile string
 	RequireSigned  bool
+}
+
+type L7Config struct {
+	Enabled                      bool
+	Mode                         string
+	Socket                       string
+	SocketGroup                  string
+	RequestTimeoutMillis         int
+	MaxConcurrent                int
+	MaxEnvelopeBytes             int
+	MaxBodyBytes                 int
+	MaxURIBytes                  int
+	MaxHeaderBytes               int
+	MaxHeaders                   int
+	MaxValueBytes                int
+	MaxInspectionBytes           int
+	MaxDecodedValues             int
+	MaxDecodeDepth               int
+	MaxJSONDepth                 int
+	MaxFormFields                int
+	MaxMultipartParts            int
+	MaxUploadBytes               int
+	AlertScore                   int
+	BlockScore                   int
+	ClientRatePerMinute          int
+	ClientRateBurst              int
+	SensitiveRatePerMinute       int
+	SensitiveRateBurst           int
+	SensitiveGlobalRatePerMinute int
+	SensitiveGlobalRateBurst     int
+	MaxTrackedClients            int
+	SensitivePaths               []string
+	RequirePeerCredentials       bool
+	AllowedPeerUIDs              []uint32
+	AllowedPeerGIDs              []uint32
+	InlineEnabled                bool
+	InlineSocket                 string
+	InlineUpstream               string
+	InlineMaxResponseBytes       int
 }
 
 type XDRConfig struct {
@@ -149,6 +190,17 @@ func defaultConfig() Config {
 			StateFile: "/var/lib/vgt/gedefense/policy.json", SigningKeyFile: "/var/lib/vgt/gedefense/policy.ed25519",
 			PublicKeyFile: "/var/lib/vgt/gedefense/policy.ed25519.pub", StorageKeyFile: "/etc/vgt/gedefense/secrets/storage-master.key", RequireSigned: true,
 		},
+		L7: L7Config{
+			Enabled: false, Mode: "observe", Socket: "/run/vgt-gedefense-l7/inspect.sock", SocketGroup: "", RequestTimeoutMillis: 750,
+			MaxConcurrent: 16, MaxEnvelopeBytes: 3 << 20, MaxBodyBytes: 2 << 20, MaxURIBytes: 16 << 10,
+			MaxHeaderBytes: 64 << 10, MaxHeaders: 128, MaxValueBytes: 16 << 10, MaxInspectionBytes: 4 << 20, MaxDecodedValues: 4096,
+			MaxDecodeDepth: 4, MaxJSONDepth: 32, MaxFormFields: 512, MaxMultipartParts: 64, MaxUploadBytes: 2 << 20,
+			AlertScore: 40, BlockScore: 90, ClientRatePerMinute: 600, ClientRateBurst: 100,
+			SensitiveRatePerMinute: 30, SensitiveRateBurst: 10, SensitiveGlobalRatePerMinute: 300, SensitiveGlobalRateBurst: 50, MaxTrackedClients: 65536,
+			SensitivePaths: []string{"/wp-login.php", "/xmlrpc.php", "/login", "/signin", "/api/login"},
+			InlineEnabled:  false, InlineSocket: "/run/vgt-gedefense-l7/edge.sock", InlineUpstream: "http://127.0.0.1:8080",
+			InlineMaxResponseBytes: 64 << 10,
+		},
 		XDR: XDRConfig{
 			Enabled: true, Mode: "observe", ScanIntervalMillis: 750, NetworkIntervalSeconds: 3,
 			IntegrityIntervalSeconds: 3, AlertScore: 40, ContainScore: 80, KillScore: 120,
@@ -206,7 +258,7 @@ func loadConfig(path string) (Config, error) {
 		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
 			section = strings.TrimSpace(line[1 : len(line)-1])
 			switch section {
-			case "node", "dashboard", "core", "defense", "policy", "feeds", "xdr", "release", "runtime", "cells":
+			case "node", "dashboard", "core", "defense", "policy", "feeds", "xdr", "l7", "release", "runtime", "cells":
 			default:
 				return cfg, fmt.Errorf("line %d: unknown section %q", lineNo, section)
 			}
@@ -224,6 +276,10 @@ func loadConfig(path string) (Config, error) {
 	if err := scanner.Err(); err != nil {
 		return cfg, err
 	}
+	if cfg.Defense.DPIEnabled {
+		cfg.L7.Enabled = true
+	}
+	cfg.Defense.DPIEnabled = cfg.L7.Enabled
 	if err := validateConfig(&cfg); err != nil {
 		return cfg, err
 	}
@@ -399,6 +455,160 @@ func assignConfig(cfg *Config, section, key, raw string) error {
 	case "policy.require_signed":
 		v, e := parseBool(raw)
 		cfg.Policy.RequireSigned = v
+		return e
+	case "l7.enabled":
+		v, e := parseBool(raw)
+		cfg.L7.Enabled = v
+		return e
+	case "l7.mode":
+		v, e := str()
+		cfg.L7.Mode = v
+		return e
+	case "l7.socket":
+		v, e := str()
+		cfg.L7.Socket = v
+		return e
+	case "l7.socket_group":
+		v, e := str()
+		cfg.L7.SocketGroup = v
+		return e
+	case "l7.request_timeout_millis":
+		v, e := parseInt(raw, 50, 10000)
+		cfg.L7.RequestTimeoutMillis = v
+		return e
+	case "l7.max_concurrent":
+		v, e := parseInt(raw, 1, 512)
+		cfg.L7.MaxConcurrent = v
+		return e
+	case "l7.max_envelope_bytes":
+		v, e := parseInt(raw, 65536, 32<<20)
+		cfg.L7.MaxEnvelopeBytes = v
+		return e
+	case "l7.max_body_bytes":
+		v, e := parseInt(raw, 1024, 16<<20)
+		cfg.L7.MaxBodyBytes = v
+		return e
+	case "l7.max_uri_bytes":
+		v, e := parseInt(raw, 1024, 1<<20)
+		cfg.L7.MaxURIBytes = v
+		return e
+	case "l7.max_header_bytes":
+		v, e := parseInt(raw, 4096, 1<<20)
+		cfg.L7.MaxHeaderBytes = v
+		return e
+	case "l7.max_headers":
+		v, e := parseInt(raw, 8, 1024)
+		cfg.L7.MaxHeaders = v
+		return e
+	case "l7.max_value_bytes":
+		v, e := parseInt(raw, 1024, 1<<20)
+		cfg.L7.MaxValueBytes = v
+		return e
+	case "l7.max_inspection_bytes":
+		v, e := parseInt(raw, 64<<10, 64<<20)
+		cfg.L7.MaxInspectionBytes = v
+		return e
+	case "l7.max_decoded_values":
+		v, e := parseInt(raw, 16, 8192)
+		cfg.L7.MaxDecodedValues = v
+		return e
+	case "l7.max_decode_depth":
+		v, e := parseInt(raw, 1, 8)
+		cfg.L7.MaxDecodeDepth = v
+		return e
+	case "l7.max_json_depth":
+		v, e := parseInt(raw, 4, 128)
+		cfg.L7.MaxJSONDepth = v
+		return e
+	case "l7.max_form_fields":
+		v, e := parseInt(raw, 16, 8192)
+		cfg.L7.MaxFormFields = v
+		return e
+	case "l7.max_multipart_parts":
+		v, e := parseInt(raw, 1, 1024)
+		cfg.L7.MaxMultipartParts = v
+		return e
+	case "l7.max_upload_bytes":
+		v, e := parseInt(raw, 1024, 16<<20)
+		cfg.L7.MaxUploadBytes = v
+		return e
+	case "l7.alert_score":
+		v, e := parseInt(raw, 1, 249)
+		cfg.L7.AlertScore = v
+		return e
+	case "l7.block_score":
+		v, e := parseInt(raw, 2, 250)
+		cfg.L7.BlockScore = v
+		return e
+	case "l7.client_rate_per_minute":
+		v, e := parseInt(raw, 1, 1000000)
+		cfg.L7.ClientRatePerMinute = v
+		return e
+	case "l7.client_rate_burst":
+		v, e := parseInt(raw, 1, 100000)
+		cfg.L7.ClientRateBurst = v
+		return e
+	case "l7.sensitive_rate_per_minute":
+		v, e := parseInt(raw, 1, 100000)
+		cfg.L7.SensitiveRatePerMinute = v
+		return e
+	case "l7.sensitive_rate_burst":
+		v, e := parseInt(raw, 1, 10000)
+		cfg.L7.SensitiveRateBurst = v
+		return e
+	case "l7.sensitive_global_rate_per_minute":
+		v, e := parseInt(raw, 1, 1000000)
+		cfg.L7.SensitiveGlobalRatePerMinute = v
+		return e
+	case "l7.sensitive_global_rate_burst":
+		v, e := parseInt(raw, 1, 100000)
+		cfg.L7.SensitiveGlobalRateBurst = v
+		return e
+	case "l7.max_tracked_clients":
+		v, e := parseInt(raw, 1024, 1000000)
+		cfg.L7.MaxTrackedClients = v
+		return e
+	case "l7.sensitive_paths":
+		v, e := str()
+		if e == nil {
+			cfg.L7.SensitivePaths = splitCSV(v)
+		}
+		return e
+	case "l7.require_peer_credentials":
+		v, e := parseBool(raw)
+		cfg.L7.RequirePeerCredentials = v
+		return e
+	case "l7.allowed_peer_uids":
+		v, e := str()
+		if e != nil {
+			return e
+		}
+		ids, e := parseUint32CSV(v)
+		cfg.L7.AllowedPeerUIDs = ids
+		return e
+	case "l7.allowed_peer_gids":
+		v, e := str()
+		if e != nil {
+			return e
+		}
+		ids, e := parseUint32CSV(v)
+		cfg.L7.AllowedPeerGIDs = ids
+		return e
+	case "l7.inline_enabled":
+		v, e := parseBool(raw)
+		cfg.L7.InlineEnabled = v
+		return e
+	case "l7.inline_socket":
+		v, e := str()
+		cfg.L7.InlineSocket = v
+		return e
+	case "l7.inline_upstream":
+		v, e := str()
+		cfg.L7.InlineUpstream = v
+		return e
+	case "l7.inline_max_response_bytes":
+		v, e := parseInt(raw, 4096, 1<<20)
+		cfg.L7.InlineMaxResponseBytes = v
 		return e
 	case "xdr.enabled":
 		v, e := parseBool(raw)
@@ -604,6 +814,25 @@ func assignConfig(cfg *Config, section, key, raw string) error {
 	}
 }
 
+func parseUint32CSV(v string) ([]uint32, error) {
+	parts := splitCSV(v)
+	out := make([]uint32, 0, len(parts))
+	seen := make(map[uint32]struct{}, len(parts))
+	for _, part := range parts {
+		n, err := strconv.ParseUint(part, 10, 32)
+		if err != nil {
+			return nil, fmt.Errorf("invalid numeric identity %q", part)
+		}
+		id := uint32(n)
+		if _, exists := seen[id]; exists {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	return out, nil
+}
+
 func splitCSV(v string) []string {
 	var out []string
 	for _, part := range strings.Split(v, ",") {
@@ -624,6 +853,63 @@ func validateAbsolutePath(label, path string, allowEmpty bool) error {
 	return nil
 }
 
+func isSafeUnixIdentityName(value string) bool {
+	if len(value) < 1 || len(value) > 32 {
+		return false
+	}
+	for i := 0; i < len(value); i++ {
+		b := value[i]
+		if (b >= 'a' && b <= 'z') || (i > 0 && b >= '0' && b <= '9') || (i > 0 && (b == '_' || b == '-')) {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func validateL7InlineUpstream(raw string) error {
+	_, _, _, err := parseL7InlineUpstream(raw)
+	return err
+}
+
+func parseL7InlineUpstream(raw string) (*url.URL, string, string, error) {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return nil, "", "", errors.New("l7.inline_upstream must not be empty")
+	}
+	u, err := url.Parse(value)
+	if err != nil || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+		return nil, "", "", errors.New("l7.inline_upstream is malformed")
+	}
+	if u.Scheme == "unix" {
+		if u.Host != "" || u.Path == "" || !filepath.IsAbs(u.Path) || filepath.Clean(u.Path) != u.Path || len(u.Path) > 100 {
+			return nil, "", "", errors.New("l7.inline_upstream unix socket must be a clean absolute path of at most 100 bytes")
+		}
+		target, parseErr := url.Parse("http://gedefense-inline-upstream")
+		if parseErr != nil {
+			return nil, "", "", fmt.Errorf("construct l7 inline unix target: %w", parseErr)
+		}
+		return target, "unix", u.Path, nil
+	}
+	if u.Scheme != "http" || u.Hostname() == "" || (u.Path != "" && u.Path != "/") {
+		return nil, "", "", errors.New("l7.inline_upstream must be unix:///path.sock or a static loopback http URL")
+	}
+	host := u.Hostname()
+	ip := net.ParseIP(host)
+	if ip == nil || !ip.IsLoopback() {
+		return nil, "", "", errors.New("l7.inline_upstream TCP target must be an explicit loopback IP literal")
+	}
+	port := u.Port()
+	if port == "" {
+		return nil, "", "", errors.New("l7.inline_upstream TCP target requires an explicit port")
+	}
+	parsedPort, err := strconv.Atoi(port)
+	if err != nil || parsedPort < 1 || parsedPort > 65535 {
+		return nil, "", "", errors.New("l7.inline_upstream has an invalid port")
+	}
+	return u, "tcp", net.JoinHostPort(host, port), nil
+}
+
 func validateConfig(cfg *Config) error {
 	if len(cfg.Node.Name) < 1 || len(cfg.Node.Name) > 64 {
 		return errors.New("node.name must contain 1-64 characters")
@@ -637,6 +923,63 @@ func validateConfig(cfg *Config) error {
 	if cfg.XDR.Mode != "observe" && cfg.XDR.Mode != "contain" && cfg.XDR.Mode != "enforce" {
 		return errors.New("xdr.mode must be observe, contain, or enforce")
 	}
+	if cfg.L7.Mode != "observe" && cfg.L7.Mode != "block" {
+		return errors.New("l7.mode must be observe or block")
+	}
+	if cfg.L7.AlertScore >= cfg.L7.BlockScore {
+		return errors.New("l7 scores must satisfy alert < block")
+	}
+	if cfg.L7.MaxUploadBytes > cfg.L7.MaxBodyBytes {
+		return errors.New("l7.max_upload_bytes must not exceed l7.max_body_bytes")
+	}
+	requiredInspection := cfg.L7.MaxBodyBytes + cfg.L7.MaxHeaderBytes + (2 * cfg.L7.MaxURIBytes) + (64 << 10)
+	if cfg.L7.MaxInspectionBytes < requiredInspection {
+		return fmt.Errorf("l7.max_inspection_bytes must be at least %d for the configured body/header/URI budgets", requiredInspection)
+	}
+	requiredEnvelope := ((cfg.L7.MaxBodyBytes + 2) / 3 * 4) + cfg.L7.MaxHeaderBytes + (64 << 10)
+	if cfg.L7.MaxEnvelopeBytes < requiredEnvelope {
+		return fmt.Errorf("l7.max_envelope_bytes must be at least %d for the configured body/header budgets", requiredEnvelope)
+	}
+	if int64(cfg.L7.MaxEnvelopeBytes)*int64(cfg.L7.MaxConcurrent) > 256<<20 {
+		return errors.New("l7 concurrent envelope memory budget exceeds 256 MiB")
+	}
+	if int64(cfg.L7.MaxInspectionBytes)*int64(cfg.L7.MaxConcurrent) > 256<<20 {
+		return errors.New("l7 concurrent inspection memory budget exceeds 256 MiB")
+	}
+	perInspectionBudget := int64(cfg.L7.MaxEnvelopeBytes) + int64(cfg.L7.MaxBodyBytes) + int64(cfg.L7.MaxInspectionBytes) + int64(cfg.L7.InlineMaxResponseBytes)
+	if perInspectionBudget*int64(cfg.L7.MaxConcurrent) > 384<<20 {
+		return errors.New("l7 aggregate concurrent memory budget exceeds 384 MiB")
+	}
+	if cfg.L7.RequirePeerCredentials && len(cfg.L7.AllowedPeerUIDs) == 0 && len(cfg.L7.AllowedPeerGIDs) == 0 {
+		return errors.New("l7 peer credential enforcement requires at least one allowed UID or GID")
+	}
+	if cfg.L7.SocketGroup != "" && !isSafeUnixIdentityName(cfg.L7.SocketGroup) {
+		return errors.New("l7.socket_group contains unsupported characters")
+	}
+	if cfg.L7.InlineEnabled {
+		if !cfg.L7.Enabled {
+			return errors.New("l7.inline_enabled requires l7.enabled")
+		}
+		if cfg.L7.InlineSocket == cfg.L7.Socket {
+			return errors.New("l7.inline_socket must differ from l7.socket")
+		}
+		if err := validateL7InlineUpstream(cfg.L7.InlineUpstream); err != nil {
+			return err
+		}
+	}
+	seenSensitivePaths := make(map[string]struct{}, len(cfg.L7.SensitivePaths))
+	normalizedSensitivePaths := make([]string, 0, len(cfg.L7.SensitivePaths))
+	for _, path := range cfg.L7.SensitivePaths {
+		if path == "" || path[0] != '/' || strings.ContainsAny(path, "?#\x00") || len(path) > cfg.L7.MaxURIBytes {
+			return fmt.Errorf("invalid l7 sensitive path %q", path)
+		}
+		if _, exists := seenSensitivePaths[path]; exists {
+			continue
+		}
+		seenSensitivePaths[path] = struct{}{}
+		normalizedSensitivePaths = append(normalizedSensitivePaths, path)
+	}
+	cfg.L7.SensitivePaths = normalizedSensitivePaths
 	if !(cfg.XDR.AlertScore < cfg.XDR.ContainScore && cfg.XDR.ContainScore < cfg.XDR.KillScore) {
 		return errors.New("xdr scores must satisfy alert < contain < kill")
 	}
@@ -688,6 +1031,8 @@ func validateConfig(cfg *Config) error {
 		"dashboard.token_file":        cfg.Dashboard.TokenFile,
 		"core.socket":                 cfg.Core.Socket,
 		"core.auth_key_file":          cfg.Core.AuthKeyFile,
+		"l7.socket":                   cfg.L7.Socket,
+		"l7.inline_socket":            cfg.L7.InlineSocket,
 		"policy.state_file":           cfg.Policy.StateFile,
 		"policy.signing_key_file":     cfg.Policy.SigningKeyFile,
 		"policy.public_key_file":      cfg.Policy.PublicKeyFile,

@@ -1,8 +1,8 @@
-# Validation — GeDefense Beta v3 (3.0.0-beta.1)
+# Validation — GeDefense Beta v4 (4.0.0-beta.1)
 
 ## Scope
 
-Beta v3 validates the branded multilingual interface, universal Linux
+Beta v4 validates the branded multilingual interface, universal Linux
 integration, Argon2id gateway authentication, AES-256-GCM operational storage,
 browser/backend hardening and the retained full-stack Rust/XDP activation path.
 

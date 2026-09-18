@@ -1,4 +1,4 @@
-name: GeDefense Beta v3 CI
+name: GeDefense Beta v4 CI
 
 on:
   push:
@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 env:
-  PRODUCT_VERSION: 3.0.0-beta.1
+  PRODUCT_VERSION: 4.0.0-beta.1
 
 jobs:
   go-frontend-security:
@@ -19,7 +19,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
         with:
-          go-version: '1.23.2'
+          go-version: '1.26.8'
           cache-dependency-path: |
             control/go.mod
             gateway/go.mod
@@ -28,6 +28,8 @@ jobs:
           node-version: '22.16.0'
       - name: Install native dependencies
         run: sudo apt-get update && sudo apt-get install -y libargon2-1 libargon2-dev python3
+      - name: Verify pinned release toolchains
+        run: bash scripts/verify-release-toolchains.sh
       - name: Unit, vet, frontend and static security gates
         run: make test
       - name: Race detector
@@ -101,7 +103,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
         with:
-          go-version: '1.23.2'
+          go-version: '1.26.8'
           cache-dependency-path: |
             control/go.mod
             gateway/go.mod
@@ -114,10 +116,10 @@ jobs:
         run: bash ./scripts/package-artifacts.sh ./release
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: gedefense-beta-v3-${{ env.PRODUCT_VERSION }}
+          name: gedefense-beta-v4-${{ env.PRODUCT_VERSION }}
           path: |
-            release/VGT_GeDefense_Beta_v3_3.0.0-beta.1_Source.zip
-            release/VGT_GeDefense_Beta_v3_3.0.0-beta.1_Source.zip.sha256
-            release/VGT_GeDefense_Beta_v3_3.0.0-beta.1_OneClick.run
-            release/VGT_GeDefense_Beta_v3_3.0.0-beta.1_OneClick.run.sha256
+            release/VGT_GeDefense_Beta_v4_4.0.0-beta.1_Source.zip
+            release/VGT_GeDefense_Beta_v4_4.0.0-beta.1_Source.zip.sha256
+            release/VGT_GeDefense_Beta_v4_4.0.0-beta.1_OneClick.run
+            release/VGT_GeDefense_Beta_v4_4.0.0-beta.1_OneClick.run.sha256
           if-no-files-found: error

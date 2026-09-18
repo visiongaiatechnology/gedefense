@@ -55,6 +55,7 @@ type XDREngine struct {
 	styx            *StyxEngine
 	morpheus        *MorpheusRASP
 	airlock         *AirlockInspector
+	l7Recent        *L7CorrelationStore
 	chronos         *ChronosScanner
 	degraded        bool
 	degradeWhy      string
@@ -119,6 +120,7 @@ func NewXDREngine(cfg Config, state *State, core *CoreClient, feeds *FeedManager
 
 	e.platformCaps = DetectPlatformCapabilities("/")
 	e.correlator = NewIncidentCorrelator(30 * time.Minute)
+	e.l7Recent = NewL7CorrelationStore(30*time.Second, 4096)
 	respCfg := DefaultResponseConfig()
 	e.responses = NewResponseEngine(respCfg, core, func(action, target, details string, ts time.Time) error {
 		if state.EvidenceLedger() != nil {
@@ -858,6 +860,9 @@ func (e *XDREngine) evaluate(p ProcessSample, conns []NetConnection, source stri
 		if len(extra) > 0 {
 			e.anomalies.Add(uint64(len(extra)))
 		}
+	}
+	if e.l7Recent != nil {
+		extra = append(extra, e.l7Recent.Match(conns, time.Now().UTC())...)
 	}
 	var index *ThreatIndex
 	if runtime.FeedsEnabled && e.feeds != nil {

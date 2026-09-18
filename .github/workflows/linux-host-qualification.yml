@@ -17,7 +17,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - name: Qualify concrete kernel, NIC and installed Beta v3
+      - name: Qualify concrete kernel, NIC and installed Beta v4
         env:
           GEDEFENSE_TEST_INTERFACE: ${{ inputs.interface }}
         run: sudo bash ./scripts/validate-installed-linux-host.sh "$GEDEFENSE_TEST_INTERFACE"

@@ -8,31 +8,25 @@ import (
 	"testing"
 )
 
-func TestHardenedTLSConfigAllowsPinnedLoopbackCompatibility(t *testing.T) {
-	config := hardenedTLSConfig(true)
-	if config.MinVersion != tls.VersionTLS13 {
-		t.Fatalf("minimum TLS version=%x", config.MinVersion)
+func TestHardenedTLSConfigPrioritizesPostQuantumWithClassicalFallback(t *testing.T) {
+	want := []tls.CurveID{
+		tls.SecP384r1MLKEM1024,
+		tls.X25519MLKEM768,
+		tls.X25519,
+		tls.CurveP384,
 	}
-	want := []tls.CurveID{tls.SecP384r1MLKEM1024, tls.X25519MLKEM768, tls.X25519}
-	if len(config.CurvePreferences) != len(want) {
-		t.Fatalf("curve count=%d", len(config.CurvePreferences))
-	}
-	for i := range want {
-		if config.CurvePreferences[i] != want[i] {
-			t.Fatalf("curve[%d]=%v want %v", i, config.CurvePreferences[i], want[i])
+	for _, loopback := range []bool{true, false} {
+		config := hardenedTLSConfig(loopback)
+		if config.MinVersion != tls.VersionTLS13 {
+			t.Fatalf("minimum TLS version=%x", config.MinVersion)
 		}
-	}
-}
-
-func TestHardenedTLSConfigRejectsClassicalRemoteFallback(t *testing.T) {
-	config := hardenedTLSConfig(false)
-	want := []tls.CurveID{tls.SecP384r1MLKEM1024, tls.X25519MLKEM768}
-	if len(config.CurvePreferences) != len(want) {
-		t.Fatalf("curve count=%d", len(config.CurvePreferences))
-	}
-	for i := range want {
-		if config.CurvePreferences[i] != want[i] {
-			t.Fatalf("curve[%d]=%v want %v", i, config.CurvePreferences[i], want[i])
+		if len(config.CurvePreferences) != len(want) {
+			t.Fatalf("loopback=%v curve count=%d", loopback, len(config.CurvePreferences))
+		}
+		for i := range want {
+			if config.CurvePreferences[i] != want[i] {
+				t.Fatalf("loopback=%v curve[%d]=%v want %v", loopback, i, config.CurvePreferences[i], want[i])
+			}
 		}
 	}
 }

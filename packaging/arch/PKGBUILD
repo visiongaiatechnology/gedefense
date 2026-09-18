@@ -3,7 +3,7 @@
 
 pkgname=gedefense
 pkgver=3.0.0_beta.1
-_release=3.0.0-beta.1
+_release=4.0.0-beta.1
 pkgrel=19
 pkgdesc='GeDefense Linux security platform: XDP, XDR, evidence and response plane'
 arch=('x86_64')
@@ -85,6 +85,11 @@ package() {
     "${release_root}/share/SECURITY.md"
   install -Dm644 "${_source_root}/TOOLCHAINS.lock" \
     "${release_root}/share/TOOLCHAINS.lock"
+
+  install -Dm644 "${_source_root}/integration/nginx/gedefense-l7.conf.example" \
+    "${release_root}/share/integration/nginx/gedefense-l7.conf.example"
+  install -Dm644 "${_source_root}/integration/nginx/README.md" \
+    "${release_root}/share/integration/nginx/README.md"
 
   install -d "${pkgdir}/opt/vgt/gedefense"
   ln -s "releases/${_release}" "${pkgdir}/opt/vgt/gedefense/current"

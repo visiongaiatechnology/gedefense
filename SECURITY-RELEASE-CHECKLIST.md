@@ -1,4 +1,4 @@
-# Security Release Checklist — 1.0.0-beta.5
+# Security Release Checklist — 4.0.0-beta.1
 
 - [x] Go control and gateway tests pass.
 - [x] Go race detector and vet pass.
@@ -12,6 +12,15 @@
 - [x] Enforce requires management allowlist and target-host core health.
 - [x] Startup and Emergency Stop require authoritative blocklist clearing, authenticated `VERIFY_EMPTY` and signed Observe persistence.
 - [x] Operator RE2 rules are bounded, revision-gated and excluded from active-response scoring.
+- [x] Native L7 production code introduces no third-party Go modules or auxiliary scripting runtime.
+- [x] L7 inspection and inline entry points share one global admission/memory budget before body allocation.
+- [x] HTTP normalization has explicit URI, header, body, form, multipart, JSON, decode and candidate budgets.
+- [x] Authentication secrets are counted against input budgets but never retained in normalized L7 state or evidence.
+- [x] L7 policy/rate decisions use canonical host/routes while forensic evidence preserves the original request path.
+- [x] Inline L7 upstreams are static local loopback or Unix-socket targets; request-controlled routing is impossible.
+- [x] Response inspection preserves exact wire bytes and emits bounded findings only.
+- [x] L7-only XDR evidence is alert-only and cannot independently increase destructive response authority.
+- [x] Dedicated L7 unit, race, fuzz and static security gates are present in the release pipeline.
 - [x] Rust dependencies are committed in `Cargo.lock` and every release build uses `--locked`.
 - [x] One-click activation rolls back on build, verifier, IPC, API or gateway failure.
 - [ ] Wider external kernel/NIC beta matrix.
