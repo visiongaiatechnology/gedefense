@@ -59,6 +59,8 @@ type XDREngine struct {
 	chronos         *ChronosScanner
 	degraded        bool
 	degradeWhy      string
+	degradeCauses   map[string]string
+	recoveryGate    chan struct{}
 	mu              sync.RWMutex
 	highJobs        chan evaluationJob
 	normalJobs      chan evaluationJob
@@ -97,15 +99,15 @@ func NewXDREngine(cfg Config, state *State, core *CoreClient, feeds *FeedManager
 		cfg: cfg, state: state, core: core, feeds: feeds, policy: policy, settings: settings, rules: NewXDRRuleEngine(), baseline: baseline,
 		behavior: behavior, logger: logger, selfPID: os.Getpid(), seen: map[string]struct{}{}, dedupe: map[string]time.Time{},
 		protected: map[string]protectedObject{}, cellPolicies: map[uint64]uint8{},
+		degradeCauses: map[string]string{}, recoveryGate: make(chan struct{}, 1),
 		highJobs: make(chan evaluationJob, highCap), normalJobs: make(chan evaluationJob, normalCap),
 	}
+	e.recoveryGate <- struct{}{}
 	if err := logger.Healthy(); err != nil {
-		e.degraded = true
-		e.degradeWhy = "incident log integrity failure: " + err.Error()
+		e.markDegradedCause("incident_log", "incident log integrity failure: "+err.Error())
 	}
 	if summary := behavior.Summary(); cfg.XDR.BehaviorEnabled && !summary.IntegrityOK {
-		e.degraded = true
-		e.degradeWhy = "behavior profile integrity failure: " + summary.Error
+		e.markDegradedCause("behavior", "behavior profile integrity failure: "+summary.Error)
 	}
 	paths := append([]string{}, cfg.XDR.ProtectedPaths...)
 	// Protect only immutable trust anchors. Mutable signed state (policy snapshots and
@@ -652,13 +654,13 @@ func (e *XDREngine) Run(ctx context.Context) {
 		case <-logVerifyTick.C:
 			if e.logger != nil {
 				if err := e.logger.Verify(); err != nil {
-					e.markDegraded("incident log verification failed: " + err.Error())
+					e.markDegradedCause("incident_log", "incident log verification failed: "+err.Error())
 				}
 			}
 		case <-behaviorSaveTick.C:
 			if e.behavior != nil {
 				if err := e.behavior.Persist(); err != nil {
-					e.markDegraded("behavior profile persistence failed: " + err.Error())
+					e.markDegradedCause("behavior", "behavior profile persistence failed: "+err.Error())
 				}
 			}
 		case now := <-rollbackTick.C:
@@ -935,7 +937,7 @@ func (e *XDREngine) evaluate(p ProcessSample, conns []NetConnection, source stri
 		Parent: p.ParentExe, Remote: decision.Remote, CommandPreview: e.rules.RedactCommand(p.Cmdline, e.cfg.XDR.CommandPreviewBytes),
 		CommandSHA256: p.CmdSHA256, RuleIDs: decision.RuleIDs, Categories: decision.Categories, Summary: decision.Summary,
 		Decision: decision.Decision, Action: "none", Outcome: "observed",
-		ExecutionChainID: execChainID, AttackStory: storyNodes, RecordHash: recordHash,
+		ExecutionChainID: execChainID, AttackStory: storyNodes, EvidenceRoot: recordHash,
 	}
 	incident.Action, incident.Outcome = e.respond(incident)
 	e.appendIncident(incident)
@@ -948,7 +950,7 @@ func (e *XDREngine) appendIncident(incident XDRIncident) {
 			incident.RecordHash = hash
 		} else {
 			log.Printf("xdr incident log: %v", err)
-			e.markDegraded("incident log unavailable")
+			e.markDegradedCause("incident_log", "incident log unavailable: "+err.Error())
 		}
 	}
 	e.state.AddIncident(incident)
@@ -1064,7 +1066,7 @@ func (e *XDREngine) respond(i XDRIncident) (string, string) {
 				strconv.Itoa(i.PID),
 				i.Score,
 				rule,
-				i.RecordHash,
+				i.EvidenceRoot,
 			)
 			if err != nil {
 				return actionName(quarantined, "stop"), "failed: " + err.Error()
@@ -1252,15 +1254,61 @@ func (e *XDREngine) selfTamper(path, reason string) {
 }
 
 func (e *XDREngine) markDegraded(reason string) {
+	e.markDegradedCause("runtime", reason)
+}
+
+func (e *XDREngine) markDegradedCause(cause, reason string) {
 	e.mu.Lock()
-	e.degraded = true
-	e.degradeWhy = reason
+	if e.degradeCauses == nil {
+		e.degradeCauses = make(map[string]string)
+	}
+	e.degradeCauses[cause] = reason
+	e.recomputeDegradedLocked()
+	degraded, degradedReason := e.degraded, e.degradeWhy
 	e.mu.Unlock()
-	e.state.MarkXDRDegraded(reason)
+	e.state.SetXDRDegraded(degraded, degradedReason)
+}
+
+func (e *XDREngine) clearDegradedCause(cause string) {
+	e.mu.Lock()
+	delete(e.degradeCauses, cause)
+	e.recomputeDegradedLocked()
+	degraded, reason := e.degraded, e.degradeWhy
+	e.mu.Unlock()
+	e.state.SetXDRDegraded(degraded, reason)
+}
+
+func (e *XDREngine) recomputeDegradedLocked() {
+	if len(e.degradeCauses) == 0 {
+		e.degraded = false
+		e.degradeWhy = ""
+		return
+	}
+	keys := make([]string, 0, len(e.degradeCauses))
+	for key := range e.degradeCauses {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	reasons := make([]string, 0, len(keys))
+	for _, key := range keys {
+		reasons = append(reasons, e.degradeCauses[key])
+	}
+	e.degraded = true
+	e.degradeWhy = strings.Join(reasons, "; ")
 }
 
 func (e *XDREngine) degradedState() (bool, string) {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 	return e.degraded, e.degradeWhy
+}
+
+func (e *XDREngine) incidentRecoveryAllowed() bool {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	if len(e.degradeCauses) != 1 {
+		return false
+	}
+	_, ok := e.degradeCauses["incident_log"]
+	return ok
 }

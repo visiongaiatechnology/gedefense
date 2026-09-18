@@ -31,6 +31,7 @@ type IncidentLogger struct {
 	mu           sync.Mutex
 	path         string
 	headPath     string
+	nodeName     string
 	key          []byte
 	crypto       *StorageCipher
 	prevHash     string
@@ -71,7 +72,7 @@ func NewIncidentLoggerWithStorage(path, keyPath, storageKeyPath, nodeName string
 	if len(maxOpt) > 0 && maxOpt[0] > 0 {
 		maxBytes = maxOpt[0]
 	}
-	l := &IncidentLogger{path: path, headPath: path + ".head", key: key, crypto: storage, maxBytes: maxBytes}
+	l := &IncidentLogger{path: path, headPath: path + ".head", nodeName: nodeName, key: key, crypto: storage, maxBytes: maxBytes}
 	if err := rejectSymlink(l.headPath); err != nil {
 		return nil, err
 	}
@@ -413,6 +414,11 @@ func (l *IncidentLogger) Append(i XDRIncident) (string, error) {
 		l.integrityErr = err
 		return "", err
 	}
+	// RecordHash belongs exclusively to the incident-ledger chain. Callers may
+	// carry an independent attack-story EvidenceRoot, but a pre-populated
+	// RecordHash must never influence the MAC and then be overwritten, otherwise
+	// the record cannot be reproduced during verification.
+	i.RecordHash = ""
 	payload, err := json.Marshal(i)
 	if err != nil {
 		return "", err

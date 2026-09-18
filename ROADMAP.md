@@ -1,4 +1,4 @@
-# Roadmap after GeDefense Beta v4 (4.0.0-beta.1)
+# Roadmap after GeDefense Beta v4 (4.0.1)
 
 ## 1.0 beta hardening
 

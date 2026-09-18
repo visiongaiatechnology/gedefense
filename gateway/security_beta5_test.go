@@ -233,6 +233,7 @@ func TestBrandedLoginHasVersionLanguagesSupportAndNonceCSP(t *testing.T) {
 		{lang: "de", text: "Operator-Zugang"},
 		{lang: "en", text: "Operator access"},
 		{lang: "ru", text: "Доступ оператора"},
+		{lang: "zh-CN", text: "操作员访问"},
 	} {
 		req := httptest.NewRequest(http.MethodGet, "https://203.0.113.10:9843/login?lang="+tc.lang, nil)
 		req.Host = "203.0.113.10:9843"
@@ -243,7 +244,7 @@ func TestBrandedLoginHasVersionLanguagesSupportAndNonceCSP(t *testing.T) {
 		}
 		body := rr.Body.String()
 		for _, expected := range []string{
-			"GeDefense", "VisionGaiaTechnology", "4.0.0-beta.1", tc.text,
+			"GeDefense", "VisionGaiaTechnology", "4.0.1", tc.text,
 			"paypal.me/dergoldenelotus", "bc1q3ue5gq822tddmkdrek79adlkm36fatat3lz0dm",
 			"0xD37DEfb09e07bD775EaaE9ccDaFE3a5b2348Fe85",
 		} {

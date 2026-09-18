@@ -361,7 +361,7 @@ function renderTransactions(payload) {
   const healthy = Boolean(payload?.healthy);
   badge(
     'transactionHealth',
-    healthy ? t('dynamic.verified') : (payload?.recovery_required ? 'RECOVERY REQUIRED' : t('dynamic.quarantined')),
+    healthy ? t('dynamic.verified') : (payload?.recovery_required ? t('dynamic.recoveryRequired') : t('dynamic.quarantined')),
     healthy ? 'good' : 'danger'
   );
   const body = byID('transactionRows');
@@ -612,7 +612,7 @@ function emptyTable(body, columns, message) {
 
 function updateHardeningSelectionCount() {
   const selected = document.querySelectorAll('#hardeningSwitches input[data-runtime-managed="true"]:checked').length;
-  text('hardeningSelectionCount', `${selected} AUSGEWÄHLT`);
+  text('hardeningSelectionCount', t('hardening.selectedCount', { count: selected }));
 }
 
 function renderHardeningSwitches(checks) {
@@ -620,7 +620,7 @@ function renderHardeningSwitches(checks) {
   if (!checks.length) {
     const message = document.createElement('p');
     message.className = 'empty-state';
-    message.textContent = 'Keine Härtungskontrollen verfügbar.';
+    message.textContent = t('hardening.noControls');
     container.replaceChildren(message);
     updateHardeningSelectionCount();
     return;
@@ -636,15 +636,15 @@ function renderHardeningSwitches(checks) {
     title.textContent = String(check.title || check.id || 'Kontrolle');
     const detail = document.createElement('small');
     detail.textContent = configurable
-      ? String(check.recommendation || 'Aktiv, live gemessen und durch GeDefense verwaltet.')
-      : `${String(check.evidence || 'Nicht messbar')} · ${String(check.recommendation || 'Plattformkontrolle ohne sichere Laufzeitänderung.')}`;
+      ? String(check.recommendation || t('hardening.managedActive'))
+      : `${String(check.evidence || t('dynamic.notMeasurable'))} · ${String(check.recommendation || t('hardening.platformOnly'))}`;
     const meta = document.createElement('span');
     meta.className = 'hardening-control-meta';
     const domain = document.createElement('em');
-    domain.textContent = configurable ? 'RUNTIME + PERSISTENT' : 'INSTALLATION / BOOT / FIRMWARE';
+    domain.textContent = configurable ? t('hardening.scope.runtimePersistent') : t('hardening.scope.installBootFirmware');
     const state = document.createElement('span');
     state.className = `hardening-control-state ${protectedState ? 'is-protected' : configurable ? 'is-available' : 'is-platform'}`;
-    state.textContent = protectedState ? 'GESCHÜTZT' : configurable ? 'VERFÜGBAR' : 'PLATTFORM';
+    state.textContent = protectedState ? t('hardening.state.protected') : configurable ? t('dynamic.available') : t('hardening.state.platform');
     meta.append(domain, state);
     copy.append(title, detail, meta);
 
@@ -669,7 +669,7 @@ function renderHardening(payload) {
   const score = Math.max(0, Math.min(100, Number(payload?.score || 0)));
   text('hardeningScore', score);
   text('hardeningScoreTitle', String(payload?.level || 'UNAVAILABLE'));
-  text('hardeningCollected', payload?.collected_at ? formatTime(payload.collected_at) : 'Keine Messung');
+  text('hardeningCollected', payload?.collected_at ? formatTime(payload.collected_at) : t('hardening.noMeasurement'));
   badge('hardeningLevel', String(payload?.level || 'UNAVAILABLE'), score >= 90 ? 'good' : score >= 50 ? 'warning' : 'danger');
   const ring = byID('hardeningScoreRing');
   if (ring) ring.style.setProperty('--score', String(score));
@@ -685,7 +685,7 @@ function renderHardening(payload) {
     value.textContent = `${Number(domain.score || 0)}%`;
     header.append(title, value);
     const detail = document.createElement('small');
-    detail.textContent = `${Number(domain.protected || 0)} von ${Number(domain.total || 0)} Kontrollen vollständig geschützt`;
+    detail.textContent = t('hardening.domainProtected', { protected: Number(domain.protected || 0), total: Number(domain.total || 0) });
     const progress = document.createElement('div');
     progress.className = 'progress';
     const bar = document.createElement('i');
@@ -701,7 +701,7 @@ function renderHardening(payload) {
   const checks = Array.isArray(payload?.checks) ? payload.checks : [];
   renderHardeningSwitches(checks);
   if (!checks.length) {
-    emptyTable(body, 5, 'Keine Härtungsdaten verfügbar.');
+    emptyTable(body, 5, t('hardening.noData'));
     return;
   }
   const rows = checks.map(check => {
@@ -718,7 +718,7 @@ function renderHardening(payload) {
     evidence.textContent = String(check.evidence || '---');
     evidence.className = 'mono';
     const recommendation = document.createElement('td');
-    recommendation.textContent = String(check.recommendation || (check.managed ? 'Durch GeDefense transaktional verwaltet.' : 'Keine Maßnahme erforderlich.'));
+    recommendation.textContent = String(check.recommendation || (check.managed ? t('hardening.managedTransactional') : t('hardening.noActionRequired')));
     row.append(state, evidence, recommendation);
     return row;
   });
@@ -738,10 +738,10 @@ function renderFIM(status) {
   text('fimGeneration', number(status?.generation));
   const findings = Array.isArray(status?.last_scan?.findings) ? status.last_scan.findings : [];
   text('fimFindings', number(findings.length));
-  text('fimRoots', Array.isArray(status?.roots) && status.roots.length ? status.roots.join(' · ') : 'Keine geschützten Pfade geladen');
+  text('fimRoots', Array.isArray(status?.roots) && status.roots.length ? status.roots.join(' · ') : t('fim.noPaths'));
   const body = byID('fimRows');
   if (!findings.length) {
-    emptyTable(body, 5, 'Keine Dateiabweichungen im letzten Scan.');
+    emptyTable(body, 5, t('fim.noFindings'));
     return;
   }
   const rows = findings.map(finding => {
@@ -770,10 +770,10 @@ function renderEvidence(payload) {
   text('evidenceRecords', number(status.records));
   text('evidenceBytes', `${number(status.stored_bytes)} B`);
   text('evidenceHead', status.head_hash ? String(status.head_hash).slice(0, 16) : '---');
-  text('evidenceKey', status.public_key ? `Ed25519 ${status.public_key}` : 'Signer nicht geladen');
+  text('evidenceKey', status.public_key ? `Ed25519 ${status.public_key}` : t('dynamic.noSigner'));
   const body = byID('evidenceRows');
   if (!records.length) {
-    emptyTable(body, 6, 'Noch keine authentifizierten Evidence-Records.');
+    emptyTable(body, 6, t('evidence.noRecords'));
     return;
   }
   const rows = records.map(record => {
@@ -800,7 +800,7 @@ function renderPackageIntegrity(status) {
   const clean = Boolean(status?.last_scan) && !status?.running &&
     Number(status?.modified || 0) === 0 && Number(status?.missing || 0) === 0 &&
     Number(status?.errors || 0) === 0;
-  const state = status?.running ? 'SCANNT' : clean ? 'VERIFIZIERT' : status?.last_scan ? 'ABWEICHUNG' : 'NICHT GEPRÜFT';
+  const state = status?.running ? t('dynamic.scanning') : clean ? t('dynamic.verified') : status?.last_scan ? t('dynamic.deviation') : t('dynamic.notChecked');
   badge('packageIntegrityHealth', state, status?.running ? 'warning' : clean ? 'good' : 'danger');
   text('packageIntegrityPackages', number(status?.packages));
   text('packageIntegrityFiles', number(status?.files));
@@ -809,7 +809,7 @@ function renderPackageIntegrity(status) {
   const findings = Array.isArray(status?.findings) ? status.findings : [];
   const body = byID('packageIntegrityRows');
   if (!findings.length) {
-    emptyTable(body, 3, status?.running ? 'Paketdateien werden kryptografisch geprüft.' : 'Keine Paketabweichungen im letzten Scan.');
+    emptyTable(body, 3, status?.running ? t('package.scanning') : t('package.noFindings'));
     return;
   }
   const rows = findings.map(finding => {
@@ -832,13 +832,13 @@ function renderPackageIntegrity(status) {
 function renderMalwareProtection() {
   const sensor = String(snapshot?.xdr?.sensor || '');
   const active = Boolean(snapshot?.core_connected) && sensor.includes('fanotify-exec');
-  badge('malwareProtectionHealth', active ? 'AKTIV' : 'NICHT VERIFIZIERT', active ? 'good' : 'danger');
-  text('malwareRuntime', active ? 'FANOTIFY EXEC GUARD' : 'SENSOR NICHT BEREIT');
-  text('malwareSignatures', active ? 'ROOT + FS-VERITY' : 'NICHT VERIFIZIERT');
-  text('malwareReleaseGate', active ? 'SCAN + HASH RECHECK' : 'FAIL CLOSED');
+  badge('malwareProtectionHealth', active ? t('dynamic.active') : t('dynamic.notVerified'), active ? 'good' : 'danger');
+  text('malwareRuntime', active ? t('malware.runtimeActive') : t('dynamic.sensorNotReady'));
+  text('malwareSignatures', active ? t('malware.signatureActive') : t('dynamic.notVerified'));
+  text('malwareReleaseGate', active ? t('malware.releaseGateActive') : t('dynamic.failClosed'));
   text('malwareProtectionDetail', active
-    ? 'Ausführbare Dateien unter /home werden vor dem ersten Befehl geprüft. Browserdownloads bleiben bis zu einem sauberen Verdict in der GaiaCell-Quarantäne.'
-    : 'Der aktuelle Snapshot bestätigt den Fanotify-Ereigniskanal nicht. Geschützte Freigaben bleiben gesperrt.');
+    ? t('malware.activeDetail')
+    : t('malware.inactiveDetail'));
   return active;
 }
 
@@ -862,7 +862,7 @@ async function loadIntegrity() {
     (!packages?.running && Number(packages?.modified || 0) === 0 &&
       Number(packages?.missing || 0) === 0 && Number(packages?.errors || 0) === 0);
   const healthy = fim?.health === 'HEALTHY' && Boolean(evidence?.status?.healthy) && packageHealthy && renderMalwareProtection();
-  badge('integrityHealth', healthy ? 'GESCHÜTZT' : 'HANDLUNGSBEDARF', healthy ? 'good' : 'danger');
+  badge('integrityHealth', healthy ? t('hardening.state.protected') : t('dynamic.actionRequired'), healthy ? 'good' : 'danger');
   return { fim, evidence, packages };
 }
 
@@ -870,14 +870,14 @@ function renderBootTrust(report) {
   badge('bootClaim', String(report?.claim_level || 'EVIDENCE ONLY'), report?.astraeaos ? 'good' : 'warning');
   text('bootPlatform', report?.platform || '---');
   text('bootDistro', report?.distro_name || report?.distro_id || '---');
-  text('bootGaia', report?.astraeaos ? 'ERKANNT' : 'NICHT ERKANNT');
+  text('bootGaia', report?.astraeaos ? t('dynamic.detected') : t('dynamic.notDetected'));
   text('bootVersion', report?.version_id || '---');
   text('bootSummary', report?.summary || '---');
   text('bootGenerated', report?.generated_at ? formatTime(report.generated_at) : '---');
   const body = byID('bootRows');
   const items = Array.isArray(report?.items) ? report.items : [];
   if (!items.length) {
-    emptyTable(body, 5, 'Keine Boot-Evidenz verfügbar.');
+    emptyTable(body, 5, t('boot.noEvidence'));
     return;
   }
   const rows = items.map(item => {
@@ -912,7 +912,7 @@ function updateSnapshot(data) {
   const policy = data.policy || {};
   const behavior = xdr.behavior || {};
   const release = data.release || {};
-  text('versionText', data.version || '4.0.0-beta.1');
+  text('versionText', data.version || '4.0.1');
   if (data.settings) applySettings(data.settings);
   text('nodeName', data.node_name || 'VGT Node');
   text('uptime', formatUptime(data.uptime_seconds));
@@ -1270,11 +1270,11 @@ function bindActions() {
         document.querySelectorAll('#hardeningSwitches input[data-runtime-managed="true"]:checked'),
         input => input.dataset.controlId
       ).filter(Boolean);
-      if (!controls.length) throw new Error('Mindestens eine aktivierbare Schutzmaßnahme auswählen.');
-      const reason = byID('hardeningReason')?.value.trim() || 'Härtung';
+      if (!controls.length) throw new Error(t('hardening.selectAtLeastOne'));
+      const reason = byID('hardeningReason')?.value.trim() || t('view.hardening.title');
       const transaction = await previewTransaction({
         type: 'hardening.sysctl-profile',
-        summary: `${controls.length} ausgewählte AstraeaOS-Härtungskontrollen`,
+        summary: t('hardening.selectionSummary', { count: controls.length }),
         reason,
         payload: { controls }
       });
@@ -1290,7 +1290,7 @@ function bindActions() {
   on('fimScan', 'click', async () => {
     try {
       await scanFIM();
-      toast('FIM-Prüfung abgeschlossen.', 'good');
+      toast(t('toast.fimCompleted'), 'good');
       await Promise.all([loadIntegrity(), loadHardening(), refresh()]);
     } catch (error) {
       handleActionError(error);
@@ -1299,7 +1299,7 @@ function bindActions() {
   on('fimBaseline', 'click', async () => {
     try {
       await createFIMBaseline();
-      toast('Verschlüsselte FIM-Baseline wurde neu erstellt.', 'good');
+      toast(t('toast.fimBaselineCreated'), 'good');
       await Promise.all([loadIntegrity(), loadHardening(), refresh()]);
     } catch (error) {
       handleActionError(error);
@@ -1308,7 +1308,7 @@ function bindActions() {
   on('evidenceVerify', 'click', async () => {
     try {
       await verifyEvidence();
-      toast('Die Evidence-Kette ist kryptografisch verifiziert.', 'good');
+      toast(t('toast.evidenceVerified'), 'good');
       await Promise.all([loadIntegrity(), loadHardening()]);
     } catch (error) {
       handleActionError(error);
@@ -1317,7 +1317,7 @@ function bindActions() {
   on('packageIntegrityScan', 'click', async () => {
     try {
       await scanPackageIntegrity();
-      toast('Paketintegritätsprüfung wurde gestartet.', 'good');
+      toast(t('toast.packageScanStarted'), 'good');
       await loadIntegrity();
     } catch (error) {
       handleActionError(error);
@@ -1330,10 +1330,10 @@ function bindActions() {
     try {
       const result = await scanMalware(path);
       renderMalwareResult(result, path);
-      toast(result.state === 'clean' ? 'Inhaltsprüfung abgeschlossen: kein Fund.' : 'Fund wurde als XDR-Evidenz und Sicherheitsfall erfasst.', result.state === 'clean' ? 'good' : 'danger');
+      toast(result.state === 'clean' ? t('toast.malwareClean') : t('toast.malwareFinding'), result.state === 'clean' ? 'good' : 'danger');
       await refresh();
     } catch (error) {
-      badge('malwareScanState', 'SCAN ABGEWIESEN', 'danger');
+      badge('malwareScanState', t('dynamic.scanRejected'), 'danger');
       handleActionError(error);
     }
   });
@@ -1395,7 +1395,7 @@ function bindActions() {
       if (!runtimeSettings) await loadSettings();
       const id = byID('customRuleId')?.value.trim();
       const category = byID('customRuleCategory')?.value.trim() || 'custom';
-      const summary = byID('customRuleSummary')?.value.trim() || 'Custom Rule';
+      const summary = byID('customRuleSummary')?.value.trim() || t('settings.defaultCustomRule');
       const pattern = byID('customRulePattern')?.value || '';
       const score = Number.parseInt(byID('customRuleScore')?.value || '25', 10);
       if (!id || !pattern) return;

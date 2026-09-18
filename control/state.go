@@ -287,6 +287,12 @@ func (s *State) SetXDRStatus(x XDRStatus) {
 	if x.ActionsTotal == 0 {
 		x.ActionsTotal = s.xdr.ActionsTotal
 	}
+	// A fail-closed degraded state must never be erased by a routine sensor
+	// status refresh. Recovery is explicit through SetXDRDegraded(false, "").
+	if s.xdr.Degraded && !x.Degraded {
+		x.Degraded = true
+		x.DegradedReason = s.xdr.DegradedReason
+	}
 	s.xdr = x
 	s.mu.Unlock()
 }
@@ -324,6 +330,17 @@ func (s *State) MarkXDRDegraded(reason string) {
 	s.mu.Lock()
 	s.xdr.Degraded = true
 	s.xdr.DegradedReason = reason
+	s.mu.Unlock()
+}
+
+func (s *State) SetXDRDegraded(degraded bool, reason string) {
+	s.mu.Lock()
+	s.xdr.Degraded = degraded
+	if degraded {
+		s.xdr.DegradedReason = reason
+	} else {
+		s.xdr.DegradedReason = ""
+	}
 	s.mu.Unlock()
 }
 

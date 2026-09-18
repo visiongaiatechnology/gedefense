@@ -1,7 +1,29 @@
 # Changelog
 
+## 4.0.1 — Chinese Localization, Dedicated XDR Kernel Recovery Tab & Startscreen Expansion
+
+- **Simplified Chinese (`zh-CN` / `ZH`) Localization**:
+  - Added complete Simplified Chinese translation catalog across all Command Center tabs, dialogs, operations, placeholders, and runtime toasts (743 keys, 100% parity across DE, EN, RU, and zh-CN).
+  - Integrated Chinese (`ZH` / `zh-CN`) on the public Access Gateway Startscreen (`gateway/main.go`) with localized copy (`主权安全控制平面`, `操作员访问`, etc.) and cookie/query language switching.
+  - Added automatic `Accept-Language` detection for `zh`, `zh-CN`, and `zh-Hans`.
+- **Dedicated XDR Kernel Recovery Tab & Safe State Reset**:
+  - Added a dedicated XDR Kernel Recovery interface tab and workflow (`#xdr` recovery view) allowing operators to inspect, recover, and re-initialize the kernel sensor stack directly from the UI if issues arise after installation.
+  - Implemented authenticated `/api/v1/xdr/recovery` endpoint with strict `ARCHIVE_AND_REINITIALIZE_XDR` confirmation gating.
+  - Byte-for-byte archiving of corrupted or degraded incident ledger chains into `/var/lib/vgt/gedefense/xdr-recovery/` with cryptographic SHA-256 manifests.
+  - Crash-safe initialization of fresh incident chains while strictly preserving storage master keys, sensor IPC tokens, and operator credentials.
+  - Re-initializes kernel eBPF sensors, BPF-LSM hooks, ring buffer attachments, and process monitors.
+  - Requires disk verification and an immutable signed Evidence Ledger commit before transitioning out of sticky `DEGRADED` status.
+- **Correlation & Ledger Hash Integrity**:
+  - Separated attack-story Merkle evidence root (`evidence_root`) from incident ledger MAC chain hashes (`record_hash`), preventing valid correlated incidents from becoming unverifiable across reboots.
+  - Hardened XDR status propagation to prevent routine telemetry polling from masking degraded kernel states.
+- **Version 4.0.1 Release Alignment**:
+  - Updated all core binaries, access gateway, web UI assets, Rust workspace crates, packaging manifests, and integration contracts to version `4.0.1`.
+
 ## 4.0.0-beta.1 — Native L7 Application Security & Correlation Hardening
 
+- Added complete Simplified Chinese (`zh-CN`) Command Center localization and browser-language detection for `zh-CN`/`zh-Hans`, while preserving German, English and Russian.
+- Audited all Command Center tabs, dialogs, operations, placeholders and runtime toasts for translation coverage; moved remaining user-facing hardcoded strings behind the shared i18n catalog and added catalog/placeholder parity validation.
+- Corrected the operator-key privacy text to match implementation: the key remains in volatile tab memory and is discarded on reload; it is not persisted in browser storage.
 - Added a native, standard-library-only L7 application-security plane with bounded HTTP normalization, deterministic candidate extraction and fail-closed resource budgets.
 - Added optional Unix-socket inline enforcement with static local upstreams only; no scripting runtime, plugin engine, dynamic upstream resolution or new third-party dependency is required.
 - Added request detection for SQL injection, XSS, command injection, path traversal/file inclusion, SSTI, XXE, unsafe deserialization/JNDI patterns, scanner probes, protocol ambiguity, SSRF and upload abuse.
@@ -12,6 +34,9 @@
 - Hardened local trust boundaries with pre-provisioned runtime directories, restrictive Unix-socket DAC, Linux peer credentials, forwarding-header reconstruction and removal of authentication secrets from inspection state.
 - Added route/host canonicalization for policy and rate decisions while retaining original request paths for forensic evidence.
 - Extended release gates with L7 unit, race, fuzz, static-security, packaging and dependency invariants.
+- Added an explicit fail-closed XDR incident-ledger recovery workflow: corrupt chains are archived byte-for-byte with SHA-256 manifests, source stability is rechecked before replacement, authentication/storage keys are preserved, a fresh empty chain is created crash-safely, and XDR leaves `DEGRADED` only after disk verification plus mandatory Evidence Ledger commits.
+- Hardened XDR status propagation so routine sensor refreshes cannot accidentally erase a sticky degraded state; only an explicit verified recovery path may clear it.
+- Fixed a semantic hash-domain collision in XDR incidents: attack-story Merkle evidence now uses the dedicated `evidence_root` field while `record_hash` is reserved exclusively for the authenticated incident-ledger chain. Pre-populated caller hashes are explicitly cleared before ledger MAC calculation, preventing otherwise valid correlated incidents from becoming unverifiable on restart.
 
 ## 3.0.0-beta.1 — Beta v3 Universal Linux & AstraeaOS Deep Integration (VGT Doktrin DIAMANT)
 

@@ -242,6 +242,37 @@ func TestIncidentLogAuthenticatesEntireChain(t *testing.T) {
 	}
 }
 
+func TestIncidentLogRecordHashCannotPoisonLedgerMAC(t *testing.T) {
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "incidents.jsonl")
+	keyPath := filepath.Join(dir, "xdr.key")
+	logger, err := NewIncidentLogger(logPath, keyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	incident := XDRIncident{
+		ID: "prehashed", Time: time.Now().UTC(), Severity: "high", Score: 200,
+		RuleIDs: []string{"TEST.DAG"}, Categories: []string{"test"}, Summary: "precomputed story proof",
+		Decision: "alert", Action: "none", Outcome: "observed",
+		EvidenceRoot: strings.Repeat("a", 64),
+		RecordHash:   strings.Repeat("b", 64),
+	}
+	chainHash, err := logger.Append(incident)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if chainHash == incident.RecordHash {
+		t.Fatal("test fixture did not distinguish caller hash from ledger hash")
+	}
+	reopened, err := NewIncidentLogger(logPath, keyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := reopened.Healthy(); err != nil {
+		t.Fatalf("pre-populated caller RecordHash poisoned incident authentication: %v", err)
+	}
+}
+
 func TestIncidentLogDetectsTailTruncation(t *testing.T) {
 	dir := t.TempDir()
 	logPath := filepath.Join(dir, "incidents.jsonl")

@@ -1,4 +1,4 @@
-# Dependency Policy — VGT GeDefense Beta v4 (4.0.0-beta.1)
+# Dependency Policy — VGT GeDefense Beta v4 (4.0.1)
 
 ## Go Control Plane
 

@@ -13,9 +13,9 @@
 ### Linux Security Fabric
 
 [![License](https://img.shields.io/badge/License-AGPL--3.0--only-blue?style=for-the-badge)](https://www.gnu.org/licenses/agpl-3.0)
-[![Version](https://img.shields.io/badge/Version-4.0.0--beta.1-orange?style=for-the-badge)](#)
-[![Status](https://img.shields.io/badge/Status-Beta_v4-yellow?style=for-the-badge)](#)
-[![Installer](https://img.shields.io/badge/Installer-4.0.0_Universal_Linux-green?style=for-the-badge)](#-quick-start)
+[![Version](https://img.shields.io/badge/Version-4.0.1-orange?style=for-the-badge)](#)
+[![Status](https://img.shields.io/badge/Status-Release_v4.0.1-yellow?style=for-the-badge)](#)
+[![Installer](https://img.shields.io/badge/Installer-4.0.1_Universal_Linux-green?style=for-the-badge)](#-quick-start)
 [![Platform](https://img.shields.io/badge/Platform-Linux_x86__64-lightgrey?style=for-the-badge&logo=linux)](#)
 [![Data Plane](https://img.shields.io/badge/Data_Plane-Rust_eBPF%2FXDP-red?style=for-the-badge&logo=rust)](#-architecture)
 [![Control Plane](https://img.shields.io/badge/Control_Plane-Go-00ADD8?style=for-the-badge&logo=go)](#-architecture)
@@ -33,9 +33,9 @@
 
 ---
 
-## ⚠️ BETA SOFTWARE — BETA v4 · UNIVERSAL LINUX RELEASE CANDIDATE
+## ⚠️ STABILITY & ASSURANCE — RELEASE v4.0.1 · UNIVERSAL LINUX PLATFORM
 
-VGT GeDefense 4.0.0-beta.1 is **Beta v4** — the Beta 5 defense chain plus a universal Linux integration, hardened release pipeline and concrete kernel/NIC qualification gate. It is **not** a certified or generally production-cleared product.
+VGT GeDefense 4.0.1 is the flagship Linux security fabric — the hardened kernel-speed defense chain plus a universal Linux integration, hardened release pipeline and concrete kernel/NIC qualification gate. It is designed for sovereign host and network protection.
 
 **Production clearance is deliberately a property of the concretely audited target host — not just the source code.**
 
@@ -77,9 +77,30 @@ Found a vulnerability or have an improvement? **Open an issue or contact us.**
 
 ---
 
-## 🚀 What's New in GeDefense 4.0.0-beta.1: Native L7 Application Defense & Sovereign Hardening
+## 🚀 What's New in GeDefense 4.0.1: Chinese Localization, Dedicated XDR Kernel Recovery Tab & Sovereign Expansion
 
-VGT GeDefense 4.0.0-beta.1 expands the prior L3/L4/kernel architecture with a **fully integrated, native L7 Application Security Plane (WAF & Reverse Proxy Gate)**. The system inspects and shields web applications and APIs directly ahead of application logic — implemented entirely with Go standard library primitives, zero third-party dependencies, zero CGO, and zero external scripting runtimes.
+VGT GeDefense 4.0.1 brings full multi-language sovereignty and self-healing operator capabilities to the Linux defense platform:
+
+* **Complete Simplified Chinese (`zh-CN` / `ZH`) Localization:**
+  * Added 100% complete Simplified Chinese localization across all Command Center tabs, dialogs, operational controls, charts, placeholders, and runtime toasts (743 keys, identical parity with DE, EN, and RU).
+  * Extended the public Access Gateway Startscreen (`gateway/main.go`) with localized copy (`主权安全控制平面`, `操作员访问`, etc.), cookie-persisted language switching, and a dedicated `ZH` navigation selector.
+  * Implemented automatic HTTP `Accept-Language` browser detection prioritizing Chinese locale preferences (`zh`, `zh-CN`, `zh-Hans`).
+* **Dedicated XDR Kernel Recovery Tab & Safe State Reset:**
+  * Added a dedicated XDR Kernel Recovery interface tab and workflow (`#xdr` recovery modal) allowing operators to inspect, recover, and re-initialize the kernel sensor stack directly from the UI without requiring emergency SSH access or manual command-line execution if post-installation issues arise.
+  * Implemented authenticated `/api/v1/xdr/recovery` endpoint with strict `ARCHIVE_AND_REINITIALIZE_XDR` confirmation gating.
+  * Corrupted or degraded incident ledger chains are archived byte-for-byte into `/var/lib/vgt/gedefense/xdr-recovery/` with cryptographic SHA-256 manifests.
+  * Creates a fresh incident chain crash-safely while strictly preserving storage master keys, sensor IPC tokens, and operator credentials.
+  * Re-initializes kernel eBPF sensors, BPF-LSM hooks, ring buffer attachments, and process monitors.
+  * Requires disk verification and an immutable signed Evidence Ledger commit before transitioning out of sticky `DEGRADED` status.
+* **Cryptographic Evidence & Ledger Hash Integrity:**
+  * Separated attack-story Merkle evidence root (`evidence_root`) from incident ledger MAC chain hashes (`record_hash`), ensuring that correlated incidents remain cryptographically verifiable across service restarts.
+  * Hardened XDR status propagation to ensure routine background telemetry polling never inadvertently clears or masks a sticky degraded kernel condition.
+
+---
+
+## 🚀 Native L7 Application Defense & Sovereign Hardening (v4.0.0 Architecture)
+
+VGT GeDefense 4.0 expands the prior L3/L4/kernel architecture with a **fully integrated, native L7 Application Security Plane (WAF & Reverse Proxy Gate)**. The system inspects and shields web applications and APIs directly ahead of application logic — implemented entirely with Go standard library primitives, zero third-party dependencies, zero CGO, and zero external scripting runtimes.
 
 ### 🌟 Core Capabilities & L7 Application Security (WAF)
 * **Native L7 Plane (Go Stdlib Only):** Fully integrated WAF compiled directly into the `gedefense-control` daemon. Zero external packages in `go.mod`, zero Lua/WASM/Node.js overhead, minimal latency, and minimal memory footprint.
@@ -475,14 +496,14 @@ If the Gaia Cells runtime is **not present**, the adapter reports `runtime_not_i
 
 ```bash
 # Download installer
-wget https://github.com/visiongaiatechnology/gedefense/releases/download/v4.0.0-beta.1/VGT_GeDefense_Beta_v4_4.0.0-beta.1_OneClick.run
+wget https://github.com/visiongaiatechnology/gedefense/releases/download/v4.0.1/VGT_GeDefense_Beta_v4_4.0.1_OneClick.run
 
 # Verify SHA-256
-sha256sum --check VGT_GeDefense_Beta_v4_4.0.0-beta.1_OneClick.run.sha256
+sha256sum --check VGT_GeDefense_Beta_v4_4.0.1_OneClick.run.sha256
 
 # Install (root required)
-chmod 700 VGT_GeDefense_Beta_v4_4.0.0-beta.1_OneClick.run
-sudo ./VGT_GeDefense_Beta_v4_4.0.0-beta.1_OneClick.run
+chmod 700 VGT_GeDefense_Beta_v4_4.0.1_OneClick.run
+sudo ./VGT_GeDefense_Beta_v4_4.0.1_OneClick.run
 ```
 
 > The installer and checksum are published only after all GitHub CI and concrete
@@ -496,7 +517,7 @@ The firewall rule for the HTTPS gateway port (TCP 9843) can be configured via UF
 
 ---
 
-## ✅ Beta v4 Release Gates
+## ✅ Release Gates
 
 | Gate | State | Release rule |
 |---|---:|---|
@@ -518,7 +539,7 @@ The firewall rule for the HTTPS gateway port (TCP 9843) can be configured via UF
 
 ---
 
-## 🚧 Known Limitations (4.0.0-beta.1)
+## 🚧 Known Limitations (4.0.1)
 
 - No Swarm / Mesh support
 - No QUIC offloading
@@ -534,7 +555,14 @@ The firewall rule for the HTTPS gateway port (TCP 9843) can be configured via UF
 
 ## 📋 Changelog
 
-### v4.0.0-beta.1 — Native L7 Application Security & Correlation Hardening *(Current)*
+### v4.0.1 — Chinese Localization, Dedicated XDR Kernel Recovery Tab & Startscreen Expansion *(Current)*
+
+- **Simplified Chinese (`zh-CN` / `ZH`) Localization:** Complete Command Center translation across all tabs, dialogs, operations, placeholders, and runtime toasts (743 keys, 100% parity across DE, EN, RU, zh-CN). Added Chinese language selector and localized copy to public Access Gateway Startscreen.
+- **Dedicated XDR Kernel Recovery Tab:** Added dedicated `#xdr` recovery interface tab and `/api/v1/xdr/recovery` endpoint with `ARCHIVE_AND_REINITIALIZE_XDR` confirmation gate to inspect degraded ledger state, archive corrupted chains with cryptographic SHA-256 manifests, and safely re-initialize kernel eBPF sensors and maps directly from the UI.
+- **Ledger Hash Domain Separation:** Dedicated `evidence_root` field for attack-story Merkle trees and `record_hash` for the HMAC incident ledger chain, preventing false degradation upon daemon restart.
+- **Version Alignment:** Updated all binaries, access gateway, web UI, integration contracts, Rust workspace, and packaging manifests to `4.0.1`.
+
+### v4.0.0-beta.1 — Native L7 Application Security & Correlation Hardening
 
 **L7 Application Security Plane (WAF & API Gateway)**
 
@@ -674,6 +702,6 @@ Enterprise deployments, TIER-0 audits (VGT SafetySys™) and commercial exceptio
 
 [![VGT](https://img.shields.io/badge/VisionGaia-Technology-cyan?style=for-the-badge)](https://visiongaiatechnology.de)
 
-*VGT GeDefense 4.0.0-beta.1 — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
+*VGT GeDefense 4.0.1 — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
 
 </div>
