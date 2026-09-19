@@ -478,6 +478,16 @@ input::placeholder, textarea::placeholder {
   background: var(--surface);
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.2);
 }
+.clickable-card {
+  cursor: pointer;
+  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.clickable-card:hover, .clickable-card:focus-visible {
+  border-color: rgba(0, 240, 255, 0.4);
+  transform: translateY(-1px);
+  box-shadow: 0 12px 30px rgba(0, 240, 255, 0.12);
+  outline: none;
+}
 .metric-card span, .metric span {
   display: block; color: var(--muted); text-transform: uppercase;
   letter-spacing: 0.1em; font-size: 0.64rem; font-weight: 600;

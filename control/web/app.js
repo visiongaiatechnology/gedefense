@@ -918,6 +918,29 @@ function updateSnapshot(data) {
   text('uptime', formatUptime(data.uptime_seconds));
   text('blockCount', number((data.blocks || []).length));
   text('feedCount', number(data.feed_vectors));
+  const feedBlocks = Number(data.feed_block_vectors || 0);
+  const feedTotal = Number(data.feed_vectors || 0);
+  const feedGen = Number(data.feed_generation || 0);
+  const overviewFeedEl = byID('overviewFeedCount');
+  if (overviewFeedEl) {
+    overviewFeedEl.textContent = number(feedBlocks > 0 ? feedBlocks : feedTotal);
+    overviewFeedEl.title = `${number(feedBlocks)} Block / ${number(feedTotal)} Total`;
+  }
+  if (data.last_feed_sync || feedGen > 0 || feedTotal > 0) {
+    const detailParts = [];
+    if (feedBlocks > 0 && feedTotal > feedBlocks) {
+      detailParts.push(`${number(feedTotal)} total`);
+    }
+    if (feedGen > 0) {
+      detailParts.push(`Gen ${feedGen}`);
+    }
+    if (data.feed_fingerprint) {
+      detailParts.push(String(data.feed_fingerprint).slice(0, 8));
+    }
+    text('overviewFeedDetail', detailParts.join(' · ') || t('metric.threatFeedsDetail'));
+  } else {
+    text('overviewFeedDetail', t('metric.threatFeedsDetail'));
+  }
   text('iface', data.telemetry?.interface || '---');
   text('rxRate', formatRate(data.telemetry?.rx_rate || 0));
   text('txRate', formatRate(data.telemetry?.tx_rate || 0));
@@ -1449,6 +1472,16 @@ function bindActions() {
   }
   on('overviewToL7Btn', 'click', () => activateView('l7'));
   on('heroProtectionAction', 'click', () => activateView('protection'));
+  on('overviewFeedCard', 'click', () => activateView('network'));
+  const feedCard = byID('overviewFeedCard');
+  if (feedCard) {
+    feedCard.addEventListener('keydown', event => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        activateView('network');
+      }
+    });
+  }
   document.querySelectorAll('[data-dialog-close]').forEach(button => {
     button.addEventListener('click', () => button.closest('dialog')?.close());
   });
