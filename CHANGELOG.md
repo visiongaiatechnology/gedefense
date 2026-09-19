@@ -16,6 +16,22 @@
 - **Correlation & Ledger Hash Integrity**:
   - Separated attack-story Merkle evidence root (`evidence_root`) from incident ledger MAC chain hashes (`record_hash`), preventing valid correlated incidents from becoming unverifiable across reboots.
   - Hardened XDR status propagation to prevent routine telemetry polling from masking degraded kernel states.
+- **Sovereign Threat Intelligence Subsystem (100% Opt-In, 12h Sync & Kernel-Speed Blocking)**:
+  - **100% Sovereign Opt-In**: The threat intelligence subsystem is disabled by default (`FeedsEnabled = false`), ensuring zero external DNS or HTTP requests occur until explicitly enabled by an administrator in the settings.
+  - **12-Hour Automatic Sync (`vis_threat_intel_cron_sync`)**: Synchronizes feeds every 12 hours (`12 * time.Hour`), guarded by an atomic transient lock with a 15-minute TTL (`vis_threat_intel_sync_lock`) to prevent race conditions and concurrent downloads between background cron and operator API triggers.
+  - **9 Integrated Threat Intelligence Feeds with 3-Tier Action Semantics**:
+    - `BLOCK` (Feodo Tracker C2, Spamhaus DROP IPv4 & IPv6): strictly these vectors enter kernel XDP / cgroup LPM tries and cause `DROP_THREAT_INTEL`.
+    - `CORRELATE_ONLY` (CINS Army, blocklist.de, Emerging Threats, IPsum Level 1+, FireHOL Level 1): utilized for XDR incident scoring and process correlation with zero kernel drops.
+    - `ANNOTATE_ONLY` (Tor Bulk Exit Nodes): strictly forensic flow and telemetry annotation without hostile scoring or packet drops.
+  - **Mathematical Hardening against SQLi & Poisoning**: Enforces strict length boundaries (`3 <= len <= 49`), pre-parsing regex whitelisting (`^[0-9a-fA-F.:\/]+$`) eliminating injection characters (`'`, `"`, `;`, `--`, spaces, and control codes), allocation-free `netip` validation, and strict anti-poisoning exclusions for loopback, RFC 1918, multicast, link-local, cloud metadata IMDS (AWS, GCP, Azure, Alibaba, IPv6 IMDSv2), and default routes (`0.0.0.0/0`, `::/0`).
+  - **Enforcement Invariants & Kernel Synchronization**:
+    - *Last-Known-Good Generation*: failed, empty, truncated or malformed downloads never overwrite active generations.
+    - *Management Allowlist Precedence*: allowlists take precedence during enforcement (evaluated first in Styx and eBPF LPM maps); whole threat CIDRs are never discarded at parse time.
+    - *Additions-Before-Deletions & Rollback*: kernel diffs apply additions before deletions; addition errors trigger immediate rollback of added items and abort generation publication.
+    - *Shared Monotonic Generation & Cryptographic Fingerprint*: kernel and userspace expose shared generation ID and canonical SHA-256 fingerprint.
+    - *Live Sync Lock Ownership*: the 15-minute lock TTL is strictly crash recovery; active owners retain ownership indefinitely until synchronization concludes.
+    - *Persisted Scheduling*: scheduling computes initial delays from persisted `/var/lib/vgt/gedefense/threat-intel-state.json`, preventing daemon restarts from postponing synchronization.
+  - **Dual Inbound & Outbound Kernel-Speed Blocking**: Drops inbound malicious traffic at the NIC driver layer via XDP LPM Trie (`BLOCKLIST_V4` / `BLOCKLIST_V6`), drops outbound C2 connections in the kernel via `gedefense_egress` (`cgroup_skb(egress)`), and intercepts socket connections in user-space via the Styx Egress Engine (`DROP_THREAT_INTEL`). Uses zero-latency diff-sync to update eBPF maps atomically without packet drop spikes.
 - **Version 4.0.1 Release Alignment**:
   - Updated all core binaries, access gateway, web UI assets, Rust workspace crates, packaging manifests, and integration contracts to version `4.0.1`.
 

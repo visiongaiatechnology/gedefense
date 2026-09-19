@@ -52,9 +52,14 @@ type Snapshot struct {
 	CoreConnected  bool            `json:"core_connected"`
 	CoreMode       string          `json:"core_mode"`
 	AllowlistReady bool            `json:"allowlist_ready"`
-	FeedVectors    int             `json:"feed_vectors"`
-	LastFeedSync   *time.Time      `json:"last_feed_sync,omitempty"`
-	Blocks         []BlockEntry    `json:"blocks"`
+	FeedVectors          int             `json:"feed_vectors"`
+	LastFeedSync         *time.Time      `json:"last_feed_sync,omitempty"`
+	FeedGeneration       uint64          `json:"feed_generation,omitempty"`
+	FeedFingerprint      string          `json:"feed_fingerprint,omitempty"`
+	FeedBlockVectors     int             `json:"feed_block_vectors,omitempty"`
+	FeedCorrelateVectors int             `json:"feed_correlate_vectors,omitempty"`
+	FeedAnnotateVectors  int             `json:"feed_annotate_vectors,omitempty"`
+	Blocks               []BlockEntry    `json:"blocks"`
 	Events         []Event         `json:"events"`
 	Telemetry      Telemetry       `json:"telemetry"`
 	XDR            XDRStatus       `json:"xdr"`
@@ -78,6 +83,11 @@ type State struct {
 	allowlistReady                           bool
 	feedVectors                              int
 	lastFeedSync                             *time.Time
+	feedGeneration                           uint64
+	feedFingerprint                          string
+	feedBlockVectors                         int
+	feedCorrelateVectors                     int
+	feedAnnotateVectors                      int
 	telemetry                                Telemetry
 	blocks                                   map[string]BlockEntry
 	events                                   []Event
@@ -261,6 +271,19 @@ func (s *State) SetTelemetry(t Telemetry) {
 func (s *State) SetFeedVectors(n int, at time.Time) {
 	s.mu.Lock()
 	s.feedVectors = n
+	u := at.UTC()
+	s.lastFeedSync = &u
+	s.mu.Unlock()
+}
+
+func (s *State) SetFeedState(blockCount, correlateCount, annotateCount int, gen uint64, fingerprint string, at time.Time) {
+	s.mu.Lock()
+	s.feedVectors = blockCount + correlateCount + annotateCount
+	s.feedBlockVectors = blockCount
+	s.feedCorrelateVectors = correlateCount
+	s.feedAnnotateVectors = annotateCount
+	s.feedGeneration = gen
+	s.feedFingerprint = fingerprint
 	u := at.UTC()
 	s.lastFeedSync = &u
 	s.mu.Unlock()
@@ -628,7 +651,10 @@ func (s *State) Snapshot() Snapshot {
 	cells := s.cells
 	snapshot := Snapshot{Version: s.version, NodeName: s.nodeName, NodeMode: s.nodeMode, Enforcement: s.enforcement, StartedAt: s.started,
 		UptimeSeconds: int64(time.Since(s.started).Seconds()), CoreConnected: s.coreConnected, CoreMode: s.coreMode, AllowlistReady: s.allowlistReady,
-		FeedVectors: s.feedVectors, LastFeedSync: s.lastFeedSync, Blocks: blocks, Events: events, Telemetry: s.telemetry,
+		FeedVectors: s.feedVectors, LastFeedSync: s.lastFeedSync,
+		FeedGeneration: s.feedGeneration, FeedFingerprint: s.feedFingerprint,
+		FeedBlockVectors: s.feedBlockVectors, FeedCorrelateVectors: s.feedCorrelateVectors, FeedAnnotateVectors: s.feedAnnotateVectors,
+		Blocks: blocks, Events: events, Telemetry: s.telemetry,
 		XDR: s.xdr, L7: s.l7, Incidents: incidents, Policy: s.policy, Release: cloneReleaseStatus(s.release), Settings: cloneRuntimeSettings(s.settings),
 		Evidence: s.evidenceStatus, FIM: fimStatus,
 		Cases: CaseStatus{Healthy: false, Cases: []SecurityCase{}},

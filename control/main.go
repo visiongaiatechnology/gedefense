@@ -484,13 +484,31 @@ func main() {
 	}()
 
 	go func() {
-		// Runtime-controlled, staged threat intelligence synchronization. Public
-		// feeds are never inserted into XDP automatically; they only enrich XDR.
+		// vis_threat_intel_cron_sync: 12-hour synchronization loop with atomic transient lock (vis_threat_intel_sync_lock).
+		// Invariant 7: Scheduling is based on persisted lastSuccessfulSyncAt, so daemon restarts cannot indefinitely postpone synchronization.
+		// 100% Opt-In: Zero DNS/HTTP egress occurs unless explicitly activated in settings.
+		wasEnabled := false
+		firstRun := true
 		for {
 			interval := time.Duration(cfg.Feeds.RefreshMinutes) * time.Minute
 			if interval < time.Minute {
-				interval = time.Minute
+				interval = 12 * time.Hour
 			}
+			if firstRun {
+				firstRun = false
+				lastSync := feeds.LastSuccessfulSyncAt()
+				if !lastSync.IsZero() {
+					elapsed := time.Since(lastSync)
+					if elapsed >= interval {
+						interval = 5 * time.Second
+					} else {
+						interval = interval - elapsed
+					}
+				} else {
+					interval = 10 * time.Second
+				}
+			}
+
 			timer := time.NewTimer(interval)
 			select {
 			case <-stopWorkers:
@@ -501,15 +519,38 @@ func main() {
 			case <-timer.C:
 			}
 			current := settings.Get()
-			if !current.FeedsEnabled || !current.AutoFeedSync {
+			if !current.FeedsEnabled {
+				if wasEnabled {
+					if core != nil {
+						cleared, _ := feeds.ClearFromKernel(core)
+						if cleared > 0 {
+							state.AddEvent(Event{Severity: "info", Kind: "feeds.cleared", Source: "intelligence", Message: fmt.Sprintf("Threat intelligence deactivated: removed %d rules from kernel", cleared)})
+						}
+					}
+					state.SetFeedVectors(0, time.Now().UTC())
+					wasEnabled = false
+				}
 				continue
 			}
-			ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
-			items, syncErrs := feeds.Sync(ctx)
+			wasEnabled = true
+			if !current.AutoFeedSync {
+				continue
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+			items, syncErrs, err := feeds.SyncWithLock(ctx, threatIntelCronKey)
 			cancel()
-			state.SetFeedVectors(len(items), time.Now().UTC())
+			if err != nil {
+				log.Printf("threat intelligence sync skipped: %v", err)
+				continue
+			}
+
+			added, deleted, _ := feeds.ApplyToKernel(core, current.ManagementAllowlist)
+
+			now := time.Now().UTC()
+			state.SetFeedState(feeds.BlockIndex().Count(), feeds.CorrelateIndex().Count(), feeds.AnnotateIndex().Count(), feeds.Generation(), feeds.Fingerprint(), now)
 			severity := "info"
-			message := fmt.Sprintf("Automatic threat-feed staging completed: %d unique prefixes", len(items))
+			message := fmt.Sprintf("vis_threat_intel_cron_sync completed (gen %d / fp %.8s...): %d block vectors (+%d/-%d kernel)",
+				feeds.Generation(), feeds.Fingerprint(), len(items), added, deleted)
 			if len(syncErrs) > 0 {
 				severity = "warning"
 				message += fmt.Sprintf("; %d source errors", len(syncErrs))

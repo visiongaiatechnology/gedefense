@@ -268,7 +268,13 @@ def main(include_release_assets: bool = False) -> int:
         scan_forbidden_markers(temporary)
         write_manifest(temporary, UPLOAD_MANIFEST)
         verify_manifest(temporary, UPLOAD_MANIFEST)
-        os.replace(temporary, upload)
+        try:
+            os.replace(temporary, upload)
+        except OSError:
+            if upload.exists():
+                shutil.rmtree(upload, ignore_errors=True)
+            shutil.copytree(temporary, upload)
+            shutil.rmtree(temporary, ignore_errors=True)
     except Exception:
         shutil.rmtree(temporary, ignore_errors=True)
         raise

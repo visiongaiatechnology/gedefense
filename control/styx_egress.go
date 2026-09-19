@@ -66,6 +66,7 @@ type StyxEngine struct {
 	rules           map[string]EgressRule
 	scopeRules      map[string][]EgressRule
 	parsedCIDRs     map[string]*net.IPNet
+	threatIndex     *ThreatIndex
 	metadataBlocked atomic.Uint64
 	egressDrops     atomic.Uint64
 	correlator      *IncidentCorrelator
@@ -85,6 +86,20 @@ func NewStyxEngine(
 		correlator:   correlator,
 		incidentSink: incidentSink,
 	}
+}
+
+// SetThreatIndex injects the sovereign ThreatIndex for outbound C2/malicious IP dropping.
+func (s *StyxEngine) SetThreatIndex(index *ThreatIndex) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.threatIndex = index
+}
+
+// ThreatIndex returns the currently configured ThreatIndex or nil.
+func (s *StyxEngine) ThreatIndex() *ThreatIndex {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.threatIndex
 }
 
 // IsCloudMetadataDestination checks if an IP belongs to cloud metadata services (IMDS),
@@ -241,22 +256,10 @@ func (s *StyxEngine) EvaluateEgress(
 		return false, "DROP_CLOUD_METADATA_SSRF", nil
 	}
 
-	// 2. Monitored Mode -> always permit
+	// 2. Evaluate Whitelist & Allow Policies First (Invariant 3: Management allowlists take precedence)
 	s.mu.RLock()
-	mode := s.mode
-	s.mu.RUnlock()
-
-	if mode == EgressModeMonitored {
-		return true, "PERMIT_MONITORED", nil
-	}
-
-	// 3. Evaluate Whitelist Policies
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
 	scopeKey := fmt.Sprintf("%s:%s", scopeType, scopeID)
 	globalKey := "GLOBAL:*"
-
 	matchingRules := append([]EgressRule{}, s.scopeRules[scopeKey]...)
 	matchingRules = append(matchingRules, s.scopeRules[globalKey]...)
 
@@ -269,14 +272,92 @@ func (s *StyxEngine) EvaluateEgress(
 		}
 
 		if ipNet, exists := s.parsedCIDRs[rule.ID]; exists && ipNet.Contains(ip) {
+			s.mu.RUnlock()
 			if rule.Action == "ALLOW" {
 				return true, "PERMIT_WHITELIST", nil
 			}
 			return false, "DROP_EXPLICIT_POLICY", nil
 		}
 	}
+	s.mu.RUnlock()
 
-	// 4. Default-Deny Decision
+	// 3. Threat Intelligence C2 & Malicious Destination Shield (Strict Invariant for BLOCK feeds)
+	s.mu.RLock()
+	threatIdx := s.threatIndex
+	s.mu.RUnlock()
+	if threatIdx != nil && threatIdx.ContainsString(remoteIPStr) {
+		s.egressDrops.Add(1)
+
+		incidentID := fmt.Sprintf("INC-THREAT-INTEL-%d-%d", pid, now.UnixNano())
+		actorStr := fmt.Sprintf("PID:%d|%s", pid, comm)
+
+		storyNode := AttackStoryNode{
+			NodeID:     fmt.Sprintf("node-threat-intel-%d", now.UnixNano()),
+			Timestamp:  now,
+			Sensor:     "STYX_EGRESS_THREAT_INTEL",
+			Category:   "COMMAND_AND_CONTROL",
+			EventType:  "THREAT_INTEL_EGRESS_BLOCKED",
+			EntityID:   remoteIPStr,
+			Actor:      actorStr,
+			Severity:   "CRITICAL",
+			Confidence: 100,
+			CausalEdge: EdgeEgressAttempted,
+			EventUUID:  incidentID,
+			Metadata: map[string]string{
+				"target_ip": remoteIPStr,
+				"comm":      comm,
+				"scope":     fmt.Sprintf("%s:%s", scopeType, scopeID),
+			},
+		}
+
+		var storyNodes []AttackStoryNode
+		var recordHash string
+		if s.correlator != nil {
+			graph, _, err := s.correlator.IngestEvent(now, actorStr, "THREAT_INTEL_C2", "EXFILTRATION", storyNode)
+			if err == nil && graph != nil {
+				storyNodes = graph.CloneNodes()
+				recordHash = graph.EvidenceRoot()
+			}
+		}
+		if len(storyNodes) == 0 {
+			storyNodes = []AttackStoryNode{storyNode}
+			recordHash = storyNode.ComputeNodeDigest()
+		}
+
+		if s.incidentSink != nil {
+			_ = s.incidentSink(XDRIncident{
+				ID:            incidentID,
+				Time:          now,
+				Severity:      "CRITICAL",
+				Score:         240,
+				ResponseScore: 240,
+				PID:           pid,
+				Process:       comm,
+				Remote:        remoteIPStr,
+				Summary:       fmt.Sprintf("Outbound C2/Threat Intelligence connection blocked: PID %d (%s) attempted connecting to %s", pid, comm, remoteIPStr),
+				RuleIDs:       []string{"STYX.EGRESS.THREAT_INTEL"},
+				Categories:    []string{"command_and_control", "exfiltration"},
+				Decision:      "drop",
+				Action:        "block-egress",
+				Outcome:       "dropped by kernel styx threat intelligence shield",
+				AttackStory:   storyNodes,
+				EvidenceRoot:  recordHash,
+			})
+		}
+
+		return false, "DROP_THREAT_INTEL", nil
+	}
+
+	// 4. Monitored Mode -> always permit
+	s.mu.RLock()
+	mode := s.mode
+	s.mu.RUnlock()
+
+	if mode == EgressModeMonitored {
+		return true, "PERMIT_MONITORED", nil
+	}
+
+	// 5. Default-Deny Decision
 	s.egressDrops.Add(1)
 	return false, "DROP_DEFAULT_DENY", nil
 }
