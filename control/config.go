@@ -227,12 +227,12 @@ func defaultConfig() Config {
 			EmergencyStopFile: "/var/lib/vgt/gedefense/EMERGENCY_STOP", AutoDegrade: true,
 		},
 		Feeds: FeedConfig{
-			Enabled: false, AutoApply: false, RefreshMinutes: 60,
-			MaxDownloadBytes: 8 << 20, MaxEntries: 100000,
-			Sources: []string{
-				"https://feodotracker.abuse.ch/downloads/ipblocklist.txt",
-				"https://www.spamhaus.org/drop/drop.txt",
-			},
+			Enabled:          false,
+			AutoApply:        true,
+			RefreshMinutes:   720,
+			MaxDownloadBytes: 16 << 20,
+			MaxEntries:       250000,
+			Sources:          append([]string(nil), DefaultThreatFeeds...),
 		},
 	}
 }
@@ -1017,9 +1017,6 @@ func validateConfig(cfg *Config) error {
 	}
 	if len(cfg.Dashboard.AllowedHosts) == 0 {
 		return errors.New("dashboard.allowed_hosts must not be empty")
-	}
-	if cfg.Feeds.AutoApply {
-		return errors.New("feeds.auto_apply is intentionally unsupported in the beta release line")
 	}
 	if cfg.Release.Channel != "beta" {
 		return errors.New("release.channel must be beta")

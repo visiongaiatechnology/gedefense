@@ -95,3 +95,58 @@ func TestStyxEgress_ScopedWhitelistAndDefaultDeny(t *testing.T) {
 		t.Fatalf("expected drop for unauthorized cell, got allowed=%t, reason=%s", allowed, reason)
 	}
 }
+
+func TestStyxEgress_ThreatIntelBlock(t *testing.T) {
+	correlator := NewIncidentCorrelator(1800 * time.Second)
+	var capturedIncident *XDRIncident
+
+	// Engine in Monitored mode (which normally permits all traffic)
+	engine := NewStyxEngine(EgressModeMonitored, correlator, func(inc XDRIncident) error {
+		capturedIncident = &inc
+		return nil
+	})
+
+	threatIndex := NewThreatIndex()
+	threatIndex.Replace([]string{
+		"203.0.113.50/32",
+		"198.51.100.0/24",
+	})
+	engine.SetThreatIndex(threatIndex)
+
+	ctx := context.Background()
+
+	// 1. Connection to known C2 / Threat IP must be dropped even in Monitored mode
+	allowed, reason, err := engine.EvaluateEgress(
+		ctx, "GLOBAL", "*", "203.0.113.50", 443, "TCP", 4567, "c2-beacon",
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if allowed {
+		t.Fatal("expected threat intelligence C2 destination to be blocked")
+	}
+	if reason != "DROP_THREAT_INTEL" {
+		t.Fatalf("expected reason DROP_THREAT_INTEL, got %s", reason)
+	}
+	if capturedIncident == nil {
+		t.Fatal("expected threat intelligence incident to be captured")
+	}
+	if capturedIncident.Severity != "CRITICAL" {
+		t.Fatalf("expected CRITICAL severity, got %s", capturedIncident.Severity)
+	}
+	if capturedIncident.RuleIDs[0] != "STYX.EGRESS.THREAT_INTEL" {
+		t.Fatalf("expected STYX.EGRESS.THREAT_INTEL rule, got %s", capturedIncident.RuleIDs[0])
+	}
+
+	// 2. Connection to clean IP in Monitored mode must be permitted
+	allowed, reason, err = engine.EvaluateEgress(
+		ctx, "GLOBAL", "*", "8.8.8.8", 53, "UDP", 4568, "dns-client",
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !allowed || reason != "PERMIT_MONITORED" {
+		t.Fatalf("expected clean IP permitted in monitored mode, got allowed=%t reason=%s", allowed, reason)
+	}
+}
+

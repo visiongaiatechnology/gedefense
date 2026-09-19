@@ -617,27 +617,59 @@ func (s *APIServer) deleteBlock(w http.ResponseWriter, r *http.Request) {
 
 func (s *APIServer) syncFeeds(w http.ResponseWriter, r *http.Request) {
 	if s.settings == nil || !s.settings.Get().FeedsEnabled {
-		apiError(w, http.StatusConflict, "feed synchronization is disabled", nil)
+		apiError(w, http.StatusConflict, "threat intelligence is disabled (100% Opt-In)", nil)
 		return
 	}
-	if !s.feedSyncing.CompareAndSwap(false, true) {
-		apiError(w, http.StatusConflict, "feed synchronization already running", nil)
-		return
-	}
-	defer s.feedSyncing.Store(false)
-	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	allowlist := s.settings.Get().ManagementAllowlist
+	ctx, cancel := context.WithTimeout(r.Context(), 45*time.Second)
 	defer cancel()
-	items, errs := s.feeds.Sync(ctx)
-	now := time.Now()
-	s.state.SetFeedVectors(len(items), now)
+	items, errs, err := s.feeds.SyncWithLock(ctx, "operator")
+	if err != nil {
+		var lockErr *ThreatIntelLockException
+		if errors.As(err, &lockErr) {
+			apiError(w, http.StatusConflict, err.Error(), nil)
+			return
+		}
+		apiError(w, http.StatusInternalServerError, "feed synchronization failed", err)
+		return
+	}
+
+	added, deleted, applyErr := s.feeds.ApplyToKernel(s.core, allowlist)
+	if applyErr != nil {
+		apiError(w, http.StatusInternalServerError, "kernel synchronization failed", applyErr)
+		return
+	}
+
+	now := time.Now().UTC()
+	blockCount := s.feeds.BlockIndex().Count()
+	correlateCount := s.feeds.CorrelateIndex().Count()
+	annotateCount := s.feeds.AnnotateIndex().Count()
+	gen := s.feeds.Generation()
+	fingerprint := s.feeds.Fingerprint()
+
+	s.state.SetFeedState(blockCount, correlateCount, annotateCount, gen, fingerprint, now)
 	severity := "info"
-	message := fmt.Sprintf("Threat feeds staged: %d unique public prefixes", len(items))
+	message := fmt.Sprintf("Threat intelligence synchronized [gen=%d fp=%.12s]: %d vectors (block=%d, correlate=%d, annotate=%d, kernel: +%d/-%d)",
+		gen, fingerprint, len(items), blockCount, correlateCount, annotateCount, added, deleted)
 	if len(errs) > 0 {
 		severity = "warning"
 		message += fmt.Sprintf("; %d source errors", len(errs))
 	}
 	s.state.AddEvent(Event{Severity: severity, Kind: "feeds.synced", Source: "intelligence", Message: message})
-	writeJSON(w, http.StatusOK, map[string]any{"vectors": len(items), "source_errors": len(errs), "auto_apply": false, "note": "Threat intelligence remains staged until local corroboration."})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"vectors":           len(items),
+		"generation":        gen,
+		"fingerprint":       fingerprint,
+		"block_vectors":     blockCount,
+		"correlate_vectors": correlateCount,
+		"annotate_vectors":  annotateCount,
+		"source_errors":     len(errs),
+		"kernel_added":      added,
+		"kernel_deleted":    deleted,
+		"auto_apply":        true,
+		"lock":              threatIntelLockKey,
+		"note":              "Threat intelligence active at kernel speed (XDP + cgroup_skb egress).",
+	})
 }
 
 func (s *APIServer) ackIncident(w http.ResponseWriter, r *http.Request) {

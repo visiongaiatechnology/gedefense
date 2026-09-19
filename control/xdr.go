@@ -188,6 +188,9 @@ func NewXDREngine(cfg Config, state *State, core *CoreClient, feeds *FeedManager
 		e.appendIncident(inc)
 		return nil
 	})
+	if feeds != nil {
+		e.styx.SetThreatIndex(feeds.BlockIndex())
+	}
 	e.morpheus = NewMorpheusRASP("", e.correlator, func(inc XDRIncident) error {
 		e.appendIncident(inc)
 		return nil
@@ -868,7 +871,7 @@ func (e *XDREngine) evaluate(p ProcessSample, conns []NetConnection, source stri
 	}
 	var index *ThreatIndex
 	if runtime.FeedsEnabled && e.feeds != nil {
-		index = e.feeds.index
+		index = e.feeds.CorrelateIndex()
 	}
 	decision := e.rules.EvaluateProcess(p, conns, index, e.baseline, extra...)
 	if decision.Score < runtime.AlertScore || len(decision.RuleIDs) == 0 {

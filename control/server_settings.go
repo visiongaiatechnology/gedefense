@@ -7,6 +7,7 @@ import (
 	"os"
 	"reflect"
 	"slices"
+	"time"
 )
 
 func (s *APIServer) settingsStatus(w http.ResponseWriter, _ *http.Request) {
@@ -101,6 +102,15 @@ func (s *APIServer) updateSettings(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		apiError(w, http.StatusBadRequest, "runtime settings rejected", err)
 		return
+	}
+	if current.FeedsEnabled && !updated.FeedsEnabled && s.feeds != nil {
+		if s.core != nil {
+			cleared, _ := s.feeds.ClearFromKernel(s.core)
+			if cleared > 0 {
+				s.state.AddEvent(Event{Severity: "info", Kind: "feeds.cleared", Source: "intelligence", Message: fmt.Sprintf("Threat intelligence deactivated: removed %d rules from kernel", cleared)})
+			}
+		}
+		s.state.SetFeedVectors(0, time.Now().UTC())
 	}
 	s.state.SetSettings(updated)
 	s.state.SetXDREnabled(updated.XDREnabled, updated.NetworkSensorEnabled)

@@ -1178,6 +1178,7 @@ function bindActions() {
     try {
       await syncFeeds();
       toast(t('toast.feedStarted'), 'good');
+      await refresh();
     } catch (error) {
       handleActionError(error);
       await refresh();
