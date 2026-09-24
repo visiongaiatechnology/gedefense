@@ -3,8 +3,6 @@
 <img width="256" height="256" alt="GeDefense" src="https://github.com/user-attachments/assets/978d2835-c915-473d-9995-d315efaa869c" />
 
 
-```
-```
 
 # VGT GeDefense
 ### Linux Security Fabric
