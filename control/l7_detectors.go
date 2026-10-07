@@ -19,7 +19,7 @@ import (
 )
 
 type l7Detector interface {
-	Detect(context.Context, l7NormalizedRequest) ([]L7Finding, error)
+	Detect(context.Context, l7NormalizedRequest, *l7RuntimeSnapshot) ([]L7Finding, error)
 }
 
 type l7PatternRule struct {
@@ -41,33 +41,38 @@ type l7PatternDefinition struct {
 	score, confidence                        int
 }
 
+// l7PatternDefinitions is the closed, read-only built-in signature set. The
+// operator can tune enablement, score, confidence and block eligibility of
+// these rules through the Fabric rule registry; the patterns themselves are
+// never administrable.
+var l7PatternDefinitions = []l7PatternDefinition{
+	{"L7.SQLI.UNION_SELECT", "sqli", "SQL UNION-based injection syntax detected", "high", `(?i)(?:\bunion\s+(?:all\s+)?select\b|\bselect\b.{0,160}\bfrom\b.{0,160}(?:--|#|/\*))`, 90, 92},
+	{"L7.SQLI.BOOLEAN_TAUTOLOGY", "sqli", "SQL boolean-tautology injection syntax detected", "high", `(?i)(?:['\"]\s*(?:or|and)\s+(?:['\"]?\w+['\"]?\s*=\s*['\"]?\w+['\"]?|\d+\s*=\s*\d+)|\b(?:or|and)\s+1\s*=\s*1\b)`, 75, 82},
+	{"L7.SQLI.TIME_DELAY", "sqli", "SQL time-delay primitive detected", "high", `(?i)\b(?:sleep\s*\(|benchmark\s*\(|pg_sleep\s*\(|waitfor\s+delay\b)`, 85, 90},
+	{"L7.SQLI.STACKED_QUERY", "sqli", "Stacked SQL statement syntax detected", "high", `(?i);\s*(?:select|insert|update|delete|drop|alter|create|exec(?:ute)?)\b`, 85, 88},
+	{"L7.XSS.SCRIPT_TAG", "xss", "Executable script element detected", "high", `(?i)<\s*script\b`, 90, 96},
+	{"L7.XSS.EVENT_HANDLER", "xss", "Inline browser event handler detected", "high", `(?i)\bon(?:error|load|click|mouseover|focus|animationstart|pointerenter)\s*=`, 80, 88},
+	{"L7.XSS.ACTIVE_URI", "xss", "Active browser URI scheme detected", "high", `(?i)(?:javascript|vbscript|data\s*:\s*text/html)\s*:`, 85, 90},
+	{"L7.XSS.IFRAME_SRCDOC", "xss", "Executable iframe srcdoc payload detected", "high", `(?is)<\s*iframe\b[^>]{0,512}\bsrcdoc\s*=`, 90, 94},
+	{"L7.CMD.SHELL_CHAIN", "command-injection", "Shell command chaining syntax detected", "high", `(?i)(?:;|&&|\|\||\|)\s*(?:/bin/)?(?:ba|da|z|k)?sh\b|(?:;|&&|\|\||\|)\s*(?:curl|wget|nc|ncat|socat|python\d*|perl|php|ruby)\b`, 95, 92},
+	{"L7.CMD.SUBSTITUTION", "command-injection", "Shell command substitution syntax detected", "high", `(?i)(?:\$\([^\r\n]{1,512}\)|` + "`" + `[^\r\n]{1,512}` + "`" + `)`, 75, 78},
+	{"L7.CMD.WINDOWS_CHAIN", "command-injection", "Windows command-execution chain detected", "high", `(?i)(?:;|&&|\|\||\|)\s*(?:powershell(?:\.exe)?|pwsh(?:\.exe)?|cmd(?:\.exe)?\s*/c|certutil(?:\.exe)?|bitsadmin(?:\.exe)?)\b`, 90, 90},
+	{"L7.PATH.TRAVERSAL", "path-traversal", "Filesystem traversal sequence detected", "high", `(?i)(?:^|[\\/])\.\.(?:[\\/]|$)|(?:/etc/(?:passwd|shadow|hosts)|/proc/(?:self|[0-9]+)/(?:environ|cmdline))`, 85, 92},
+	{"L7.FILE.STREAM_WRAPPER", "file-inclusion", "Server-side stream-wrapper reference detected", "high", `(?i)\b(?:php|phar|zip|expect|data)://`, 90, 91},
+	{"L7.SSTI.TEMPLATE_EXPR", "ssti", "Server-side template expression syntax detected", "high", `(?s)(?:\{\{.{0,512}\}\}|\{%[^%]{0,512}%\}|\$\{[^}]{1,512}\}|#\{[^}]{1,512}\}|<%=.{0,512}%>)`, 75, 78},
+	{"L7.XXE.DECLARATION", "xxe", "XML external-entity declaration detected", "critical", `(?i)<!\s*(?:DOCTYPE|ENTITY)\b`, 105, 96},
+	{"L7.XXE.EXTERNAL_SYSTEM", "xxe", "XML external SYSTEM/PUBLIC entity detected", "critical", `(?i)\b(?:SYSTEM|PUBLIC)\s+[\"'][^\"']{1,1000}[\"']`, 105, 94},
+	{"L7.DESERIALIZE.PHP", "deserialization", "PHP serialized object payload detected", "high", `(?s)(?:^|[^A-Za-z0-9])(?:O|C):[0-9]{1,8}:\"[^\"]{1,512}\"`, 80, 88},
+	{"L7.DESERIALIZE.JAVA", "deserialization", "Java serialized-object marker detected", "high", `(?:rO0AB|\xac\xed\x00\x05)`, 80, 86},
+	{"L7.SCANNER.PROBE", "scanner", "Common vulnerability-scanner probe detected", "medium", `(?i)(?:/\.git/(?:HEAD|config)|/\.env(?:$|[?&])|/wp-config\.php(?:\.bak)?|/phpinfo\.php|/server-status|/actuator/(?:env|heapdump)|/vendor/phpunit/)`, 55, 86},
+	{"L7.CRLF.HEADER_SPLIT", "header-injection", "CRLF response-header injection syntax detected", "high", `(?i)\r?\n(?:set-cookie|location|content-length|transfer-encoding|x-[a-z0-9-]{1,64})\s*:`, 90, 92},
+	{"L7.CODE.PHP_TAG", "code-injection", "Server-side PHP execution marker detected", "high", `(?i)<\?(?:php|=)`, 95, 94},
+	{"L7.JNDI.LOOKUP", "injection", "JNDI lookup payload detected", "critical", `(?i)\$\{\s*jndi\s*:\s*(?:ldap|ldaps|rmi|dns|iiop)\s*:`, 110, 98},
+}
+
 func newL7PatternDetector() (*l7PatternDetector, error) {
-	definitions := []l7PatternDefinition{
-		{"L7.SQLI.UNION_SELECT", "sqli", "SQL UNION-based injection syntax detected", "high", `(?i)(?:\bunion\s+(?:all\s+)?select\b|\bselect\b.{0,160}\bfrom\b.{0,160}(?:--|#|/\*))`, 90, 92},
-		{"L7.SQLI.BOOLEAN_TAUTOLOGY", "sqli", "SQL boolean-tautology injection syntax detected", "high", `(?i)(?:['\"]\s*(?:or|and)\s+(?:['\"]?\w+['\"]?\s*=\s*['\"]?\w+['\"]?|\d+\s*=\s*\d+)|\b(?:or|and)\s+1\s*=\s*1\b)`, 75, 82},
-		{"L7.SQLI.TIME_DELAY", "sqli", "SQL time-delay primitive detected", "high", `(?i)\b(?:sleep\s*\(|benchmark\s*\(|pg_sleep\s*\(|waitfor\s+delay\b)`, 85, 90},
-		{"L7.SQLI.STACKED_QUERY", "sqli", "Stacked SQL statement syntax detected", "high", `(?i);\s*(?:select|insert|update|delete|drop|alter|create|exec(?:ute)?)\b`, 85, 88},
-		{"L7.XSS.SCRIPT_TAG", "xss", "Executable script element detected", "high", `(?i)<\s*script\b`, 90, 96},
-		{"L7.XSS.EVENT_HANDLER", "xss", "Inline browser event handler detected", "high", `(?i)\bon(?:error|load|click|mouseover|focus|animationstart|pointerenter)\s*=`, 80, 88},
-		{"L7.XSS.ACTIVE_URI", "xss", "Active browser URI scheme detected", "high", `(?i)(?:javascript|vbscript|data\s*:\s*text/html)\s*:`, 85, 90},
-		{"L7.XSS.IFRAME_SRCDOC", "xss", "Executable iframe srcdoc payload detected", "high", `(?is)<\s*iframe\b[^>]{0,512}\bsrcdoc\s*=`, 90, 94},
-		{"L7.CMD.SHELL_CHAIN", "command-injection", "Shell command chaining syntax detected", "high", `(?i)(?:;|&&|\|\||\|)\s*(?:/bin/)?(?:ba|da|z|k)?sh\b|(?:;|&&|\|\||\|)\s*(?:curl|wget|nc|ncat|socat|python\d*|perl|php|ruby)\b`, 95, 92},
-		{"L7.CMD.SUBSTITUTION", "command-injection", "Shell command substitution syntax detected", "high", `(?i)(?:\$\([^\r\n]{1,512}\)|` + "`" + `[^\r\n]{1,512}` + "`" + `)`, 75, 78},
-		{"L7.CMD.WINDOWS_CHAIN", "command-injection", "Windows command-execution chain detected", "high", `(?i)(?:;|&&|\|\||\|)\s*(?:powershell(?:\.exe)?|pwsh(?:\.exe)?|cmd(?:\.exe)?\s*/c|certutil(?:\.exe)?|bitsadmin(?:\.exe)?)\b`, 90, 90},
-		{"L7.PATH.TRAVERSAL", "path-traversal", "Filesystem traversal sequence detected", "high", `(?i)(?:^|[\\/])\.\.(?:[\\/]|$)|(?:/etc/(?:passwd|shadow|hosts)|/proc/(?:self|[0-9]+)/(?:environ|cmdline))`, 85, 92},
-		{"L7.FILE.STREAM_WRAPPER", "file-inclusion", "Server-side stream-wrapper reference detected", "high", `(?i)\b(?:php|phar|zip|expect|data)://`, 90, 91},
-		{"L7.SSTI.TEMPLATE_EXPR", "ssti", "Server-side template expression syntax detected", "high", `(?s)(?:\{\{.{0,512}\}\}|\{%[^%]{0,512}%\}|\$\{[^}]{1,512}\}|#\{[^}]{1,512}\}|<%=.{0,512}%>)`, 75, 78},
-		{"L7.XXE.DECLARATION", "xxe", "XML external-entity declaration detected", "critical", `(?i)<!\s*(?:DOCTYPE|ENTITY)\b`, 105, 96},
-		{"L7.XXE.EXTERNAL_SYSTEM", "xxe", "XML external SYSTEM/PUBLIC entity detected", "critical", `(?i)\b(?:SYSTEM|PUBLIC)\s+[\"'][^\"']{1,1000}[\"']`, 105, 94},
-		{"L7.DESERIALIZE.PHP", "deserialization", "PHP serialized object payload detected", "high", `(?s)(?:^|[^A-Za-z0-9])(?:O|C):[0-9]{1,8}:\"[^\"]{1,512}\"`, 80, 88},
-		{"L7.DESERIALIZE.JAVA", "deserialization", "Java serialized-object marker detected", "high", `(?:rO0AB|\xac\xed\x00\x05)`, 80, 86},
-		{"L7.SCANNER.PROBE", "scanner", "Common vulnerability-scanner probe detected", "medium", `(?i)(?:/\.git/(?:HEAD|config)|/\.env(?:$|[?&])|/wp-config\.php(?:\.bak)?|/phpinfo\.php|/server-status|/actuator/(?:env|heapdump)|/vendor/phpunit/)`, 55, 86},
-		{"L7.CRLF.HEADER_SPLIT", "header-injection", "CRLF response-header injection syntax detected", "high", `(?i)\r?\n(?:set-cookie|location|content-length|transfer-encoding|x-[a-z0-9-]{1,64})\s*:`, 90, 92},
-		{"L7.CODE.PHP_TAG", "code-injection", "Server-side PHP execution marker detected", "high", `(?i)<\?(?:php|=)`, 95, 94},
-		{"L7.JNDI.LOOKUP", "injection", "JNDI lookup payload detected", "critical", `(?i)\$\{\s*jndi\s*:\s*(?:ldap|ldaps|rmi|dns|iiop)\s*:`, 110, 98},
-	}
-	detector := &l7PatternDetector{rules: make([]l7PatternRule, 0, len(definitions))}
-	for _, definition := range definitions {
+	detector := &l7PatternDetector{rules: make([]l7PatternRule, 0, len(l7PatternDefinitions))}
+	for _, definition := range l7PatternDefinitions {
 		re, err := regexp.Compile(definition.pattern)
 		if err != nil {
 			return nil, fmt.Errorf("compile l7 rule %s: %w", definition.id, err)
@@ -80,7 +85,7 @@ func newL7PatternDetector() (*l7PatternDetector, error) {
 	return detector, nil
 }
 
-func (d *l7PatternDetector) Detect(ctx context.Context, req l7NormalizedRequest) ([]L7Finding, error) {
+func (d *l7PatternDetector) Detect(ctx context.Context, req l7NormalizedRequest, _ *l7RuntimeSnapshot) ([]L7Finding, error) {
 	findings := make([]L7Finding, 0, 8)
 	seen := make(map[string]struct{}, len(d.rules))
 	for index, candidate := range req.Candidates {
@@ -115,7 +120,7 @@ func newL7SSRFDetector() (*l7SSRFDetector, error) {
 	return &l7SSRFDetector{urlPattern: re}, nil
 }
 
-func (d *l7SSRFDetector) Detect(ctx context.Context, req l7NormalizedRequest) ([]L7Finding, error) {
+func (d *l7SSRFDetector) Detect(ctx context.Context, req l7NormalizedRequest, _ *l7RuntimeSnapshot) ([]L7Finding, error) {
 	findings := make([]L7Finding, 0, 2)
 	seen := make(map[string]struct{}, 2)
 	for index, candidate := range req.Candidates {
@@ -232,7 +237,7 @@ func parseIPv4Number(part string) (uint64, bool) {
 
 type l7ProtocolDetector struct{}
 
-func (l7ProtocolDetector) Detect(ctx context.Context, req l7NormalizedRequest) ([]L7Finding, error) {
+func (l7ProtocolDetector) Detect(ctx context.Context, req l7NormalizedRequest, _ *l7RuntimeSnapshot) ([]L7Finding, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -266,11 +271,11 @@ func (l7ProtocolDetector) Detect(ctx context.Context, req l7NormalizedRequest) (
 }
 
 type l7UploadDetector struct {
-	cfg     L7Config
+	live    *l7Runtime
 	airlock *AirlockInspector
 }
 
-func (d l7UploadDetector) Detect(ctx context.Context, req l7NormalizedRequest) ([]L7Finding, error) {
+func (d l7UploadDetector) Detect(ctx context.Context, req l7NormalizedRequest, snapshot *l7RuntimeSnapshot) ([]L7Finding, error) {
 	if req.ContentType != "multipart/form-data" || len(req.Body) == 0 {
 		return nil, nil
 	}
@@ -282,6 +287,7 @@ func (d l7UploadDetector) Detect(ctx context.Context, req l7NormalizedRequest) (
 	if err != nil || params["boundary"] == "" || len(params["boundary"]) > 200 {
 		return []L7Finding{newL7Finding("L7.UPLOAD.INVALID_MULTIPART", "file-upload", "high", 80, 92, "body.multipart", req.BodySHA256, "Malformed multipart upload framing detected")}, nil
 	}
+	cfg := snapshot.cfg
 	reader := multipart.NewReader(bytes.NewReader(req.Body), params["boundary"])
 	findings := make([]L7Finding, 0, 2)
 	parts := 0
@@ -298,7 +304,7 @@ func (d l7UploadDetector) Detect(ctx context.Context, req l7NormalizedRequest) (
 			break
 		}
 		parts++
-		if parts > d.cfg.MaxMultipartParts {
+		if parts > cfg.MaxMultipartParts {
 			findings = append(findings, newL7Finding("L7.UPLOAD.PART_BUDGET", "file-upload", "high", 75, 99, "body.multipart", req.BodySHA256, "Multipart part budget exceeded"))
 			break
 		}
@@ -307,12 +313,12 @@ func (d l7UploadDetector) Detect(ctx context.Context, req l7NormalizedRequest) (
 			_ = part.Close()
 			continue
 		}
-		data, readErr := io.ReadAll(io.LimitReader(part, int64(d.cfg.MaxUploadBytes)+1))
+		data, readErr := io.ReadAll(io.LimitReader(part, int64(cfg.MaxUploadBytes)+1))
 		_ = part.Close()
 		if readErr != nil {
 			continue
 		}
-		if len(data) > d.cfg.MaxUploadBytes {
+		if len(data) > cfg.MaxUploadBytes {
 			findings = append(findings, newL7Finding("L7.UPLOAD.SIZE_BUDGET", "file-upload", "high", 80, 99, "upload."+safeLocationKey(filename), req.BodySHA256, "Uploaded file exceeds the inline inspection budget"))
 			continue
 		}

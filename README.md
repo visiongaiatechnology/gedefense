@@ -8,9 +8,9 @@
 ### Linux Security Fabric
 
 [![License](https://img.shields.io/badge/License-AGPL--3.0--only-blue?style=for-the-badge)](https://www.gnu.org/licenses/agpl-3.0)
-[![Version](https://img.shields.io/badge/Version-4.0.1-orange?style=for-the-badge)](#)
-[![Status](https://img.shields.io/badge/Status-Release_v4.0.1-yellow?style=for-the-badge)](#)
-[![Installer](https://img.shields.io/badge/Installer-4.0.1_Universal_Linux-green?style=for-the-badge)](#-quick-start)
+[![Version](https://img.shields.io/badge/Version-4.2.0-orange?style=for-the-badge)](#)
+[![Status](https://img.shields.io/badge/Status-Release_v4.2.0-yellow?style=for-the-badge)](#)
+[![Installer](https://img.shields.io/badge/Installer-4.2.0_Universal_Linux-green?style=for-the-badge)](#-quick-start)
 [![Platform](https://img.shields.io/badge/Platform-Linux_x86__64-lightgrey?style=for-the-badge&logo=linux)](#)
 [![Data Plane](https://img.shields.io/badge/Data_Plane-Rust_eBPF%2FXDP-red?style=for-the-badge&logo=rust)](#-architecture)
 [![Control Plane](https://img.shields.io/badge/Control_Plane-Go-00ADD8?style=for-the-badge&logo=go)](#-architecture)
@@ -28,15 +28,50 @@
 
 ---
 
-## ⚠️ STABILITY & ASSURANCE — RELEASE v4.0.1 · UNIVERSAL LINUX PLATFORM
+## 🚨 KRITISCHE SICHERHEITSWARNUNG & SECURITY ADVISORY — RELEASE v4.2.0
 
-VGT GeDefense 4.0.1 is the flagship Linux security fabric — the hardened kernel-speed defense chain plus a universal Linux integration, hardened release pipeline and concrete kernel/NIC qualification gate. It is designed for sovereign host and network protection.
+> [!CAUTION]
+> **DRINGENDER SICHERHEITSHINWEIS FÜR ALLE OPERATOREN & SYSTEMADMINISTRATOREN (UPGRADE DRINGEND EMPFOHLEN):**
+> 
+> In GeDefense Version 4.2.0 wurden im Rahmen eines umfassenden Audits und Verifikationslaufs **mehrere kritische Sicherheitslücken und Integritätsrisiken früherer Versionen (4.0.x / 4.1.0)** identifiziert und vollständig behoben. Ein sofortiges Upgrade auf v4.2.0 wird für alle Produktivinstallationen dringend angeraten:
+> 
+> 1. **Kritische Rechteausweitung durch Symlink-Traversal (Canary Deployment):**
+>    - *Schwachstelle:* Das vorherige Canary-Deployment folgte symbolischen Links am Decoy- oder Staging-Pfad. Ein manipulierter Link in übergeordneten Pfaden konnte Schreibzugriffe auf beliebige Verzeichnisse umleiten (`cron`, `authorized_keys`, `ld.so.preload`) → Willkürliches Dateischreiben mit Root-Privilegien.
+>    - *Behebung:* Vollständige Umstellung auf descriptor-basierte Auflösung (`openat(2)` mit `O_NOFOLLOW|O_DIRECTORY` für jede einzelne Pfadkomponente). Untergeschobene Symlinks scheitern deterministisch mit `ELOOP`.
+> 
+> 2. **Opaque Error Responses statt Informationsabfluss:**
+>    - *Schwachstelle:* Fünf API-Handler lieferten rohe Laufzeitfehler an Clients (interne Dateisystempfade, Kernel-Faults, Upstream-Feed-URLs, DNS-/TLS-Interna). Die bisherige Stichwort-Blacklist war unzureichend.
+>    - *Behebung:* Strukturelle Entkopplung — interne Laufzeitfehler werden niemals als API-Meldungen weitergereicht, sondern durch opake, typisierte Fehlerantworten ersetzt.
+> 
+> 3. **Fail-Closed CSPRNG & Vorhersagbarkeits-Schutz:**
+>    - *Schwachstelle:* Beim Versagen der System-Zufallsquelle fielen Evidence-, Incident-, Block- und Transaktions-IDs auf vorhersehbare Zeitstempel zurück.
+>    - *Behebung:* Striktes Fail-Closed via `log.Fatalf` — kryptografische IDs können niemals auf vorhersagbare Werte degradieren.
+> 
+> 4. **Crash-Sicherer Atomarer Writer (`atomicWriteFile`):**
+>    - Richtlinien, Feed-Zustände und Chronos-Checkpoints nutzen ausnahmslos atomares Schreiben mit Symlink-Ablehnung, `O_EXCL` und `fsync` auf Datei sowie Elternverzeichnis.
+> 
+> 5. **Härtung der Content Security Policy (CSP) & Trusted Types:**
+>    - `unsafe-inline` für Styles wurde vollständig aus der CSP entfernt.
+>    - `require-trusted-types-for 'script'` ist aktiv und wird vom Browser als Laufzeit-Invariante erzwungen (keine DOM-XSS-Sinks).
+> 
+> 6. **Deadlock & Fail-Open Beseitigung in der Engine:**
+>    - Deadlock in `CaseEngine.Status` (rekursiver Mutex-Lock) behoben.
+>    - Beseitigung von zwei Fail-Open Zuständen im Airlock-Inspektor und der CaseEngine.
+> 
+> 7. **Toolchain-Sicherheitsboden (Go ≥ 1.26.6):**
+>    - Beseitigung von 6 erreichbaren Standardbibliothek-CVEs älterer Go-Versionen auf den Ingress- und Feed-Pfaden.
 
-**Production clearance is deliberately a property of the concretely audited target host — not just the source code.**
+---
 
-Initial deployment: **Observe mode only.** Canary and Enforce exclusively after documented gates have been passed.
+## ⚠️ STABILITY & ASSURANCE — RELEASE v4.2.0 · UNIVERSAL LINUX PLATFORM
 
-Found a vulnerability or have an improvement? **Open an issue or contact us.**
+VGT GeDefense 4.2.0 ist das Flaggschiff der Linux Security Fabric — gehärtete Kernel-Speed Defense Chain kombiniert mit der neuen **Security Fabric Control Plane**, universeller Linux-Integration, gehärteter Release-Pipeline und konkretem Kernel/NIC-Qualifikations-Gate. Es ist für den souveränen Schutz von Hosts und Netzwerken konzipiert.
+
+**Die Produktionsfreigabe ist bewusst eine Eigenschaft des konkret geprüften Zielhosts — nicht bloß des Quellcodes.**
+
+Erster Rollout: **Observe-Modus**. Canary und Enforce ausschließlich nach Erfüllung der dokumentierten Gates.
+
+Sicherheitsbefund oder Verbesserungsvorschlag? **Issue eröffnen oder direkt Kontakt aufnehmen.**
 
 ---
 
@@ -69,6 +104,36 @@ Found a vulnerability or have an improvement? **Open an issue or contact us.**
 - **Web-Evidence Isolation Barrier:** Web findings carry `AlertOnly: true` (`ResponseScore: 0`). A web-tier finding can never autonomously trigger host-level process termination (`SIGKILL`/`SIGSTOP`); destructive containment strictly requires independent host/kernel evidence.
 - **Cryptographic Evidence Ledger:** Tamper-evident, monotone sequence with predecessor hashing (`AES-256-GCM` + `Ed25519`).
 - **Reversible Sysctl Hardening:** Atomic compare-and-set with kernel readback and automatic rollback on partial failure.
+
+---
+
+## 🚀 What's New in GeDefense 4.2.0: Security Fabric Control Plane, Full-Stack Audit Fixes & UI/UX Supreme
+
+VGT GeDefense 4.2.0 represents a major evolutionary leap for the sovereign Linux Security Fabric:
+
+* **Security Fabric Control Plane (12 Administrable Modules):**
+  * Full schema-driven configuration for 12 modular subsystems (`kinetic`, `network`, `protection`, `xdr`, `l7`, `threat_intel`, `hardening`, `integrity`, `boot_trust`, `policy_trust`, `forensics`, `system`).
+  * The server is the single source of truth; the dashboard renders entirely from schemas with zero hardcoded setting names.
+  * **Immutable Snapshots on Hot Paths:** Configuration revisions compile into atomic immutable snapshots. A request resolves exactly one snapshot, eliminating race conditions or hybrid states during mid-request changes.
+  * **Hardened Invariants are Non-Administrable:** Kernel map bounds, Core IPC authentication, path validation, private-key secrecy, management self-lockout, and feed anti-poisoning remain permanently hard-locked.
+
+* **Fabric Control-Plane Operations & Drift Detection:**
+  * `GET /api/v1/settings/search` — Deterministic search across all configuration keys with live effective values and match rationale.
+  * `POST /api/v1/settings/export` — Cryptographically signed, secret-free export bundles across all namespaces.
+  * `POST /api/v1/settings/import/preview` + `.../apply` — Genuinely two-stage import: cryptographic signature verification, diff generation, and execution via single-use expiring tokens bound to reviewed content.
+  * `GET /api/v1/settings/drift` — Continuous drift watch: revisions failing engine synchronization flag `CONFIG_DRIFT` (never false `SYSTEM_NOMINAL`).
+
+* **Fully Vendored Offline SVG World Map (jsVectorMap 1.7.0):**
+  * Complete local geometry (`world_merc`) across 43 vendored source files. Zero CDN, zero tile servers, zero external network calls.
+  * **Strict Trusted Types Enforcement:** Operates 100% compliant with `require-trusted-types-for 'script'` by bypassing DOM string sinks via native button elements.
+  * Live tracking markers, pulsating new sources, event-rate choropleth maps, and distinct color buckets for blocked threats.
+  * Bounded DOM rendering budgets (96 tracking, 48 blocked, 24 pulse, 192 regions) with visual threshold limits.
+
+* **UI/UX Supreme — Complete Dashboard Redesign:**
+  * Replaced repetitive card grids across Kinetic Defense, Threat Intel, Application Defense, and XDR with a unified command tier and grouped telemetry tracks.
+  * Semantic `<dl>` data structures with hairline dividers replace heavy card borders.
+  * State-driven accent colors: functional highlights activate only on non-zero metrics.
+  * True `<button>` keyboard accessibility, full WCAG AA contrast compliance, and complete support for `prefers-reduced-motion`.
 
 ---
 
@@ -550,7 +615,38 @@ The firewall rule for the HTTPS gateway port (TCP 9843) can be configured via UF
 
 ## 📋 Changelog
 
-### v4.0.1 — Chinese Localization, Dedicated XDR Kernel Recovery Tab & Startscreen Expansion *(Current)*
+### v4.2.0 — Security Fabric Control Plane *(Current)*
+
+* **Vollständige Behebung des Sicherheits-Audits & Härtung:**
+  * **Kritisch:** Beseitigung der Symlink-Traversal-Schwachstelle im Canary-Deployment (willkürliches Dateischreiben / Root-Privilege-Escalation) via komponentenweiser `openat(2)`-Auflösung mit `O_NOFOLLOW|O_DIRECTORY` und `ELOOP`-Erzwingung.
+  * **Hoch:** Ersatz von Information-Disclosure-Lecks durch typisierte, opake Fehlerantworten bei 5 API-Handlern; strukturelle Entkopplung statt unvollständiger Wort-Blacklists.
+  * **Hoch:** Fail-Closed CSPRNG (`log.Fatalf`) verhindert vorhersagbare Zeitstempel-IDs für Incidents, Quarantäne und Blöcke.
+  * **Hoch:** Remote-Panic im Settings-Import-Preview durch Fail-Closed-Schlüsselerzeugung behoben.
+  * **Hoch:** Import-Token sind kryptografisch an den geprüften Inhalt gebunden (verhindert Token-Kollisionen).
+  * **Mittel:** Crash-sicherer atomarer Writer (`atomicWriteFile`) für Policy, Feeds und Chronos mit Symlink-Ablehnung und `fsync`.
+  * **Mittel:** `unsafe-inline` Styles aus der Content Security Policy verbannt; HSTS ausschließlich über TLS.
+* **Security Fabric Control Plane:**
+  * 12 administrierbare Module (`kinetic`, `network`, `protection`, `xdr`, `l7`, `threat_intel`, `hardening`, `integrity`, `boot_trust`, `policy_trust`, `forensics`, `system`).
+  * Server-authoritatives Schema, unveränderliche Snapshots auf heißen Pfaden, persistierte `restart_required`-Semantik.
+  * Nicht-administrierbare Sicherheitsinvarianten: Kernel-Maps, Core-Auth, Private-Key-Geheimhaltung, Management-Self-Lockout, Feed-Anti-Poisoning.
+* **Control-Plane Workbench & Telemetrie:**
+  * Deterministische Settings-Suche (`GET /api/v1/settings/search`) mit Live-Werten und Trefferbegründung.
+  * Kryptografisch signierter, geheimnisfreier Settings-Export (`POST /api/v1/settings/export`).
+  * Echter zweistufiger Import (`/import/preview` + `/import/apply`) mit Diff-Analyse und Einmal-Tokens.
+  * Kontinuierliche Drift-Erkennung (`GET /api/v1/settings/drift`) signalisiert `CONFIG_DRIFT`.
+* **Vendorte Offline-SVG-Weltkarte (jsVectorMap 1.7.0):**
+  * 100% lokales Rendern ohne CDN oder Kachelserver; native Buttons gewährleisten vollständige Konformität mit `require-trusted-types-for 'script'`.
+  * Lokale GeoIP/ASN-Auflösung, Choropleth-Dichteanzeige, Live-Marker und Traffic-Puls.
+* **UI/UX Supreme — Modernes Dashboard-Design:**
+  * Kartenraster eliminiert; semantische `<dl>`-Datenbänder mit Haarlinien-Trennern.
+  * Reine Zustandsfarben, Barrierefreiheit (WCAG AA), echte Tastatur-Controls (`<button>`) und Unterstützung für `prefers-reduced-motion`.
+* **Laufzeit- und Engine-Fixes:**
+  * Deadlock in `CaseEngine.Status` behoben.
+  * Fail-Open im Airlock-Inspektor und in der CaseEngine beseitigt.
+  * Route `GET /assets/{name...}` für mehrstufige Pfade korrigiert.
+  * Toolchain-Sicherheitsboden auf Go ≥ 1.26.6 angehoben (behebt 6 Standardbibliothek-CVEs).
+
+### v4.0.1 — Chinese Localization, Dedicated XDR Kernel Recovery Tab & Startscreen Expansion
 
 - **Simplified Chinese (`zh-CN` / `ZH`) Localization:** Complete Command Center translation across all tabs, dialogs, operations, placeholders, and runtime toasts (743 keys, 100% parity across DE, EN, RU, zh-CN). Added Chinese language selector and localized copy to public Access Gateway Startscreen.
 - **Dedicated XDR Kernel Recovery Tab:** Added dedicated `#xdr` recovery interface tab and `/api/v1/xdr/recovery` endpoint with `ARCHIVE_AND_REINITIALIZE_XDR` confirmation gate to inspect degraded ledger state, archive corrupted chains with cryptographic SHA-256 manifests, and safely re-initialize kernel eBPF sensors and maps directly from the UI.

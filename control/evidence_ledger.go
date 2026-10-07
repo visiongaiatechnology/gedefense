@@ -88,6 +88,7 @@ type EvidenceLedger struct {
 	maxBytes     int64
 	integrityErr error
 	recent       []EvidenceRecord
+	policy       EvidenceFabricSettings
 }
 
 func NewEvidenceLedger(path, keyPath, storageKeyPath, nodeName string, maxBytes int64) (*EvidenceLedger, error) {
@@ -116,6 +117,7 @@ func NewEvidenceLedger(path, keyPath, storageKeyPath, nodeName string, maxBytes 
 	ledger := &EvidenceLedger{
 		path: path, headPath: path + ".head", keyPath: keyPath, publicPath: keyPath + ".pub",
 		privateKey: privateKey, publicKey: publicKey, crypto: storage, maxBytes: maxBytes,
+		policy: defaultIntegrityFabricSettings(Config{}).Evidence,
 		recent: make([]EvidenceRecord, 0, 256),
 	}
 	if err := ledger.writeOrVerifyPublicKey(); err != nil {
@@ -413,11 +415,11 @@ func (l *EvidenceLedger) Append(record EvidenceRecord) (EvidenceRecord, error) {
 		}
 	}
 	nextSize := l.expectedSize + int64(len(line)+1)
-	if nextSize > l.maxBytes {
+	if nextSize > l.effectiveMaxBytesLocked() {
 		l.integrityErr = errors.New("evidence ledger size budget exhausted")
 		return EvidenceRecord{}, l.integrityErr
 	}
-	file, err := os.OpenFile(l.path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	file, err := os.OpenFile(l.path, os.O_CREATE|os.O_APPEND|os.O_WRONLY|noFollowFlag, 0o600)
 	if err != nil {
 		return EvidenceRecord{}, err
 	}
@@ -466,6 +468,39 @@ func (l *EvidenceLedger) verifyUnchangedLocked() error {
 		return errors.New("evidence ledger size changed outside the trusted writer")
 	}
 	return nil
+}
+
+// ApplyPolicy republishes the administrable evidence budget and page bounds. A
+// lowered budget takes effect on the next append and never truncates existing
+// records: the ledger is append-only by construction.
+func (l *EvidenceLedger) ApplyPolicy(settings EvidenceFabricSettings) error {
+	if l == nil {
+		return nil
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.policy = settings
+	if settings.MaxBytes > 0 {
+		l.maxBytes = settings.MaxBytes
+	}
+	return nil
+}
+
+// Policy returns the active evidence policy.
+func (l *EvidenceLedger) Policy() EvidenceFabricSettings {
+	if l == nil {
+		return EvidenceFabricSettings{}
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.policy
+}
+
+func (l *EvidenceLedger) effectiveMaxBytesLocked() int64 {
+	if l.policy.MaxBytes > 0 {
+		return l.policy.MaxBytes
+	}
+	return l.maxBytes
 }
 
 func (l *EvidenceLedger) Verify() error {

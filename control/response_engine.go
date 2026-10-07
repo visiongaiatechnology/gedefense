@@ -51,11 +51,11 @@ func NewResponseStorageException(msg string, err error) *ResponseStorageExceptio
 type ResponseActionType string
 
 const (
-	ActionContainIP        ResponseActionType = "CONTAIN_IP"
-	ActionRestrictProcess  ResponseActionType = "RESTRICT_PROCESS"
-	ActionIsolateNetwork   ResponseActionType = "ISOLATE_NETWORK"
-	ActionFreezeExecution  ResponseActionType = "FREEZE_EXECUTION"
-	ActionContainCell      ResponseActionType = "CONTAIN_CELL"
+	ActionContainIP       ResponseActionType = "CONTAIN_IP"
+	ActionRestrictProcess ResponseActionType = "RESTRICT_PROCESS"
+	ActionIsolateNetwork  ResponseActionType = "ISOLATE_NETWORK"
+	ActionFreezeExecution ResponseActionType = "FREEZE_EXECUTION"
+	ActionContainCell     ResponseActionType = "CONTAIN_CELL"
 )
 
 // Status Types
@@ -71,10 +71,10 @@ const (
 )
 
 const (
-	DefaultResponseTTL  = 900 * time.Second       // 15 minutes
-	MaxEscalatedTTL     = 7 * 24 * time.Hour      // 7 days ceiling
-	LookbackWindow24h   = 24 * time.Hour
-	MaxResponseRecords  = 8192
+	DefaultResponseTTL = 900 * time.Second  // 15 minutes
+	MaxEscalatedTTL    = 7 * 24 * time.Hour // 7 days ceiling
+	LookbackWindow24h  = 24 * time.Hour
+	MaxResponseRecords = 8192
 )
 
 // CoreActionDispatcher abstracts privileged kernel mutations across standalone Linux and AstraeaOS.

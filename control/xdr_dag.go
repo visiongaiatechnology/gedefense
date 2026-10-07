@@ -91,12 +91,12 @@ func (n *AttackStoryNode) ComputeNodeDigest() string {
 // AttackStoryGraph encapsulates a verified Directed Acyclic Graph of incident events.
 type AttackStoryGraph struct {
 	mu        sync.RWMutex
-	ChainID   string                       `json:"chain_id"`
-	Nodes     []AttackStoryNode            `json:"nodes"`
+	ChainID   string            `json:"chain_id"`
+	Nodes     []AttackStoryNode `json:"nodes"`
 	nodeMap   map[string]AttackStoryNode
 	adjList   map[string][]string
 	inDegree  map[string]int
-	RootNodes []string                     `json:"root_nodes"`
+	RootNodes []string `json:"root_nodes"`
 }
 
 // NewAttackStoryGraph creates an empty, thread-safe attack story graph.
@@ -385,4 +385,3 @@ func SerializeGraph(g *AttackStoryGraph) ([]byte, error) {
 	nodes := g.CloneNodes()
 	return json.Marshal(nodes)
 }
-

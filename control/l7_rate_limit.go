@@ -21,32 +21,29 @@ type l7LimiterShard struct {
 	lastGC   time.Time
 }
 
+// l7ShardedLimiter holds only token-bucket state. Rates are supplied per call
+// from the published Fabric snapshot, so an operator revision takes effect on
+// the next evaluation without rebuilding or draining limiter state.
 type l7ShardedLimiter struct {
-	rate             float64
-	burst            float64
 	maxEntriesPerMap int
 	shards           [l7LimiterShards]l7LimiterShard
 }
 
-func newL7ShardedLimiter(perMinute, burst, maxEntries int) *l7ShardedLimiter {
-	limiter := &l7ShardedLimiter{
-		rate: float64(perMinute) / 60.0, burst: float64(burst),
-		maxEntriesPerMap: (maxEntries + l7LimiterShards - 1) / l7LimiterShards,
-	}
+func newL7ShardedLimiter(maxEntries int) *l7ShardedLimiter {
+	limiter := &l7ShardedLimiter{maxEntriesPerMap: (maxEntries + l7LimiterShards - 1) / l7LimiterShards}
 	if limiter.maxEntriesPerMap < 16 {
 		limiter.maxEntriesPerMap = 16
 	}
 	now := time.Now()
 	for i := range limiter.shards {
 		limiter.shards[i].buckets = make(map[string]l7TokenBucket, limiter.maxEntriesPerMap)
-		limiter.shards[i].overflow = l7TokenBucket{tokens: limiter.burst, last: now}
 		limiter.shards[i].lastGC = now
 	}
 	return limiter
 }
 
-func (l *l7ShardedLimiter) Allow(key string, now time.Time) bool {
-	if l == nil || l.rate <= 0 || l.burst <= 0 {
+func (l *l7ShardedLimiter) Allow(key string, rate, burst float64, now time.Time) bool {
+	if l == nil || rate <= 0 || burst <= 0 {
 		return false
 	}
 	shard := &l.shards[l7ShardIndex(key)]
@@ -60,13 +57,12 @@ func (l *l7ShardedLimiter) Allow(key string, now time.Time) bool {
 				l7LimiterGCLocked(shard, now, 5*time.Minute)
 			}
 			if len(shard.buckets) >= l.maxEntriesPerMap {
-				allowed := consumeL7Token(&shard.overflow, l.rate, l.burst, now)
-				return allowed
+				return consumeL7Token(&shard.overflow, rate, burst, now)
 			}
 		}
-		bucket = l7TokenBucket{tokens: l.burst, last: now}
+		bucket = l7TokenBucket{tokens: burst, last: now}
 	}
-	allowed := consumeL7Token(&bucket, l.rate, l.burst, now)
+	allowed := consumeL7Token(&bucket, rate, burst, now)
 	shard.buckets[key] = bucket
 	if now.Sub(shard.lastGC) >= 2*time.Minute {
 		l7LimiterGCLocked(shard, now, 15*time.Minute)
@@ -115,54 +111,43 @@ type L7RateLimiter struct {
 	client          *l7ShardedLimiter
 	sensitive       *l7ShardedLimiter
 	sensitiveGlobal *l7ShardedLimiter
-	paths           map[string]struct{}
 }
 
 func NewL7RateLimiter(cfg L7Config) *L7RateLimiter {
-	paths := make(map[string]struct{}, len(cfg.SensitivePaths))
-	for _, path := range cfg.SensitivePaths {
-		paths[path] = struct{}{}
-	}
+	return newL7RateLimiterWithRuntime(cfg)
+}
+
+func newL7RateLimiterWithRuntime(cfg L7Config) *L7RateLimiter {
 	return &L7RateLimiter{
-		client:          newL7ShardedLimiter(cfg.ClientRatePerMinute, cfg.ClientRateBurst, cfg.MaxTrackedClients),
-		sensitive:       newL7ShardedLimiter(cfg.SensitiveRatePerMinute, cfg.SensitiveRateBurst, cfg.MaxTrackedClients),
-		sensitiveGlobal: newL7ShardedLimiter(cfg.SensitiveGlobalRatePerMinute, cfg.SensitiveGlobalRateBurst, cfg.MaxTrackedClients),
-		paths:           paths,
+		client:          newL7ShardedLimiter(cfg.MaxTrackedClients),
+		sensitive:       newL7ShardedLimiter(cfg.MaxTrackedClients),
+		sensitiveGlobal: newL7ShardedLimiter(cfg.MaxTrackedClients),
 	}
 }
 
-func (l *L7RateLimiter) Evaluate(remoteIP, host, path, method string, now time.Time) (bool, string) {
-	if l == nil {
+func l7Rate(perMinute int) float64 { return float64(perMinute) / 60.0 }
+
+// Evaluate performs one rate decision against exactly the snapshot it is
+// handed. The caller passes the same snapshot that governs the rest of the
+// inspection, which keeps a single request self-consistent.
+func (l *L7RateLimiter) Evaluate(snapshot *l7RuntimeSnapshot, remoteIP, host, path, method string, now time.Time) (bool, string) {
+	if l == nil || snapshot == nil {
 		return true, ""
 	}
+	cfg := snapshot.cfg
 	clientKey := remoteIP + "|" + strings.ToLower(host)
-	if !l.client.Allow(clientKey, now) {
+	if !l.client.Allow(clientKey, l7Rate(cfg.ClientRatePerMinute), float64(cfg.ClientRateBurst), now) {
 		return false, "client"
 	}
-	if l.sensitivePath(path) {
+	if snapshot.sensitivePath(path) {
 		globalKey := strings.ToLower(host) + "|" + method + "|" + path
-		if !l.sensitiveGlobal.Allow(globalKey, now) {
+		if !l.sensitiveGlobal.Allow(globalKey, l7Rate(cfg.SensitiveGlobalRatePerMinute), float64(cfg.SensitiveGlobalRateBurst), now) {
 			return false, "sensitive-route-global"
 		}
 		key := clientKey + "|" + method + "|" + path
-		if !l.sensitive.Allow(key, now) {
+		if !l.sensitive.Allow(key, l7Rate(cfg.SensitiveRatePerMinute), float64(cfg.SensitiveRateBurst), now) {
 			return false, "sensitive-route"
 		}
 	}
 	return true, ""
-}
-
-func (l *L7RateLimiter) sensitivePath(path string) bool {
-	if l == nil || path == "" {
-		return false
-	}
-	if _, ok := l.paths[path]; ok {
-		return true
-	}
-	for configured := range l.paths {
-		if configured != "/" && strings.HasPrefix(path, configured+"/") {
-			return true
-		}
-	}
-	return false
 }

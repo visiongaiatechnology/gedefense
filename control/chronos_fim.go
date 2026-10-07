@@ -63,13 +63,19 @@ type ChronosScanner struct {
 	batchSize      int
 	yieldDuration  time.Duration
 	checkpoint     *ChronosCheckpoint
+	storage        *StorageCipher
+	policy         chronosPolicy
 }
+
+// chronosPurpose binds a sealed checkpoint to this store and node.
+const chronosPurpose = "chronos-checkpoint"
 
 func NewChronosScanner(
 	roots []string,
 	checkpointPath string,
 	batchSize int,
 	yieldDuration time.Duration,
+	storage ...*StorageCipher,
 ) (*ChronosScanner, error) {
 	if len(roots) == 0 {
 		return nil, NewChronosValidationException("at least one root path must be specified", nil)
@@ -81,13 +87,28 @@ func NewChronosScanner(
 	for _, r := range roots {
 		cleanRoots = append(cleanRoots, filepath.Clean(r))
 	}
+	var cipher *StorageCipher
+	if len(storage) > 0 {
+		cipher = storage[0]
+	}
 
+	defaults := defaultIntegrityFabricSettings(Config{}).Chronos
 	return &ChronosScanner{
 		roots:          cleanRoots,
 		checkpointPath: filepath.Clean(checkpointPath),
 		batchSize:      batchSize,
 		yieldDuration:  yieldDuration,
+		storage:        cipher,
+		policy:         defaults.policy(),
 	}, nil
+}
+
+// Encrypted reports whether the checkpoint is sealed with the storage cipher.
+func (c *ChronosScanner) Encrypted() bool {
+	if c == nil {
+		return false
+	}
+	return c.storage != nil
 }
 
 // ComputeMerkleRoot builds an authenticated binary Merkle tree over sorted file hash entries.
@@ -150,13 +171,23 @@ func (c *ChronosScanner) SaveCheckpoint() error {
 	if err != nil {
 		return NewChronosStorageException("failed to marshal checkpoint", err)
 	}
-
-	tmpPath := c.checkpointPath + ".tmp"
-	if err := os.WriteFile(tmpPath, data, 0600); err != nil {
-		return NewChronosStorageException("failed to write checkpoint tmp file", err)
+	// File-path digests are operational state, not public data. When a storage
+	// cipher is configured the checkpoint is sealed exactly like the FIM
+	// baseline, the evidence ledger and the policy document.
+	if c.storage != nil {
+		sealed, sealErr := c.storage.Encrypt(c.checkpointPath, chronosPurpose, 0, data)
+		if sealErr != nil {
+			return NewChronosStorageException("failed to seal checkpoint", sealErr)
+		}
+		data = sealed
 	}
-	if err := os.Rename(tmpPath, c.checkpointPath); err != nil {
-		return NewChronosStorageException("failed to atomically rename checkpoint", err)
+
+	// The shared atomic writer refuses a symlinked target, creates the staging
+	// file exclusively and flushes file and directory, so a link planted at the
+	// checkpoint path cannot redirect the write and a crash cannot leave a
+	// half-written inventory.
+	if err := atomicWriteFile(c.checkpointPath, data, 0o600); err != nil {
+		return NewChronosStorageException("failed to persist checkpoint", err)
 	}
 	return nil
 }
@@ -174,6 +205,16 @@ func (c *ChronosScanner) LoadCheckpoint() (*ChronosCheckpoint, error) {
 		return nil, NewChronosStorageException("failed to read checkpoint file", err)
 	}
 
+	if c.storage != nil {
+		plaintext, legacy, decryptErr := c.storage.Decrypt(c.checkpointPath, chronosPurpose, data, nil)
+		if decryptErr != nil {
+			return nil, NewChronosStorageException("checkpoint authentication failed", decryptErr)
+		}
+		if legacy {
+			return nil, NewChronosStorageException("unencrypted Chronos checkpoint is rejected", nil)
+		}
+		data = plaintext
+	}
 	var cp ChronosCheckpoint
 	if err := json.Unmarshal(data, &cp); err != nil {
 		return nil, NewChronosStorageException("invalid checkpoint json format", err)
@@ -212,10 +253,29 @@ func (c *ChronosScanner) Scan(ctx context.Context, resume bool) (*ChronosCheckpo
 
 	filesInBatch := 0
 	resumedPastLast := (c.checkpoint.LastVisitedPath == "")
+	policy := c.policy
+	if policy.maxFiles <= 0 {
+		policy = defaultIntegrityFabricSettings(Config{}).Chronos.policy()
+	}
+	if policy.batchSize > 0 {
+		c.batchSize = policy.batchSize
+	}
+	if policy.yieldMillis >= 0 {
+		c.yieldDuration = time.Duration(policy.yieldMillis) * time.Millisecond
+	}
+	bounded := false
 
 	for rIdx := c.checkpoint.CurrentRootIndex; rIdx < len(c.roots); rIdx++ {
 		root := c.roots[rIdx]
 		c.checkpoint.CurrentRootIndex = rIdx
+
+		// A checkpoint walk must be bounded. Without a file and byte budget an
+		// operator-supplied root could keep the walker busy indefinitely and grow
+		// the in-memory digest map without limit.
+		if c.checkpoint.FilesScanned >= uint64(policy.maxFiles) || c.checkpoint.BytesScanned >= uint64(policy.maxTotalBytes) {
+			bounded = true
+			break
+		}
 
 		err := filepath.Walk(root, func(path string, info os.FileInfo, walkErr error) error {
 			if walkErr != nil {
@@ -231,6 +291,10 @@ func (c *ChronosScanner) Scan(ctx context.Context, resume bool) (*ChronosCheckpo
 
 			if info.IsDir() || !info.Mode().IsRegular() {
 				return nil
+			}
+			if c.checkpoint.FilesScanned >= uint64(policy.maxFiles) || c.checkpoint.BytesScanned >= uint64(policy.maxTotalBytes) {
+				bounded = true
+				return filepath.SkipAll
 			}
 
 			// If resuming, skip paths until we pass the last visited path
@@ -273,6 +337,15 @@ func (c *ChronosScanner) Scan(ctx context.Context, resume bool) (*ChronosCheckpo
 		}
 	}
 
+	if bounded {
+		c.checkpoint.Phase = "BOUNDED"
+		c.checkpoint.MerkleRoot = ComputeMerkleRoot(c.checkpoint.FileHashes)
+		_ = c.SaveCheckpoint()
+		return c.checkpoint, NewChronosValidationException(
+			fmt.Sprintf("Chronos traversal budget exhausted after %d files and %d bytes; the digest set is partial",
+				c.checkpoint.FilesScanned, c.checkpoint.BytesScanned), nil)
+	}
+
 	c.checkpoint.Phase = "COMPLETED"
 	c.checkpoint.MerkleRoot = ComputeMerkleRoot(c.checkpoint.FileHashes)
 	_ = c.SaveCheckpoint()
@@ -295,4 +368,3 @@ func hashRegularFile(path string) (string, int64, error) {
 	}
 	return hex.EncodeToString(hasher.Sum(nil)), written, nil
 }
-

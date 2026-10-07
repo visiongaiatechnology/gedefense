@@ -26,15 +26,31 @@ done
 curl --fail --silent --show-error --max-time 3 http://127.0.0.1:9844/bootz >/dev/null || fail 'control boot gate failed'
 curl --fail --silent --show-error --max-time 3 --cacert "$cert" https://127.0.0.1:9843/gateway/livez >/dev/null || fail 'TLS gateway gate failed'
 
+status_file=$(mktemp)
+trap 'rm -f "$status_file"' EXIT
 curl --fail --silent --show-error --max-time 3 \
   -H "Authorization: Bearer $(tr -d '\r\n' < "$token")" \
-  http://127.0.0.1:9844/api/v1/status | python3 - "$interface" <<'PY'
+  http://127.0.0.1:9844/api/v1/status > "$status_file"
+python3 - "$interface" "$status_file" <<'PY'
 import json, sys
-interface = sys.argv[1]
-doc = json.load(sys.stdin)
+interface, status_path = sys.argv[1], sys.argv[2]
+with open(status_path, 'r', encoding='utf-8') as handle:
+    doc = json.load(handle)
 assert doc.get('core_connected') is True, doc
 assert doc.get('core_mode') in {'native', 'generic', 'native+bpf-lsm-cell', 'generic+bpf-lsm-cell'}, doc
-print(f"core gate: PASS ({doc['core_mode']}, interface={interface})")
+policy = doc.get('policy') or {}
+assert policy.get('verified') is True, policy
+coverage = doc.get('coverage') or {}
+sensors = coverage.get('sensors') or {}
+ingress = sensors.get('xdp_ingress') or {}
+assert ingress.get('required') is True, ingress
+assert str(ingress.get('status', '')).lower() == 'online', ingress
+kinetic = doc.get('kinetic') or {}
+layer = (kinetic.get('layers') or {}).get('ingress_network') or {}
+assert layer.get('detection_healthy') is True, layer
+release = doc.get('release') or {}
+assert release.get('emergency_stop') is not True, release
+print(f"core/policy/kinetic gate: PASS ({doc['core_mode']}, interface={interface}, ingress=online)")
 PY
 
 ip -details link show dev "$interface" | grep -E 'xdp|prog/xdp' >/dev/null || fail 'no XDP program is attached to the target interface'

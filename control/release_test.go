@@ -36,6 +36,11 @@ func betaReleaseFixture(t *testing.T) (Config, *State, *PolicyStore, *ReleaseCon
 	cfg.Policy.SigningKeyFile = filepath.Join(dir, "policy.key")
 	cfg.Policy.PublicKeyFile = filepath.Join(dir, "policy.pub")
 	state := NewState("test", cfg)
+	verifiedAt := time.Now().UTC()
+	state.SetSensorCoverage(SensorCoverage{
+		Name: "xdp_ingress", Layer: LayerIngressNetwork, Status: CoverageOnline, Required: true,
+		LastOK: &verifiedAt, SelfTest: "pass", CoverageReason: "verified release-test ingress fixture",
+	})
 	policy, err := NewPolicyStore(cfg.Policy)
 	if err != nil {
 		t.Fatal(err)
@@ -200,5 +205,42 @@ func TestRecoveredCoreRetriesUnverifiedFailSafe(t *testing.T) {
 	status := release.Status()
 	if !status.FailSafeVerified || status.KernelPolicyState != "verified-empty" {
 		t.Fatalf("recovered core did not complete fail-safe verification: %+v", status)
+	}
+}
+
+func TestKineticSensorDegradationTriggersImmediateReleaseFailSafe(t *testing.T) {
+	cfg, state, _, release := betaReleaseFixture(t)
+	cfg.Kinetic.EnforcementMode = "block"
+	if _, err := release.Transition(ReleasePhaseCanary, "PROMOTE:CANARY", "enter canary before sensor degradation test"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := release.Transition(ReleasePhaseEnforce, "PROMOTE:ENFORCE", "arm enforcement before sensor degradation test"); err != nil {
+		t.Fatal(err)
+	}
+
+	server := &APIServer{cfg: cfg, state: state, release: release}
+	server.setKineticSensorState(CoverageDegraded, "degraded", "synthetic ingress ring pressure")
+
+	status := release.Status()
+	if status.Phase != ReleasePhaseDegraded || !status.FailSafeVerified || status.KernelPolicyState != "verified-empty" {
+		t.Fatalf("sensor degradation did not force verified fail-safe: %+v", status)
+	}
+	networkMode, xdrMode := state.Modes()
+	if networkMode != "observe" || xdrMode != "observe" {
+		t.Fatalf("unsafe modes after kinetic degradation: %s/%s", networkMode, xdrMode)
+	}
+}
+
+func TestReleaseEnforceRejectsRequiredL7CoverageGap(t *testing.T) {
+	_, state, _, release := betaReleaseFixture(t)
+	if _, err := release.Transition(ReleasePhaseCanary, "PROMOTE:CANARY", "start controlled canary phase"); err != nil {
+		t.Fatal(err)
+	}
+	state.SetSensorCoverage(SensorCoverage{
+		Name: "l7_application", Layer: LayerApplicationL7, Status: CoverageDegraded, Required: true,
+		SelfTest: "awaiting-traffic", CoverageReason: "TLS inspection enabled but no verified ClientHello producer is in path",
+	})
+	if _, err := release.Transition(ReleasePhaseEnforce, "PROMOTE:ENFORCE", "must reject incomplete application coverage"); err == nil {
+		t.Fatal("enforce promotion unexpectedly succeeded with required L7 coverage degraded")
 	}
 }

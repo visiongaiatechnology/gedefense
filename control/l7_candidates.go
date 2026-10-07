@@ -15,18 +15,18 @@ import (
 	"unicode/utf8"
 )
 
-func (n *L7Normalizer) addQueryCandidates(out *l7NormalizedRequest, raw string) error {
-	if !l7RawEntryBudgetString(raw, n.cfg.MaxFormFields) {
+func (n *L7Normalizer) addQueryCandidates(cfg L7Config, out *l7NormalizedRequest, raw string) error {
+	if !l7RawEntryBudgetString(raw, cfg.MaxFormFields) {
 		return fmt.Errorf("%w: query entry budget exceeded", ErrL7ResourceLimit)
 	}
 	values, err := url.ParseQuery(raw)
 	if err != nil {
 		return fmt.Errorf("%w: malformed query encoding", ErrL7InvalidRequest)
 	}
-	if len(values) > n.cfg.MaxFormFields {
+	if len(values) > cfg.MaxFormFields {
 		return fmt.Errorf("%w: query field budget exceeded", ErrL7ResourceLimit)
 	}
-	if l7FormEntryCount(values, n.cfg.MaxFormFields) > n.cfg.MaxFormFields {
+	if l7FormEntryCount(values, cfg.MaxFormFields) > cfg.MaxFormFields {
 		return fmt.Errorf("%w: query entry budget exceeded", ErrL7ResourceLimit)
 	}
 	keys := make([]string, 0, len(values))
@@ -36,37 +36,37 @@ func (n *L7Normalizer) addQueryCandidates(out *l7NormalizedRequest, raw string) 
 	sort.Strings(keys)
 	for _, key := range keys {
 		entries := values[key]
-		n.addCandidate(out, "query.key", key)
+		n.addCandidate(cfg, out, "query.key", key)
 		if len(entries) > 32 {
 			return fmt.Errorf("%w: repeated query field budget exceeded", ErrL7ResourceLimit)
 		}
 		for _, value := range entries {
-			n.addCandidate(out, "query."+safeLocationKey(key), value)
+			n.addCandidate(cfg, out, "query."+safeLocationKey(key), value)
 		}
 	}
 	return nil
 }
 
-func (n *L7Normalizer) addBodyCandidates(out *l7NormalizedRequest) error {
+func (n *L7Normalizer) addBodyCandidates(cfg L7Config, out *l7NormalizedRequest) error {
 	switch {
 	case isL7JSONMediaType(out.ContentType):
-		return n.addJSONCandidates(out)
+		return n.addJSONCandidates(cfg, out)
 	case out.ContentType == "application/x-www-form-urlencoded":
-		return n.addFormCandidates(out)
+		return n.addFormCandidates(cfg, out)
 	case isL7XMLMediaType(out.ContentType):
-		n.addTextChunks(out, "body.xml", out.Body)
+		n.addTextChunks(cfg, out, "body.xml", out.Body)
 		return nil
 	case out.ContentType == "multipart/form-data":
-		return n.addMultipartCandidates(out)
+		return n.addMultipartCandidates(cfg, out)
 	default:
 		if isMostlyText(out.Body) {
-			n.addTextChunks(out, "body.text", out.Body)
+			n.addTextChunks(cfg, out, "body.text", out.Body)
 		}
 		return nil
 	}
 }
 
-func (n *L7Normalizer) addMultipartCandidates(out *l7NormalizedRequest) error {
+func (n *L7Normalizer) addMultipartCandidates(cfg L7Config, out *l7NormalizedRequest) error {
 	values := out.Headers["content-type"]
 	if len(values) != 1 {
 		return nil
@@ -86,7 +86,7 @@ func (n *L7Normalizer) addMultipartCandidates(out *l7NormalizedRequest) error {
 			return fmt.Errorf("%w: malformed multipart body", ErrL7InvalidRequest)
 		}
 		parts++
-		if parts > n.cfg.MaxMultipartParts {
+		if parts > cfg.MaxMultipartParts {
 			_ = part.Close()
 			return fmt.Errorf("%w: multipart part budget exceeded", ErrL7ResourceLimit)
 		}
@@ -95,25 +95,25 @@ func (n *L7Normalizer) addMultipartCandidates(out *l7NormalizedRequest) error {
 			continue
 		}
 		name := safeLocationKey(part.FormName())
-		value, readErr := io.ReadAll(io.LimitReader(part, int64(n.cfg.MaxBodyBytes)+1))
+		value, readErr := io.ReadAll(io.LimitReader(part, int64(cfg.MaxBodyBytes)+1))
 		_ = part.Close()
 		if readErr != nil {
 			return fmt.Errorf("%w: multipart field read failed", ErrL7InvalidRequest)
 		}
-		if len(value) > n.cfg.MaxBodyBytes {
+		if len(value) > cfg.MaxBodyBytes {
 			return fmt.Errorf("%w: multipart field budget exceeded", ErrL7ResourceLimit)
 		}
-		n.addCandidate(out, "body.multipart."+name, strings.ToValidUTF8(string(value), " "))
+		n.addCandidate(cfg, out, "body.multipart."+name, strings.ToValidUTF8(string(value), " "))
 	}
 }
 
-func (n *L7Normalizer) addJSONCandidates(out *l7NormalizedRequest) error {
+func (n *L7Normalizer) addJSONCandidates(cfg L7Config, out *l7NormalizedRequest) error {
 	decoder := json.NewDecoder(bytes.NewReader(out.Body))
 	decoder.UseNumber()
 	depth := 0
 	values := 0
 	tokens := 0
-	maxTokens := maxInt(n.cfg.MaxFormFields*8, 256)
+	maxTokens := maxInt(cfg.MaxFormFields*8, 256)
 	for {
 		token, err := decoder.Token()
 		if err == io.EOF {
@@ -131,7 +131,7 @@ func (n *L7Normalizer) addJSONCandidates(out *l7NormalizedRequest) error {
 			switch value {
 			case '{', '[':
 				depth++
-				if depth > n.cfg.MaxJSONDepth {
+				if depth > cfg.MaxJSONDepth {
 					return fmt.Errorf("%w: json depth budget exceeded", ErrL7ResourceLimit)
 				}
 			case '}', ']':
@@ -142,10 +142,10 @@ func (n *L7Normalizer) addJSONCandidates(out *l7NormalizedRequest) error {
 			}
 		case string:
 			values++
-			if values > n.cfg.MaxFormFields {
+			if values > cfg.MaxFormFields {
 				return fmt.Errorf("%w: json value budget exceeded", ErrL7ResourceLimit)
 			}
-			n.addCandidate(out, "body.json", value)
+			n.addCandidate(cfg, out, "body.json", value)
 		}
 	}
 	if depth != 0 {
@@ -154,21 +154,21 @@ func (n *L7Normalizer) addJSONCandidates(out *l7NormalizedRequest) error {
 	return nil
 }
 
-func (n *L7Normalizer) addFormCandidates(out *l7NormalizedRequest) error {
-	if len(out.Body) > n.cfg.MaxBodyBytes {
+func (n *L7Normalizer) addFormCandidates(cfg L7Config, out *l7NormalizedRequest) error {
+	if len(out.Body) > cfg.MaxBodyBytes {
 		return fmt.Errorf("%w: form body exceeds budget", ErrL7ResourceLimit)
 	}
-	if !l7RawEntryBudgetBytes(out.Body, n.cfg.MaxFormFields) {
+	if !l7RawEntryBudgetBytes(out.Body, cfg.MaxFormFields) {
 		return fmt.Errorf("%w: form entry budget exceeded", ErrL7ResourceLimit)
 	}
 	values, err := url.ParseQuery(string(out.Body))
 	if err != nil {
 		return fmt.Errorf("%w: malformed form body", ErrL7InvalidRequest)
 	}
-	if len(values) > n.cfg.MaxFormFields {
+	if len(values) > cfg.MaxFormFields {
 		return fmt.Errorf("%w: form field budget exceeded", ErrL7ResourceLimit)
 	}
-	if l7FormEntryCount(values, n.cfg.MaxFormFields) > n.cfg.MaxFormFields {
+	if l7FormEntryCount(values, cfg.MaxFormFields) > cfg.MaxFormFields {
 		return fmt.Errorf("%w: form entry budget exceeded", ErrL7ResourceLimit)
 	}
 	keys := make([]string, 0, len(values))
@@ -178,12 +178,12 @@ func (n *L7Normalizer) addFormCandidates(out *l7NormalizedRequest) error {
 	sort.Strings(keys)
 	for _, key := range keys {
 		entries := values[key]
-		n.addCandidate(out, "body.form.key", key)
+		n.addCandidate(cfg, out, "body.form.key", key)
 		if len(entries) > 32 {
 			return fmt.Errorf("%w: repeated form field budget exceeded", ErrL7ResourceLimit)
 		}
 		for _, value := range entries {
-			n.addCandidate(out, "body.form."+safeLocationKey(key), value)
+			n.addCandidate(cfg, out, "body.form."+safeLocationKey(key), value)
 		}
 	}
 	return nil
@@ -251,7 +251,7 @@ func isL7XMLMediaType(contentType string) bool {
 	return contentType == "application/xml" || contentType == "text/xml" || contentType == "image/svg+xml" || strings.HasSuffix(contentType, "+xml")
 }
 
-func (n *L7Normalizer) addTextChunks(out *l7NormalizedRequest, location string, body []byte) {
+func (n *L7Normalizer) addTextChunks(cfg L7Config, out *l7NormalizedRequest, location string, body []byte) {
 	const chunkSize = 16 << 10
 	const overlap = 256
 	for start := 0; start < len(body); {
@@ -260,7 +260,7 @@ func (n *L7Normalizer) addTextChunks(out *l7NormalizedRequest, location string, 
 			end = len(body)
 		}
 		chunk := body[start:end]
-		n.addCandidate(out, location, strings.ToValidUTF8(string(chunk), " "))
+		n.addCandidate(cfg, out, location, strings.ToValidUTF8(string(chunk), " "))
 		if out.CandidateBudgetExceeded {
 			return
 		}
@@ -271,31 +271,31 @@ func (n *L7Normalizer) addTextChunks(out *l7NormalizedRequest, location string, 
 	}
 }
 
-func (n *L7Normalizer) addCandidate(out *l7NormalizedRequest, location, value string) {
+func (n *L7Normalizer) addCandidate(cfg L7Config, out *l7NormalizedRequest, location, value string) {
 	if value == "" {
 		return
 	}
-	if len(out.Candidates) >= n.cfg.MaxDecodedValues || out.CandidateBytes >= n.cfg.MaxInspectionBytes {
+	if len(out.Candidates) >= cfg.MaxDecodedValues || out.CandidateBytes >= cfg.MaxInspectionBytes {
 		out.CandidateBudgetExceeded = true
 		return
 	}
 	value = strings.ToValidUTF8(value, " ")
-	if len(value) <= n.cfg.MaxValueBytes {
-		n.addCandidateChunk(out, location, value)
+	if len(value) <= cfg.MaxValueBytes {
+		n.addCandidateChunk(cfg, out, location, value)
 		return
 	}
 	const overlap = 256
 	for start := 0; start < len(value); {
-		if len(out.Candidates) >= n.cfg.MaxDecodedValues || out.CandidateBytes >= n.cfg.MaxInspectionBytes {
+		if len(out.Candidates) >= cfg.MaxDecodedValues || out.CandidateBytes >= cfg.MaxInspectionBytes {
 			out.CandidateBudgetExceeded = true
 			return
 		}
-		chunk := truncateUTF8(value[start:], n.cfg.MaxValueBytes)
+		chunk := truncateUTF8(value[start:], cfg.MaxValueBytes)
 		if chunk == "" {
 			out.CandidateBudgetExceeded = true
 			return
 		}
-		n.addCandidateChunk(out, location, chunk)
+		n.addCandidateChunk(cfg, out, location, chunk)
 		if out.CandidateBudgetExceeded {
 			return
 		}
@@ -314,69 +314,69 @@ func (n *L7Normalizer) addCandidate(out *l7NormalizedRequest, location, value st
 	}
 }
 
-func (n *L7Normalizer) addCandidateChunk(out *l7NormalizedRequest, location, value string) {
+func (n *L7Normalizer) addCandidateChunk(cfg L7Config, out *l7NormalizedRequest, location, value string) {
 	if value == "" {
 		return
 	}
-	if len(out.Candidates) >= n.cfg.MaxDecodedValues || out.CandidateBytes >= n.cfg.MaxInspectionBytes {
+	if len(out.Candidates) >= cfg.MaxDecodedValues || out.CandidateBytes >= cfg.MaxInspectionBytes {
 		out.CandidateBudgetExceeded = true
 		return
 	}
-	value = truncateUTF8(value, n.cfg.MaxValueBytes)
+	value = truncateUTF8(value, cfg.MaxValueBytes)
 	if value == "" {
 		return
 	}
 	canonical := value
-	for depth := 0; depth < n.cfg.MaxDecodeDepth; depth++ {
+	for depth := 0; depth < cfg.MaxDecodeDepth; depth++ {
 		decoded := canonical
 		if v, err := url.PathUnescape(decoded); err == nil {
 			decoded = v
 		}
 		decoded = html.UnescapeString(decoded)
-		decoded = truncateUTF8(decoded, n.cfg.MaxValueBytes)
+		decoded = truncateUTF8(decoded, cfg.MaxValueBytes)
 		if decoded == canonical {
 			break
 		}
 		canonical = decoded
 	}
-	if !n.appendCandidate(out, location, canonical) {
+	if !n.appendCandidate(cfg, out, location, canonical) {
 		return
 	}
-	if compatible, ok := foldL7CompatibilityASCII(canonical, n.cfg.MaxValueBytes); ok {
-		if !n.appendCandidate(out, location+".compat", compatible) {
+	if compatible, ok := foldL7CompatibilityASCII(canonical, cfg.MaxValueBytes); ok {
+		if !n.appendCandidate(cfg, out, location+".compat", compatible) {
 			return
 		}
 	}
-	if escaped, ok := decodeL7TextEscapes(canonical, n.cfg.MaxValueBytes); ok {
-		if !n.appendCandidate(out, location+".escaped", escaped) {
+	if escaped, ok := decodeL7TextEscapes(canonical, cfg.MaxValueBytes); ok {
+		if !n.appendCandidate(cfg, out, location+".escaped", escaped) {
 			return
 		}
 	}
-	if decoded, ok := decodeTextBase64(canonical, n.cfg.MaxValueBytes); ok {
-		decoded = canonicalizeL7DecodedText(decoded, n.cfg.MaxDecodeDepth, n.cfg.MaxValueBytes)
-		if !n.appendCandidate(out, location+".base64", decoded) {
+	if decoded, ok := decodeTextBase64(canonical, cfg.MaxValueBytes); ok {
+		decoded = canonicalizeL7DecodedText(decoded, cfg.MaxDecodeDepth, cfg.MaxValueBytes)
+		if !n.appendCandidate(cfg, out, location+".base64", decoded) {
 			return
 		}
 	}
-	if decoded, ok := decodeTextHex(canonical, n.cfg.MaxValueBytes); ok {
-		decoded = canonicalizeL7DecodedText(decoded, n.cfg.MaxDecodeDepth, n.cfg.MaxValueBytes)
-		n.appendCandidate(out, location+".hex", decoded)
+	if decoded, ok := decodeTextHex(canonical, cfg.MaxValueBytes); ok {
+		decoded = canonicalizeL7DecodedText(decoded, cfg.MaxDecodeDepth, cfg.MaxValueBytes)
+		n.appendCandidate(cfg, out, location+".hex", decoded)
 	}
 }
 
-func (n *L7Normalizer) appendCandidate(out *l7NormalizedRequest, location, value string) bool {
+func (n *L7Normalizer) appendCandidate(cfg L7Config, out *l7NormalizedRequest, location, value string) bool {
 	if value == "" {
 		return false
 	}
-	if len(out.Candidates) >= n.cfg.MaxDecodedValues {
+	if len(out.Candidates) >= cfg.MaxDecodedValues {
 		out.CandidateBudgetExceeded = true
 		return false
 	}
-	value = truncateUTF8(value, n.cfg.MaxValueBytes)
+	value = truncateUTF8(value, cfg.MaxValueBytes)
 	if value == "" {
 		return false
 	}
-	remaining := n.cfg.MaxInspectionBytes - out.CandidateBytes
+	remaining := cfg.MaxInspectionBytes - out.CandidateBytes
 	if remaining < len(value) {
 		out.CandidateBudgetExceeded = true
 		return false

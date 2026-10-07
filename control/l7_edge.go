@@ -29,6 +29,7 @@ type l7EdgeRequestContextKey struct{}
 
 type L7EdgeService struct {
 	cfg      L7Config
+	live     *l7Runtime
 	engine   *L7Engine
 	state    *State
 	proxy    *httputil.ReverseProxy
@@ -52,7 +53,7 @@ func NewL7EdgeService(cfg L7Config, engine *L7Engine, state *State) (*L7EdgeServ
 		return nil, errors.New("l7 inline service requires engine and state")
 	}
 	if !cfg.InlineEnabled {
-		return &L7EdgeService{cfg: cfg, engine: engine, state: state, errors: make(chan error, 1)}, nil
+		return &L7EdgeService{cfg: cfg, live: engine.live, engine: engine, state: state, errors: make(chan error, 1)}, nil
 	}
 	if err := validateL7InlineUpstream(cfg.InlineUpstream); err != nil {
 		return nil, err
@@ -61,9 +62,23 @@ func NewL7EdgeService(cfg L7Config, engine *L7Engine, state *State) (*L7EdgeServ
 	if err != nil {
 		return nil, err
 	}
-	service := &L7EdgeService{cfg: cfg, engine: engine, state: state, errors: make(chan error, 1)}
+	service := &L7EdgeService{cfg: cfg, live: engine.live, engine: engine, state: state, errors: make(chan error, 1)}
 	service.proxy = service.newReverseProxy(upstream, network, address)
 	return service, nil
+}
+
+// runtimeConfig returns the configuration the inline path must observe right
+// now. The listener lifecycle still uses the boot configuration, which is the
+// only configuration that can describe an already-bound socket.
+func (s *L7EdgeService) runtimeConfig() L7Config {
+	if s.live == nil {
+		return s.cfg
+	}
+	snapshot := s.live.current()
+	if snapshot == nil {
+		return s.cfg
+	}
+	return snapshot.cfg
 }
 
 func (s *L7EdgeService) newReverseProxy(upstream *url.URL, network, address string) *httputil.ReverseProxy {
@@ -182,7 +197,7 @@ func (s *L7EdgeService) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rawBody, err := readL7EdgeBody(w, r, s.cfg.MaxBodyBytes)
+	rawBody, err := readL7EdgeBody(w, r, s.runtimeConfig().MaxBodyBytes)
 	if err != nil {
 		writeL7EdgeJSON(w, l7EdgeBodyErrorStatus(err), "request body rejected")
 		return
@@ -272,7 +287,7 @@ func (s *L7EdgeService) inspectResponse(response *http.Response) error {
 	if !ok {
 		return nil
 	}
-	limit := s.cfg.InlineMaxResponseBytes
+	limit := s.runtimeConfig().InlineMaxResponseBytes
 	if limit <= 0 {
 		return nil
 	}

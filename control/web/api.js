@@ -192,3 +192,31 @@ export const getCases = () => api('/api/v1/cases?limit=100');
 export const setCaseStatus = (id, status, resolution) => api(`/api/v1/cases/${encodeURIComponent(id)}/status`, { method: 'POST', json: { status, resolution } });
 export const getCells = () => api('/api/v1/cells');
 export const previewCellAction = input => api('/api/v1/cells/preview', { method: 'POST', json: input });
+export const getKineticStatus = () => api('/api/v1/kinetic/status');
+export const getKineticLive = (window = 'live', limit = 100, state = 'all') => api(`/api/v1/kinetic/live?window=${encodeURIComponent(window)}&limit=${encodeURIComponent(limit)}&state=${encodeURIComponent(state)}`);
+export const getKineticEvents = () => api('/api/v1/kinetic/events');
+export const getKineticSources = (limit = 100) => api(`/api/v1/kinetic/sources?limit=${encodeURIComponent(limit)}`);
+export const getKineticMap = () => api('/api/v1/kinetic/map');
+export const reconcileKinetic = () => api('/api/v1/kinetic/reconcile', { method: 'POST', json: {} });
+export const getThreatIntelStatus = () => api('/api/v1/feeds/status');
+export const applyFeeds = () => api('/api/v1/feeds/apply', { method: 'POST', json: {} });
+export const getFabricSettingsSchema = () => api('/api/v1/settings/schema');
+
+// Fabric control-plane surface.
+export const searchFabricSettings = query => api(`/api/v1/settings/search?q=${encodeURIComponent(query)}`);
+export const getFabricDrift = () => api('/api/v1/settings/drift');
+export const exportFabricSettings = () => api('/api/v1/settings/export', { method: 'POST', json: {} });
+export const previewFabricImport = bundle => api('/api/v1/settings/import/preview', {
+  method: 'POST',
+  body: JSON.stringify(bundle),
+  headers: { 'Content-Type': 'application/json' }
+});
+export const applyFabricImport = (token, expectedRevision) => api('/api/v1/settings/import/apply', {
+  method: 'POST',
+  json: { token, expected_revision: expectedRevision }
+});
+export const getFabricSettings = module => api(`/api/v1/settings/${encodeURIComponent(module)}`);
+export const previewFabricSettings = (module, expected_revision, settings) => api(`/api/v1/settings/${encodeURIComponent(module)}/preview`, { method: 'POST', json: { expected_revision, settings } });
+export const updateFabricSettings = (module, expected_revision, settings) => api(`/api/v1/settings/${encodeURIComponent(module)}`, { method: 'PUT', json: { expected_revision, settings } });
+export const getFabricSettingsHistory = () => api('/api/v1/settings/history');
+export const rollbackFabricSettings = revision => api('/api/v1/settings/rollback', { method: 'POST', json: { revision } });

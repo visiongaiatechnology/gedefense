@@ -85,11 +85,22 @@ export async function loadXDRView(snap) {
   const xdr = snapshot.xdr || {};
   text('xdrProcesses', String(xdr.processes || 0));
   text('xdrConnections', String(xdr.open_connections || 0));
-  text('evaluationCount', Number(xdr.evaluations_total || 0).toLocaleString());
-  text('queueDepth', `${xdr.queue_depth || 0} / ${xdr.queue_capacity || 0}`);
-  text('queueDrops', t('dynamic.drops', { value: xdr.evaluation_drops || 0 }));
-  text('profileCount', String(xdr.profiles_total || 0));
-  text('warmProfiles', t('dynamic.warm', { value: xdr.profiles_warm || 0 }));
+  const depth = Number(xdr.queue_depth || 0);
+  const cap = Number(xdr.queue_capacity || 0);
+  const drops = Number(xdr.evaluation_drops || 0);
+  text('queueDepth', `${depth.toLocaleString()} / ${cap.toLocaleString()}`);
+  const dropEl = byID('queueDrops');
+  if (dropEl) {
+    dropEl.textContent = drops > 0
+      ? t('dynamic.drops', { value: drops.toLocaleString() })
+      : `${drops} Drops · optimal`;
+    dropEl.className = drops > 0 ? 'text-danger font-semibold' : 'text-muted';
+  }
+  const behavior = xdr.behavior || {};
+  const profileCount = behavior.profiles ?? xdr.profiles_total ?? 0;
+  const warmCount = behavior.warm_profiles ?? xdr.profiles_warm ?? 0;
+  text('profileCount', Number(profileCount).toLocaleString());
+  text('warmProfiles', Number(warmCount).toLocaleString());
 
   const modeBadge = byID('xdrModeBadge');
   if (modeBadge) {

@@ -442,7 +442,7 @@ func (l *IncidentLogger) Append(i XDRIncident) (string, error) {
 		l.integrityErr = errors.New("incident log size budget exhausted")
 		return "", l.integrityErr
 	}
-	f, err := os.OpenFile(l.path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	f, err := os.OpenFile(l.path, os.O_CREATE|os.O_APPEND|os.O_WRONLY|noFollowFlag, 0o600)
 	if err != nil {
 		return "", err
 	}

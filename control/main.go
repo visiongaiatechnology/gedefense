@@ -16,7 +16,7 @@ import (
 	"time"
 )
 
-const version = "4.0.1"
+const version = "4.2.0"
 
 func detectInterface(requested string) (string, error) {
 	if requested != "" && requested != "auto" {
@@ -51,7 +51,12 @@ func detectInterface(requested string) (string, error) {
 	return "lo", nil
 }
 
-func persistPolicy(policy *PolicyStore, cfg Config, state *State) error {
+type policyPersistence interface {
+	Persist(nodeName, enforcement, xdrMode string, blocks []BlockEntry) error
+	Status() PolicyStatus
+}
+
+func persistPolicy(policy policyPersistence, cfg Config, state *State) error {
 	if policy == nil {
 		return nil
 	}
@@ -223,6 +228,14 @@ func main() {
 	if err != nil {
 		log.Fatalf("runtime settings: %v", err)
 	}
+	// The persisted Fabric revision is the authority for every administrable
+	// runtime parameter. The static configuration file only seeds the first
+	// revision, exactly as documented in the control-plane plan (section 5).
+	cfg.L7 = effectiveL7Settings(settings.Get(), cfg.L7).toConfig()
+	cfg.Defense.DPIEnabled = cfg.L7.Enabled
+	// The same rule applies to Threat Intelligence: the persisted Fabric
+	// namespace is the authority for feed definitions and bounds.
+	cfg.Feeds = effectiveThreatIntelSettings(settings.Get()).effectiveFeedConfig(cfg.Feeds)
 
 	state := NewState(version, cfg)
 	cells := NewGaiaCellsAdapter(cfg.Cells)
@@ -269,12 +282,15 @@ func main() {
 	if err := state.AttachCases(cases); err != nil {
 		log.Fatalf("case engine state attachment: %v", err)
 	}
+	// The quarantine applier is constructed once and passed on, so the Fabric module
+	// publishes its path policy to the same instance that enforces it.
+	quarantine := NewQuarantineTransactionApplier(core)
 	transactions, err := NewTransactionEngine(
 		filepath.Join(evidenceDir, "transactions.enc"),
 		fimStorage,
 		state.RecordEvidence,
 		NewSysctlTransactionApplier(core),
-		NewQuarantineTransactionApplier(core),
+		quarantine,
 		NewCellTransactionApplier(cells),
 	)
 	if err != nil {
@@ -355,16 +371,56 @@ func main() {
 	}
 
 	feeds := NewFeedManager(cfg.Feeds)
+	if err := feeds.applyThreatIntelSettings(effectiveThreatIntelSettings(settings.Get()), settings.Get().Revision); err != nil {
+		log.Fatalf("threat intelligence settings: %v", err)
+	}
+	state.SetFeedState(
+		feeds.BlockIndex().Count(),
+		feeds.CorrelateIndex().Count(),
+		feeds.AnnotateIndex().Count(),
+		feeds.Generation(),
+		feeds.Fingerprint(),
+		feeds.OverallStatus(),
+		feeds.LastAttemptAt(),
+		feeds.LastSuccessfulSyncAt(),
+		feeds.LastFullySuccessfulSyncAt(),
+	)
 	xdr, err := NewXDREngine(cfg, state, core, feeds, policy, settings, *configPath)
 	if err != nil {
 		log.Fatalf("xdr initialization: %v", err)
 	}
 	xdr.SetReleaseController(release)
+	// Project the persisted Host Security namespace onto the RASP, deception and
+	// Airlock engines before anything can observe them, so a restart genuinely
+	// activates the stored revision.
+	if err := xdr.ApplyRuntimeSettings(settings.Get()); err != nil {
+		log.Fatalf("host security settings: %v", err)
+	}
+	// The API server owns the boot evidence collector, so only the policy trust
+	// store is projected here; the boot evidence namespace is applied where that
+	// collector is constructed.
+	if err := policy.ApplyPolicy(effectivePolicyTrustSettings(settings.Get())); err != nil {
+		log.Fatalf("policy trust settings: %v", err)
+	}
+	// Forensics budgets and the quarantine path policy are projected at start, so
+	// the first incident and the first quarantine decision already honour the
+	// persisted revision instead of the compiled-in defaults.
+	if err := applyForensicsPolicies(effectiveForensicsSettings(settings.Get()), cases, quarantine); err != nil {
+		log.Fatalf("forensics settings: %v", err)
+	}
+	// The rate limiter is owned by the API server, so that part of the System
+	// namespace is applied where the server is constructed. The event cache and the
+	// core deadline live here and are projected now.
+	if err := applySystemPolicies(effectiveSystemSettings(settings.Get()), nil, state, core); err != nil {
+		log.Fatalf("system settings: %v", err)
+	}
 
+	var l7Engine *L7Engine
 	var l7Service *L7Service
 	var l7EdgeService *L7EdgeService
 	if cfg.L7.Enabled {
-		l7Engine, l7Err := NewL7Engine(cfg.L7, xdr, release)
+		var l7Err error
+		l7Engine, l7Err = NewL7Engine(cfg.L7, xdr, release)
 		if l7Err != nil {
 			log.Fatalf("l7 engine initialization: %v", l7Err)
 		}
@@ -405,12 +461,8 @@ func main() {
 	xdrCtx, cancelXDR := context.WithCancel(context.Background())
 	defer cancelXDR()
 	go xdr.Run(xdrCtx)
-	go runFIM(
-		xdrCtx,
-		state,
-		fim,
-		time.Duration(cfg.XDR.IntegrityIntervalSeconds)*time.Second,
-	)
+	go runFIM(xdrCtx, state, fim, settings)
+	go runEvidenceVerification(xdrCtx, state, settings)
 	go runTransactionVerification(xdrCtx, state, transactions, 60*time.Second)
 
 	state.AddEvent(Event{Severity: "info", Kind: "node.started", Source: "system", Message: "GeDefense Beta control plane started in gated observe phase on " + iface})
@@ -446,39 +498,7 @@ func main() {
 				release.ObserveCore(online)
 				release.Evaluate()
 			case now := <-expire.C:
-				expired := state.Expired(now)
-				removed := 0
-				for _, b := range expired {
-					if b.Enforced {
-						if err := core.Delete(b.Target); err != nil {
-							state.RestoreBlock(b)
-							state.AddEvent(Event{Severity: "warning", Kind: "block.expiry_deferred", Source: "policy", Message: "Kernel core rejected expired rule removal; signed policy retained the rule", Target: b.Target})
-							continue
-						}
-					}
-					removed++
-					state.AddEvent(Event{Severity: "info", Kind: "block.expired", Source: "policy", Message: "Temporary block expired", Target: b.Target})
-				}
-				if removed > 0 {
-					if err := persistPolicy(policy, cfg, state); err != nil {
-						for _, b := range expired {
-							if _, exists := state.BlockByID(b.ID); exists {
-								continue
-							}
-							state.RestoreBlock(b)
-							if b.Enforced {
-								if rollbackErr := core.Add(b.Target); rollbackErr != nil {
-									failSafeErr := release.FailSafe("expired block policy rollback failed")
-									state.AddEvent(Event{
-										Severity: "critical", Kind: "policy.rollback_failed", Source: "policy",
-										Message: errors.Join(rollbackErr, failSafeErr).Error(), Target: b.Target,
-									})
-								}
-							}
-						}
-						state.AddEvent(Event{Severity: "critical", Kind: "policy.persist_failed", Source: "policy", Message: "Failed to persist signed policy after expiry; rules restored"})
-					}
-				}
+				_, _ = reconcileExpiredNetworkBlocks(now.UTC(), state, core, policy, cfg, release)
 			}
 		}
 	}()
@@ -490,7 +510,19 @@ func main() {
 		wasEnabled := false
 		firstRun := true
 		for {
-			interval := time.Duration(cfg.Feeds.RefreshMinutes) * time.Minute
+			// The refresh interval and the shortest per-feed override are read
+			// from the published Fabric revision, so an operator change takes
+			// effect on the next scheduling decision without a restart.
+			live := feeds.LiveSettings()
+			interval := time.Duration(live.RefreshMinutes) * time.Minute
+			for _, feed := range live.Feeds {
+				if !feed.Enabled || feed.RefreshMinutes <= 0 {
+					continue
+				}
+				if override := time.Duration(feed.RefreshMinutes) * time.Minute; override < interval {
+					interval = override
+				}
+			}
 			if interval < time.Minute {
 				interval = 12 * time.Hour
 			}
@@ -544,10 +576,29 @@ func main() {
 				continue
 			}
 
-			added, deleted, _ := feeds.ApplyToKernel(core, current.ManagementAllowlist)
+			added, deleted := 0, 0
+			if live.Kernel.AutoApply {
+				added, deleted, _ = feeds.ApplyToKernel(core, current.ManagementAllowlist)
+			}
+			if feeds.KernelDivergent() && live.Kernel.DivergenceDegrades {
+				state.AddEvent(Event{Severity: "critical", Kind: "feeds.kernel_divergent", Source: "intelligence",
+					Message: "Threat intelligence kernel state diverged from the validated userspace generation; the release gate is forced into a safe phase"})
+				if err := release.FailSafe("threat intelligence kernel divergence"); err != nil {
+					log.Printf("threat intelligence divergence fail-safe: %v", err)
+				}
+			}
 
-			now := time.Now().UTC()
-			state.SetFeedState(feeds.BlockIndex().Count(), feeds.CorrelateIndex().Count(), feeds.AnnotateIndex().Count(), feeds.Generation(), feeds.Fingerprint(), now)
+			state.SetFeedState(
+				feeds.BlockIndex().Count(),
+				feeds.CorrelateIndex().Count(),
+				feeds.AnnotateIndex().Count(),
+				feeds.Generation(),
+				feeds.Fingerprint(),
+				feeds.OverallStatus(),
+				feeds.LastAttemptAt(),
+				feeds.LastSuccessfulSyncAt(),
+				feeds.LastFullySuccessfulSyncAt(),
+			)
 			severity := "info"
 			message := fmt.Sprintf("vis_threat_intel_cron_sync completed (gen %d / fp %.8s...): %d block vectors (+%d/-%d kernel)",
 				feeds.Generation(), feeds.Fingerprint(), len(items), added, deleted)
@@ -560,6 +611,17 @@ func main() {
 	}()
 
 	srv := NewAPIServer(cfg, state, core, feeds, policy, xdr, release, settings, token)
+	if l7Engine != nil {
+		srv.AttachL7(l7Engine)
+	}
+	srv.AttachFeeds(feeds)
+	srv.AttachFIM(fim)
+	if l7Service != nil && l7Engine != nil {
+		l7Service.SetTLSFindingSink(func(clientIP string, summary TLSClientHelloSummary, findings []L7Finding, now time.Time) {
+			generated := srv.kinetic.IngestTLSFindings(clientIP, summary, findings, now)
+			srv.handleKineticDecisions(generated)
+		})
+	}
 	errCh := make(chan error, 1)
 	readyCh := make(chan struct{})
 	go func() {

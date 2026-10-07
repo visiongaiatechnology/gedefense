@@ -1,0 +1,24 @@
+/**
+ * jsVectorMap
+ * Copyrights (c) Mustafa Omar https://github.com/themustafaomar
+ * Released under the MIT License.
+ */
+import Map from './map'
+
+
+class jsVectorMap {
+  constructor(options = {}) {
+    if (!options.selector) {
+      throw new Error('Selector is not given.')
+    }
+
+    return new Map(options)
+  }
+
+  // Public
+  static addMap(name, map) {
+    Map.maps[name] = map
+  }
+}
+
+export default jsVectorMap

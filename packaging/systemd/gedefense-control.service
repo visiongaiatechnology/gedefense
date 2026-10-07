@@ -16,7 +16,7 @@ ExecStartPre=/opt/vgt/gedefense/current/bin/gedefense-control --config=/etc/vgt/
 ExecStart=/opt/vgt/gedefense/current/bin/gedefense-control --config=/etc/vgt/gedefense/gedefense.toml
 Restart=on-failure
 RestartSec=3s
-TimeoutStartSec=45s
+TimeoutStartSec=300s
 TimeoutStopSec=15s
 NoNewPrivileges=true
 PrivateTmp=true

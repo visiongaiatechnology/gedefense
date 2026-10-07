@@ -145,7 +145,7 @@ func TestQuarantineRejectsSecurityControlAndVirtualPaths(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := decodeQuarantineRequest(raw); err == nil {
+		if _, err := decodeQuarantineRequest(raw, quarantinePolicy{}); err == nil {
 			t.Fatalf("forbidden quarantine path accepted: %s", path)
 		}
 	}

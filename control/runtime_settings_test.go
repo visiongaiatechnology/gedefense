@@ -97,6 +97,15 @@ func TestRuntimeSettingsLoadLegacyDocumentWithoutRuleFields(t *testing.T) {
 	legacy.UpdatedAt = time.Date(2026, time.July, 28, 10, 0, 0, 0, time.UTC)
 	legacy.EnabledRuleModules = nil
 	legacy.CustomRules = nil
+	legacy.FabricVersion = 1
+	legacy.L7 = nil
+	legacy.ThreatIntel = nil
+	legacy.Hardening = nil
+	legacy.Integrity = nil
+	legacy.BootTrust = nil
+	legacy.PolicyTrust = nil
+	legacy.Forensics = nil
+	legacy.System = nil
 	canonical, err := json.Marshal(legacy)
 	if err != nil {
 		t.Fatal(err)

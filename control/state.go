@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"log"
 	"net"
 	"sort"
 	"sync"
@@ -43,35 +44,60 @@ type Telemetry struct {
 }
 
 type Snapshot struct {
-	Version        string          `json:"version"`
-	NodeName       string          `json:"node_name"`
-	NodeMode       string          `json:"node_mode"`
-	Enforcement    string          `json:"enforcement"`
-	StartedAt      time.Time       `json:"started_at"`
-	UptimeSeconds  int64           `json:"uptime_seconds"`
-	CoreConnected  bool            `json:"core_connected"`
-	CoreMode       string          `json:"core_mode"`
-	AllowlistReady bool            `json:"allowlist_ready"`
-	FeedVectors          int             `json:"feed_vectors"`
-	LastFeedSync         *time.Time      `json:"last_feed_sync,omitempty"`
-	FeedGeneration       uint64          `json:"feed_generation,omitempty"`
-	FeedFingerprint      string          `json:"feed_fingerprint,omitempty"`
-	FeedBlockVectors     int             `json:"feed_block_vectors,omitempty"`
-	FeedCorrelateVectors int             `json:"feed_correlate_vectors,omitempty"`
-	FeedAnnotateVectors  int             `json:"feed_annotate_vectors,omitempty"`
-	Blocks               []BlockEntry    `json:"blocks"`
-	Events         []Event         `json:"events"`
-	Telemetry      Telemetry       `json:"telemetry"`
-	XDR            XDRStatus       `json:"xdr"`
-	L7             L7Status        `json:"l7"`
-	Incidents      []XDRIncident   `json:"incidents"`
-	Policy         PolicyStatus    `json:"policy"`
-	Release        ReleaseStatus   `json:"release"`
-	Settings       RuntimeSettings `json:"settings"`
-	Evidence       EvidenceStatus  `json:"evidence"`
-	FIM            FIMStatus       `json:"fim"`
-	Cases          CaseStatus      `json:"cases"`
-	Cells          GaiaCellsStatus `json:"cells"`
+	Version              string              `json:"version"`
+	NodeName             string              `json:"node_name"`
+	NodeMode             string              `json:"node_mode"`
+	Enforcement          string              `json:"enforcement"`
+	StartedAt            time.Time           `json:"started_at"`
+	UptimeSeconds        int64               `json:"uptime_seconds"`
+	CoreConnected        bool                `json:"core_connected"`
+	CoreMode             string              `json:"core_mode"`
+	AllowlistReady       bool                `json:"allowlist_ready"`
+	FeedVectors          int                 `json:"feed_vectors"`
+	FeedStatus           string              `json:"feed_status,omitempty"`
+	LastFeedSync         *time.Time          `json:"last_feed_sync,omitempty"`
+	LastFeedAttempt      *time.Time          `json:"last_feed_attempt,omitempty"`
+	LastFeedFullSync     *time.Time          `json:"last_feed_full_sync,omitempty"`
+	FeedGeneration       uint64              `json:"feed_generation,omitempty"`
+	FeedFingerprint      string              `json:"feed_fingerprint,omitempty"`
+	FeedBlockVectors     int                 `json:"feed_block_vectors,omitempty"`
+	FeedCorrelateVectors int                 `json:"feed_correlate_vectors,omitempty"`
+	FeedAnnotateVectors  int                 `json:"feed_annotate_vectors,omitempty"`
+	Blocks               []BlockEntry        `json:"blocks"`
+	Events               []Event             `json:"events"`
+	Telemetry            Telemetry           `json:"telemetry"`
+	XDR                  XDRStatus           `json:"xdr"`
+	L7                   L7Status            `json:"l7"`
+	Incidents            []XDRIncident       `json:"incidents"`
+	Policy               PolicyStatus        `json:"policy"`
+	Release              ReleaseStatus       `json:"release"`
+	Settings             RuntimeSettings     `json:"settings"`
+	Evidence             EvidenceStatus      `json:"evidence"`
+	FIM                  FIMStatus           `json:"fim"`
+	Cases                CaseStatus          `json:"cases"`
+	Cells                GaiaCellsStatus     `json:"cells"`
+	Kinetic              KineticTelemetry    `json:"kinetic"`
+	Coverage             SystemCoverage      `json:"coverage"`
+	Stream               StreamDiagnostics   `json:"stream"`
+	DetectionRules       DetectionRulesCount `json:"detection_rules"`
+}
+
+type DetectionRulesCount struct {
+	BuiltinXDR  int `json:"builtin_xdr"`
+	Custom      int `json:"custom"`
+	Behavior    int `json:"behavior"`
+	Kinetic     int `json:"kinetic"`
+	L7          int `json:"l7"`
+	ThreatFeeds int `json:"threat_feeds"`
+	Total       int `json:"total"`
+}
+
+type StreamDiagnostics struct {
+	ActiveClients    int        `json:"active_clients"`
+	TotalConnects    int64      `json:"total_connects"`
+	TotalDisconnects int64      `json:"total_disconnects"`
+	LastHeartbeatAt  *time.Time `json:"last_heartbeat_at,omitempty"`
+	WriteErrors      int64      `json:"write_errors"`
 }
 
 type State struct {
@@ -82,7 +108,10 @@ type State struct {
 	coreMode                                 string
 	allowlistReady                           bool
 	feedVectors                              int
+	feedStatus                               string
 	lastFeedSync                             *time.Time
+	lastFeedAttempt                          *time.Time
+	lastFeedFullSync                         *time.Time
 	feedGeneration                           uint64
 	feedFingerprint                          string
 	feedBlockVectors                         int
@@ -107,10 +136,13 @@ type State struct {
 	transactions                             *TransactionEngine
 	cases                                    *CaseEngine
 	cells                                    *GaiaCellsAdapter
+	kinetic                                  KineticTelemetry
+	sensors                                  map[string]SensorCoverage
+	streamDiagnostics                        StreamDiagnostics
 }
 
 func NewState(version string, cfg Config) *State {
-	return &State{version: version, nodeName: cfg.Node.Name, nodeMode: cfg.Node.Mode, enforcement: cfg.Defense.Enforcement,
+	s := &State{version: version, nodeName: cfg.Node.Name, nodeMode: cfg.Node.Mode, enforcement: cfg.Defense.Enforcement,
 		started: time.Now().UTC(), coreMode: "offline", blocks: make(map[string]BlockEntry), eventCap: 250,
 		subscribers: make(map[chan Event]struct{}), incidentCap: 250,
 		xdr: XDRStatus{Enabled: cfg.XDR.Enabled, Mode: cfg.XDR.Mode, Sensor: "initializing", QueueCapacity: cfg.XDR.QueueCapacity},
@@ -119,12 +151,39 @@ func NewState(version string, cfg Config) *State {
 			InlineEnabled: cfg.L7.InlineEnabled, InlineHealthy: !cfg.L7.InlineEnabled, InlineSocket: cfg.L7.InlineSocket,
 		},
 		release: ReleaseStatus{Channel: cfg.Release.Channel, Phase: ReleasePhaseObserve, Since: time.Now().UTC()}}
+	s.kinetic = DefaultKineticTelemetry()
+	s.sensors = make(map[string]SensorCoverage)
+	for k, v := range s.kinetic.Coverage.Sensors {
+		s.sensors[k] = v
+	}
+	return s
 }
 
+// randomID returns the identifier carried by evidence records: block entries,
+// incidents, quarantine objects, transactions and cases.
+//
+// A failure of the system random source is fatal on purpose. The previous clock
+// fallback made every subsequent identifier predictable, and an identifier an
+// attacker can pre-compute is exactly what is needed to collide or forge audit
+// records. There is no safe degraded mode for a value that must be unguessable,
+// so the process stops instead of continuing with weak identifiers.
+//
+// The width is eight bytes because the identifier format is a contract: the
+// CS-, TX- and QV- prefixes are validated at exactly nineteen characters.
+//
+// Entropy boundary: eight bytes is 64 bits. That is ample for correlation - the
+// chance of a collision stays negligible far beyond any realistic number of
+// records - and it is NOT adequate for a value an attacker could profit from
+// guessing. These identifiers are not secrets and must never become one: no
+// endpoint may authorise an action on an identifier alone, and no identifier may
+// be accepted as a capability. Authorisation is carried by the bearer token
+// compared in constant time in tokenEqual. A future feature that needs an
+// unguessable handle must mint its own value from crypto/rand with at least 128
+// bits rather than reuse this function.
 func randomID() string {
 	b := make([]byte, 8)
 	if _, err := rand.Read(b); err != nil {
-		return time.Now().UTC().Format("20060102150405.000000000")
+		log.Fatalf("system random source unavailable, refusing to mint evidence identifiers: %v", err)
 	}
 	return hex.EncodeToString(b)
 }
@@ -150,6 +209,13 @@ func normalizeTarget(target string) (string, error) {
 }
 
 func (s *State) AddBlock(target, reason, source string, ttl time.Duration, enforced bool, maxEntries int) (BlockEntry, error) {
+	return s.AddBlockAt(target, reason, source, ttl, enforced, maxEntries, time.Now().UTC())
+}
+
+// AddBlockAt is the deterministic form used by response engines and tests. The
+// supplied timestamp is part of the decision evidence and therefore also owns
+// the TTL origin; callers that do not have an evidence timestamp use AddBlock.
+func (s *State) AddBlockAt(target, reason, source string, ttl time.Duration, enforced bool, maxEntries int, now time.Time) (BlockEntry, error) {
 	target, err := normalizeTarget(target)
 	if err != nil {
 		return BlockEntry{}, err
@@ -157,11 +223,15 @@ func (s *State) AddBlock(target, reason, source string, ttl time.Duration, enfor
 	if len(reason) < 3 || len(reason) > 240 {
 		return BlockEntry{}, errors.New("reason must contain 3-240 characters")
 	}
-	now := time.Now().UTC()
+	if now.IsZero() {
+		now = time.Now().UTC()
+	} else {
+		now = now.UTC()
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if len(s.blocks) >= maxEntries {
-		return BlockEntry{}, errors.New("blocklist capacity reached")
+	if maxEntries <= 0 {
+		return BlockEntry{}, errors.New("blocklist capacity must be positive")
 	}
 	if old, ok := s.blocks[target]; ok {
 		old.ExpiresAt = now.Add(ttl)
@@ -169,6 +239,9 @@ func (s *State) AddBlock(target, reason, source string, ttl time.Duration, enfor
 		old.Enforced = enforced
 		s.blocks[target] = old
 		return old, nil
+	}
+	if len(s.blocks) >= maxEntries {
+		return BlockEntry{}, errors.New("blocklist capacity reached")
 	}
 	b := BlockEntry{ID: randomID(), Target: target, Reason: reason, Source: source, CreatedAt: now, ExpiresAt: now.Add(ttl), Enforced: enforced}
 	s.blocks[target] = b
@@ -184,6 +257,20 @@ func (s *State) BlockByID(id string) (BlockEntry, bool) {
 		}
 	}
 	return BlockEntry{}, false
+}
+
+// BlockByTarget returns the current normalized block entry for a target. It is
+// used by transactional response paths that must restore an existing manual or
+// automatic rule exactly when a later kernel/policy step fails.
+func (s *State) BlockByTarget(target string) (BlockEntry, bool) {
+	normalized, err := normalizeTarget(target)
+	if err != nil {
+		return BlockEntry{}, false
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	block, ok := s.blocks[normalized]
+	return block, ok
 }
 
 func (s *State) RemoveBlockByID(id string) (BlockEntry, bool) {
@@ -276,7 +363,7 @@ func (s *State) SetFeedVectors(n int, at time.Time) {
 	s.mu.Unlock()
 }
 
-func (s *State) SetFeedState(blockCount, correlateCount, annotateCount int, gen uint64, fingerprint string, at time.Time) {
+func (s *State) SetFeedState(blockCount, correlateCount, annotateCount int, gen uint64, fingerprint, status string, lastAttempt, lastSuccess, lastFullSuccess time.Time) {
 	s.mu.Lock()
 	s.feedVectors = blockCount + correlateCount + annotateCount
 	s.feedBlockVectors = blockCount
@@ -284,8 +371,19 @@ func (s *State) SetFeedState(blockCount, correlateCount, annotateCount int, gen 
 	s.feedAnnotateVectors = annotateCount
 	s.feedGeneration = gen
 	s.feedFingerprint = fingerprint
-	u := at.UTC()
-	s.lastFeedSync = &u
+	s.feedStatus = status
+	if !lastAttempt.IsZero() {
+		u := lastAttempt.UTC()
+		s.lastFeedAttempt = &u
+	}
+	if !lastSuccess.IsZero() {
+		u := lastSuccess.UTC()
+		s.lastFeedSync = &u
+	}
+	if !lastFullSuccess.IsZero() {
+		u := lastFullSuccess.UTC()
+		s.lastFeedFullSync = &u
+	}
 	s.mu.Unlock()
 }
 
@@ -522,6 +620,15 @@ func (s *State) EvidenceHealthy() error {
 	return s.evidenceErr
 }
 
+// SetEvidenceStatus publishes a freshly verified ledger status without recording
+// an event. It is used by the periodic verification loop so a healthy ledger
+// keeps its status current and a tampered one flips to unhealthy immediately.
+func (s *State) SetEvidenceStatus(status EvidenceStatus) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.evidenceStatus = status
+}
+
 func (s *State) EvidenceLedger() *EvidenceLedger {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -651,14 +758,54 @@ func (s *State) Snapshot() Snapshot {
 	cells := s.cells
 	snapshot := Snapshot{Version: s.version, NodeName: s.nodeName, NodeMode: s.nodeMode, Enforcement: s.enforcement, StartedAt: s.started,
 		UptimeSeconds: int64(time.Since(s.started).Seconds()), CoreConnected: s.coreConnected, CoreMode: s.coreMode, AllowlistReady: s.allowlistReady,
-		FeedVectors: s.feedVectors, LastFeedSync: s.lastFeedSync,
+		FeedVectors: s.feedVectors, FeedStatus: s.feedStatus, LastFeedSync: s.lastFeedSync,
+		LastFeedAttempt: s.lastFeedAttempt, LastFeedFullSync: s.lastFeedFullSync,
 		FeedGeneration: s.feedGeneration, FeedFingerprint: s.feedFingerprint,
 		FeedBlockVectors: s.feedBlockVectors, FeedCorrelateVectors: s.feedCorrelateVectors, FeedAnnotateVectors: s.feedAnnotateVectors,
 		Blocks: blocks, Events: events, Telemetry: s.telemetry,
 		XDR: s.xdr, L7: s.l7, Incidents: incidents, Policy: s.policy, Release: cloneReleaseStatus(s.release), Settings: cloneRuntimeSettings(s.settings),
 		Evidence: s.evidenceStatus, FIM: fimStatus,
-		Cases: CaseStatus{Healthy: false, Cases: []SecurityCase{}},
-		Cells: GaiaCellsStatus{Enabled: false, Healthy: false, Availability: "disabled", Cells: []GaiaCell{}}}
+		Cases:    CaseStatus{Healthy: false, Cases: []SecurityCase{}},
+		Cells:    GaiaCellsStatus{Enabled: false, Healthy: false, Availability: "disabled", Cells: []GaiaCell{}},
+		Kinetic:  s.kinetic,
+		Coverage: s.kinetic.Coverage,
+		Stream:   s.streamDiagnostics}
+	snapshot.Stream.ActiveClients = len(s.subscribers)
+	customCount := 0
+	for _, cr := range s.settings.CustomRules {
+		if cr.Enabled {
+			customCount++
+		}
+	}
+	builtinXDR := 0
+	if s.xdr.Enabled {
+		builtinXDR = 8
+	}
+	behaviorRules := 0
+	if s.settings.BehaviorEnabled {
+		behaviorRules = 1
+	}
+	kineticRules := 0
+	if s.kinetic.Coverage.OverallStatus != "disabled" {
+		kineticRules = 7
+	}
+	l7Rules := 0
+	if s.l7.Enabled {
+		l7Rules = 3
+	}
+	threatFeeds := 0
+	if s.settings.FeedsEnabled {
+		threatFeeds = s.feedVectors
+	}
+	snapshot.DetectionRules = DetectionRulesCount{
+		BuiltinXDR:  builtinXDR,
+		Custom:      customCount,
+		Behavior:    behaviorRules,
+		Kinetic:     kineticRules,
+		L7:          l7Rules,
+		ThreatFeeds: threatFeeds,
+		Total:       builtinXDR + customCount + behaviorRules + kineticRules + l7Rules + threatFeeds,
+	}
 	s.mu.RUnlock()
 	if cases != nil {
 		snapshot.Cases = cases.Status(100)
@@ -667,4 +814,86 @@ func (s *State) Snapshot() Snapshot {
 		snapshot.Cells = cells.Status(false)
 	}
 	return snapshot
+}
+
+func (s *State) RecordStreamConnect() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.streamDiagnostics.TotalConnects++
+	s.streamDiagnostics.ActiveClients = len(s.subscribers)
+}
+
+func (s *State) RecordStreamDisconnect() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.streamDiagnostics.TotalDisconnects++
+	s.streamDiagnostics.ActiveClients = len(s.subscribers)
+}
+
+func (s *State) RecordStreamHeartbeat() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := time.Now().UTC()
+	s.streamDiagnostics.LastHeartbeatAt = &now
+}
+
+func (s *State) RecordStreamWriteError() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.streamDiagnostics.WriteErrors++
+}
+
+func (s *State) StreamDiagnostics() StreamDiagnostics {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	res := s.streamDiagnostics
+	res.ActiveClients = len(s.subscribers)
+	return res
+}
+
+func (s *State) KineticTelemetry() KineticTelemetry {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.kinetic
+}
+
+func (s *State) SetKineticTelemetry(t KineticTelemetry) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.kinetic = t
+}
+
+func (s *State) UpdateKineticTelemetry(fn func(*KineticTelemetry)) {
+	if fn == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	fn(&s.kinetic)
+}
+
+func (s *State) SetSensorCoverage(cov SensorCoverage) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.sensors == nil {
+		s.sensors = make(map[string]SensorCoverage)
+	}
+	s.sensors[cov.Name] = cov
+	s.kinetic.Coverage = EvaluateCoverage(s.sensors)
+}
+
+func (s *State) SensorCoverage(name string) (SensorCoverage, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.sensors == nil {
+		return SensorCoverage{}, false
+	}
+	cov, ok := s.sensors[name]
+	return cov, ok
+}
+
+func (s *State) SystemCoverage() SystemCoverage {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.kinetic.Coverage
 }

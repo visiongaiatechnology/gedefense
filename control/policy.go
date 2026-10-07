@@ -50,6 +50,7 @@ type PolicyStore struct {
 	publicKey  ed25519.PublicKey
 	generation uint64
 	status     PolicyStatus
+	trust      PolicyTrustFabricSettings
 }
 
 func NewPolicyStore(cfg PolicyConfig, nodeNames ...string) (*PolicyStore, error) {
@@ -81,7 +82,14 @@ func NewPolicyStore(cfg PolicyConfig, nodeNames ...string) (*PolicyStore, error)
 		return nil, err
 	}
 	finger := fmt.Sprintf("ed25519:%x", pub[:8])
-	return &PolicyStore{cfg: cfg, crypto: storage, nodeName: nodeName, privateKey: priv, publicKey: pub, status: PolicyStatus{Verified: true, Signer: finger}}, nil
+	// The compiled-in bootstrap value seeds the first Fabric revision; the Policy
+	// Trust namespace is authoritative for every revision after it.
+	trust := defaultPolicyTrustFabricSettings()
+	trust.RequireSigned = cfg.RequireSigned
+	return &PolicyStore{
+		cfg: cfg, crypto: storage, nodeName: nodeName, privateKey: priv, publicKey: pub,
+		status: PolicyStatus{Verified: true, Signer: finger}, trust: trust,
+	}, nil
 }
 
 func loadOrCreatePolicyKey(privatePath, publicPath string, storage *StorageCipher) (ed25519.PublicKey, ed25519.PrivateKey, error) {
@@ -151,6 +159,16 @@ func verifyOrWritePublicKey(path string, expected ed25519.PublicKey) error {
 	return nil
 }
 
+// atomicWriteFile writes a file through a staging file and an atomic replace.
+//
+// Scope of the symlink guarantee: the final component is protected. rejectSymlink
+// refuses a link at the target name and O_EXCL refuses one at the staging name, so
+// neither can be redirected. Directories above the target are resolved by the
+// kernel at open time and are NOT covered here. That is acceptable for the stores
+// this serves, whose paths are operator configuration inside directories the
+// service owns, and it is not acceptable for a path a request can influence -
+// those go through openBeneath, which resolves every component relative to an
+// already-open descriptor.
 func atomicWriteFile(path string, data []byte, mode os.FileMode) error {
 	if err := rejectSymlink(path); err != nil {
 		return err
@@ -233,7 +251,7 @@ func (p *PolicyStore) Load() (envelope PolicyEnvelope, err error) {
 			}
 		}
 	}()
-	b, err := readBoundedPrivateFile(p.cfg.StateFile, 64<<20)
+	b, err := readBoundedPrivateFile(p.cfg.StateFile, p.maxStateBytes())
 	if errors.Is(err, os.ErrNotExist) {
 		p.status = PolicyStatus{Verified: true, Generation: 0, Signer: p.status.Signer}
 		return PolicyEnvelope{Version: policyDocumentVersion}, nil
@@ -259,10 +277,19 @@ func (p *PolicyStore) Load() (envelope PolicyEnvelope, err error) {
 	sig, err := base64.RawURLEncoding.DecodeString(doc.Signature)
 	if err != nil || len(sig) != ed25519.SignatureSize || !ed25519.Verify(p.publicKey, payload, sig) {
 		p.status = PolicyStatus{Verified: false, Error: "signature verification failed", Signer: p.status.Signer}
-		if p.cfg.RequireSigned {
+		if p.requireSigned() {
 			return PolicyEnvelope{}, errors.New("policy signature verification failed")
 		}
 		return PolicyEnvelope{Version: policyDocumentVersion}, nil
+	}
+	// Rollback protection: a document older than the administrable floor is a
+	// replayed permissive revision, not a legitimate policy. Refusing it here
+	// means an attacker who can write the state file cannot silently downgrade the
+	// enforcement posture by restoring an old copy.
+	if floor := p.trust.MinimumGeneration; floor > 0 && doc.Envelope.Generation < floor {
+		p.status = PolicyStatus{Verified: false, Signer: p.status.Signer,
+			Error: fmt.Sprintf("policy generation %d is below the pinned minimum %d", doc.Envelope.Generation, floor)}
+		return PolicyEnvelope{}, fmt.Errorf("policy rollback detected: generation %d is below the pinned minimum %d", doc.Envelope.Generation, floor)
 	}
 	p.generation = doc.Envelope.Generation
 	u := doc.Envelope.UpdatedAt.UTC()
@@ -273,6 +300,34 @@ func (p *PolicyStore) Load() (envelope PolicyEnvelope, err error) {
 		}
 	}
 	return doc.Envelope, nil
+}
+
+// SignBytes signs an arbitrary canonical payload with the policy signing key. It
+// exists so the settings export can be authenticated by the same trust anchor the
+// policy document already uses instead of introducing a second key to manage.
+func (p *PolicyStore) SignBytes(payload []byte) ([]byte, error) {
+	if p == nil {
+		return nil, errors.New("settings signer unavailable")
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if len(p.privateKey) != ed25519.PrivateKeySize {
+		return nil, errors.New("settings signer unavailable")
+	}
+	return ed25519.Sign(p.privateKey, payload), nil
+}
+
+// TrustedPublicKey returns a copy of the verification key.
+func (p *PolicyStore) TrustedPublicKey() ed25519.PublicKey {
+	if p == nil {
+		return nil
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if len(p.publicKey) != ed25519.PublicKeySize {
+		return nil
+	}
+	return append(ed25519.PublicKey(nil), p.publicKey...)
 }
 
 func (p *PolicyStore) writeDocument(doc PolicyDocument) error {

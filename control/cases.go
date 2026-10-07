@@ -77,6 +77,7 @@ type CaseEngine struct {
 	byFinger  map[string]string
 	integrity error
 	now       func() time.Time
+	policy    casePolicy
 }
 
 func NewCaseEngine(
@@ -257,8 +258,23 @@ func (e *CaseEngine) IngestIncident(incident XDRIncident) error {
 	if e.integrity != nil {
 		return e.integrity
 	}
+	policy := e.policy.effective()
+	if !policy.autoCreate {
+		return nil
+	}
+	// The score gate is what keeps a noisy detector from opening cases on its own.
+	if incident.Score < policy.minimumScore {
+		return nil
+	}
 	fingerprint := caseFingerprint(incident)
 	now := e.now()
+	if id, exists := e.byFinger[fingerprint]; exists && correlationExpired(e.cases[id], incident, now, policy) {
+		// The lapsed window means this is a recurrence, not a continuation, so the
+		// fingerprint is released and a fresh case is opened below.
+		delete(e.byFinger, fingerprint)
+		exists = false
+		id = ""
+	}
 	if id, exists := e.byFinger[fingerprint]; exists {
 		record := e.cases[id]
 		before := cloneSecurityCase(record)
@@ -269,8 +285,8 @@ func (e *CaseEngine) IngestIncident(incident XDRIncident) error {
 		record.UpdatedAt = now
 		record.OccurrenceCount++
 		record.Severity = maximumCaseSeverity(record.Severity, incident.Severity)
-		record.Observations = boundedObservations(record.Observations, incidentObservation(incident))
-		record.EvidenceIDs = appendUniqueBounded(record.EvidenceIDs, caseMaxEvidence, incident.ID)
+		record.Observations = boundedObservations(record.Observations, incidentObservation(incident), policy.maxObservations)
+		record.EvidenceIDs = appendUniqueBounded(record.EvidenceIDs, policy.maxEvidence, incident.ID)
 		record.RuleIDs = appendUniqueBounded(record.RuleIDs, 128, incident.RuleIDs...)
 		record.Categories = appendUniqueBounded(record.Categories, 64, incident.Categories...)
 		e.cases[id] = record
@@ -281,7 +297,7 @@ func (e *CaseEngine) IngestIncident(incident XDRIncident) error {
 		}
 		return nil
 	}
-	if len(e.cases) >= caseMaxRecords {
+	if len(e.cases) >= policy.maxCases {
 		return errors.New("case capacity exhausted")
 	}
 	id := "CS-" + randomID()
@@ -293,7 +309,7 @@ func (e *CaseEngine) IngestIncident(incident XDRIncident) error {
 		Status: "open", Severity: incident.Severity,
 		Confidence: caseConfidence(incident), CreatedAt: now, UpdatedAt: now,
 		Observations: []CaseObservation{incidentObservation(incident)},
-		EvidenceIDs:  appendUniqueBounded(nil, caseMaxEvidence, incident.ID),
+		EvidenceIDs:  appendUniqueBounded(nil, policy.maxEvidence, incident.ID),
 		RuleIDs:      appendUniqueBounded(nil, 128, incident.RuleIDs...),
 		Categories:   appendUniqueBounded(nil, 64, incident.Categories...),
 		Recommended:  caseRecommendations(incident), OccurrenceCount: 1,
@@ -357,7 +373,10 @@ func (e *CaseEngine) SetStatus(id, status, resolution string) (SecurityCase, err
 func (e *CaseEngine) Status(limit int) CaseStatus {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if limit < 1 || limit > caseListMaxLimit {
+	// The lock is already held here, so the policy is read directly: policySnapshot
+	// takes e.mu, and a non-reentrant mutex turns that call into a self-deadlock.
+	// IngestIncident reads e.policy.effective() the same way for the same reason.
+	if limit < 1 || limit > e.policy.effective().listMaxLimit {
 		limit = 100
 	}
 	records := make([]SecurityCase, 0, len(e.cases))
@@ -466,10 +485,14 @@ func maximumCaseSeverity(left, right string) string {
 func boundedObservations(
 	existing []CaseObservation,
 	next CaseObservation,
+	limit int,
 ) []CaseObservation {
+	if limit <= 0 {
+		limit = caseMaxObserved
+	}
 	result := append(append([]CaseObservation(nil), existing...), next)
-	if len(result) > caseMaxObserved {
-		result = append([]CaseObservation(nil), result[len(result)-caseMaxObserved:]...)
+	if len(result) > limit {
+		result = append([]CaseObservation(nil), result[len(result)-limit:]...)
 	}
 	return result
 }

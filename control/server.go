@@ -15,9 +15,11 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"path/filepath"
+	"path"
+	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -26,23 +28,47 @@ import (
 var webAssets embed.FS
 
 type APIServer struct {
-	cfg         Config
-	state       *State
-	core        *CoreClient
-	feeds       *FeedManager
-	policy      *PolicyStore
-	xdr         *XDREngine
-	release     *ReleaseController
-	settings    *SettingsStore
-	token       string
-	http        *http.Server
-	feedSyncing atomic.Bool
-	limiter     *RateLimiter
-	replay      *ReplayGuard
-	sseClients  atomic.Int32
-	bootTrust   *BootTrustCollector
-	hardening   *HardeningCollector
-	packages    *PackageIntegrityScanner
+	cfg              Config
+	state            *State
+	core             *CoreClient
+	feeds            *FeedManager
+	policy           *PolicyStore
+	xdr              *XDREngine
+	release          *ReleaseController
+	settings         *SettingsStore
+	token            string
+	http             *http.Server
+	feedSyncing      atomic.Bool
+	limiter          *RateLimiter
+	replay           *ReplayGuard
+	sseClients       atomic.Int32
+	bootTrust        *BootTrustCollector
+	hardening        *HardeningCollector
+	packages         *PackageIntegrityScanner
+	kinetic          *KineticEngine
+	kineticResponse  *KineticResponseEngine
+	kineticRules     *KineticRuleRegistry
+	kineticRuntimeMu sync.Mutex
+	kineticCancel    context.CancelFunc
+	geo              *GeoResolver
+	l7               *L7Engine
+	fim              *FIMEngine
+
+	packageMu     sync.Mutex
+	packageCancel context.CancelFunc
+
+	trustMu     sync.Mutex
+	trustCancel context.CancelFunc
+	driftCancel context.CancelFunc
+	caseCancel  context.CancelFunc
+	imports     *importPreviewStore
+
+	hardeningMu     sync.Mutex
+	hardeningCancel context.CancelFunc
+	// hardeningMemo suppresses repeated posture events for a domain that keeps
+	// reporting the same state, so the event stream stays readable.
+	hardeningMemo  map[string]string
+	hardeningLevel string
 }
 
 func NewAPIServer(cfg Config, state *State, core *CoreClient, feeds *FeedManager, policy *PolicyStore, xdr *XDREngine, release *ReleaseController, settings *SettingsStore, token string) *APIServer {
@@ -53,9 +79,51 @@ func NewAPIServer(cfg Config, state *State, core *CoreClient, feeds *FeedManager
 		hardening: NewHardeningCollector(),
 		packages:  NewPackageIntegrityScanner(),
 	}
+	imports, importErr := newImportPreviewStore()
+	if importErr != nil {
+		// Without a preview store there is no way to review an import, so the
+		// import endpoints must be able to say so instead of dereferencing nil.
+		log.Printf("fabric import preview store unavailable: %v", importErr)
+	}
+	s.imports = imports
+	rules := NewKineticRuleRegistry()
+	s.kineticRules = rules
+	effectiveKinetic := cfg.Kinetic
+	effectiveAllowlist := append([]string(nil), cfg.Defense.Allowlist...)
+	var persisted RuntimeSettings
+	if settings != nil {
+		persisted = settings.Get()
+		effectiveKinetic = kineticConfigFromRuntime(cfg.Kinetic, persisted.Kinetic)
+		effectiveAllowlist = append([]string(nil), persisted.ManagementAllowlist...)
+		// The boot evidence requirements are projected here, where the collector is
+		// constructed, so the first collection already evaluates the persisted
+		// policy instead of the compiled-in default.
+		if err := s.bootTrust.ApplyPolicy(effectiveBootTrustSettings(persisted)); err != nil {
+			s.bootTrust = NewBootTrustCollector(5 * time.Minute)
+		}
+		// The rate limiter belongs to this server, so its bound is applied here
+		// rather than from main, where no limiter exists yet.
+		if err := applySystemPolicies(effectiveSystemSettings(persisted), s.limiter, nil, nil); err != nil {
+			log.Printf("system rate limit could not be applied at start, using the compiled-in default: %v", err)
+		}
+	}
+	s.kinetic = NewKineticEngine(effectiveKinetic, state, rules, effectiveAllowlist)
+	if feeds != nil {
+		s.kinetic.SetThreatIntel(feeds.BlockIndex(), feeds.CorrelateIndex(), feeds.AnnotateIndex())
+	}
+	s.kineticResponse = NewKineticResponseEngine(cfg, state, core)
+	if settings != nil {
+		s.kineticResponse.UpdateConfig(persisted.Kinetic, persisted.Network)
+		s.kineticResponse.UpdateAllowlist(persisted.ManagementAllowlist)
+	}
+	s.geo = NewGeoResolver(cfg.Kinetic.GeoIPCSV)
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /", s.index)
-	mux.HandleFunc("GET /assets/{name}", s.asset)
+	// The multi-segment wildcard is required: `{name}` matches a single segment, so
+	// the vendored library under vendor/jsvectormap/js/** was unreachable through the
+	// router even though resolveWebAsset accepted it. `{name...}` keeps the
+	// single-segment case working and lets the allowlist remain the only authority.
+	mux.HandleFunc("GET /assets/{name...}", s.asset)
 	mux.HandleFunc("GET /api/v1/status", s.auth(s.status))
 	mux.HandleFunc("GET /api/v1/boot-trust", s.auth(s.bootTrustStatus))
 	mux.HandleFunc("GET /api/v1/hardening/posture", s.auth(s.hardeningPosture))
@@ -92,11 +160,30 @@ func NewAPIServer(cfg Config, state *State, core *CoreClient, feeds *FeedManager
 	mux.HandleFunc("POST /api/v1/release/emergency-stop/clear", s.auth(s.releaseEmergencyStopClear))
 	mux.HandleFunc("GET /api/v1/settings", s.auth(s.settingsStatus))
 	mux.HandleFunc("PUT /api/v1/settings", s.auth(s.updateSettings))
+	mux.HandleFunc("GET /api/v1/settings/schema", s.auth(s.fabricSettingsSchema))
+	mux.HandleFunc("GET /api/v1/settings/history", s.auth(s.fabricSettingsHistory))
+	mux.HandleFunc("POST /api/v1/settings/rollback", s.auth(s.fabricSettingsRollback))
+	mux.HandleFunc("GET /api/v1/settings/search", s.auth(s.fabricSettingsSearch))
+	mux.HandleFunc("GET /api/v1/settings/drift", s.auth(s.fabricSettingsDrift))
+	mux.HandleFunc("POST /api/v1/settings/export", s.auth(s.fabricSettingsExport))
+	mux.HandleFunc("POST /api/v1/settings/import/preview", s.auth(s.fabricSettingsImportPreview))
+	mux.HandleFunc("POST /api/v1/settings/import/apply", s.auth(s.fabricSettingsImportApply))
+	mux.HandleFunc("GET /api/v1/settings/{module}", s.auth(s.fabricSettingsModule))
+	mux.HandleFunc("POST /api/v1/settings/{module}/preview", s.auth(s.fabricSettingsPreview))
+	mux.HandleFunc("PUT /api/v1/settings/{module}", s.auth(s.fabricSettingsUpdate))
 	mux.HandleFunc("POST /api/v1/allowlist", s.auth(s.addAllowlist))
 	mux.HandleFunc("POST /api/v1/allowlist/remove", s.auth(s.removeAllowlist))
 	mux.HandleFunc("POST /api/v1/blocks", s.auth(s.addBlock))
 	mux.HandleFunc("DELETE /api/v1/blocks/{id}", s.auth(s.deleteBlock))
 	mux.HandleFunc("POST /api/v1/feeds/sync", s.auth(s.syncFeeds))
+	mux.HandleFunc("POST /api/v1/feeds/apply", s.auth(s.applyFeeds))
+	mux.HandleFunc("GET /api/v1/feeds/status", s.auth(s.getFeedStatus))
+	mux.HandleFunc("GET /api/v1/kinetic/status", s.auth(s.getKineticStatus))
+	mux.HandleFunc("GET /api/v1/kinetic/live", s.auth(s.getKineticLive))
+	mux.HandleFunc("GET /api/v1/kinetic/events", s.auth(s.getKineticEvents))
+	mux.HandleFunc("GET /api/v1/kinetic/sources", s.auth(s.getKineticSources))
+	mux.HandleFunc("GET /api/v1/kinetic/map", s.auth(s.getKineticMap))
+	mux.HandleFunc("POST /api/v1/kinetic/reconcile", s.auth(s.reconcileKinetic))
 	mux.HandleFunc("POST /api/v1/xdr/incidents/{id}/ack", s.auth(s.ackIncident))
 	mux.HandleFunc("GET /api/v1/xdr/attack-stories", s.auth(s.attackStories))
 	mux.HandleFunc("GET /api/v1/platform/caps", s.auth(s.platformCapabilities))
@@ -114,10 +201,51 @@ func NewAPIServer(cfg Config, state *State, core *CoreClient, feeds *FeedManager
 	mux.HandleFunc("GET /panelz", s.panelStatus)
 	s.http = &http.Server{
 		Addr: cfg.Dashboard.Listen, Handler: s.secure(mux), ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout: 15 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second,
+		ReadTimeout: 15 * time.Second, WriteTimeout: 0, IdleTimeout: 2 * time.Minute,
 		MaxHeaderBytes: 16 << 10, TLSConfig: &tls.Config{MinVersion: tls.VersionTLS13},
 	}
 	return s
+}
+
+// AttachL7 binds the running Application Defense engine to the control plane so
+// the Fabric module can report apply state, the effective values and the rule
+// catalogue from the component that actually enforces them. It is called after
+// construction because the L7 engine is created later than the HTTP server.
+func (s *APIServer) AttachL7(engine *L7Engine) { s.l7 = engine }
+
+// caseEngine returns the case engine when it is attached.
+func (s *APIServer) caseEngine() *CaseEngine {
+	if s.state == nil {
+		return nil
+	}
+	return s.state.Cases()
+}
+
+// quarantineApplier returns the quarantine transaction applier when the
+// transaction engine is attached. It is reached through the engine rather than
+// stored separately, so there is one instance and no second policy target.
+func (s *APIServer) quarantineApplier() *QuarantineTransactionApplier {
+	if s.state == nil {
+		return nil
+	}
+	engine := s.state.Transactions()
+	if engine == nil {
+		return nil
+	}
+	return engine.QuarantineApplier()
+}
+
+// AttachFIM binds the running file integrity engine so the Integrity module can
+// project its policy and report effective state.
+func (s *APIServer) AttachFIM(engine *FIMEngine) { s.fim = engine }
+
+// AttachFeeds binds the running Threat Intelligence manager so the Fabric module
+// can report the active revision and the per-feed generation state.
+func (s *APIServer) AttachFeeds(feeds *FeedManager) {
+	if feeds == nil {
+		return
+	}
+	s.feeds = feeds
 }
 
 func validateTLSMaterial(certPath, keyPath string) error {
@@ -156,6 +284,12 @@ func (s *APIServer) RunWithReady(ready chan<- struct{}) error {
 	if err != nil {
 		return err
 	}
+	s.startKineticRuntime()
+	s.startHardeningPosture()
+	s.startPackageIntegrity()
+	s.startTrustWatch()
+	s.startDriftWatch()
+	s.startCaseSweep()
 	if ready != nil {
 		close(ready)
 	}
@@ -165,10 +299,335 @@ func (s *APIServer) RunWithReady(ready chan<- struct{}) error {
 	return s.http.Serve(listener)
 }
 
-func (s *APIServer) Shutdown(ctx context.Context) error { return s.http.Shutdown(ctx) }
+func (s *APIServer) Shutdown(ctx context.Context) error {
+	s.setKineticRuntimeEnabled(false)
+	s.stopHardeningPosture()
+	s.stopPackageIntegrity()
+	s.stopTrustWatch()
+	s.stopDriftWatch()
+	s.stopCaseSweep()
+	return s.http.Shutdown(ctx)
+}
+
+// startHardeningPosture runs the administrable periodic posture evaluation. It
+// is the only place that raises a posture event, so the operator sees a change
+// once instead of on every dashboard poll.
+func (s *APIServer) startHardeningPosture() {
+	if s.hardening == nil {
+		return
+	}
+	s.hardeningMu.Lock()
+	if s.hardeningCancel != nil {
+		s.hardeningMu.Unlock()
+		return
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	s.hardeningCancel = cancel
+	if s.hardeningMemo == nil {
+		s.hardeningMemo = make(map[string]string)
+	}
+	s.hardeningMu.Unlock()
+
+	go func() {
+		for {
+			interval := time.Duration(hardeningDefaultPostureIntervalSeconds) * time.Second
+			autoScan := true
+			if s.settings != nil {
+				posture := effectiveHardeningSettings(s.settings.Get()).Posture
+				autoScan = posture.AutoScan
+				if posture.ScanIntervalSeconds > 0 {
+					interval = time.Duration(posture.ScanIntervalSeconds) * time.Second
+				}
+			}
+			if autoScan {
+				s.evaluateHardeningPosture()
+			} else {
+				// A disabled automatic scan still re-reads the policy regularly so
+				// re-enabling it does not require a restart.
+				interval = 30 * time.Second
+			}
+			timer := time.NewTimer(interval)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return
+			case <-timer.C:
+			}
+		}
+	}()
+}
+
+func (s *APIServer) stopHardeningPosture() {
+	s.hardeningMu.Lock()
+	cancel := s.hardeningCancel
+	s.hardeningCancel = nil
+	s.hardeningMu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+}
+
+// startTrustWatch re-verifies the signed policy document and the boot evidence
+// requirements periodically. Without it a tampered state file, a replayed older
+// revision or a boot anchor that changed after startup would only be noticed at
+// the next operator action.
+func (s *APIServer) startTrustWatch() {
+	if s.policy == nil && s.bootTrust == nil {
+		return
+	}
+	s.trustMu.Lock()
+	if s.trustCancel != nil {
+		s.trustMu.Unlock()
+		return
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	s.trustCancel = cancel
+	s.trustMu.Unlock()
+
+	go func() {
+		lastVerified := true
+		lastLevel := ""
+		for {
+			interval := time.Duration(defaultPolicyTrustFabricSettings().VerifyIntervalSeconds) * time.Second
+			if s.settings != nil {
+				configured := effectivePolicyTrustSettings(s.settings.Get()).VerifyIntervalSeconds
+				if configured >= policyTrustVerifyFloor {
+					interval = time.Duration(configured) * time.Second
+				}
+			}
+			timer := time.NewTimer(interval)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return
+			case <-timer.C:
+			}
+			if s.state == nil {
+				continue
+			}
+			if s.policy != nil {
+				if _, err := s.policy.Load(); err != nil {
+					if lastVerified {
+						s.state.AddEvent(Event{Severity: "critical", Kind: "policy.verification_failed", Source: "policy",
+							Message: "Signed policy document failed periodic verification; the last known-good policy remains active"})
+					}
+					lastVerified = false
+				} else {
+					lastVerified = true
+					s.state.SetPolicyStatus(s.policy.Status())
+				}
+			}
+			if s.bootTrust != nil {
+				report := s.bootTrust.Collect()
+				if report.Summary != lastLevel {
+					if lastLevel != "" {
+						s.state.AddEvent(Event{Severity: "warning", Kind: "boot_trust.changed", Source: "boot",
+							Message: "Boot trust evidence changed: " + report.Summary})
+					}
+					lastLevel = report.Summary
+				}
+			}
+		}
+	}()
+}
+
+func (s *APIServer) stopTrustWatch() {
+	s.trustMu.Lock()
+	cancel := s.trustCancel
+	s.trustCancel = nil
+	s.trustMu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+}
+
+// startCaseSweep closes open cases that have been idle longer than the
+// administrable age. A zero setting disables it, which is the default: closing a
+// case is an operator judgement, and the sweep never touches a case an operator
+// moved to a non-open status.
+func (s *APIServer) startCaseSweep() {
+	if s.caseEngine() == nil {
+		return
+	}
+	s.trustMu.Lock()
+	if s.caseCancel != nil {
+		s.trustMu.Unlock()
+		return
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	s.caseCancel = cancel
+	s.trustMu.Unlock()
+
+	go func() {
+		for {
+			interval := 30 * time.Minute
+			enabled := false
+			if s.settings != nil {
+				enabled = effectiveForensicsSettings(s.settings.Get()).Cases.AutoCloseAfterHours > 0
+			}
+			timer := time.NewTimer(interval)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return
+			case <-timer.C:
+			}
+			if !enabled {
+				continue
+			}
+			engine := s.caseEngine()
+			if engine == nil {
+				continue
+			}
+			policy := engine.policySnapshot()
+			status := engine.Status(policy.listMaxLimit)
+			now := time.Now().UTC()
+			for _, record := range status.Cases {
+				if !autoCloseCandidate(record, now, policy) {
+					continue
+				}
+				if _, err := engine.SetStatus(record.ID, "resolved", "automatically closed after the configured inactivity window"); err != nil {
+					continue
+				}
+				if s.state != nil {
+					s.state.AddEvent(Event{Severity: "info", Kind: "case.auto_closed", Source: "forensics",
+						Message: fmt.Sprintf("Case %s was closed automatically after %d hours without activity", record.ID, policy.autoCloseHours)})
+				}
+			}
+		}
+	}()
+}
+
+func (s *APIServer) stopCaseSweep() {
+	s.trustMu.Lock()
+	cancel := s.caseCancel
+	s.caseCancel = nil
+	s.trustMu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+}
+
+// startPackageIntegrity runs the administrable package verification schedule. It
+// re-reads enablement and cadence on every cycle, so an operator change needs no
+// restart.
+func (s *APIServer) startPackageIntegrity() {
+	if s.packages == nil {
+		return
+	}
+	s.packageMu.Lock()
+	if s.packageCancel != nil {
+		s.packageMu.Unlock()
+		return
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	s.packageCancel = cancel
+	s.packageMu.Unlock()
+
+	go func() {
+		for {
+			interval := time.Hour
+			run := false
+			if s.settings != nil {
+				policy := effectiveIntegritySettings(s.settings.Get()).Packages
+				if policy.IntervalHours >= 1 {
+					interval = time.Duration(policy.IntervalHours) * time.Hour
+				}
+				run = policy.Enabled && policy.AutoScan
+			}
+			if run && !s.packages.Status().Running {
+				s.packages.Start(s.recordPackageIntegrityOutcome)
+			}
+			if !run {
+				interval = time.Minute
+			}
+			timer := time.NewTimer(interval)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return
+			case <-timer.C:
+			}
+		}
+	}()
+}
+
+func (s *APIServer) stopPackageIntegrity() {
+	s.packageMu.Lock()
+	cancel := s.packageCancel
+	s.packageCancel = nil
+	s.packageMu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+}
+
+// recordPackageIntegrityOutcome publishes the scheduled scan result as an event.
+func (s *APIServer) recordPackageIntegrityOutcome(status PackageIntegrityStatus) {
+	if s.state == nil {
+		return
+	}
+	if status.Modified > 0 || status.Missing > 0 || status.Errors > 0 {
+		s.state.AddEvent(Event{Severity: "warning", Kind: "package_integrity.deviation", Source: "integrity",
+			Message: fmt.Sprintf("Scheduled package verification found %d modified and %d missing file(s) across %d package(s)", status.Modified, status.Missing, status.Packages)})
+		return
+	}
+	s.state.AddEvent(Event{Severity: "info", Kind: "package_integrity.verified", Source: "integrity",
+		Message: fmt.Sprintf("Scheduled package verification confirmed %d package(s) and %d file(s)", status.Packages, status.Files)})
+}
+
+// evaluateHardeningPosture collects the live posture and reports a level change
+// or a required-domain regression exactly once per transition.
+func (s *APIServer) evaluateHardeningPosture() {
+	if s.hardening == nil || s.state == nil {
+		return
+	}
+	settings := HardeningPostureSettings{}
+	if s.settings != nil {
+		settings = effectiveHardeningSettings(s.settings.Get()).Posture
+	}
+	report := s.hardening.Collect(s.state.Snapshot(), s.bootTrust.Collect())
+	report.Checks = append(report.Checks, packageIntegrityPostureCheck(s.packages.Status()))
+	posture := summarizeHardening(report.CollectedAt, report.Checks, settings.thresholds())
+	findings := assessHardeningPosture(posture, settings)
+
+	s.hardeningMu.Lock()
+	defer s.hardeningMu.Unlock()
+	if posture.Level != s.hardeningLevel {
+		severity := "info"
+		switch posture.Level {
+		case "CRITICAL":
+			severity = "critical"
+		case "BASIC":
+			severity = "warning"
+		}
+		s.state.AddEvent(Event{Severity: severity, Kind: "hardening.posture_changed", Source: "hardening",
+			Message: fmt.Sprintf("Host hardening posture is now %s at %d%% compliance", posture.Level, posture.Score)})
+		s.hardeningLevel = posture.Level
+	}
+	for _, finding := range findings {
+		previous, seen := s.hardeningMemo[finding.Domain]
+		if seen && previous == finding.State {
+			continue
+		}
+		s.hardeningMemo[finding.Domain] = finding.State
+		if finding.State == "PROTECTED" {
+			continue
+		}
+		severity := "warning"
+		if finding.State == "CRITICAL" || finding.State == "UNAVAILABLE" {
+			severity = "critical"
+		}
+		s.state.AddEvent(Event{Severity: severity, Kind: "hardening.required_domain", Source: "hardening",
+			Message: fmt.Sprintf("Required posture domain %s is %s at %d%% (threshold %d): %s", finding.Title, finding.State, finding.Score, finding.Threshold, finding.Reason)})
+	}
+}
 
 func (s *APIServer) secure(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Security-Policy", contentSecurityPolicy)
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-Frame-Options", "DENY")
 		if !s.hostAllowed(r.Host) {
 			http.Error(w, "invalid host", http.StatusBadRequest)
 			return
@@ -186,8 +645,6 @@ func (s *APIServer) secure(next http.Handler) http.Handler {
 				return
 			}
 		}
-		w.Header().Set("X-Content-Type-Options", "nosniff")
-		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), bluetooth=()")
 		w.Header().Set("Cross-Origin-Opener-Policy", "same-origin")
@@ -195,10 +652,19 @@ func (s *APIServer) secure(next http.Handler) http.Handler {
 		w.Header().Set("Cross-Origin-Embedder-Policy", "require-corp")
 		w.Header().Set("Origin-Agent-Cluster", "?1")
 		w.Header().Set("X-Permitted-Cross-Domain-Policies", "none")
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src 'none'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; manifest-src 'self'; worker-src 'none'")
+		// Every mutating body passes this ceiling before any handler sees it. A
+		// handler that accepts less still accepts less; the administrable value can
+		// only tighten, so one revision cannot widen every endpoint at once.
+		if r.Method != http.MethodGet && r.Method != http.MethodHead && r.Body != nil {
+			r.Body = http.MaxBytesReader(w, r.Body, s.apiPayloadLimit())
+		}
 		w.Header().Set("Cache-Control", "no-store")
 		if r.TLS != nil {
-			w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+			// HSTS is only meaningful on a TLS origin. Emitting it from a plain-HTTP
+			// control port is noise that hides whether TLS is actually in effect.
+			if r.TLS != nil {
+				w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+			}
 		}
 		next.ServeHTTP(w, r)
 	})
@@ -269,24 +735,170 @@ func (s *APIServer) index(w http.ResponseWriter, r *http.Request) {
 	s.serveEmbedded(w, r, "web/index.html", "text/html; charset=utf-8")
 }
 
+// webAssetAllowlist is the complete set of dashboard assets the embedded HTTP
+// handler is permitted to serve. Every ES module that app.js imports must be
+// listed here: a missing entry breaks the whole module graph with a 404 rather
+// than a single missing view, which is why serving is contract-tested against
+// the real import graph.
+// webAssetAllowlist is the exhaustive set of embedded files the network may reach.
+//
+// It is exact, not a prefix rule: a request is resolved against this map and
+// nothing else. Files that ship for provenance but must never be served - the
+// upstream licence, the readme, the upstream manifest and the Sass sources - are
+// embedded because the embed directive covers the whole directory, and are kept out
+// of the network by being absent here.
+var webAssetAllowlist = map[string]bool{
+	"api.js":             true,
+	"app.css":            true,
+	"app.js":             true,
+	"charts.js":          true,
+	"fabric-settings.js": true,
+	"fabric-surface.js":  true,
+	"gedefense-logo.png": true,
+	"geo-map.js":         true,
+	"i18n.js":            true,
+	"kinetic.js":         true,
+	"l7.js":              true,
+	"operations.js":      true,
+	"protection.js":      true,
+	"render.js":          true,
+	"threat-intel.js":    true,
+	"v4.css":             true,
+	"vendor/jsvectormap/js/components/base.js":                  true,
+	"vendor/jsvectormap/js/components/concerns/interactable.js": true,
+	"vendor/jsvectormap/js/components/line.js":                  true,
+	"vendor/jsvectormap/js/components/marker.js":                true,
+	"vendor/jsvectormap/js/components/region.js":                true,
+	"vendor/jsvectormap/js/components/tooltip.js":               true,
+	"vendor/jsvectormap/js/core/applyTransform.js":              true,
+	"vendor/jsvectormap/js/core/coordsToPoint.js":               true,
+	"vendor/jsvectormap/js/core/createLines.js":                 true,
+	"vendor/jsvectormap/js/core/createMarkers.js":               true,
+	"vendor/jsvectormap/js/core/createRegions.js":               true,
+	"vendor/jsvectormap/js/core/createSeries.js":                true,
+	"vendor/jsvectormap/js/core/getInsetForPoint.js":            true,
+	"vendor/jsvectormap/js/core/getMarkerPosition.js":           true,
+	"vendor/jsvectormap/js/core/index.js":                       true,
+	"vendor/jsvectormap/js/core/repositionLabels.js":            true,
+	"vendor/jsvectormap/js/core/repositionLines.js":             true,
+	"vendor/jsvectormap/js/core/repositionMarkers.js":           true,
+	"vendor/jsvectormap/js/core/resize.js":                      true,
+	"vendor/jsvectormap/js/core/setFocus.js":                    true,
+	"vendor/jsvectormap/js/core/setScale.js":                    true,
+	"vendor/jsvectormap/js/core/setupContainerEvents.js":        true,
+	"vendor/jsvectormap/js/core/setupContainerTouchEvents.js":   true,
+	"vendor/jsvectormap/js/core/setupElementEvents.js":          true,
+	"vendor/jsvectormap/js/core/setupZoomButtons.js":            true,
+	"vendor/jsvectormap/js/core/updateSize.js":                  true,
+	"vendor/jsvectormap/js/dataVisualization.js":                true,
+	"vendor/jsvectormap/js/defaults/events.js":                  true,
+	"vendor/jsvectormap/js/defaults/options.js":                 true,
+	"vendor/jsvectormap/js/eventHandler.js":                     true,
+	"vendor/jsvectormap/js/index.js":                            true,
+	"vendor/jsvectormap/js/legend.js":                           true,
+	"vendor/jsvectormap/js/map.js":                              true,
+	"vendor/jsvectormap/js/projection.js":                       true,
+	"vendor/jsvectormap/js/scales/ordinalScale.js":              true,
+	"vendor/jsvectormap/js/series.js":                           true,
+	"vendor/jsvectormap/js/svg/baseElement.js":                  true,
+	"vendor/jsvectormap/js/svg/canvasElement.js":                true,
+	"vendor/jsvectormap/js/svg/imageElement.js":                 true,
+	"vendor/jsvectormap/js/svg/shapeElement.js":                 true,
+	"vendor/jsvectormap/js/svg/textElement.js":                  true,
+	"vendor/jsvectormap/js/util/deepMerge.js":                   true,
+	"vendor/jsvectormap/js/util/index.js":                       true,
+	"vendor/jsvectormap/jsvectormap.css":                        true,
+	"vendor/jsvectormap/maps/world-merc.js":                     true,
+	"xdr.js":                                                    true,
+}
+
+// webAssetNameAllowed validates a request path before any resolution happens. It
+// accepts exactly one optional trailing slash and nothing else: no absolute path, no
+// backslash, no NUL, no empty, dot or dot-dot segment, and no uncleaned form.
+func webAssetNameAllowed(name string) bool {
+	if name == "" || len(name) > 256 {
+		return false
+	}
+	if strings.ContainsAny(name, "\\\x00") || strings.HasPrefix(name, "/") {
+		return false
+	}
+	trimmed := strings.TrimSuffix(name, "/")
+	if trimmed == "" || path.Clean(trimmed) != trimmed {
+		return false
+	}
+	for _, segment := range strings.Split(trimmed, "/") {
+		if segment == "" || segment == "." || segment == ".." {
+			return false
+		}
+	}
+	return true
+}
+
+// resolveWebAsset maps a request path to an allowlisted embedded file.
+//
+// Vendored libraries live in subdirectories and import each other with
+// extensionless specifiers (`./map`, `../util`), which is what Node and every
+// bundler accept and what a browser does not: it requests the specifier verbatim.
+// Rewriting 43 upstream files to add extensions would replace auditable third-party
+// code with our own edit of it, so the resolution happens here instead, over exactly
+// three candidates. Every candidate is looked up in the exhaustive allowlist, so the
+// shim cannot reach a file the allowlist does not already expose, and the returned
+// name is the one that gets read - the request string is never used as a path.
+//
+// A directory index is different from the other two candidates and returns a
+// redirect instead of a file. Module resolution is URL-based, not filesystem-based:
+// if `.../js/core` answered with the bytes of `core/index.js`, the browser would
+// resolve that module's own relative imports against `.../js/core` as though it were
+// a file, request `.../js/setupContainerEvents`, and the entire vendored tree would
+// fail to load. Redirecting to the trailing-slash form makes the directory the base
+// URL, which is the only form a relative import resolves correctly from.
+//
+// The second return value is non-empty when the caller must redirect to it.
+func resolveWebAsset(name string) (string, string) {
+	if !webAssetNameAllowed(name) {
+		return "", ""
+	}
+	if webAssetAllowlist[name] {
+		return name, ""
+	}
+	if webAssetAllowlist[name+".js"] {
+		return name + ".js", ""
+	}
+	trimmed := strings.TrimSuffix(name, "/")
+	if webAssetAllowlist[trimmed+"/index.js"] {
+		if !strings.HasSuffix(name, "/") {
+			return "", trimmed + "/"
+		}
+		return trimmed + "/index.js", ""
+	}
+	return "", ""
+}
+
 func (s *APIServer) asset(w http.ResponseWriter, r *http.Request) {
-	name := r.PathValue("name")
-	if name == "" || filepath.Base(name) != name || strings.ContainsAny(name, "\\/\x00") {
+	name, redirect := resolveWebAsset(r.PathValue("name"))
+	if redirect != "" {
+		// The trailing slash is preserved in the Location so the browser re-resolves
+		// relative imports against the directory rather than against a file URL.
+		http.Redirect(w, r, "/assets/"+redirect, http.StatusMovedPermanently)
+		return
+	}
+	if name == "" {
 		http.NotFound(w, r)
 		return
 	}
-	allowed := map[string]bool{
-		"app.css": true, "v4.css": true, "api.js": true, "charts.js": true, "render.js": true, "i18n.js": true, "app.js": true,
-		"protection.js": true, "l7.js": true, "xdr.js": true, "operations.js": true,
-		"gedefense-logo.png": true,
-	}
-	if !allowed[name] {
-		http.NotFound(w, r)
-		return
-	}
-	contentType := mime.TypeByExtension(filepath.Ext(name))
-	if contentType == "" {
-		contentType = "application/octet-stream"
+	extension := path.Ext(name)
+	contentType := mime.TypeByExtension(extension)
+	switch extension {
+	case ".js":
+		contentType = "text/javascript; charset=utf-8"
+	case ".css":
+		contentType = "text/css; charset=utf-8"
+	case ".png":
+		contentType = "image/png"
+	default:
+		if contentType == "" {
+			contentType = "application/octet-stream"
+		}
 	}
 	s.serveEmbedded(w, r, "web/"+name, contentType)
 }
@@ -317,21 +929,87 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
-func apiError(w http.ResponseWriter, status int, publicMessage string, internal error) {
+// opaqueFaultMessage maps a status code to a stable, non-descriptive client text.
+// The operator correlates it through the returned error identifier, which is the
+// only value that ties the response to the internal log line.
+func opaqueFaultMessage(status int) string {
+	switch {
+	case status == http.StatusBadRequest:
+		return "request rejected"
+	case status == http.StatusUnauthorized:
+		return "authorization required"
+	case status == http.StatusForbidden:
+		return "request rejected"
+	case status == http.StatusNotFound:
+		return "resource not found"
+	case status == http.StatusConflict:
+		return "request conflicts with the current state"
+	case status == http.StatusTooManyRequests:
+		return "rate limit exceeded"
+	case status >= 500:
+		return "internal fault"
+	default:
+		return "request rejected"
+	}
+}
+
+// apiFault reports an internal fault opaquely. The client receives a stable text
+// and an identifier; the detail goes to the log only.
+func apiFault(w http.ResponseWriter, status int, internal error) {
 	id := randomID()
 	if internal != nil {
 		log.Printf("api fault id=%s status=%d: %v", id, status, internal)
 	}
-	// Sanitize public message if it contains security-sensitive patterns or internal path indicators (Pattern 1.5.A)
-	sanitizedMsg := publicMessage
-	msgLower := strings.ToLower(publicMessage)
-	if strings.Contains(msgLower, "injection") || strings.Contains(msgLower, "path") ||
-		strings.Contains(msgLower, "traversal") || strings.Contains(msgLower, "token") ||
-		strings.Contains(msgLower, "secret") || strings.Contains(msgLower, "key") ||
-		strings.Contains(msgLower, "password") {
-		sanitizedMsg = "request rejected for security reasons"
+	writeJSON(w, status, map[string]string{"error": opaqueFaultMessage(status), "error_id": id})
+}
+
+// contentSecurityPolicy is the single source of truth for the dashboard policy.
+//
+// The application ships no inline script and no inline style, so neither
+// 'unsafe-inline' nor 'unsafe-eval' is needed and neither is granted. Trusted
+// Types makes the absence of DOM-XSS sinks a runtime invariant instead of a
+// property that only a source scan checks: any future assignment to a script
+// sink raises instead of executing.
+const contentSecurityPolicy = "default-src 'self'; " +
+	"script-src 'self'; " +
+	"style-src 'self'; " +
+	"img-src 'self' data:; " +
+	"connect-src 'self'; " +
+	"font-src 'none'; " +
+	"object-src 'none'; " +
+	"base-uri 'none'; " +
+	"form-action 'self'; " +
+	"frame-ancestors 'none'; " +
+	"manifest-src 'self'; " +
+	"worker-src 'none'; " +
+	"require-trusted-types-for 'script'"
+
+// apiError publishes only explicitly approved operator messages. Unknown text
+// and messages identical to an internal cause are opaque, even without a cause.
+func apiError(w http.ResponseWriter, status int, publicMessage string, internal error) {
+	// Only registered operator messages may cross the disclosure boundary.
+	if _, approved := operatorMessages[publicMessage]; !approved {
+		if internal == nil {
+			internal = errors.New(publicMessage)
+		}
+		apiFault(w, status, internal)
+		return
 	}
-	writeJSON(w, status, map[string]string{"error": sanitizedMsg, "error_id": id})
+	if internal != nil {
+		if publicMessage == "" || publicMessage == internal.Error() {
+			apiFault(w, status, internal)
+			return
+		}
+	}
+	if publicMessage == "" {
+		apiFault(w, status, nil)
+		return
+	}
+	id := randomID()
+	if internal != nil {
+		log.Printf("api fault id=%s status=%d: %v", id, status, internal)
+	}
+	writeJSON(w, status, map[string]string{"error": publicMessage, "error_id": id})
 }
 
 func decodeStrictJSON(w http.ResponseWriter, r *http.Request, max int64, dst any) error {
@@ -360,26 +1038,49 @@ func (s *APIServer) bootTrustStatus(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, s.bootTrust.Collect())
 }
 
+// hardeningPosture evaluates the live posture with the administrable thresholds
+// and reports the required-domain verdicts beside it, so the dashboard never has
+// to re-derive a classification the backend already made.
 func (s *APIServer) hardeningPosture(w http.ResponseWriter, _ *http.Request) {
+	settings := HardeningPostureSettings{}
+	if s.settings != nil {
+		settings = effectiveHardeningSettings(s.settings.Get()).Posture
+	}
 	posture := s.hardening.Collect(s.state.Snapshot(), s.bootTrust.Collect())
 	posture.Checks = append(posture.Checks, packageIntegrityPostureCheck(s.packages.Status()))
-	writeJSON(w, http.StatusOK, summarizeHardening(posture.CollectedAt, posture.Checks))
+	summarized := summarizeHardening(posture.CollectedAt, posture.Checks, settings.thresholds())
+	writeJSON(w, http.StatusOK, struct {
+		HardeningPosture
+		RequiredDomains []HardeningDomainFinding `json:"required_domains"`
+	}{HardeningPosture: summarized, RequiredDomains: assessHardeningPosture(summarized, settings)})
 }
 
 func (s *APIServer) evidenceStatus(w http.ResponseWriter, r *http.Request) {
 	ledger := s.state.EvidenceLedger()
-	if ledger == nil {
-		apiError(w, http.StatusServiceUnavailable, "evidence ledger unavailable", nil)
-		return
+	// The page bounds are administrable so an operator can widen the evidence
+	// view without a code change, while the ceiling keeps the response bounded.
+	pageDefault, pageCeiling := 100, 500
+	if s.settings != nil {
+		policy := effectiveIntegritySettings(s.settings.Get()).Evidence
+		if policy.APIRecentDefault > 0 {
+			pageDefault = policy.APIRecentDefault
+		}
+		if policy.APIRecentMax >= pageDefault {
+			pageCeiling = policy.APIRecentMax
+		}
 	}
-	limit := 100
+	limit := pageDefault
 	if raw := r.URL.Query().Get("limit"); raw != "" {
 		value, err := strconv.Atoi(raw)
-		if err != nil || value < 1 || value > 500 {
+		if err != nil || value < 1 || value > pageCeiling {
 			apiError(w, http.StatusBadRequest, "invalid evidence limit", err)
 			return
 		}
 		limit = value
+	}
+	if ledger == nil {
+		apiError(w, http.StatusServiceUnavailable, "evidence ledger unavailable", nil)
+		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"status": ledger.Status(), "records": ledger.Recent(limit)})
 }
@@ -478,7 +1179,7 @@ func isLoopbackRemote(remote string) bool {
 }
 
 func (s *APIServer) stream(w http.ResponseWriter, r *http.Request) {
-	if s.sseClients.Add(1) > int32(s.cfg.Dashboard.MaxSSEClients) {
+	if s.sseClients.Add(1) > s.sseClientLimit() {
 		s.sseClients.Add(-1)
 		http.Error(w, "stream capacity reached", http.StatusServiceUnavailable)
 		return
@@ -492,13 +1193,24 @@ func (s *APIServer) stream(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("X-Accel-Buffering", "no")
+	s.state.RecordStreamConnect()
+	defer s.state.RecordStreamDisconnect()
 	ch, cancel := s.state.Subscribe()
 	defer cancel()
-	fmt.Fprint(w, "event: snapshot\ndata: ")
-	_ = json.NewEncoder(w).Encode(s.state.Snapshot())
-	fmt.Fprint(w, "\n")
+	if _, err := fmt.Fprint(w, "event: snapshot\ndata: "); err != nil {
+		s.state.RecordStreamWriteError()
+		return
+	}
+	if err := json.NewEncoder(w).Encode(s.state.Snapshot()); err != nil {
+		s.state.RecordStreamWriteError()
+		return
+	}
+	if _, err := fmt.Fprint(w, "\n"); err != nil {
+		s.state.RecordStreamWriteError()
+		return
+	}
 	fl.Flush()
-	heartbeat := time.NewTicker(20 * time.Second)
+	heartbeat := time.NewTicker(5 * time.Second)
 	defer heartbeat.Stop()
 	for {
 		select {
@@ -508,12 +1220,25 @@ func (s *APIServer) stream(w http.ResponseWriter, r *http.Request) {
 			if !ok {
 				return
 			}
-			fmt.Fprint(w, "event: event\ndata: ")
-			_ = json.NewEncoder(w).Encode(e)
-			fmt.Fprint(w, "\n")
+			if _, err := fmt.Fprint(w, "event: event\ndata: "); err != nil {
+				s.state.RecordStreamWriteError()
+				return
+			}
+			if err := json.NewEncoder(w).Encode(e); err != nil {
+				s.state.RecordStreamWriteError()
+				return
+			}
+			if _, err := fmt.Fprint(w, "\n"); err != nil {
+				s.state.RecordStreamWriteError()
+				return
+			}
 			fl.Flush()
 		case <-heartbeat.C:
-			fmt.Fprint(w, ": heartbeat\n\n")
+			s.state.RecordStreamHeartbeat()
+			if _, err := fmt.Fprint(w, ": heartbeat\n\n"); err != nil {
+				s.state.RecordStreamWriteError()
+				return
+			}
 			fl.Flush()
 		}
 	}
@@ -529,10 +1254,14 @@ func (s *APIServer) addBlock(w http.ResponseWriter, r *http.Request) {
 		apiError(w, http.StatusBadRequest, "invalid request", err)
 		return
 	}
-	if in.TTLSeconds == 0 {
-		in.TTLSeconds = s.cfg.Defense.DefaultTTLSeconds
+	network := NetworkRuntimeSettings{DefaultTTLSeconds: s.cfg.Defense.DefaultTTLSeconds, MaxTTLSeconds: s.cfg.Defense.MaxTTLSeconds, MaxBlockEntries: s.cfg.Defense.MaxBlockEntries}
+	if s.settings != nil {
+		network = s.settings.Get().Network
 	}
-	if in.TTLSeconds < 60 || in.TTLSeconds > s.cfg.Defense.MaxTTLSeconds {
+	if in.TTLSeconds == 0 {
+		in.TTLSeconds = network.DefaultTTLSeconds
+	}
+	if in.TTLSeconds < 60 || in.TTLSeconds > network.MaxTTLSeconds {
 		apiError(w, http.StatusBadRequest, "TTL outside policy", nil)
 		return
 	}
@@ -542,6 +1271,10 @@ func (s *APIServer) addBlock(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	in.Target = normalizedTarget
+	if s.kineticResponse != nil && s.kineticResponse.IsAllowlistProtected(in.Target) {
+		apiError(w, http.StatusConflict, "target overlaps immutable management allowlist", ErrAllowlistProtected)
+		return
+	}
 	enforced := false
 	enforcement, _ := s.state.Modes()
 	if enforcement == "enforce" {
@@ -552,7 +1285,7 @@ func (s *APIServer) addBlock(w http.ResponseWriter, r *http.Request) {
 		}
 		enforced = true
 	}
-	b, err := s.state.AddBlock(in.Target, in.Reason, "manual", time.Duration(in.TTLSeconds)*time.Second, enforced, s.cfg.Defense.MaxBlockEntries)
+	b, err := s.state.AddBlock(in.Target, in.Reason, "manual", time.Duration(in.TTLSeconds)*time.Second, enforced, network.MaxBlockEntries)
 	if err != nil {
 		if enforced {
 			if rollbackErr := s.core.Delete(in.Target); rollbackErr != nil {
@@ -561,7 +1294,7 @@ func (s *APIServer) addBlock(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		apiError(w, http.StatusBadRequest, err.Error(), nil)
+		apiFault(w, http.StatusBadRequest, err)
 		return
 	}
 	if err := persistPolicy(s.policy, s.cfg, s.state); err != nil {
@@ -620,34 +1353,68 @@ func (s *APIServer) syncFeeds(w http.ResponseWriter, r *http.Request) {
 		apiError(w, http.StatusConflict, "threat intelligence is disabled (100% Opt-In)", nil)
 		return
 	}
+	if s.feeds == nil {
+		apiError(w, http.StatusServiceUnavailable, "threat intelligence manager unavailable", nil)
+		return
+	}
 	allowlist := s.settings.Get().ManagementAllowlist
 	ctx, cancel := context.WithTimeout(r.Context(), 45*time.Second)
 	defer cancel()
+	s.state.AddEvent(Event{Severity: "info", Kind: "feeds.sync_started", Source: "intelligence", Message: "Threat intelligence synchronization started: fetching and validating configured sources"})
 	items, errs, err := s.feeds.SyncWithLock(ctx, "operator")
 	if err != nil {
 		var lockErr *ThreatIntelLockException
+		severity := "error"
 		if errors.As(err, &lockErr) {
-			apiError(w, http.StatusConflict, err.Error(), nil)
+			severity = "warning"
+			s.state.AddEvent(Event{Severity: severity, Kind: "feeds.sync_failed", Source: "intelligence", Message: err.Error()})
+			apiFault(w, http.StatusConflict, err)
 			return
 		}
+		s.state.AddEvent(Event{Severity: severity, Kind: "feeds.sync_failed", Source: "intelligence", Message: "Threat intelligence source synchronization failed"})
 		apiError(w, http.StatusInternalServerError, "feed synchronization failed", err)
 		return
 	}
 
-	added, deleted, applyErr := s.feeds.ApplyToKernel(s.core, allowlist)
-	if applyErr != nil {
-		apiError(w, http.StatusInternalServerError, "kernel synchronization failed", applyErr)
-		return
+	downloadSeverity := "info"
+	downloadKind := "feeds.sources_validated"
+	downloadMessage := fmt.Sprintf("Threat intelligence sources validated: %d active block vectors composed", len(items))
+	if len(errs) > 0 {
+		downloadSeverity = "warning"
+		downloadKind = "feeds.sources_partial"
+		downloadMessage = fmt.Sprintf("Threat intelligence source fetch completed partially: %d source errors; last-known-good data preserved", len(errs))
+	}
+	s.state.AddEvent(Event{Severity: downloadSeverity, Kind: downloadKind, Source: "intelligence", Message: downloadMessage})
+
+	// Automatic kernel publication is administrable. With it disabled the
+	// validated generation stays in userspace until the operator applies it
+	// explicitly, so a sync alone can never change kernel policy.
+	policy := effectiveThreatIntelSettings(s.settings.Get())
+	added, deleted := 0, 0
+	if policy.Kernel.AutoApply {
+		s.state.AddEvent(Event{Severity: "info", Kind: "feeds.kernel_applying", Source: "intelligence", Message: "Applying validated BLOCK feed generation to kernel policy"})
+		var applyErr error
+		added, deleted, applyErr = s.feeds.ApplyToKernel(s.core, allowlist)
+		if applyErr != nil {
+			s.state.AddEvent(Event{Severity: "error", Kind: "feeds.kernel_apply_failed", Source: "intelligence", Message: "Threat intelligence kernel synchronization failed"})
+			apiError(w, http.StatusInternalServerError, "kernel synchronization failed", applyErr)
+			return
+		}
+	} else {
+		s.state.AddEvent(Event{Severity: "info", Kind: "feeds.kernel_pending", Source: "intelligence", Message: "Validated generation held in userspace: automatic kernel publication is disabled, apply explicitly to enforce it"})
 	}
 
-	now := time.Now().UTC()
 	blockCount := s.feeds.BlockIndex().Count()
 	correlateCount := s.feeds.CorrelateIndex().Count()
 	annotateCount := s.feeds.AnnotateIndex().Count()
 	gen := s.feeds.Generation()
 	fingerprint := s.feeds.Fingerprint()
+	status := s.feeds.OverallStatus()
+	lastAttempt := s.feeds.LastAttemptAt()
+	lastSuccess := s.feeds.LastSuccessfulSyncAt()
+	lastFullSuccess := s.feeds.LastFullySuccessfulSyncAt()
 
-	s.state.SetFeedState(blockCount, correlateCount, annotateCount, gen, fingerprint, now)
+	s.state.SetFeedState(blockCount, correlateCount, annotateCount, gen, fingerprint, status, lastAttempt, lastSuccess, lastFullSuccess)
 	severity := "info"
 	message := fmt.Sprintf("Threat intelligence synchronized [gen=%d fp=%.12s]: %d vectors (block=%d, correlate=%d, annotate=%d, kernel: +%d/-%d)",
 		gen, fingerprint, len(items), blockCount, correlateCount, annotateCount, added, deleted)
@@ -656,20 +1423,74 @@ func (s *APIServer) syncFeeds(w http.ResponseWriter, r *http.Request) {
 		message += fmt.Sprintf("; %d source errors", len(errs))
 	}
 	s.state.AddEvent(Event{Severity: severity, Kind: "feeds.synced", Source: "intelligence", Message: message})
+	telemetry := s.feeds.Telemetry()
 	writeJSON(w, http.StatusOK, map[string]any{
-		"vectors":           len(items),
-		"generation":        gen,
-		"fingerprint":       fingerprint,
-		"block_vectors":     blockCount,
-		"correlate_vectors": correlateCount,
-		"annotate_vectors":  annotateCount,
-		"source_errors":     len(errs),
-		"kernel_added":      added,
-		"kernel_deleted":    deleted,
-		"auto_apply":        true,
-		"lock":              threatIntelLockKey,
-		"note":              "Threat intelligence active at kernel speed (XDP + cgroup_skb egress).",
+		"vectors":                         len(items),
+		"generation":                      gen,
+		"fingerprint":                     fingerprint,
+		"overall_status":                  telemetry.OverallStatus,
+		"last_attempt_at":                 telemetry.LastAttemptAt,
+		"last_successful_sync_at":         telemetry.LastSuccessfulSyncAt,
+		"last_partial_successful_sync_at": telemetry.LastPartialSuccessfulSyncAt,
+		"last_fully_successful_sync_at":   telemetry.LastFullySuccessfulSyncAt,
+		"block_vectors":                   blockCount,
+		"correlate_vectors":               correlateCount,
+		"annotate_vectors":                annotateCount,
+		"source_errors":                   len(errs),
+		"kernel_added":                    added,
+		"kernel_deleted":                  deleted,
+		"kernel_apply_status":             telemetry.KernelApplyStatus,
+		"kernel_generation":               telemetry.KernelGeneration,
+		"feeds":                           telemetry.Feeds,
+		"auto_apply":                      policy.Kernel.AutoApply,
+		"lock":                            threatIntelLockKey,
+		"note":                            "Threat intelligence active at kernel speed (XDP + cgroup_skb egress).",
 	})
+}
+
+// applyFeeds publishes the currently validated userspace generation to the
+// kernel. It is the explicit counterpart to automatic publication and is the
+// only way to enforce a generation while "apply to kernel automatically" is
+// switched off.
+func (s *APIServer) applyFeeds(w http.ResponseWriter, r *http.Request) {
+	if s.feeds == nil {
+		apiError(w, http.StatusServiceUnavailable, "threat intelligence manager unavailable", nil)
+		return
+	}
+	var allowlist []string
+	if s.settings != nil {
+		allowlist = s.settings.Get().ManagementAllowlist
+	}
+	added, deleted, err := s.feeds.ApplyToKernel(s.core, allowlist)
+	if err != nil {
+		s.state.AddEvent(Event{Severity: "error", Kind: "feeds.kernel_apply_failed", Source: "intelligence", Message: "Explicit threat intelligence kernel publication failed"})
+		apiError(w, http.StatusInternalServerError, "kernel synchronization failed", err)
+		return
+	}
+	telemetry := s.feeds.Telemetry()
+	s.state.SetFeedState(
+		s.feeds.BlockIndex().Count(), s.feeds.CorrelateIndex().Count(), s.feeds.AnnotateIndex().Count(),
+		telemetry.Generation, telemetry.Fingerprint, telemetry.OverallStatus,
+		telemetry.LastAttemptAt, telemetry.LastSuccessfulSyncAt, telemetry.LastFullySuccessfulSyncAt,
+	)
+	s.state.AddEvent(Event{Severity: "info", Kind: "feeds.kernel_applied", Source: "intelligence",
+		Message: fmt.Sprintf("Operator published threat intelligence generation %d to the kernel: +%d/-%d", telemetry.Generation, added, deleted)})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"kernel_added":        added,
+		"kernel_deleted":      deleted,
+		"kernel_apply_status": telemetry.KernelApplyStatus,
+		"kernel_generation":   telemetry.KernelGeneration,
+		"generation":          telemetry.Generation,
+		"fingerprint":         telemetry.Fingerprint,
+	})
+}
+
+func (s *APIServer) getFeedStatus(w http.ResponseWriter, r *http.Request) {
+	if s.feeds == nil {
+		writeJSON(w, http.StatusOK, ThreatIntelTelemetry{OverallStatus: "DISABLED", KernelApplyStatus: "NOT_APPLIED"})
+		return
+	}
+	writeJSON(w, http.StatusOK, s.feeds.Telemetry())
 }
 
 func (s *APIServer) ackIncident(w http.ResponseWriter, r *http.Request) {
@@ -1083,12 +1904,35 @@ func (s *APIServer) transactionReverse(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, transaction)
 }
 
+// forensicsExport produces the signed forensic record.
+//
+// The administrable policy shapes the snapshot before it is signed, so the
+// signature covers exactly the bytes the operator receives. Redaction therefore
+// cannot be undone by a verifier, and an export that was redacted is
+// distinguishable from one that was not because the redaction changed the signed
+// content rather than a display layer.
 func (s *APIServer) forensicsExport(w http.ResponseWriter, _ *http.Request) {
-	document, err := s.policy.SignForensics(s.state.Snapshot())
+	settings := effectiveForensicsSettings(s.settings.Get()).Export
+	snapshot, err := shapeForensicsSnapshot(s.state.Snapshot(), settings, s.policy.TrustedPublicKey() != nil)
 	if err != nil {
-		apiError(w, http.StatusInternalServerError, "forensics export unavailable", err)
+		apiError(w, http.StatusConflict, "forensics export rejected by policy", err)
 		return
 	}
+	if !settings.SigningRequired {
+		// The operator explicitly accepted an unauthenticated record. The response
+		// says so in a header and in the body, so a consumer cannot mistake it for a
+		// verified one.
+		w.Header().Set("X-Gedefense-Signature", "none")
+		w.Header().Set("Content-Disposition", `attachment; filename="gedefense-forensics.unsigned.json"`)
+		writeJSON(w, http.StatusOK, map[string]any{"signed": false, "snapshot": snapshot})
+		return
+	}
+	document, err := s.policy.SignForensics(snapshot)
+	if err != nil {
+		apiError(w, http.StatusInternalServerError, "forensics export could not be signed", err)
+		return
+	}
+	w.Header().Set("X-Gedefense-Signature", "ed25519")
 	w.Header().Set("Content-Disposition", `attachment; filename="gedefense-forensics.signed.json"`)
 	writeJSON(w, http.StatusOK, document)
 }
@@ -1101,7 +1945,7 @@ func (s *APIServer) releaseReadiness(w http.ResponseWriter, r *http.Request) {
 	target := r.URL.Query().Get("target")
 	readiness, err := s.release.Readiness(target)
 	if err != nil {
-		apiError(w, http.StatusBadRequest, err.Error(), nil)
+		apiFault(w, http.StatusBadRequest, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, readiness)
@@ -1224,6 +2068,10 @@ func (s *APIServer) releaseEmergencyStopClear(w http.ResponseWriter, r *http.Req
 }
 
 func (s *APIServer) metrics(w http.ResponseWriter, r *http.Request) {
+	if !s.metricsAllowed() {
+		http.NotFound(w, r)
+		return
+	}
 	if s.cfg.Dashboard.AllowRemote && !isLoopbackRemote(r.RemoteAddr) {
 		http.NotFound(w, r)
 		return
@@ -1260,6 +2108,21 @@ func (s *APIServer) metrics(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "# TYPE gedefense_xdr_anomalies_total counter\ngedefense_xdr_anomalies_total %d\n", snap.XDR.AnomaliesTotal)
 	fmt.Fprintf(w, "# TYPE gedefense_xdr_queue_depth gauge\ngedefense_xdr_queue_depth %d\n", snap.XDR.QueueDepth)
 	fmt.Fprintf(w, "# TYPE gedefense_xdr_behavior_profiles gauge\ngedefense_xdr_behavior_profiles %d\n", snap.XDR.Behavior.Profiles)
+	fmt.Fprintf(w, "# TYPE gedefense_kinetic_hits_total counter\ngedefense_kinetic_hits_total %d\n", snap.Kinetic.HitsTotal)
+	fmt.Fprintf(w, "# TYPE gedefense_kinetic_velocity_bursts_total counter\ngedefense_kinetic_velocity_bursts_total %d\n", snap.Kinetic.VelocityBurstsTotal)
+	fmt.Fprintf(w, "# TYPE gedefense_kinetic_portscans_total counter\ngedefense_kinetic_portscans_total %d\n", snap.Kinetic.PortscansTotal)
+	fmt.Fprintf(w, "# TYPE gedefense_kinetic_subnet_strikes_total counter\ngedefense_kinetic_subnet_strikes_total %d\n", snap.Kinetic.SubnetStrikesTotal)
+	fmt.Fprintf(w, "# TYPE gedefense_kinetic_active_tracking_ips gauge\ngedefense_kinetic_active_tracking_ips %d\n", snap.Kinetic.ActiveTrackingIPs)
+	fmt.Fprintf(w, "# TYPE gedefense_kinetic_tracking_drops_total counter\ngedefense_kinetic_tracking_drops_total %d\n", snap.Kinetic.TrackingDropsTotal)
+	fmt.Fprintf(w, "# TYPE gedefense_kinetic_tracking_evictions_total counter\ngedefense_kinetic_tracking_evictions_total %d\n", snap.Kinetic.TrackingEvictionsTotal)
+	fmt.Fprintf(w, "# TYPE gedefense_kinetic_aggregate_evictions_total counter\ngedefense_kinetic_aggregate_evictions_total %d\n", snap.Kinetic.AggregateEvictionsTotal)
+	fmt.Fprintf(w, "# TYPE gedefense_kinetic_kernel_ring_drops_total counter\ngedefense_kinetic_kernel_ring_drops_total %d\n", snap.Kinetic.KernelRingDrops)
+	fmt.Fprintf(w, "# TYPE gedefense_kinetic_kernel_track_insert_failures_total counter\ngedefense_kinetic_kernel_track_insert_failures_total %d\n", snap.Kinetic.KernelTrackInsertFailures)
+	fmt.Fprintf(w, "# TYPE gedefense_kinetic_bans_enforced_total counter\ngedefense_kinetic_bans_enforced_total %d\n", snap.Kinetic.BansEnforcedTotal)
+	fmt.Fprintf(w, "# TYPE gedefense_kinetic_bans_expired_total counter\ngedefense_kinetic_bans_expired_total %d\n", snap.Kinetic.BansExpiredTotal)
+	fmt.Fprintf(w, "# TYPE gedefense_kinetic_response_applied_total counter\ngedefense_kinetic_response_applied_total %d\n", snap.Kinetic.ResponseAppliedTotal)
+	fmt.Fprintf(w, "# TYPE gedefense_kinetic_response_suppressed_total counter\ngedefense_kinetic_response_suppressed_total %d\n", snap.Kinetic.ResponseSuppressedTotal)
+	fmt.Fprintf(w, "# TYPE gedefense_kinetic_response_failed_total counter\ngedefense_kinetic_response_failed_total %d\n", snap.Kinetic.ResponseFailedTotal)
 	l7Healthy := 0
 	if snap.L7.Healthy {
 		l7Healthy = 1
@@ -1331,7 +2194,7 @@ func (s *APIServer) deceptionTestAccess(w http.ResponseWriter, r *http.Request) 
 	}
 	inc, resp, err := s.xdr.Deception().HandleCanaryAccess(r.Context(), evt)
 	if err != nil {
-		apiError(w, http.StatusBadRequest, err.Error(), err)
+		apiFault(w, http.StatusBadRequest, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -1390,7 +2253,7 @@ func (s *APIServer) addStyxRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.xdr.Styx().AddRule(rule); err != nil {
-		apiError(w, http.StatusBadRequest, err.Error(), err)
+		apiFault(w, http.StatusBadRequest, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, map[string]any{"ok": true, "rule": rule})
@@ -1427,4 +2290,337 @@ func (s *APIServer) chronosStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"status": cp.Phase, "checkpoint": cp})
+}
+
+type kineticLiveBounds struct {
+	SourceLimit                int    `json:"source_limit"`
+	EventLimit                 int    `json:"event_limit"`
+	EventCapacity              int    `json:"event_capacity"`
+	EventDropsTotal            uint64 `json:"event_drops_total"`
+	EventHistoryComplete       bool   `json:"event_history_complete"`
+	SourceRetentionSeconds     int64  `json:"source_retention_seconds"`
+	SourceHistoryComplete      bool   `json:"source_history_complete"`
+	AggregationHistoryComplete bool   `json:"aggregation_history_complete"`
+	AggregateEvictionsTotal    uint64 `json:"aggregate_evictions_total"`
+	SourceBucketResolution     string `json:"source_bucket_resolution"`
+	TopPortsBasis              string `json:"top_ports_basis"`
+	TopRulesBasis              string `json:"top_rules_basis"`
+	Bounded                    bool   `json:"bounded"`
+}
+
+type kineticLiveResponse struct {
+	GeneratedAt   time.Time                 `json:"generated_at"`
+	Window        string                    `json:"window"`
+	WindowSeconds int64                     `json:"window_seconds"`
+	StateFilter   string                    `json:"state_filter"`
+	ActiveBlocks  int                       `json:"active_blocks"`
+	Status        KineticTelemetry          `json:"status"`
+	Traffic       KineticTrafficWindow      `json:"traffic"`
+	Sources       []KineticSourceSnapshot   `json:"sources"`
+	Events        []KineticEvent            `json:"events"`
+	Decisions     []KineticEvent            `json:"decisions"`
+	Subnets       []KineticSubnetAggregate  `json:"subnets"`
+	TopRules      []KineticTopRule          `json:"top_rules"`
+	TopPorts      []KineticTopPort          `json:"top_ports"`
+	Countries     []kineticCountryAggregate `json:"countries"`
+	Geo           GeoStatus                 `json:"geo"`
+	Bounds        kineticLiveBounds         `json:"bounds"`
+}
+
+func kineticRequestLimit(r *http.Request, fallback int) (int, error) {
+	limit := fallback
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 1 || parsed > 250 {
+			return 0, errors.New("limit must be between 1 and 250")
+		}
+		limit = parsed
+	}
+	return limit, nil
+}
+
+func filterKineticSourcesByState(sources []KineticSourceSnapshot, stateFilter string) ([]KineticSourceSnapshot, bool) {
+	stateFilter = strings.ToLower(strings.TrimSpace(stateFilter))
+	if stateFilter == "" {
+		stateFilter = "all"
+	}
+	if stateFilter != "all" && stateFilter != "suspicious" && stateFilter != "blocked" {
+		return nil, false
+	}
+	if stateFilter == "all" {
+		return sources, true
+	}
+	out := make([]KineticSourceSnapshot, 0, len(sources))
+	for _, src := range sources {
+		state := strings.ToUpper(src.State)
+		switch stateFilter {
+		case "blocked":
+			if src.Blocked || state == "BLOCKED" {
+				out = append(out, src)
+			}
+		case "suspicious":
+			if src.Blocked || src.Score >= 40 || state == "SUSPICIOUS" || state == "SCAN" || state == "BURST" || state == "THREAT" || state == "BLOCKED" {
+				out = append(out, src)
+			}
+		}
+	}
+	return out, true
+}
+
+func kineticSourceBucketResolution(spec KineticWindowSpec) string {
+	if spec.Duration <= time.Minute {
+		return "60s-calendar"
+	}
+	if spec.Duration <= time.Hour {
+		return "5m"
+	}
+	return "1h"
+}
+
+func activeKineticBlockCount(state *State, now time.Time) int {
+	if state == nil {
+		return 0
+	}
+	count := 0
+	for _, entry := range state.BlocksSnapshot() {
+		if !entry.Enforced {
+			continue
+		}
+		if !entry.ExpiresAt.IsZero() && !entry.ExpiresAt.After(now) {
+			continue
+		}
+		count++
+	}
+	return count
+}
+
+func (s *APIServer) getKineticLive(w http.ResponseWriter, r *http.Request) {
+	spec, ok := parseKineticWindow(r.URL.Query().Get("window"))
+	if !ok {
+		apiError(w, http.StatusBadRequest, "invalid kinetic window", errors.New("supported windows: live, 1m, 5m, 15m, 1h, 24h"))
+		return
+	}
+	limit, err := kineticRequestLimit(r, 100)
+	if err != nil {
+		apiError(w, http.StatusBadRequest, "invalid source limit", err)
+		return
+	}
+	stateFilter := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("state")))
+	if stateFilter == "" {
+		stateFilter = "all"
+	}
+	now := time.Now().UTC()
+	if s.kinetic == nil {
+		if _, valid := filterKineticSourcesByState(nil, stateFilter); !valid {
+			apiError(w, http.StatusBadRequest, "invalid kinetic state filter", errors.New("supported filters: all, suspicious, blocked"))
+			return
+		}
+		writeJSON(w, http.StatusOK, kineticLiveResponse{
+			GeneratedAt: now, Window: spec.Name, WindowSeconds: int64(spec.Duration / time.Second), StateFilter: stateFilter, ActiveBlocks: activeKineticBlockCount(s.state, now),
+			Status: DefaultKineticTelemetry(), Traffic: KineticTrafficWindow{Name: spec.Name, Seconds: int64(spec.Duration / time.Second), GeneratedAt: now},
+			Sources: []KineticSourceSnapshot{}, Events: []KineticEvent{}, Decisions: []KineticEvent{}, Subnets: []KineticSubnetAggregate{},
+			TopRules: []KineticTopRule{}, TopPorts: []KineticTopPort{}, Countries: []kineticCountryAggregate{}, Geo: s.geo.Status(),
+			Bounds: kineticLiveBounds{SourceLimit: limit, EventLimit: limit, SourceRetentionSeconds: int64(kineticSourceRetention / time.Second),
+				SourceBucketResolution: kineticSourceBucketResolution(spec), TopPortsBasis: "security_events", TopRulesBasis: "security_events", Bounded: true},
+		})
+		return
+	}
+
+	status := s.kinetic.SnapshotTelemetry()
+	traffic := s.kinetic.TrafficWindow(spec, now)
+	sources := s.kinetic.SourceSnapshotForWindow(limit, spec, now)
+	s.enrichKineticSources(sources)
+	filtered, valid := filterKineticSourcesByState(sources, stateFilter)
+	if !valid {
+		apiError(w, http.StatusBadRequest, "invalid kinetic state filter", errors.New("supported filters: all, suspicious, blocked"))
+		return
+	}
+	events, drops, eventsComplete := s.kinetic.RecentEventsForWindow(spec, now, limit)
+	countries := aggregateKineticCountries(filtered)
+	sourceComplete := spec.Duration <= kineticSourceRetention && traffic.HistoryComplete && status.TrackingEvictionsTotal == 0
+	writeJSON(w, http.StatusOK, kineticLiveResponse{
+		GeneratedAt: now, Window: spec.Name, WindowSeconds: int64(spec.Duration / time.Second), StateFilter: stateFilter, ActiveBlocks: activeKineticBlockCount(s.state, now),
+		Status: status, Traffic: traffic, Sources: filtered, Events: events, Decisions: kineticDecisions(events, minInt(limit, 50)),
+		Subnets: aggregateKineticSubnets(filtered, 20), TopRules: aggregateKineticRules(events, 12), TopPorts: aggregateKineticPorts(events, 12),
+		Countries: countries, Geo: s.geo.Status(),
+		Bounds: kineticLiveBounds{
+			SourceLimit: limit, EventLimit: limit, EventCapacity: s.kinetic.eventQueue.Capacity(), EventDropsTotal: drops,
+			EventHistoryComplete: eventsComplete, SourceRetentionSeconds: int64(kineticSourceRetention / time.Second),
+			SourceHistoryComplete: sourceComplete, AggregationHistoryComplete: status.AggregateEvictionsTotal == 0, AggregateEvictionsTotal: status.AggregateEvictionsTotal, SourceBucketResolution: kineticSourceBucketResolution(spec),
+			TopPortsBasis: "security_events", TopRulesBasis: "security_events", Bounded: true,
+		},
+	})
+}
+
+func (s *APIServer) getKineticStatus(w http.ResponseWriter, r *http.Request) {
+	if s.kinetic == nil {
+		writeJSON(w, http.StatusOK, DefaultKineticTelemetry())
+		return
+	}
+	writeJSON(w, http.StatusOK, s.kinetic.SnapshotTelemetry())
+}
+
+func (s *APIServer) getKineticEvents(w http.ResponseWriter, r *http.Request) {
+	if s.kinetic == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"events": []KineticEvent{}, "drops": uint64(0)})
+		return
+	}
+	if rawWindow := strings.TrimSpace(r.URL.Query().Get("window")); rawWindow != "" {
+		spec, ok := parseKineticWindow(rawWindow)
+		if !ok {
+			apiError(w, http.StatusBadRequest, "invalid kinetic window", errors.New("supported windows: live, 1m, 5m, 15m, 1h, 24h"))
+			return
+		}
+		limit, err := kineticRequestLimit(r, 100)
+		if err != nil {
+			apiError(w, http.StatusBadRequest, "invalid event limit", err)
+			return
+		}
+		events, drops, complete := s.kinetic.RecentEventsForWindow(spec, time.Now().UTC(), limit)
+		writeJSON(w, http.StatusOK, map[string]any{"events": events, "drops": drops, "window": spec.Name, "history_complete": complete})
+		return
+	}
+	events, drops := s.kinetic.RecentEvents()
+	writeJSON(w, http.StatusOK, map[string]any{
+		"events": events,
+		"drops":  drops,
+	})
+}
+
+func (s *APIServer) getKineticSources(w http.ResponseWriter, r *http.Request) {
+	if s.kinetic == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"sources": []KineticSourceSnapshot{}})
+		return
+	}
+	limit, err := kineticRequestLimit(r, 100)
+	if err != nil {
+		apiError(w, http.StatusBadRequest, "invalid source limit", err)
+		return
+	}
+	var sources []KineticSourceSnapshot
+	windowName := ""
+	if rawWindow := strings.TrimSpace(r.URL.Query().Get("window")); rawWindow != "" {
+		spec, ok := parseKineticWindow(rawWindow)
+		if !ok {
+			apiError(w, http.StatusBadRequest, "invalid kinetic window", errors.New("supported windows: live, 1m, 5m, 15m, 1h, 24h"))
+			return
+		}
+		windowName = spec.Name
+		sources = s.kinetic.SourceSnapshotForWindow(limit, spec, time.Now().UTC())
+	} else {
+		sources = s.kinetic.SourceSnapshot(limit)
+	}
+	s.enrichKineticSources(sources)
+	if stateFilter := strings.TrimSpace(r.URL.Query().Get("state")); stateFilter != "" {
+		filtered, ok := filterKineticSourcesByState(sources, stateFilter)
+		if !ok {
+			apiError(w, http.StatusBadRequest, "invalid kinetic state filter", errors.New("supported filters: all, suspicious, blocked"))
+			return
+		}
+		sources = filtered
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"sources": sources, "geo": s.geo.Status(), "window": windowName})
+}
+
+type kineticCountryAggregate struct {
+	Code    string  `json:"code"`
+	Name    string  `json:"name"`
+	Events  int     `json:"events"`
+	Blocked int     `json:"blocked"`
+	Hits    int     `json:"hits"`
+	Lat     float64 `json:"lat"`
+	Lon     float64 `json:"lon"`
+}
+
+func aggregateKineticCountries(sources []KineticSourceSnapshot) []kineticCountryAggregate {
+	byCountry := make(map[string]*kineticCountryAggregate)
+	for _, source := range sources {
+		if source.CountryCode == "" || source.Latitude == nil || source.Longitude == nil {
+			continue
+		}
+		agg := byCountry[source.CountryCode]
+		if agg == nil {
+			agg = &kineticCountryAggregate{Code: source.CountryCode, Name: source.Country}
+			byCountry[source.CountryCode] = agg
+		}
+		agg.Events++
+		n := float64(agg.Events)
+		agg.Lat += (*source.Latitude - agg.Lat) / n
+		agg.Lon += (*source.Longitude - agg.Lon) / n
+		hits := source.WindowHits
+		if hits <= 0 {
+			hits = source.Hits
+		}
+		agg.Hits += hits
+		if source.Blocked {
+			agg.Blocked++
+		}
+	}
+	countries := make([]kineticCountryAggregate, 0, len(byCountry))
+	for _, agg := range byCountry {
+		countries = append(countries, *agg)
+	}
+	sort.Slice(countries, func(i, j int) bool {
+		if countries[i].Hits != countries[j].Hits {
+			return countries[i].Hits > countries[j].Hits
+		}
+		return countries[i].Code < countries[j].Code
+	})
+	return countries
+}
+
+func (s *APIServer) getKineticMap(w http.ResponseWriter, r *http.Request) {
+	if s.kinetic == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"countries": []kineticCountryAggregate{}, "sources": []KineticSourceSnapshot{}, "geo": s.geo.Status()})
+		return
+	}
+	var sources []KineticSourceSnapshot
+	windowName := ""
+	if rawWindow := strings.TrimSpace(r.URL.Query().Get("window")); rawWindow != "" {
+		spec, ok := parseKineticWindow(rawWindow)
+		if !ok {
+			apiError(w, http.StatusBadRequest, "invalid kinetic window", errors.New("supported windows: live, 1m, 5m, 15m, 1h, 24h"))
+			return
+		}
+		windowName = spec.Name
+		sources = s.kinetic.SourceSnapshotForWindow(250, spec, time.Now().UTC())
+	} else {
+		sources = s.kinetic.SourceSnapshot(250)
+	}
+	s.enrichKineticSources(sources)
+	countries := aggregateKineticCountries(sources)
+	writeJSON(w, http.StatusOK, map[string]any{"countries": countries, "sources": sources, "geo": s.geo.Status(), "window": windowName})
+}
+
+func (s *APIServer) enrichKineticSources(sources []KineticSourceSnapshot) {
+	if s.geo == nil {
+		return
+	}
+	for i := range sources {
+		geo, ok := s.geo.Lookup(net.ParseIP(sources[i].SourceIP))
+		if !ok {
+			continue
+		}
+		sources[i].CountryCode = geo.CountryCode
+		sources[i].Country = geo.Country
+		sources[i].ASN = geo.ASN
+		sources[i].ASName = geo.ASName
+		lat, lon := geo.Latitude, geo.Longitude
+		sources[i].Latitude, sources[i].Longitude = &lat, &lon
+	}
+}
+
+func (s *APIServer) reconcileKinetic(w http.ResponseWriter, r *http.Request) {
+	// Policy TTL expiry has exactly one owner: the central transactional worker in
+	// main.go. This endpoint only forces detector ageing, otherwise an operator
+	// click could race the expiry worker and lose signed-policy evidence.
+	now := time.Now().UTC()
+	if s.kinetic != nil {
+		s.kinetic.Sweep(now)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"reconciled": 0,
+		"entries":    []BlockEntry{},
+		"note":       "detector state swept; policy TTL expiry is owned by the central transactional worker",
+	})
 }

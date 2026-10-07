@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -24,6 +25,7 @@ type Config struct {
 	Release   ReleaseConfig
 	Runtime   RuntimeConfig
 	Cells     CellsConfig
+	Kinetic   KineticConfig
 }
 
 type NodeConfig struct {
@@ -105,6 +107,13 @@ type L7Config struct {
 	InlineSocket                 string
 	InlineUpstream               string
 	InlineMaxResponseBytes       int
+	TLSEnabled                   bool
+	TLSAllowedDomains            []string
+	TLSFloodThreshold            int
+	TLSSNIStrikeThreshold        int
+	TLSAntiSpoof                 bool
+	TLSMaxClientHelloBytes       int
+	TLSJA3File                   string
 }
 
 type XDRConfig struct {
@@ -161,6 +170,33 @@ type CellsConfig struct {
 	RequestTimeoutMillis int
 }
 
+type KineticConfig struct {
+	Enabled               bool
+	EnforcementMode       string
+	IPThreshold           int
+	VelocityLimit         int
+	RangeThreshold        int
+	IPv6SubThreshold      int
+	WideRangeThreshold    int
+	PortscanThreshold     int
+	SYNThreshold          int
+	SYNAckRatio           int
+	LowSlowMinSeconds     int
+	SubnetMinSources      int
+	IPv6SubnetMinSources  int
+	WideMinSources        int
+	AutoContainSingleIP   bool
+	AutoContainIPv4Subnet bool
+	AutoContainIPv6Subnet bool
+	MaxTrackingIPs        int
+	BanTTLSeconds         int
+	MaxStrikesPerSec      int
+	ServicePortsWeb       []uint16
+	ServicePortsMail      []uint16
+	ServicePortsAdmin     []uint16
+	GeoIPCSV              string
+}
+
 type FeedConfig struct {
 	Enabled          bool
 	AutoApply        bool
@@ -200,6 +236,8 @@ func defaultConfig() Config {
 			SensitivePaths: []string{"/wp-login.php", "/xmlrpc.php", "/login", "/signin", "/api/login"},
 			InlineEnabled:  false, InlineSocket: "/run/vgt-gedefense-l7/edge.sock", InlineUpstream: "http://127.0.0.1:8080",
 			InlineMaxResponseBytes: 64 << 10,
+			TLSEnabled:             true, TLSAllowedDomains: nil, TLSFloodThreshold: 15, TLSSNIStrikeThreshold: 10, TLSAntiSpoof: true,
+			TLSMaxClientHelloBytes: 64 << 10, TLSJA3File: "",
 		},
 		XDR: XDRConfig{
 			Enabled: true, Mode: "observe", ScanIntervalMillis: 750, NetworkIntervalSeconds: 3,
@@ -234,6 +272,26 @@ func defaultConfig() Config {
 			MaxEntries:       250000,
 			Sources:          append([]string(nil), DefaultThreatFeeds...),
 		},
+		Kinetic: KineticConfig{
+			Enabled:            true,
+			EnforcementMode:    "observe",
+			IPThreshold:        35,
+			VelocityLimit:      15,
+			RangeThreshold:     45,
+			IPv6SubThreshold:   55,
+			WideRangeThreshold: 77,
+			PortscanThreshold:  5,
+			SYNThreshold:       25, SYNAckRatio: 4, LowSlowMinSeconds: 60,
+			SubnetMinSources: 2, IPv6SubnetMinSources: 2, WideMinSources: 4,
+			AutoContainSingleIP: true, AutoContainIPv4Subnet: true, AutoContainIPv6Subnet: true,
+			MaxTrackingIPs:    65536,
+			BanTTLSeconds:     86400,
+			MaxStrikesPerSec:  100,
+			ServicePortsWeb:   []uint16{80, 443, 8443},
+			ServicePortsMail:  []uint16{25, 465, 587, 110, 995, 143, 993},
+			ServicePortsAdmin: []uint16{22, 2222, 888, 3306, 5432},
+			GeoIPCSV:          "/var/lib/vgt/gedefense/geoip.csv",
+		},
 	}
 }
 
@@ -258,7 +316,7 @@ func loadConfig(path string) (Config, error) {
 		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
 			section = strings.TrimSpace(line[1 : len(line)-1])
 			switch section {
-			case "node", "dashboard", "core", "defense", "policy", "feeds", "xdr", "l7", "release", "runtime", "cells":
+			case "node", "dashboard", "core", "defense", "policy", "feeds", "xdr", "l7", "release", "runtime", "cells", "kinetic":
 			default:
 				return cfg, fmt.Errorf("line %d: unknown section %q", lineNo, section)
 			}
@@ -610,6 +668,36 @@ func assignConfig(cfg *Config, section, key, raw string) error {
 		v, e := parseInt(raw, 4096, 1<<20)
 		cfg.L7.InlineMaxResponseBytes = v
 		return e
+	case "l7.tls_enabled":
+		v, e := parseBool(raw)
+		cfg.L7.TLSEnabled = v
+		return e
+	case "l7.tls_allowed_domains":
+		v, e := str()
+		if e == nil {
+			cfg.L7.TLSAllowedDomains = splitCSV(v)
+		}
+		return e
+	case "l7.tls_flood_threshold":
+		v, e := parseInt(raw, 2, 100000)
+		cfg.L7.TLSFloodThreshold = v
+		return e
+	case "l7.tls_sni_strike_threshold":
+		v, e := parseInt(raw, 2, 1000)
+		cfg.L7.TLSSNIStrikeThreshold = v
+		return e
+	case "l7.tls_anti_spoof":
+		v, e := parseBool(raw)
+		cfg.L7.TLSAntiSpoof = v
+		return e
+	case "l7.tls_max_client_hello_bytes":
+		v, e := parseInt(raw, 1024, 1<<20)
+		cfg.L7.TLSMaxClientHelloBytes = v
+		return e
+	case "l7.tls_ja3_file":
+		v, e := str()
+		cfg.L7.TLSJA3File = v
+		return e
 	case "xdr.enabled":
 		v, e := parseBool(raw)
 		cfg.XDR.Enabled = v
@@ -809,9 +897,146 @@ func assignConfig(cfg *Config, section, key, raw string) error {
 			cfg.Feeds.Sources = splitCSV(v)
 		}
 		return e
+	case "kinetic.enabled":
+		v, e := parseBool(raw)
+		cfg.Kinetic.Enabled = v
+		return e
+	case "kinetic.enforcement_mode":
+		v, e := str()
+		cfg.Kinetic.EnforcementMode = v
+		return e
+	case "kinetic.ip_threshold":
+		v, e := parseInt(raw, 1, 100000)
+		cfg.Kinetic.IPThreshold = v
+		return e
+	case "kinetic.velocity_limit":
+		v, e := parseInt(raw, 1, 50000)
+		cfg.Kinetic.VelocityLimit = v
+		return e
+	case "kinetic.range_threshold":
+		v, e := parseInt(raw, 1, 100000)
+		cfg.Kinetic.RangeThreshold = v
+		return e
+	case "kinetic.ipv6_sub_threshold":
+		v, e := parseInt(raw, 1, 100000)
+		cfg.Kinetic.IPv6SubThreshold = v
+		return e
+	case "kinetic.wide_range_threshold":
+		v, e := parseInt(raw, 1, 100000)
+		cfg.Kinetic.WideRangeThreshold = v
+		return e
+	case "kinetic.portscan_threshold":
+		v, e := parseInt(raw, 1, 1000)
+		cfg.Kinetic.PortscanThreshold = v
+		return e
+	case "kinetic.syn_threshold":
+		v, e := parseInt(raw, 1, 100000)
+		cfg.Kinetic.SYNThreshold = v
+		return e
+	case "kinetic.syn_ack_ratio":
+		v, e := parseInt(raw, 1, 100)
+		cfg.Kinetic.SYNAckRatio = v
+		return e
+	case "kinetic.low_slow_min_seconds":
+		v, e := parseInt(raw, 10, 86400)
+		cfg.Kinetic.LowSlowMinSeconds = v
+		return e
+	case "kinetic.subnet_min_sources":
+		v, e := parseInt(raw, 2, 1024)
+		cfg.Kinetic.SubnetMinSources = v
+		return e
+	case "kinetic.ipv6_subnet_min_sources":
+		v, e := parseInt(raw, 2, 1024)
+		cfg.Kinetic.IPv6SubnetMinSources = v
+		return e
+	case "kinetic.wide_min_sources":
+		v, e := parseInt(raw, 2, 4096)
+		cfg.Kinetic.WideMinSources = v
+		return e
+	case "kinetic.auto_contain_single_ip":
+		v, e := parseBool(raw)
+		cfg.Kinetic.AutoContainSingleIP = v
+		return e
+	case "kinetic.auto_contain_ipv4_subnet":
+		v, e := parseBool(raw)
+		cfg.Kinetic.AutoContainIPv4Subnet = v
+		return e
+	case "kinetic.auto_contain_ipv6_subnet":
+		v, e := parseBool(raw)
+		cfg.Kinetic.AutoContainIPv6Subnet = v
+		return e
+	case "kinetic.max_tracking_ips":
+		v, e := parseInt(raw, 100, 500000)
+		cfg.Kinetic.MaxTrackingIPs = v
+		return e
+	case "kinetic.ban_ttl_seconds":
+		v, e := parseInt(raw, 60, 2592000)
+		cfg.Kinetic.BanTTLSeconds = v
+		return e
+	case "kinetic.max_strikes_per_sec":
+		v, e := parseInt(raw, 1, 10000)
+		cfg.Kinetic.MaxStrikesPerSec = v
+		return e
+	case "kinetic.service_ports_web":
+		v, e := str()
+		if e != nil {
+			return e
+		}
+		ports, e := parsePortCSV(v)
+		if e == nil {
+			cfg.Kinetic.ServicePortsWeb = ports
+		}
+		return e
+	case "kinetic.service_ports_mail":
+		v, e := str()
+		if e != nil {
+			return e
+		}
+		ports, e := parsePortCSV(v)
+		if e == nil {
+			cfg.Kinetic.ServicePortsMail = ports
+		}
+		return e
+	case "kinetic.service_ports_admin":
+		v, e := str()
+		if e != nil {
+			return e
+		}
+		ports, e := parsePortCSV(v)
+		if e == nil {
+			cfg.Kinetic.ServicePortsAdmin = ports
+		}
+		return e
+	case "kinetic.geoip_csv":
+		v, e := str()
+		cfg.Kinetic.GeoIPCSV = v
+		return e
 	default:
 		return fmt.Errorf("unknown key %s.%s", section, key)
 	}
+}
+
+func parsePortCSV(v string) ([]uint16, error) {
+	parts := splitCSV(v)
+	if len(parts) == 0 {
+		return nil, errors.New("port list must not be empty")
+	}
+	out := make([]uint16, 0, len(parts))
+	seen := make(map[uint16]struct{}, len(parts))
+	for _, part := range parts {
+		n, err := strconv.ParseUint(strings.TrimSpace(part), 10, 16)
+		if err != nil || n == 0 {
+			return nil, fmt.Errorf("invalid port %q", part)
+		}
+		port := uint16(n)
+		if _, exists := seen[port]; exists {
+			continue
+		}
+		seen[port] = struct{}{}
+		out = append(out, port)
+	}
+	slices.Sort(out)
+	return out, nil
 }
 
 func parseUint32CSV(v string) ([]uint32, error) {
@@ -956,6 +1181,34 @@ func validateConfig(cfg *Config) error {
 	if cfg.L7.SocketGroup != "" && !isSafeUnixIdentityName(cfg.L7.SocketGroup) {
 		return errors.New("l7.socket_group contains unsupported characters")
 	}
+	if cfg.L7.TLSEnabled {
+		if cfg.L7.TLSFloodThreshold < 2 {
+			return errors.New("l7.tls_flood_threshold must be at least 2")
+		}
+		if cfg.L7.TLSSNIStrikeThreshold < 2 || cfg.L7.TLSSNIStrikeThreshold > 1000 {
+			return errors.New("l7.tls_sni_strike_threshold must be between 2 and 1000")
+		}
+		if cfg.L7.TLSMaxClientHelloBytes < 1024 || cfg.L7.TLSMaxClientHelloBytes > 1<<20 {
+			return errors.New("l7.tls_max_client_hello_bytes must be between 1024 and 1048576")
+		}
+	}
+	seenTLSDomains := make(map[string]struct{}, len(cfg.L7.TLSAllowedDomains))
+	normalizedTLSDomains := make([]string, 0, len(cfg.L7.TLSAllowedDomains))
+	for _, domain := range cfg.L7.TLSAllowedDomains {
+		normalized, err := normalizeTLSAllowedPattern(domain)
+		if err != nil {
+			return fmt.Errorf("invalid l7 TLS allowed domain %q: %w", domain, err)
+		}
+		if _, exists := seenTLSDomains[normalized]; exists {
+			continue
+		}
+		seenTLSDomains[normalized] = struct{}{}
+		normalizedTLSDomains = append(normalizedTLSDomains, normalized)
+	}
+	cfg.L7.TLSAllowedDomains = normalizedTLSDomains
+	if cfg.L7.TLSJA3File != "" && (!filepath.IsAbs(cfg.L7.TLSJA3File) || filepath.Clean(cfg.L7.TLSJA3File) != cfg.L7.TLSJA3File) {
+		return errors.New("l7.tls_ja3_file must be a clean absolute path when configured")
+	}
 	if cfg.L7.InlineEnabled {
 		if !cfg.L7.Enabled {
 			return errors.New("l7.inline_enabled requires l7.enabled")
@@ -1023,6 +1276,51 @@ func validateConfig(cfg *Config) error {
 	}
 	if cfg.Defense.Enforcement != "observe" || cfg.XDR.Mode != "observe" {
 		return errors.New("beta startup configuration must begin in observe mode; promotion is runtime-gated")
+	}
+	if cfg.Kinetic.EnforcementMode != "observe" && cfg.Kinetic.EnforcementMode != "contain" && cfg.Kinetic.EnforcementMode != "block" {
+		return errors.New("kinetic.enforcement_mode must be observe, contain, or block")
+	}
+	if cfg.Kinetic.IPThreshold < 1 || cfg.Kinetic.IPThreshold > 100000 {
+		return errors.New("kinetic.ip_threshold must be between 1 and 100000")
+	}
+	if cfg.Kinetic.VelocityLimit < 1 || cfg.Kinetic.VelocityLimit > 50000 {
+		return errors.New("kinetic.velocity_limit must be between 1 and 50000")
+	}
+	if cfg.Kinetic.RangeThreshold < 1 || cfg.Kinetic.RangeThreshold > 100000 {
+		return errors.New("kinetic.range_threshold must be between 1 and 100000")
+	}
+	if cfg.Kinetic.IPv6SubThreshold < 1 || cfg.Kinetic.IPv6SubThreshold > 100000 {
+		return errors.New("kinetic.ipv6_sub_threshold must be between 1 and 100000")
+	}
+	if cfg.Kinetic.WideRangeThreshold < 1 || cfg.Kinetic.WideRangeThreshold > 100000 {
+		return errors.New("kinetic.wide_range_threshold must be between 1 and 100000")
+	}
+	if cfg.Kinetic.PortscanThreshold < 2 || cfg.Kinetic.PortscanThreshold > 65535 {
+		return errors.New("kinetic.portscan_threshold must be between 2 and 65535")
+	}
+	if cfg.Kinetic.SYNThreshold < 1 || cfg.Kinetic.SYNThreshold > 100000 || cfg.Kinetic.SYNAckRatio < 1 || cfg.Kinetic.SYNAckRatio > 100 {
+		return errors.New("kinetic SYN flood settings are outside safe bounds")
+	}
+	if cfg.Kinetic.LowSlowMinSeconds < 10 || cfg.Kinetic.LowSlowMinSeconds > 86400 {
+		return errors.New("kinetic.low_slow_min_seconds must be between 10 and 86400")
+	}
+	if cfg.Kinetic.SubnetMinSources < 2 || cfg.Kinetic.SubnetMinSources > 1024 || cfg.Kinetic.IPv6SubnetMinSources < 2 || cfg.Kinetic.IPv6SubnetMinSources > 1024 || cfg.Kinetic.WideMinSources < 2 || cfg.Kinetic.WideMinSources > 4096 {
+		return errors.New("kinetic subnet source gates are outside safe bounds")
+	}
+	if cfg.Kinetic.MaxTrackingIPs < 100 || cfg.Kinetic.MaxTrackingIPs > 500000 {
+		return errors.New("kinetic.max_tracking_ips must be between 100 and 500000")
+	}
+	if err := validatePortList("kinetic web service ports", cfg.Kinetic.ServicePortsWeb); err != nil {
+		return err
+	}
+	if err := validatePortList("kinetic mail service ports", cfg.Kinetic.ServicePortsMail); err != nil {
+		return err
+	}
+	if err := validatePortList("kinetic admin service ports", cfg.Kinetic.ServicePortsAdmin); err != nil {
+		return err
+	}
+	if cfg.Kinetic.GeoIPCSV != "" && !filepath.IsAbs(cfg.Kinetic.GeoIPCSV) {
+		return errors.New("kinetic.geoip_csv must be an absolute path when configured")
 	}
 	for label, path := range map[string]string{
 		"dashboard.token_file":        cfg.Dashboard.TokenFile,

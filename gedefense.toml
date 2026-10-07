@@ -76,6 +76,17 @@ inline_socket = "/run/vgt-gedefense-l7/edge.sock"
 inline_upstream = "http://127.0.0.1:8080"
 inline_max_response_bytes = 65536
 
+# Native TLS ClientHello telemetry. A trusted local TLS terminator/proxy can submit
+# bounded ClientHello records over the same peer-authenticated Unix socket.
+tls_enabled = true
+# Comma-separated authoritative SNI names. Empty means observe SNI without foreign-domain enforcement.
+tls_allowed_domains = ""
+tls_flood_threshold = 15
+tls_anti_spoof = true
+tls_max_client_hello_bytes = 65536
+# Optional local JSON fingerprint set. No network lookup occurs at runtime.
+tls_ja3_file = ""
+
 [policy]
 state_file = "/var/lib/vgt/gedefense/policy.json"
 signing_key_file = "/var/lib/vgt/gedefense/policy.ed25519"
@@ -124,6 +135,24 @@ enabled = false
 socket = "/run/gaia-cells/control.sock"
 auth_key_file = "/etc/vgt/gedefense/secrets/gaia-cells.key"
 request_timeout_millis = 1500
+
+[kinetic]
+# Native Auto-Punisher parity. Detection starts fail-safe and is reported ONLINE
+# only after the authenticated Rust Core ingress channel has been verified.
+enabled = true
+# observe = detect/evidence only; contain = userspace containment state; block = eligible rules may enter the XDP LPM drop map.
+enforcement_mode = "observe"
+ip_threshold = 35
+velocity_limit = 15
+range_threshold = 45
+ipv6_sub_threshold = 55
+wide_range_threshold = 77
+portscan_threshold = 5
+max_tracking_ips = 65536
+ban_ttl_seconds = 86400
+max_strikes_per_sec = 100
+# Optional local-only GeoIP/ASN enrichment for the Kinetic world map. No live cloud lookup is performed.
+geoip_csv = "/var/lib/vgt/gedefense/geoip.csv"
 
 [release]
 channel = "beta"

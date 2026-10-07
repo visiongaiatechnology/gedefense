@@ -31,10 +31,18 @@ func newTestCaseEngine(
 	return engine, path, storage
 }
 
+// testCaseIncident builds a fixture that clears the case-creation score floor.
+//
+// The XDR score scale is 0-250, not 0-100: rule scores in this codebase are 50, 55,
+// 80, 120, 180 and 250, and the compiled-in MinimumIncidentScore default is 150 -
+// the same bar xdr_l7.go uses for a serious L7 response. The previous fixture scored
+// 90, which is below that floor, so it described an incident the case engine is
+// meant to filter out rather than correlate. 180 matches how this codebase scores a
+// high-severity process incident (xdr.go).
 func testCaseIncident(id, severity string) XDRIncident {
 	return XDRIncident{
 		ID: id, Time: time.Unix(1_700_000_000, 0).UTC(),
-		Severity: severity, Score: 90, ResponseScore: 85,
+		Severity: severity, Score: 180, ResponseScore: 175,
 		PID: 77, StartTicks: 1234, Executable: "/usr/bin/test-threat",
 		RuleIDs: []string{"XDR.TEST.ORIGIN"}, Categories: []string{"origin"},
 		Summary:  "Executable origin violated trusted policy",
@@ -131,5 +139,42 @@ func TestCaseStoreTamperFailsClosed(t *testing.T) {
 	}
 	if err := reloaded.IngestIncident(testCaseIncident("incident-b", "critical")); err == nil {
 		t.Fatal("tampered case store accepted a new incident")
+	}
+}
+
+// TestCaseEngineScoreFloorAndFailClosedDefaults pins the two behaviours that the
+// fixture above depends on, so they are verified rather than assumed.
+func TestCaseEngineScoreFloorAndFailClosedDefaults(t *testing.T) {
+	// 1. An incident below the compiled-in floor must not open a case.
+	engine, _, _ := newTestCaseEngine(t, func(EvidenceRecord) error { return nil })
+	low := testCaseIncident("incident-low", "high")
+	low.Score = 90
+	if err := engine.IngestIncident(low); err != nil {
+		t.Fatal(err)
+	}
+	if status := engine.Status(10); status.Count != 0 {
+		t.Fatalf("an incident below the score floor opened a case: %+v", status)
+	}
+
+	// 2. An unconfigured engine must record, not discard. The zero value of the
+	// policy would silently drop every incident, which is the one outcome a
+	// forensics engine must never produce.
+	if err := engine.IngestIncident(testCaseIncident("incident-high", "high")); err != nil {
+		t.Fatal(err)
+	}
+	if status := engine.Status(10); status.Count != 1 || status.Open != 1 {
+		t.Fatalf("an unconfigured case engine discarded a qualifying incident: %+v", status)
+	}
+
+	// 3. A published revision that switches correlation off must still be honoured:
+	// the fail-closed default applies only until an administrator decides.
+	if err := engine.ApplyPolicy(ForensicsCasesSettings{AutoCreate: false, MinimumIncidentScore: 150, MaxCases: 64, MaxEvidenceRefsPerCase: 16, MaxObservationsPerCase: 16, ListMaxLimit: 50, CorrelationWindowMins: 30}); err != nil {
+		t.Fatal(err)
+	}
+	if err := engine.IngestIncident(testCaseIncident("incident-off", "critical")); err != nil {
+		t.Fatal(err)
+	}
+	if status := engine.Status(10); status.Count != 1 {
+		t.Fatalf("a published AutoCreate=false revision was not honoured: %+v", status)
 	}
 }

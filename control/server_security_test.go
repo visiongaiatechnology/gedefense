@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"testing"
 	"time"
 )
@@ -346,6 +348,45 @@ func TestBeta5SecurityHeadersAndI18nAssetAllowlist(t *testing.T) {
 	server.http.Handler.ServeHTTP(recorder, req)
 	if recorder.Code != http.StatusNotFound {
 		t.Fatalf("unknown asset status=%d", recorder.Code)
+	}
+}
+
+func TestAllWebAssetsAreAllowlistedAndAccessible(t *testing.T) {
+	cfg := defaultConfig()
+	server := NewAPIServer(cfg, NewState("test", cfg), nil, nil, nil, nil, nil, nil, "0123456789abcdef0123456789abcdef")
+
+	contentTypes := map[string]string{
+		".css": "text/css; charset=utf-8",
+		".js":  "text/javascript; charset=utf-8",
+		".png": "image/png",
+	}
+	expectedAssets := make([]struct {
+		name        string
+		contentType string
+	}, 0, len(webAssetAllowlist))
+	for name := range webAssetAllowlist {
+		extension := name[strings.LastIndex(name, "."):]
+		expectedAssets = append(expectedAssets, struct {
+			name        string
+			contentType string
+		}{name, contentTypes[extension]})
+	}
+	sort.Slice(expectedAssets, func(i, j int) bool { return expectedAssets[i].name < expectedAssets[j].name })
+
+	for _, tc := range expectedAssets {
+		recorder := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "http://127.0.0.1/assets/"+tc.name, nil)
+		req.Host = "127.0.0.1"
+		server.http.Handler.ServeHTTP(recorder, req)
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("asset %s status=%d want=%d", tc.name, recorder.Code, http.StatusOK)
+		}
+		if recorder.Header().Get("Content-Type") != tc.contentType {
+			t.Fatalf("asset %s content-type=%q want=%q", tc.name, recorder.Header().Get("Content-Type"), tc.contentType)
+		}
+		if recorder.Body.Len() == 0 {
+			t.Fatalf("asset %s body is empty", tc.name)
+		}
 	}
 }
 

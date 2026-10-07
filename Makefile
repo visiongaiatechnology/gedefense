@@ -10,11 +10,7 @@ all: test go gateway
 test:
 	cd control && $(GO) test ./... && $(GO) vet ./...
 	cd gateway && $(GO) test ./... && $(GO) vet ./...
-	node --check control/web/api.js
-	node --check control/web/render.js
-	node --check control/web/i18n.js
-	node --check control/web/charts.js
-	node --check control/web/app.js
+	for f in control/web/*.js; do node --check "$$f" || exit 1; done
 	bash ./scripts/security-audit.sh
 
 security-audit:

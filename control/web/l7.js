@@ -57,11 +57,14 @@ export async function loadL7View(snap) {
 
 function renderL7StatusHeader(snapshot) {
   const l7 = snapshot.l7 || {};
+  const coverage = String(l7.coverage || (l7.enabled ? 'HEALTHY_AWAITING_TRAFFIC' : 'DISABLED')).toUpperCase();
 
   text('l7StatusEngine', l7.healthy ? t('dynamic.healthy') : (l7.enabled ? t('dynamic.degraded') : t('dynamic.disabled')));
   const enginePill = byID('l7StatusEnginePill');
   if (enginePill) {
-    enginePill.className = `status-pill ${l7.healthy ? 'good' : (l7.enabled ? 'danger' : 'muted')}`;
+    const cls = coverage === 'TRAFFIC_ACTIVE' ? 'good' : (coverage === 'DISABLED' ? 'muted' : (coverage === 'OFFLINE' ? 'danger' : 'warn'));
+    enginePill.className = `status-pill ${cls}`;
+    enginePill.textContent = coverageLabel(coverage);
   }
 
   text('l7StatusMode', (l7.mode || 'observe').toUpperCase());
@@ -73,6 +76,65 @@ function renderL7StatusHeader(snapshot) {
 
   text('l7StatusSocket', l7.socket || '---');
   text('l7StatusLastInspection', l7.last_inspection ? formatTime(l7.last_inspection) : '---');
+
+  const coveragePill = byID('l7StatusCoveragePill');
+  if (coveragePill) {
+    coveragePill.className = `status-pill ${coverageClass(coverage)}`;
+    coveragePill.textContent = coverageLabel(coverage);
+  }
+  text('l7StatusCoverageReason', l7.coverage_reason || t('l7.telemetry.coverageDetail'));
+
+  const tlsPathPill = byID('l7StatusTLSPathPill');
+  if (tlsPathPill) {
+    if (!l7.tls_enabled) {
+      tlsPathPill.className = 'status-pill muted';
+      tlsPathPill.textContent = t('dynamic.disabled');
+    } else if (l7.tls_path_verified) {
+      tlsPathPill.className = 'status-pill good';
+      tlsPathPill.textContent = t('l7.tls.verified');
+    } else if (coverage === 'TLS_NOT_IN_PATH') {
+      tlsPathPill.className = 'status-pill danger';
+      tlsPathPill.textContent = t('l7.tls.notInPath');
+    } else {
+      tlsPathPill.className = 'status-pill warn';
+      tlsPathPill.textContent = t('l7.tls.awaiting');
+    }
+  }
+  text('l7StatusTLSHandshakes', Number(l7.tls_handshakes_total || 0).toLocaleString(locale()));
+  text('l7StatusTLSLastHandshake', l7.tls_last_handshake ? formatTime(l7.tls_last_handshake) : '---');
+  const fpVersion = Number(l7.tls_fingerprint_version || 0);
+  const fpSignatures = Number(l7.tls_fingerprint_signatures || 0);
+  const fpProfiles = Number(l7.tls_fingerprint_profiles || 0);
+  text('l7StatusTLSFingerprint', fpVersion > 0
+    ? `v${fpVersion} · ${fpSignatures} SIG · ${fpProfiles} PROFILE`
+    : t('l7.tls.noFingerprintSet'));
+}
+
+function coverageClass(coverage) {
+  switch (coverage) {
+    case 'TRAFFIC_ACTIVE': return 'good';
+    case 'DISABLED': return 'muted';
+    case 'OFFLINE': return 'danger';
+    case 'INLINE_DEGRADED':
+    case 'TLS_NOT_IN_PATH':
+    case 'NO_TRAFFIC_WARNING':
+    case 'HEALTHY_AWAITING_TRAFFIC':
+      return 'warn';
+    default: return 'warn';
+  }
+}
+
+function coverageLabel(coverage) {
+  const key = {
+    DISABLED: 'l7.coverage.disabled',
+    OFFLINE: 'l7.coverage.offline',
+    INLINE_DEGRADED: 'l7.coverage.inlineDegraded',
+    TLS_NOT_IN_PATH: 'l7.coverage.tlsNotInPath',
+    NO_TRAFFIC_WARNING: 'l7.coverage.noTraffic',
+    HEALTHY_AWAITING_TRAFFIC: 'l7.coverage.awaiting',
+    TRAFFIC_ACTIVE: 'l7.coverage.active',
+  }[coverage];
+  return key ? t(key) : coverage;
 }
 
 function renderL7EffectiveBlocking(snapshot) {

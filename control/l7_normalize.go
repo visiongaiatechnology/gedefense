@@ -17,27 +17,71 @@ import (
 	"strings"
 )
 
+// L7Normalizer decodes and canonicalises one inspection envelope into bounded
+// candidates. Its request budgets are read from the published Fabric snapshot
+// so an operator revision takes effect on the next inspection without any
+// per-request configuration parsing.
 type L7Normalizer struct {
-	cfg L7Config
+	live *l7Runtime
 }
 
 func NewL7Normalizer(cfg L7Config) *L7Normalizer {
-	return &L7Normalizer{cfg: cfg}
+	return newL7NormalizerWithRuntime(cfg, newL7Runtime(defaultL7FabricSettings(cfg), 0))
+}
+
+func newL7NormalizerWithRuntime(cfg L7Config, live *l7Runtime) *L7Normalizer {
+	if live == nil {
+		live = newL7Runtime(defaultL7FabricSettings(cfg), 0)
+	}
+	return &L7Normalizer{live: live}
+}
+
+func (n *L7Normalizer) runtimeConfig() L7Config {
+	snapshot := n.live.current()
+	if snapshot == nil {
+		return L7Config{}
+	}
+	return snapshot.cfg
 }
 
 func (n *L7Normalizer) Normalize(req L7InspectionRequest) (l7NormalizedRequest, error) {
-	body, err := n.decodeBody(req.BodyBase64)
+	return n.NormalizeWith(req, n.live.current())
+}
+
+// NormalizeWith evaluates one request against the caller's snapshot, so a
+// single inspection never mixes two configuration revisions.
+func (n *L7Normalizer) NormalizeWith(req L7InspectionRequest, snapshot *l7RuntimeSnapshot) (l7NormalizedRequest, error) {
+	if snapshot == nil {
+		return l7NormalizedRequest{}, fmt.Errorf("%w: l7 runtime configuration unavailable", ErrL7InvalidRequest)
+	}
+	body, err := n.decodeBody(snapshot.cfg, req.BodyBase64)
 	if err != nil {
 		return l7NormalizedRequest{}, err
 	}
-	return n.NormalizeRaw(req, body)
+	return n.normalizeRaw(req, body, snapshot)
 }
 
+// NormalizeRaw evaluates one request against exactly one configuration
+// snapshot. The snapshot is captured once so every budget check inside a single
+// inspection is consistent even while an operator revision is being published.
 func (n *L7Normalizer) NormalizeRaw(req L7InspectionRequest, body []byte) (l7NormalizedRequest, error) {
+	return n.NormalizeRawWith(req, body, n.live.current())
+}
+
+// NormalizeRawWith evaluates one raw body against the caller's snapshot.
+func (n *L7Normalizer) NormalizeRawWith(req L7InspectionRequest, body []byte, snapshot *l7RuntimeSnapshot) (l7NormalizedRequest, error) {
+	if snapshot == nil {
+		return l7NormalizedRequest{}, fmt.Errorf("%w: l7 runtime configuration unavailable", ErrL7InvalidRequest)
+	}
+	return n.normalizeRaw(req, body, snapshot)
+}
+
+func (n *L7Normalizer) normalizeRaw(req L7InspectionRequest, body []byte, snapshot *l7RuntimeSnapshot) (l7NormalizedRequest, error) {
+	cfg := snapshot.cfg
 	if req.Version != l7ProtocolVersion {
 		return l7NormalizedRequest{}, fmt.Errorf("%w: unsupported protocol version", ErrL7InvalidRequest)
 	}
-	if len(body) > n.cfg.MaxBodyBytes {
+	if len(body) > cfg.MaxBodyBytes {
 		return l7NormalizedRequest{}, fmt.Errorf("%w: body exceeds budget", ErrL7ResourceLimit)
 	}
 	method := strings.ToUpper(strings.TrimSpace(req.Method))
@@ -56,7 +100,7 @@ func (n *L7Normalizer) NormalizeRaw(req L7InspectionRequest, body []byte) (l7Nor
 		return l7NormalizedRequest{}, err
 	}
 	uri := strings.TrimSpace(req.URI)
-	if uri == "" || len(uri) > n.cfg.MaxURIBytes || strings.ContainsRune(uri, '\x00') {
+	if uri == "" || len(uri) > cfg.MaxURIBytes || strings.ContainsRune(uri, '\x00') {
 		return l7NormalizedRequest{}, fmt.Errorf("%w: invalid uri", ErrL7InvalidRequest)
 	}
 	if uri != "*" && !strings.HasPrefix(uri, "/") {
@@ -86,11 +130,11 @@ func (n *L7Normalizer) NormalizeRaw(req L7InspectionRequest, body []byte) (l7Nor
 		return l7NormalizedRequest{}, fmt.Errorf("%w: invalid request id", ErrL7InvalidRequest)
 	}
 
-	headers, contentType, err := n.normalizeHeaders(req.Headers)
+	headers, contentType, err := n.normalizeHeaders(cfg, req.Headers)
 	if err != nil {
 		return l7NormalizedRequest{}, err
 	}
-	body, err = n.decodeContentEncoding(body, headers["content-encoding"])
+	body, err = n.decodeContentEncoding(cfg, body, headers["content-encoding"])
 	if err != nil {
 		return l7NormalizedRequest{}, err
 	}
@@ -108,26 +152,26 @@ func (n *L7Normalizer) NormalizeRaw(req L7InspectionRequest, body []byte) (l7Nor
 		RequestID: requestID, Method: method, Scheme: scheme, Host: host,
 		Path: rawPath, RatePath: canonicalL7RoutePath(parsedURI.Path, uri == "*"), RemoteIP: remoteIP.String(), Headers: headers,
 		Body: body, BodySHA256: bodyDigest, ContentType: contentType,
-		Candidates: make([]l7Candidate, 0, minInt(n.cfg.MaxDecodedValues, 128)),
+		Candidates: make([]l7Candidate, 0, minInt(cfg.MaxDecodedValues, 128)),
 		ServerPID:  req.ServerPID, ServerProcess: safeProcessName(req.ServerProcess),
 	}
-	n.addCandidate(&normalized, "uri.path", rawPath)
+	n.addCandidate(cfg, &normalized, "uri.path", rawPath)
 	if normalized.RatePath != rawPath {
-		n.addCandidate(&normalized, "uri.path.canonical", normalized.RatePath)
+		n.addCandidate(cfg, &normalized, "uri.path.canonical", normalized.RatePath)
 	}
 	if parsedURI.RawQuery != "" {
-		n.addCandidate(&normalized, "uri.query.raw", parsedURI.RawQuery)
-		if err := n.addQueryCandidates(&normalized, parsedURI.RawQuery); err != nil {
+		n.addCandidate(cfg, &normalized, "uri.query.raw", parsedURI.RawQuery)
+		if err := n.addQueryCandidates(cfg, &normalized, parsedURI.RawQuery); err != nil {
 			return l7NormalizedRequest{}, err
 		}
 	}
 	for _, headerName := range []string{"user-agent", "referer", "x-forwarded-host", "x-original-uri"} {
 		for _, value := range headers[headerName] {
-			n.addCandidate(&normalized, "header."+headerName, value)
+			n.addCandidate(cfg, &normalized, "header."+headerName, value)
 		}
 	}
 	if len(body) > 0 {
-		if err := n.addBodyCandidates(&normalized); err != nil {
+		if err := n.addBodyCandidates(cfg, &normalized); err != nil {
 			return l7NormalizedRequest{}, err
 		}
 	}
@@ -145,8 +189,8 @@ func newL7RequestID() (string, error) {
 	return hex.EncodeToString(raw[:]), nil
 }
 
-func (n *L7Normalizer) normalizeHeaders(in []L7Header) (map[string][]string, string, error) {
-	if len(in) > n.cfg.MaxHeaders {
+func (n *L7Normalizer) normalizeHeaders(cfg L7Config, in []L7Header) (map[string][]string, string, error) {
+	if len(in) > cfg.MaxHeaders {
 		return nil, "", fmt.Errorf("%w: too many headers", ErrL7ResourceLimit)
 	}
 	headers := make(map[string][]string, len(in))
@@ -160,7 +204,7 @@ func (n *L7Normalizer) normalizeHeaders(in []L7Header) (map[string][]string, str
 			return nil, "", fmt.Errorf("%w: invalid header value", ErrL7InvalidRequest)
 		}
 		totalBytes += len(name) + len(h.Value)
-		if totalBytes > n.cfg.MaxHeaderBytes {
+		if totalBytes > cfg.MaxHeaderBytes {
 			return nil, "", fmt.Errorf("%w: header budget exceeded", ErrL7ResourceLimit)
 		}
 		if l7SensitiveHeader(name) {
@@ -186,27 +230,27 @@ func (n *L7Normalizer) normalizeHeaders(in []L7Header) (map[string][]string, str
 	return headers, contentType, nil
 }
 
-func (n *L7Normalizer) decodeBody(encoded string) ([]byte, error) {
+func (n *L7Normalizer) decodeBody(cfg L7Config, encoded string) ([]byte, error) {
 	if encoded == "" {
 		return nil, nil
 	}
-	maxEncoded := base64.StdEncoding.EncodedLen(n.cfg.MaxBodyBytes) + 8
+	maxEncoded := base64.StdEncoding.EncodedLen(cfg.MaxBodyBytes) + 8
 	if len(encoded) > maxEncoded {
 		return nil, fmt.Errorf("%w: encoded body exceeds budget", ErrL7ResourceLimit)
 	}
 	decoder := base64.NewDecoder(base64.StdEncoding, strings.NewReader(encoded))
-	limited := io.LimitReader(decoder, int64(n.cfg.MaxBodyBytes)+1)
+	limited := io.LimitReader(decoder, int64(cfg.MaxBodyBytes)+1)
 	body, err := io.ReadAll(limited)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid base64 body", ErrL7InvalidRequest)
 	}
-	if len(body) > n.cfg.MaxBodyBytes {
+	if len(body) > cfg.MaxBodyBytes {
 		return nil, fmt.Errorf("%w: body exceeds budget", ErrL7ResourceLimit)
 	}
 	return body, nil
 }
 
-func (n *L7Normalizer) decodeContentEncoding(body []byte, values []string) ([]byte, error) {
+func (n *L7Normalizer) decodeContentEncoding(cfg L7Config, body []byte, values []string) ([]byte, error) {
 	if len(body) == 0 || len(values) == 0 {
 		return body, nil
 	}
@@ -234,11 +278,11 @@ func (n *L7Normalizer) decodeContentEncoding(body []byte, values []string) ([]by
 		return nil, fmt.Errorf("%w: invalid compressed request body", ErrL7InvalidRequest)
 	}
 	defer reader.Close()
-	decoded, err := io.ReadAll(io.LimitReader(reader, int64(n.cfg.MaxBodyBytes)+1))
+	decoded, err := io.ReadAll(io.LimitReader(reader, int64(cfg.MaxBodyBytes)+1))
 	if err != nil {
 		return nil, fmt.Errorf("%w: compressed request decode failed", ErrL7InvalidRequest)
 	}
-	if len(decoded) > n.cfg.MaxBodyBytes {
+	if len(decoded) > cfg.MaxBodyBytes {
 		return nil, fmt.Errorf("%w: decoded request body exceeds budget", ErrL7ResourceLimit)
 	}
 	return decoded, nil

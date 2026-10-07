@@ -96,6 +96,22 @@ type TransactionEngine struct {
 	now       func() time.Time
 }
 
+// QuarantineApplier returns the registered quarantine applier so the Fabric module
+// can publish its path policy. The applier stored in the registry is the same
+// instance that enforces the rule, so there is no second policy target.
+func (e *TransactionEngine) QuarantineApplier() *QuarantineTransactionApplier {
+	if e == nil {
+		return nil
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	applier, ok := e.appliers[quarantineTransactionType].(*QuarantineTransactionApplier)
+	if !ok {
+		return nil
+	}
+	return applier
+}
+
 type RecoveryRequiredError struct {
 	Stage string
 	Err   error
@@ -366,6 +382,14 @@ func (e *TransactionEngine) Apply(id, confirmation string) (TransactionView, err
 	if e.now().Sub(record.CreatedAt) > transactionPreviewTTL {
 		return TransactionView{}, errors.New("transaction preview expired")
 	}
+	// The confirmation is a deliberate-action guard: the operator retypes a phrase
+	// derived from the transaction identifier so an accidental apply is impossible.
+	// It is deliberately NOT a capability - it is derivable from the identifier, so
+	// it proves intent, not authority. Authority comes from the bearer token that
+	// the handler already verified. The comparison is constant time so that nobody
+	// later mistakes this check for a secret comparison and weakens it, and so that
+	// turning the phrase into a real token would not silently introduce a timing
+	// oracle.
 	expectedConfirmation := "APPLY " + record.ID
 	if subtle.ConstantTimeCompare([]byte(confirmation), []byte(expectedConfirmation)) != 1 {
 		return TransactionView{}, errors.New("transaction confirmation rejected")
@@ -453,6 +477,7 @@ func (e *TransactionEngine) Reverse(id, confirmation string) (TransactionView, e
 	if record.Status != "applied" && record.Status != "recovery_required" {
 		return TransactionView{}, errors.New("transaction is not reversible")
 	}
+	// Same deliberate-action guard as Apply: intent, not authority.
 	expectedConfirmation := "REVERSE " + record.ID
 	if subtle.ConstantTimeCompare([]byte(confirmation), []byte(expectedConfirmation)) != 1 {
 		return TransactionView{}, errors.New("transaction confirmation rejected")

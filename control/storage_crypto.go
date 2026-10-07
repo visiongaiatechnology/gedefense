@@ -221,4 +221,3 @@ func (c *StorageCipher) Destroy() {
 		c.nodeName = ""
 	}
 }
-

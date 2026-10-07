@@ -1,7 +1,7 @@
 use aya::{
     maps::{
         lpm_trie::{Key, LpmTrie},
-        HashMap as AyaHashMap, MapData, MapError, RingBuf,
+        HashMap as AyaHashMap, MapData, MapError, PerCpuArray, RingBuf,
     },
     programs::{
         tc, CgroupAttachMode, CgroupSkb, CgroupSkbAttachType, Lsm, SchedClassifier, TcAttachType,
@@ -11,8 +11,9 @@ use aya::{
 };
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use gedefense_common::{
-    CellLsmDenyEvent, EgressDropEvent, ExecEvent, ACTION_DROP, CELL_LSM_DENY_NON_UNIX_SOCKET,
-    EXEC_COMM_BYTES, NETWORK_ADDRESS_BYTES, NETWORK_FAMILY_V4, NETWORK_FAMILY_V6,
+    decode_ingress_event, CellLsmDenyEvent, EgressDropEvent, ExecEvent, ACTION_DROP,
+    CELL_LSM_DENY_NON_UNIX_SOCKET, EXEC_COMM_BYTES, NETWORK_ADDRESS_BYTES, NETWORK_FAMILY_V4,
+    NETWORK_FAMILY_V6,
 };
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
@@ -51,6 +52,7 @@ const CLOCK_WINDOW_SECS: u64 = 30;
 const REPLAY_CACHE_CAPACITY: usize = 4096;
 const MAX_EXEC_EVENTS_PER_RESPONSE: usize = 24;
 const MAX_EGRESS_EVENTS_PER_RESPONSE: usize = 24;
+const MAX_INGRESS_EVENTS_PER_RESPONSE: usize = 12;
 const MAX_CELL_LSM_EVENTS_PER_RESPONSE: usize = 24;
 const HARDENING_FILE: &str = "/etc/sysctl.d/90-vgt-gedefense.conf";
 const RENAME_NOREPLACE: u32 = 1;
@@ -426,6 +428,10 @@ struct KernelCore {
     _ebpf: Ebpf,
     exec_events: RingBuf<MapData>,
     egress_events: RingBuf<MapData>,
+    ingress_events: RingBuf<MapData>,
+    ingress_events_emitted: PerCpuArray<MapData, u64>,
+    ingress_ring_drops: PerCpuArray<MapData, u64>,
+    ingress_track_insert_failures: PerCpuArray<MapData, u64>,
     cell_lsm_events: RingBuf<MapData>,
     cell_lsm_policies: AyaHashMap<MapData, u64, u8>,
     allow_v4: LpmTrie<MapData, [u8; 4], u8>,
@@ -521,6 +527,22 @@ impl KernelCore {
             ebpf.take_map("EGRESS_EVENTS")
                 .ok_or("EGRESS_EVENTS missing")?,
         )?;
+        let ingress_events = RingBuf::try_from(
+            ebpf.take_map("INGRESS_EVENTS")
+                .ok_or("INGRESS_EVENTS missing")?,
+        )?;
+        let ingress_events_emitted = PerCpuArray::try_from(
+            ebpf.take_map("INGRESS_EVENTS_EMITTED")
+                .ok_or("INGRESS_EVENTS_EMITTED missing")?,
+        )?;
+        let ingress_ring_drops = PerCpuArray::try_from(
+            ebpf.take_map("INGRESS_RING_DROPS")
+                .ok_or("INGRESS_RING_DROPS missing")?,
+        )?;
+        let ingress_track_insert_failures = PerCpuArray::try_from(
+            ebpf.take_map("INGRESS_TRACK_INSERT_FAILURES")
+                .ok_or("INGRESS_TRACK_INSERT_FAILURES missing")?,
+        )?;
         let cell_lsm_events = RingBuf::try_from(
             ebpf.take_map("CELL_LSM_EVENTS")
                 .ok_or("CELL_LSM_EVENTS missing")?,
@@ -554,6 +576,10 @@ impl KernelCore {
             _ebpf: ebpf,
             exec_events,
             egress_events,
+            ingress_events,
+            ingress_events_emitted,
+            ingress_ring_drops,
+            ingress_track_insert_failures,
             cell_lsm_events,
             cell_lsm_policies,
             allow_v4,
@@ -650,6 +676,59 @@ impl KernelCore {
             encoded.push(format!(
                 "{pid}:{uid}:{gid}:{}",
                 hex::encode(&comm[..comm_len])
+            ));
+        }
+        if encoded.is_empty() {
+            Ok("empty".to_owned())
+        } else {
+            Ok(encoded.join(","))
+        }
+    }
+
+    fn per_cpu_counter_sum(counter: &PerCpuArray<MapData, u64>) -> Result<u64, BoxError> {
+        let values = counter.get(&0, 0)?;
+        Ok(values
+            .iter()
+            .copied()
+            .fold(0u64, |sum, value| sum.saturating_add(value)))
+    }
+
+    fn ingress_health(&self) -> Result<String, BoxError> {
+        let emitted = Self::per_cpu_counter_sum(&self.ingress_events_emitted)?;
+        let ring_drops = Self::per_cpu_counter_sum(&self.ingress_ring_drops)?;
+        let track_insert_failures =
+            Self::per_cpu_counter_sum(&self.ingress_track_insert_failures)?;
+        Ok(format!("{emitted}:{ring_drops}:{track_insert_failures}"))
+    }
+
+    fn take_ingress_events(&mut self) -> Result<String, BoxError> {
+        let mut encoded = Vec::with_capacity(MAX_INGRESS_EVENTS_PER_RESPONSE);
+        while encoded.len() < MAX_INGRESS_EVENTS_PER_RESPONSE {
+            let Some(item) = self.ingress_events.next() else {
+                break;
+            };
+            let event = decode_ingress_event(&item)
+                .ok_or("kernel ingress event has invalid size or metadata")?;
+            let address_len = if event.family == NETWORK_FAMILY_V4 {
+                4
+            } else {
+                NETWORK_ADDRESS_BYTES
+            };
+            encoded.push(format!(
+                "{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}",
+                event.family,
+                event.protocol,
+                event.tcp_flags,
+                event.attempt_count,
+                event.src_port,
+                event.dst_port,
+                event.packets,
+                event.bytes,
+                event.syn_count,
+                event.ack_count,
+                event.window_epoch_sec,
+                hex::encode(&event.source[..address_len]),
+                hex::encode(&event.destination[..address_len])
             ));
         }
         if encoded.is_empty() {
@@ -996,6 +1075,8 @@ fn process_command(
         ["CELL_LSM_EVENTS"] => core.take_cell_lsm_events(),
         ["EXEC_EVENTS"] => core.take_exec_events(),
         ["EGRESS_EVENTS"] => core.take_egress_events(),
+        ["INGRESS_EVENTS"] => core.take_ingress_events(),
+        ["INGRESS_HEALTH"] => core.ingress_health(),
         ["MALWARE_EVENTS"] => scanner.take_events(),
         ["CLEAR_BLOCKLIST"] => core.clear_blocklist().map(|_| "cleared".into()),
         ["VERIFY_EMPTY"] if core.blocked.is_empty() => Ok("empty".into()),

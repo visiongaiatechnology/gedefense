@@ -329,3 +329,31 @@ func TestBaselineRejectsTrailingJSON(t *testing.T) {
 		t.Fatal("baseline with trailing JSON was accepted")
 	}
 }
+
+func TestBuiltinRuleOverridesCannotCreateKillEligibility(t *testing.T) {
+	engine := NewXDRRuleEngine()
+	settings := defaultRuntimeSettings(defaultConfig())
+	settings.Revision = 40
+	settings.EnabledRuleModules = []string{"command"}
+	settings.XDRFabric.RuleOverrides = []XDRRuleOverride{{ID: "KD.LINUX.REVERSE_SHELL", Enabled: false, Score: 20}}
+	if err := engine.Configure(settings); err != nil {
+		t.Fatal(err)
+	}
+	decision := engine.EvaluateProcess(ProcessSample{Cmdline: "bash -i", Exe: "/usr/bin/bash"}, nil, nil, nil)
+	if slices.Contains(decision.RuleIDs, "KD.LINUX.REVERSE_SHELL") {
+		t.Fatalf("disabled built-in rule still matched: %+v", decision)
+	}
+
+	settings.Revision++
+	settings.XDRFabric.RuleOverrides = []XDRRuleOverride{{ID: "KD.LINUX.REVERSE_SHELL", Enabled: true, Score: 20}}
+	if err := engine.Configure(settings); err != nil {
+		t.Fatal(err)
+	}
+	decision = engine.EvaluateProcess(ProcessSample{Cmdline: "bash -i", Exe: "/usr/bin/bash"}, nil, nil, nil)
+	if !slices.Contains(decision.RuleIDs, "KD.LINUX.REVERSE_SHELL") || decision.Score != 20 {
+		t.Fatalf("score override not applied: %+v", decision)
+	}
+	if decision.KillSignals != 1 || decision.Decision == "kill" {
+		t.Fatalf("score override changed structural kill boundary: %+v", decision)
+	}
+}

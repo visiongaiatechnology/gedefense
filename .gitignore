@@ -38,3 +38,18 @@ Thumbs.db
 .manifest-regen-status.txt
 .agents/
 .codex/
+
+# Verification infrastructure and internal working documents (never commit)
+wsl-verify.sh
+wsl-qa.sh
+wsl-vuln.sh
+wsl-probe.sh
+extract.sh
+qa-server.py
+qa/
+GEDEFENSE_4.2_TESTBEFUNDE.md
+GEDEFENSE_4.2_CHANGELOG_KONSOLIDIERT.md
+GEDEFENSE_4.2_FIX_VERIFICATION.md
+OPENAI_REWORK_PROGRESS.md
+GeDefense_4.2_SECURITY_FABRIC_CONTROL_PLANE_PLAN.md
+emergency_stop.sh
