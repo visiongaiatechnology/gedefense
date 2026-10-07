@@ -93,6 +93,100 @@ export async function loadKineticView(force = false) {
   }
 }
 
+// Which hook the kernel actually attached, and what the path has done with it.
+//
+// The mode is read from the core's own INGRESS_HEALTH response, not from configuration:
+// what was configured and what the driver accepted are different facts, and only the
+// second one describes this host. The counters come from the same telemetry the engine
+// already keeps; none of them are recomputed here.
+function renderEnforcement(status) {
+  const mode = String(status?.ingress_mode || '');
+  const badge = byID('kineticIngressMode');
+  if (badge) {
+    if (!mode) {
+      badge.textContent = t('kinetic.enforcement.modeUnknown');
+      badge.className = 'status-pill warn';
+    } else if (mode === 'NATIVE_XDP') {
+      badge.textContent = t('kinetic.enforcement.modeNative');
+      badge.className = 'status-pill good';
+    } else if (mode === 'GENERIC_XDP') {
+      badge.textContent = t('kinetic.enforcement.modeGeneric');
+      badge.className = 'status-pill warn';
+    } else if (mode === 'TC_INGRESS') {
+      badge.textContent = t('kinetic.enforcement.modeTc');
+      badge.className = 'status-pill warn';
+    } else {
+      badge.textContent = mode;
+      badge.className = 'status-pill muted';
+    }
+  }
+
+  // The note states what the mode means for this host. A native hook drops before the
+  // kernel allocates a socket buffer; the fallbacks drop later, which is a real
+  // difference under load and not a detail worth hiding behind a green pill.
+  const note = byID('kineticIngressNote');
+  if (note) {
+    note.textContent = !mode
+      ? t('kinetic.enforcement.noteUnknown')
+      : mode === 'NATIVE_XDP'
+        ? t('kinetic.enforcement.noteNative')
+        : mode === 'GENERIC_XDP'
+          ? t('kinetic.enforcement.noteGeneric')
+          : mode === 'TC_INGRESS'
+            ? t('kinetic.enforcement.noteTc')
+            : t('kinetic.enforcement.noteOther');
+  }
+
+  const number = value => formatNumber(Number(value || 0));
+  const fill = (hostID, rows) => {
+    const host = byID(hostID);
+    if (!host) return;
+    host.replaceChildren(...rows.map(([label, value, tone]) => {
+      const row = document.createElement('div');
+      row.className = 'kinetic-enforcement-fact';
+      const term = document.createElement('dt');
+      term.textContent = label;
+      const detail = document.createElement('dd');
+      detail.textContent = value;
+      if (tone) detail.setAttribute('data-tone', tone);
+      row.append(term, detail);
+      return row;
+    }));
+  };
+
+  // Kernel path: is the channel keeping up, and is it losing anything.
+  const ringDrops = Number(status?.kernel_ring_drops || 0);
+  const trackFailures = Number(status?.kernel_track_insert_failures || 0);
+  const trackingDrops = Number(status?.tracking_drops_total || 0);
+  fill('kineticKernelFacts', [
+    [t('kinetic.enforcement.fact.events'), number(status?.kernel_events_emitted), ''],
+    [t('kinetic.enforcement.fact.ringDrops'), number(ringDrops), ringDrops > 0 ? 'warn' : 'good'],
+    [t('kinetic.enforcement.fact.trackFailures'), number(trackFailures), trackFailures > 0 ? 'warn' : 'good'],
+    [t('kinetic.enforcement.fact.trackingCapacity'), number(status?.active_tracking_ips) + ' / ' + number(status?.tracking_capacity), '']
+  ]);
+
+  // Detection: what the engine recognised, by kind, so a busy host is legible.
+  fill('kineticDetectionFacts', [
+    [t('kinetic.enforcement.fact.hits'), number(status?.hits_total), ''],
+    [t('kinetic.enforcement.fact.velocity'), number(status?.velocity_bursts_total), ''],
+    [t('kinetic.enforcement.fact.portscans'), number(status?.portscans_total), ''],
+    [t('kinetic.enforcement.fact.subnet'), number(status?.subnet_strikes_total), ''],
+    [t('kinetic.enforcement.fact.l7'), number(status?.l7_strikes_total), '']
+  ]);
+
+  // Response: what was actually done, and what was refused. A suppression is not a
+  // failure and a failure is not a suppression, so they are listed apart.
+  const failed = Number(status?.response_failed_total || 0);
+  fill('kineticResponseFacts', [
+    [t('kinetic.enforcement.fact.bansEnforced'), number(status?.bans_enforced_total), ''],
+    [t('kinetic.enforcement.fact.bansExpired'), number(status?.bans_expired_total), ''],
+    [t('kinetic.enforcement.fact.applied'), number(status?.response_applied_total), 'good'],
+    [t('kinetic.enforcement.fact.suppressed'), number(status?.response_suppressed_total), ''],
+    [t('kinetic.enforcement.fact.failed'), number(failed), failed > 0 ? 'bad' : 'good'],
+    [t('kinetic.enforcement.fact.trackingDrops'), number(trackingDrops), trackingDrops > 0 ? 'warn' : 'good']
+  ]);
+}
+
 function renderCurrentData() {
   const live = latest || {};
   const status = live.status || {};
@@ -100,6 +194,7 @@ function renderCurrentData() {
   const events = Array.isArray(live.events) ? live.events : [];
   renderKineticKPIs(live, sources, events);
   renderCoverage(status);
+  renderEnforcement(status);
   renderHistoryTruth(live);
   renderGeoStatus(live.geo);
   renderKineticMap(live, sources);

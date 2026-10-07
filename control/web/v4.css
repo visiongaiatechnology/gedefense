@@ -2206,3 +2206,39 @@ dialog::backdrop { background: rgba(1, 6, 13, .77); backdrop-filter: blur(12px) 
 .restart-state[data-state="pending"] { color: #8aa6ba; }
 .restart-state[data-state="accepted"] { color: var(--green); }
 .restart-state[data-state="rejected"] { color: var(--red); }
+/* Enforcement and effect.
+   Three groups rather than a row of equal statistic tiles, because they answer three
+   different questions in sequence: how the host enforces, what it recognised, and what it
+   did about it. Definition lists, matching the telemetry rails used elsewhere, so a
+   value and its label keep the same relationship across the product. */
+.kinetic-enforcement-note { margin: 10px 0 0; color: #8aa6ba; font-size: .72rem; line-height: 1.6; max-width: 92ch; }
+.kinetic-enforcement-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 22px; }
+.kinetic-enforcement-group h4 {
+  margin: 0 0 12px;
+  padding-bottom: 9px;
+  border-bottom: 1px solid rgba(82, 199, 255, .12);
+  color: #6d8ba0;
+  font-size: .58rem;
+  font-weight: 700;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+.kinetic-enforcement-facts { display: flex; flex-direction: column; gap: 10px; margin: 0; }
+.kinetic-enforcement-fact { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; }
+.kinetic-enforcement-fact dt { color: #7d95a6; font-size: .72rem; line-height: 1.4; }
+/* Technical values are monospaced and tabular so a live counter does not shift width
+   as it grows, which would make the whole column twitch. */
+.kinetic-enforcement-fact dd {
+  margin: 0;
+  color: #dceaf4;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: .78rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.kinetic-enforcement-fact dd[data-tone="good"] { color: var(--green); }
+.kinetic-enforcement-fact dd[data-tone="warn"] { color: var(--amber); }
+.kinetic-enforcement-fact dd[data-tone="bad"] { color: var(--red); }
+@media (max-width: 720px) {
+  .kinetic-enforcement-grid { grid-template-columns: 1fr; gap: 18px; }
+}

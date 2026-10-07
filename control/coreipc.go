@@ -64,6 +64,15 @@ type CoreIngressHealth struct {
 	EventsEmitted       uint64
 	RingDrops           uint64
 	TrackInsertFailures uint64
+	// Mode names the hook that is actually enforcing ingress: "native" for XDP in the
+	// driver path, "generic" for XDP in the generic path, and "tc-ingress" when neither
+	// was available and the kernel enforces at the traffic-control layer instead. The
+	// core decides this at attach time and it is the only honest answer to whether this
+	// host's hardware is doing the work.
+	//
+	// Empty means the core is older than the field, which is reported as unknown rather
+	// than assumed to be native.
+	Mode string
 }
 
 type CoreEgressDropEvent struct {
@@ -399,7 +408,10 @@ func (c *CoreClient) IngressHealth() (CoreIngressHealth, error) {
 
 func parseCoreIngressHealth(response string) (CoreIngressHealth, error) {
 	fields := strings.Split(response, ":")
-	if len(fields) != 3 {
+	// Three fields before the enforcement mode was reported, four after. Both are
+	// accepted so a newer control plane can talk to an older core and the reverse: a
+	// version mismatch must not read as a broken kernel.
+	if len(fields) != 3 && len(fields) != 4 {
 		return CoreIngressHealth{}, errors.New("core returned malformed ingress health")
 	}
 	emitted, err1 := strconv.ParseUint(fields[0], 10, 64)
@@ -408,9 +420,32 @@ func parseCoreIngressHealth(response string) (CoreIngressHealth, error) {
 	if err1 != nil || err2 != nil || err3 != nil {
 		return CoreIngressHealth{}, errors.New("core returned invalid ingress health counters")
 	}
+	mode := ""
+	if len(fields) == 4 {
+		mode = normalizeIngressMode(fields[3])
+	}
 	return CoreIngressHealth{
 		EventsEmitted: emitted, RingDrops: ringDrops, TrackInsertFailures: trackFailures,
+		Mode: mode,
 	}, nil
+}
+
+// normalizeIngressMode maps the core's own spelling onto the vocabulary the interface
+// uses. An unrecognised value is preserved verbatim rather than dropped: if a future core
+// reports a mode this build does not know, the operator should see it, not "unknown".
+func normalizeIngressMode(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "native":
+		return "NATIVE_XDP"
+	case "generic":
+		return "GENERIC_XDP"
+	case "tc-ingress", "tc":
+		return "TC_INGRESS"
+	case "":
+		return ""
+	default:
+		return strings.ToUpper(strings.TrimSpace(raw))
+	}
 }
 
 func parseCoreIngressEvents(response string) ([]CoreIngressEvent, error) {

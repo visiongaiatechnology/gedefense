@@ -1145,6 +1145,40 @@
               </div>
             </article>
 
+            <!-- Enforcement and effect.
+                 Two questions, two groups. "How is this host enforcing?" is answered by
+                 the hook the kernel actually attached, not by the mode the product
+                 intended, and by the kernel-side counters that show whether the channel
+                 is keeping up. "What has it done?" is answered by the detection and
+                 response totals the engine already keeps. The block reason is not
+                 repeated here: it belongs to the individual event and is carried in the
+                 decision column of the stream beside this panel. -->
+            <article class="glass-panel panel-padded">
+              <div class="section-head flex-between">
+                <div>
+                  <p class="eyebrow" data-i18n="kinetic.enforcementKicker">ENFORCEMENT PATH</p>
+                  <h3 class="m-0" data-i18n="kinetic.enforcementTitle">Durchsetzung und Wirkung</h3>
+                </div>
+                <span id="kineticIngressMode" class="status-pill muted" data-i18n="dynamic.checking">WIRD GEPRÜFT</span>
+              </div>
+              <p id="kineticIngressNote" class="kinetic-enforcement-note"></p>
+
+              <div class="kinetic-enforcement-grid mt-md">
+                <section class="kinetic-enforcement-group">
+                  <h4 data-i18n="kinetic.enforcement.kernel">Kernel-Pfad</h4>
+                  <dl class="kinetic-enforcement-facts" id="kineticKernelFacts"></dl>
+                </section>
+                <section class="kinetic-enforcement-group">
+                  <h4 data-i18n="kinetic.enforcement.detection">Erkennung</h4>
+                  <dl class="kinetic-enforcement-facts" id="kineticDetectionFacts"></dl>
+                </section>
+                <section class="kinetic-enforcement-group">
+                  <h4 data-i18n="kinetic.enforcement.response">Reaktion</h4>
+                  <dl class="kinetic-enforcement-facts" id="kineticResponseFacts"></dl>
+                </section>
+              </div>
+            </article>
+
             <article class="glass-panel panel-padded flex-col gap-md">
               <div class="section-head">
                 <div>

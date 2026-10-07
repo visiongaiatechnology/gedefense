@@ -161,31 +161,37 @@ func (e *KineticEvent) ComputeFingerprint() string {
 
 // KineticTelemetry captures the aggregate performance and incident metrics.
 type KineticTelemetry struct {
-	HitsTotal                 uint64                             `json:"hits_total"`
-	VelocityBurstsTotal       uint64                             `json:"velocity_bursts_total"`
-	PortscansTotal            uint64                             `json:"portscans_total"`
-	SubnetStrikesTotal        uint64                             `json:"subnet_strikes_total"`
-	L7StrikesTotal            uint64                             `json:"l7_strikes_total"`
-	BansEnforcedTotal         uint64                             `json:"bans_enforced_total"`
-	BansExpiredTotal          uint64                             `json:"bans_expired_total"`
-	ResponseAppliedTotal      uint64                             `json:"response_applied_total"`
-	ResponseSuppressedTotal   uint64                             `json:"response_suppressed_total"`
-	ResponseRollbackTotal     uint64                             `json:"response_rollback_total"`
-	ResponseFailedTotal       uint64                             `json:"response_failed_total"`
-	ActiveTrackingIPs         int                                `json:"active_tracking_ips"`
-	ActiveSubnetsV4           int                                `json:"active_subnets_v4"`
-	ActiveSubnetsV6           int                                `json:"active_subnets_v6"`
-	ActiveWideV4              int                                `json:"active_wide_v4"`
-	TrackingCapacity          int                                `json:"tracking_capacity"`
-	TrackingDropsTotal        uint64                             `json:"tracking_drops_total"`
-	TrackingEvictionsTotal    uint64                             `json:"tracking_evictions_total"`
-	AggregateEvictionsTotal   uint64                             `json:"aggregate_evictions_total"`
-	KernelEventsEmitted       uint64                             `json:"kernel_events_emitted"`
-	KernelRingDrops           uint64                             `json:"kernel_ring_drops"`
-	KernelTrackInsertFailures uint64                             `json:"kernel_track_insert_failures"`
-	LastStrikeAt              *time.Time                         `json:"last_strike_at,omitempty"`
-	Layers                    map[DefenseLayer]DefenseLayerState `json:"layers"`
-	Coverage                  SystemCoverage                     `json:"coverage"`
+	HitsTotal                 uint64 `json:"hits_total"`
+	VelocityBurstsTotal       uint64 `json:"velocity_bursts_total"`
+	PortscansTotal            uint64 `json:"portscans_total"`
+	SubnetStrikesTotal        uint64 `json:"subnet_strikes_total"`
+	L7StrikesTotal            uint64 `json:"l7_strikes_total"`
+	BansEnforcedTotal         uint64 `json:"bans_enforced_total"`
+	BansExpiredTotal          uint64 `json:"bans_expired_total"`
+	ResponseAppliedTotal      uint64 `json:"response_applied_total"`
+	ResponseSuppressedTotal   uint64 `json:"response_suppressed_total"`
+	ResponseRollbackTotal     uint64 `json:"response_rollback_total"`
+	ResponseFailedTotal       uint64 `json:"response_failed_total"`
+	ActiveTrackingIPs         int    `json:"active_tracking_ips"`
+	ActiveSubnetsV4           int    `json:"active_subnets_v4"`
+	ActiveSubnetsV6           int    `json:"active_subnets_v6"`
+	ActiveWideV4              int    `json:"active_wide_v4"`
+	TrackingCapacity          int    `json:"tracking_capacity"`
+	TrackingDropsTotal        uint64 `json:"tracking_drops_total"`
+	TrackingEvictionsTotal    uint64 `json:"tracking_evictions_total"`
+	AggregateEvictionsTotal   uint64 `json:"aggregate_evictions_total"`
+	KernelEventsEmitted       uint64 `json:"kernel_events_emitted"`
+	KernelRingDrops           uint64 `json:"kernel_ring_drops"`
+	KernelTrackInsertFailures uint64 `json:"kernel_track_insert_failures"`
+	// IngressMode names the hook that is actually enforcing ingress on this host:
+	// NATIVE_XDP in the driver path, GENERIC_XDP in the generic path, TC_INGRESS when
+	// neither was available. It is reported because "the kernel producer is verified"
+	// was previously true for all three, and they perform very differently under load -
+	// an operator could not tell whether their hardware was doing the work.
+	IngressMode  string                             `json:"ingress_mode,omitempty"`
+	LastStrikeAt *time.Time                         `json:"last_strike_at,omitempty"`
+	Layers       map[DefenseLayer]DefenseLayerState `json:"layers"`
+	Coverage     SystemCoverage                     `json:"coverage"`
 }
 
 // DefaultKineticTelemetry initializes a fail-safe baseline. No sensor is

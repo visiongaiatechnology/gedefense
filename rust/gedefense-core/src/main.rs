@@ -440,6 +440,11 @@ struct KernelCore {
     v6: LpmTrie<MapData, [u8; 16], u8>,
     blocked: HashSet<Target>,
     mode: String,
+    // Which hook is actually enforcing ingress, decided at attach time and reported
+    // through INGRESS_HEALTH. The attach ladder degrades native XDP -> generic XDP -> TC
+    // ingress, and until now the outcome was only written to stderr at start: an operator
+    // had no way to tell which of the three was live on their hardware.
+    ingress_mode: &'static str,
     cell_lsm_attached: bool,
     cell_policy_epoch: String,
 }
@@ -469,7 +474,7 @@ impl KernelCore {
                 }
             }
         };
-        let ingress_mode = match xdp_mode {
+        let ingress_mode: &'static str = match xdp_mode {
             Some(mode) => mode,
             None => {
                 if let Err(error) = tc::qdisc_add_clsact(iface) {
@@ -588,6 +593,7 @@ impl KernelCore {
             v6,
             blocked: HashSet::new(),
             mode,
+            ingress_mode,
             cell_lsm_attached,
             cell_policy_epoch: random_epoch()?,
         })
@@ -698,7 +704,14 @@ impl KernelCore {
         let ring_drops = Self::per_cpu_counter_sum(&self.ingress_ring_drops)?;
         let track_insert_failures =
             Self::per_cpu_counter_sum(&self.ingress_track_insert_failures)?;
-        Ok(format!("{emitted}:{ring_drops}:{track_insert_failures}"))
+        // A fourth field, appended rather than inserted so a control plane from before
+        // this change still parses the response. The mode is what an operator needs in
+        // order to know whether the kernel enforces in the driver path, in the generic
+        // path, or only at the traffic-control layer.
+        Ok(format!(
+            "{emitted}:{ring_drops}:{track_insert_failures}:{}",
+            self.ingress_mode
+        ))
     }
 
     fn take_ingress_events(&mut self) -> Result<String, BoxError> {
