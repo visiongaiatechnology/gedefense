@@ -24,54 +24,59 @@
 
 **KERNEL-NEAR NETWORK DEFENSE · HOST XDR · ENCRYPTED EVIDENCE · REVERSIBLE HARDENING · NO CLOUD CONTROL PLANE**
 
+<br />
+
+🌐 **Languages / Sprachen / Языки / 语言:**  
+**English** · [Deutsch](README.de.md) · [Русский](README.ru.md) · [中文 (简体)](README.zh.md)
+
 </div>
 
 ---
 
-## 🚨 KRITISCHE SICHERHEITSWARNUNG & SECURITY ADVISORY — RELEASE v4.2.0
+## 🚨 CRITICAL SECURITY ADVISORY & WARNING — RELEASE v4.2.0
 
 > [!CAUTION]
-> **DRINGENDER SICHERHEITSHINWEIS FÜR ALLE OPERATOREN & SYSTEMADMINISTRATOREN (UPGRADE DRINGEND EMPFOHLEN):**
+> **URGENT SECURITY NOTICE FOR ALL OPERATORS & SYSTEM ADMINISTRATORS (UPGRADE STRONGLY RECOMMENDED):**
 > 
-> In GeDefense Version 4.2.0 wurden im Rahmen eines umfassenden Audits und Verifikationslaufs **mehrere kritische Sicherheitslücken und Integritätsrisiken früherer Versionen (4.0.x / 4.1.0)** identifiziert und vollständig behoben. Ein sofortiges Upgrade auf v4.2.0 wird für alle Produktivinstallationen dringend angeraten:
+> In GeDefense version 4.2.0, as part of an exhaustive security audit and verification cycle, **multiple critical vulnerabilities and integrity flaws present in previous versions (4.0.x / 4.1.0)** were identified and completely remediated. An immediate upgrade to v4.2.0 is strongly advised for all production installations:
 > 
-> 1. **Kritische Rechteausweitung durch Symlink-Traversal (Canary Deployment):**
->    - *Schwachstelle:* Das vorherige Canary-Deployment folgte symbolischen Links am Decoy- oder Staging-Pfad. Ein manipulierter Link in übergeordneten Pfaden konnte Schreibzugriffe auf beliebige Verzeichnisse umleiten (`cron`, `authorized_keys`, `ld.so.preload`) → Willkürliches Dateischreiben mit Root-Privilegien.
->    - *Behebung:* Vollständige Umstellung auf descriptor-basierte Auflösung (`openat(2)` mit `O_NOFOLLOW|O_DIRECTORY` für jede einzelne Pfadkomponente). Untergeschobene Symlinks scheitern deterministisch mit `ELOOP`.
+> 1. **Critical Privilege Escalation via Symlink Traversal (Canary Deployment):**
+>    - *Vulnerability:* The previous canary deployment followed symbolic links at the decoy or staging path. An attacker-controlled symlink in parent directories could redirect file writes with root privileges to arbitrary filesystem locations (`cron`, `authorized_keys`, `ld.so.preload`) → Arbitrary file write leading to root privilege escalation.
+>    - *Remediation:* Replaced with strict descriptor-based path resolution (`openat(2)` with `O_NOFOLLOW|O_DIRECTORY` on every single path component). Traversals across symlinks fail deterministically with `ELOOP`.
 > 
-> 2. **Opaque Error Responses statt Informationsabfluss:**
->    - *Schwachstelle:* Fünf API-Handler lieferten rohe Laufzeitfehler an Clients (interne Dateisystempfade, Kernel-Faults, Upstream-Feed-URLs, DNS-/TLS-Interna). Die bisherige Stichwort-Blacklist war unzureichend.
->    - *Behebung:* Strukturelle Entkopplung — interne Laufzeitfehler werden niemals als API-Meldungen weitergereicht, sondern durch opake, typisierte Fehlerantworten ersetzt.
+> 2. **Opaque Error Responses Eliminating Information Disclosure:**
+>    - *Vulnerability:* Five API handlers leaked raw runtime errors to clients (internal filesystem paths, kernel faults, upstream feed URLs, DNS/TLS internals). The previous keyword blacklist was brittle and incomplete.
+>    - *Remediation:* Structural decoupling — internal runtime errors are never forwarded as API error responses and are instead replaced by opaque, typed error responses.
 > 
-> 3. **Fail-Closed CSPRNG & Vorhersagbarkeits-Schutz:**
->    - *Schwachstelle:* Beim Versagen der System-Zufallsquelle fielen Evidence-, Incident-, Block- und Transaktions-IDs auf vorhersehbare Zeitstempel zurück.
->    - *Behebung:* Striktes Fail-Closed via `log.Fatalf` — kryptografische IDs können niemals auf vorhersagbare Werte degradieren.
+> 3. **Fail-Closed CSPRNG & Predictability Protection:**
+>    - *Vulnerability:* If the CSPRNG entropy source failed, Evidence, Incident, Block, and Transaction IDs fell back to predictable timestamps.
+>    - *Remediation:* Strict fail-closed semantics via `log.Fatalf` — cryptographic identifiers never degrade to predictable values.
 > 
-> 4. **Crash-Sicherer Atomarer Writer (`atomicWriteFile`):**
->    - Richtlinien, Feed-Zustände und Chronos-Checkpoints nutzen ausnahmslos atomares Schreiben mit Symlink-Ablehnung, `O_EXCL` und `fsync` auf Datei sowie Elternverzeichnis.
+> 4. **Crash-Safe Atomic Writer (`atomicWriteFile`):**
+>    - Policies, feed state, and Chronos checkpoints universally utilize atomic writes with symlink rejection, `O_EXCL`, and `fsync` on both the file and its parent directory.
 > 
-> 5. **Härtung der Content Security Policy (CSP) & Trusted Types:**
->    - `unsafe-inline` für Styles wurde vollständig aus der CSP entfernt.
->    - `require-trusted-types-for 'script'` ist aktiv und wird vom Browser als Laufzeit-Invariante erzwungen (keine DOM-XSS-Sinks).
+> 5. **Content Security Policy (CSP) Hardening & Trusted Types:**
+>    - `unsafe-inline` styles have been completely eliminated from the CSP.
+>    - `require-trusted-types-for 'script'` is actively enforced by the browser as a runtime invariant (zero DOM-XSS sinks).
 > 
-> 6. **Deadlock & Fail-Open Beseitigung in der Engine:**
->    - Deadlock in `CaseEngine.Status` (rekursiver Mutex-Lock) behoben.
->    - Beseitigung von zwei Fail-Open Zuständen im Airlock-Inspektor und der CaseEngine.
+> 6. **Deadlock & Fail-Open Elimination in Engine:**
+>    - Fixed deadlock in `CaseEngine.Status` (recursive mutex lock).
+>    - Eliminated fail-open states in the Airlock inspector and CaseEngine.
 > 
-> 7. **Toolchain-Sicherheitsboden (Go ≥ 1.26.6):**
->    - Beseitigung von 6 erreichbaren Standardbibliothek-CVEs älterer Go-Versionen auf den Ingress- und Feed-Pfaden.
+> 7. **Toolchain Security Floor (Go ≥ 1.26.6):**
+>    - Remediated 6 reachable standard-library CVEs of older Go releases on the ingress reverse proxy and threat-intelligence feed paths.
 
 ---
 
 ## ⚠️ STABILITY & ASSURANCE — RELEASE v4.2.0 · UNIVERSAL LINUX PLATFORM
 
-VGT GeDefense 4.2.0 ist das Flaggschiff der Linux Security Fabric — gehärtete Kernel-Speed Defense Chain kombiniert mit der neuen **Security Fabric Control Plane**, universeller Linux-Integration, gehärteter Release-Pipeline und konkretem Kernel/NIC-Qualifikations-Gate. Es ist für den souveränen Schutz von Hosts und Netzwerken konzipiert.
+VGT GeDefense 4.2.0 is the flagship Linux security fabric — the hardened kernel-speed defense chain combined with the new **Security Fabric Control Plane**, universal Linux integration, hardened release pipeline, and concrete kernel/NIC qualification gates. It is engineered for sovereign host and network protection.
 
-**Die Produktionsfreigabe ist bewusst eine Eigenschaft des konkret geprüften Zielhosts — nicht bloß des Quellcodes.**
+**Production clearance is deliberately a property of the concretely audited target host — not merely the source code.**
 
-Erster Rollout: **Observe-Modus**. Canary und Enforce ausschließlich nach Erfüllung der dokumentierten Gates.
+Initial deployment: **Observe mode only.** Canary and Enforce exclusively after documented gates have been satisfied.
 
-Sicherheitsbefund oder Verbesserungsvorschlag? **Issue eröffnen oder direkt Kontakt aufnehmen.**
+Found a vulnerability or have an improvement? **Open an issue or contact us directly.**
 
 ---
 
@@ -556,14 +561,14 @@ If the Gaia Cells runtime is **not present**, the adapter reports `runtime_not_i
 
 ```bash
 # Download installer
-wget https://github.com/visiongaiatechnology/gedefense/releases/download/v4.0.1/VGT_GeDefense_Beta_v4_4.0.1_OneClick.run
+wget https://github.com/visiongaiatechnology/gedefense/releases/download/v4.2.0/GeDefense-4.2.0-OneClick.run
 
 # Verify SHA-256
-sha256sum --check VGT_GeDefense_Beta_v4_4.0.1_OneClick.run.sha256
+sha256sum --check GeDefense-4.2.0-OneClick.run.sha256
 
 # Install (root required)
-chmod 700 VGT_GeDefense_Beta_v4_4.0.1_OneClick.run
-sudo ./VGT_GeDefense_Beta_v4_4.0.1_OneClick.run
+chmod 700 GeDefense-4.2.0-OneClick.run
+sudo ./GeDefense-4.2.0-OneClick.run
 ```
 
 > The installer and checksum are published only after all GitHub CI and concrete
@@ -599,7 +604,7 @@ The firewall rule for the HTTPS gateway port (TCP 9843) can be configured via UF
 
 ---
 
-## 🚧 Known Limitations (4.0.1)
+## 🚧 Known Limitations (4.2.0)
 
 - No Swarm / Mesh support
 - No QUIC offloading
@@ -617,34 +622,34 @@ The firewall rule for the HTTPS gateway port (TCP 9843) can be configured via UF
 
 ### v4.2.0 — Security Fabric Control Plane *(Current)*
 
-* **Vollständige Behebung des Sicherheits-Audits & Härtung:**
-  * **Kritisch:** Beseitigung der Symlink-Traversal-Schwachstelle im Canary-Deployment (willkürliches Dateischreiben / Root-Privilege-Escalation) via komponentenweiser `openat(2)`-Auflösung mit `O_NOFOLLOW|O_DIRECTORY` und `ELOOP`-Erzwingung.
-  * **Hoch:** Ersatz von Information-Disclosure-Lecks durch typisierte, opake Fehlerantworten bei 5 API-Handlern; strukturelle Entkopplung statt unvollständiger Wort-Blacklists.
-  * **Hoch:** Fail-Closed CSPRNG (`log.Fatalf`) verhindert vorhersagbare Zeitstempel-IDs für Incidents, Quarantäne und Blöcke.
-  * **Hoch:** Remote-Panic im Settings-Import-Preview durch Fail-Closed-Schlüsselerzeugung behoben.
-  * **Hoch:** Import-Token sind kryptografisch an den geprüften Inhalt gebunden (verhindert Token-Kollisionen).
-  * **Mittel:** Crash-sicherer atomarer Writer (`atomicWriteFile`) für Policy, Feeds und Chronos mit Symlink-Ablehnung und `fsync`.
-  * **Mittel:** `unsafe-inline` Styles aus der Content Security Policy verbannt; HSTS ausschließlich über TLS.
+* **Comprehensive Security Audit Remediation & Hardening:**
+  * **Critical:** Remediated symlink-traversal vulnerability in canary deployment (arbitrary file write / root privilege escalation) via component-by-component `openat(2)` resolution with `O_NOFOLLOW|O_DIRECTORY` and deterministic `ELOOP` enforcement.
+  * **High:** Replaced information disclosure leaks with typed, opaque error responses across 5 API handlers; structural decoupling replaces incomplete substring blacklists.
+  * **High:** Fail-closed CSPRNG (`log.Fatalf`) prevents fallback to predictable timestamp IDs for evidence, incidents, quarantine, and blocks.
+  * **High:** Resolved remote panic in settings import preview via fail-closed ephemeral key derivation.
+  * **High:** Import tokens are cryptographically bound to the verified payload digest (preventing token collisions).
+  * **Medium:** Crash-safe atomic writer (`atomicWriteFile`) for policies, feeds, and Chronos checkpoints with symlink rejection, `O_EXCL`, and parent-directory `fsync`.
+  * **Medium:** `unsafe-inline` styles eliminated from Content Security Policy; HSTS strictly enforced over TLS.
 * **Security Fabric Control Plane:**
-  * 12 administrierbare Module (`kinetic`, `network`, `protection`, `xdr`, `l7`, `threat_intel`, `hardening`, `integrity`, `boot_trust`, `policy_trust`, `forensics`, `system`).
-  * Server-authoritatives Schema, unveränderliche Snapshots auf heißen Pfaden, persistierte `restart_required`-Semantik.
-  * Nicht-administrierbare Sicherheitsinvarianten: Kernel-Maps, Core-Auth, Private-Key-Geheimhaltung, Management-Self-Lockout, Feed-Anti-Poisoning.
-* **Control-Plane Workbench & Telemetrie:**
-  * Deterministische Settings-Suche (`GET /api/v1/settings/search`) mit Live-Werten und Trefferbegründung.
-  * Kryptografisch signierter, geheimnisfreier Settings-Export (`POST /api/v1/settings/export`).
-  * Echter zweistufiger Import (`/import/preview` + `/import/apply`) mit Diff-Analyse und Einmal-Tokens.
-  * Kontinuierliche Drift-Erkennung (`GET /api/v1/settings/drift`) signalisiert `CONFIG_DRIFT`.
-* **Vendorte Offline-SVG-Weltkarte (jsVectorMap 1.7.0):**
-  * 100% lokales Rendern ohne CDN oder Kachelserver; native Buttons gewährleisten vollständige Konformität mit `require-trusted-types-for 'script'`.
-  * Lokale GeoIP/ASN-Auflösung, Choropleth-Dichteanzeige, Live-Marker und Traffic-Puls.
-* **UI/UX Supreme — Modernes Dashboard-Design:**
-  * Kartenraster eliminiert; semantische `<dl>`-Datenbänder mit Haarlinien-Trennern.
-  * Reine Zustandsfarben, Barrierefreiheit (WCAG AA), echte Tastatur-Controls (`<button>`) und Unterstützung für `prefers-reduced-motion`.
-* **Laufzeit- und Engine-Fixes:**
-  * Deadlock in `CaseEngine.Status` behoben.
-  * Fail-Open im Airlock-Inspektor und in der CaseEngine beseitigt.
-  * Route `GET /assets/{name...}` für mehrstufige Pfade korrigiert.
-  * Toolchain-Sicherheitsboden auf Go ≥ 1.26.6 angehoben (behebt 6 Standardbibliothek-CVEs).
+  * 12 administrable modules (`kinetic`, `network`, `protection`, `xdr`, `l7`, `threat_intel`, `hardening`, `integrity`, `boot_trust`, `policy_trust`, `forensics`, `system`).
+  * Server-authoritative schema, immutable snapshots on hot paths, persisted `restart_required` semantics.
+  * Non-administrable security invariants: kernel maps, core auth, private key secrecy, management self-lockout prevention, feed anti-poisoning.
+* **Control-Plane Workbench & Telemetry:**
+  * Deterministic settings search (`GET /api/v1/settings/search`) with live values and match rationale.
+  * Cryptographically signed, secret-sanitized settings export (`POST /api/v1/settings/export`).
+  * True two-stage import (`/import/preview` + `/import/apply`) with diff analysis and single-use tokens.
+  * Continuous drift detection (`GET /api/v1/settings/drift`) raising `CONFIG_DRIFT`.
+* **Vendored Offline SVG World Map (jsVectorMap 1.7.0):**
+  * 100% local rendering without external CDNs or tile servers; native buttons guarantee strict compliance with `require-trusted-types-for 'script'`.
+  * Local GeoIP/ASN resolution, choropleth density display, live threat markers, and traffic pulse.
+* **UI/UX Supreme — Modern Dashboard Design:**
+  * Card grids eliminated; semantic `<dl>` data ribbons with hairline separators.
+  * Pure state-driven color palette, WCAG AA accessibility, native keyboard controls (`<button>`), and full `prefers-reduced-motion` support.
+* **Runtime & Engine Fixes:**
+  * Resolved deadlock in `CaseEngine.Status`.
+  * Eliminated fail-open states in Airlock inspector and CaseEngine.
+  * Corrected route `GET /assets/{name...}` for multi-segment path resolution.
+  * Raised toolchain security floor to Go ≥ 1.26.6 (remediating 6 standard-library CVEs).
 
 ### v4.0.1 — Chinese Localization, Dedicated XDR Kernel Recovery Tab & Startscreen Expansion
 
@@ -793,6 +798,6 @@ Enterprise deployments, TIER-0 audits (VGT SafetySys™) and commercial exceptio
 
 [![VGT](https://img.shields.io/badge/VisionGaia-Technology-cyan?style=for-the-badge)](https://visiongaiatechnology.de)
 
-*VGT GeDefense 4.0.1 — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
+*VGT GeDefense 4.2.0 — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
 
 </div>
