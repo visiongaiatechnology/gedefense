@@ -35,8 +35,8 @@ MemoryDenyWriteExecute=true
 SystemCallArchitectures=native
 SystemCallFilter=@system-service
 SystemCallErrorNumber=EPERM
-ReadOnlyPaths=@RELEASE@ /etc/vgt/gedefense
-ReadWritePaths=/var/lib/vgt/gedefense
+ReadOnlyPaths=@RELEASE@
+ReadWritePaths=/var/lib/vgt/gedefense /etc/vgt/gedefense
 UMask=0077
 
 [Install]
