@@ -22,8 +22,9 @@ import shutil, sys
 src, dst = map(Path, sys.argv[1:])
 excluded_dirs = {'.git','.go-cache','.tmp-go-cache','dist','target','__pycache__','release-beta','release-final','RUN Build','GitHub Upload','qa'}
 excluded_names = {
-    'SOURCE-MANIFEST.sha256','PAYLOAD-MANIFEST.sha256','control',
+    'SOURCE-MANIFEST.sha256','PAYLOAD-MANIFEST.sha256','control','gateway',
     'wsl-verify.sh','wsl-qa.sh','wsl-vuln.sh','wsl-probe.sh','wsl-race.sh','wsl-gate.sh','wsl-login-qa.sh',
+    'wsl-panel-qa.sh','wsl-rust-syntax.sh',
     'extract.sh','qa-server.py','GEDEFENSE_4.2_TESTBEFUNDE.md','GEDEFENSE_4.2_CHANGELOG_KONSOLIDIERT.md',
     'GEDEFENSE_4.2_FIX_VERIFICATION.md','OPENAI_REWORK_PROGRESS.md','GeDefense_4.2_SECURITY_FABRIC_CONTROL_PLANE_PLAN.md'
 }
@@ -32,7 +33,7 @@ for path in sorted(src.rglob('*')):
     rel = path.relative_to(src)
     if any(part in excluded_dirs for part in rel.parts):
         continue
-    if path.name in excluded_names or path.suffix.lower() in excluded_suffixes:
+    if path.name in excluded_names or path.name.startswith('wsl-') or path.suffix.lower() in excluded_suffixes:
         continue
     target = dst / rel
     if path.is_dir():

@@ -81,7 +81,7 @@ def main():
     for p in sorted(root.rglob("*")):
         if any(part in excluded_dirs for part in p.parts):
             continue
-        if p.name in excluded_names:
+        if p.name in excluded_names or p.name.startswith("wsl-"):
             continue
         if p.suffix.lower() in excluded_exts:
             continue

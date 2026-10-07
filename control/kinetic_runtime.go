@@ -112,6 +112,7 @@ func (s *APIServer) runKineticRuntime(ctx context.Context) {
 				t.KernelEventsEmitted = current.EventsEmitted
 				t.KernelRingDrops = current.RingDrops
 				t.KernelTrackInsertFailures = current.TrackInsertFailures
+				t.IngressMode = current.Mode
 			})
 			status, selfTest, reason := evaluateKineticSensorHealth(eventFailures, healthFailures, lastHealth, &current)
 			s.setKineticSensorState(status, selfTest, reason)
@@ -146,7 +147,27 @@ func evaluateKineticSensorHealth(eventFailures, healthFailures int, previous, cu
 	if current.EventsEmitted == 0 {
 		return CoverageOnline, "pass", "kernel ingress program and bounded health maps verified; no ingress events emitted yet"
 	}
-	return CoverageOnline, "pass", fmt.Sprintf("verified kernel ingress producer (%d events emitted)", current.EventsEmitted)
+	// The hook is named in the reason. A pass on native XDP and a pass on TC ingress are
+	// not the same statement about a host, and reporting both as "verified kernel ingress
+	// producer" hid which one the operator actually has.
+	return CoverageOnline, "pass", fmt.Sprintf("verified kernel ingress producer via %s (%d events emitted)", describeIngressMode(current.Mode), current.EventsEmitted)
+}
+
+// describeIngressMode turns the mode token into something an operator can read, and
+// states plainly when the core did not report one rather than implying native XDP.
+func describeIngressMode(mode string) string {
+	switch mode {
+	case "NATIVE_XDP":
+		return "native XDP in the driver path"
+	case "GENERIC_XDP":
+		return "generic XDP (the driver has no native hook)"
+	case "TC_INGRESS":
+		return "TC ingress (no XDP was available, enforcement is at the traffic-control layer)"
+	case "":
+		return "an unreported hook (the core did not state its enforcement mode)"
+	default:
+		return mode
+	}
 }
 
 func (s *APIServer) setKineticSensorState(status SensorCoverageStatus, selfTest, reason string) {
