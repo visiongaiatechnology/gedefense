@@ -14,6 +14,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 )
 
 const (
@@ -189,13 +190,13 @@ func (r *GeoResolver) Load(path string) error {
 		if len(record) > 5 {
 			geo.ASN = strings.TrimSpace(record[5])
 			if len(geo.ASN) > 32 {
-				return fmt.Errorf("geoip CSV row %d ASN too long", row)
+				geo.ASN = truncateUTF8Bytes(geo.ASN, 32)
 			}
 		}
 		if len(record) > 6 {
 			geo.ASName = strings.TrimSpace(record[6])
 			if len(geo.ASName) > 128 {
-				return fmt.Errorf("geoip CSV row %d AS name too long", row)
+				geo.ASName = truncateUTF8Bytes(geo.ASName, 128)
 			}
 		}
 		bits := prefix.Bits()
@@ -322,4 +323,15 @@ func (r *GeoResolver) Status() GeoStatus {
 	r.cacheMu.RUnlock()
 	status.CacheCapacity = geoCacheCapacity
 	return status
+}
+
+func truncateUTF8Bytes(s string, maxBytes int) string {
+	if len(s) <= maxBytes {
+		return s
+	}
+	b := []byte(s[:maxBytes])
+	for len(b) > 0 && !utf8.Valid(b) {
+		b = b[:len(b)-1]
+	}
+	return strings.TrimSpace(string(b))
 }

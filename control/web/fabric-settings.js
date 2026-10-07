@@ -463,7 +463,13 @@ class FabricSettingsController {
     if (meta.key === 'sysctl.profiles') return this.buildSysctlProfiles(meta);
 
     if (meta.type === 'boolean') {
-      const wrap = groupNode('div', 'settings-switch');
+      // The wrapper is a <label>, and that is the whole mechanism: the input is
+      // visually hidden at 1x1px, so the only thing an operator can actually aim at
+      // is the visible track - a <span>. A click on a span inside a <div> does not
+      // toggle a checkbox, so with a <div> here the switch looked operable
+      // (cursor: pointer) and did nothing. A label forwards activation from
+      // anywhere inside it to its control, and it also names that control.
+      const wrap = groupNode('label', 'settings-switch');
       input = document.createElement('input');
       input.type = 'checkbox';
       input.id = id;
@@ -473,6 +479,9 @@ class FabricSettingsController {
       input.addEventListener('change', () => {
         state.textContent = input.checked ? 'enabled' : 'disabled';
       });
+      // The visible state text carries the value in words, so the switch does not
+      // communicate through colour and position alone.
+      track.setAttribute('aria-hidden', 'true');
       wrap.append(input, track, state);
       this.bindInput(meta, input);
       return wrap;

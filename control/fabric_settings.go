@@ -44,6 +44,10 @@ type FabricModuleView struct {
 	Source     string         `json:"source"`
 	Settings   interface{}    `json:"settings"`
 	Details    map[string]any `json:"details,omitempty"`
+	// Migrations names every operator-visible value this document had changed on the
+	// operator's behalf during a schema upgrade. An upgrade that edits somebody else's
+	// configuration has to say so where that configuration is read.
+	Migrations []string `json:"migrations,omitempty"`
 }
 
 type FabricSettingDiff struct {
@@ -411,7 +415,7 @@ func (s *APIServer) fabricSettingsModule(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	applyState := s.fabricModuleApplyState(current, module)
-	writeJSON(w, http.StatusOK, FabricModuleView{Module: module, Revision: current.Revision, UpdatedAt: current.UpdatedAt, ApplyState: applyState, Source: "encrypted-runtime-settings", Settings: view, Details: s.fabricModuleDetails(module)})
+	writeJSON(w, http.StatusOK, FabricModuleView{Module: module, Revision: current.Revision, UpdatedAt: current.UpdatedAt, ApplyState: applyState, Source: "encrypted-runtime-settings", Settings: view, Details: s.fabricModuleDetails(module), Migrations: current.Migrations})
 }
 
 // fabricModuleApplyState compares the persisted revision with what the running

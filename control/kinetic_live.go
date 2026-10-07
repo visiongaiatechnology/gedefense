@@ -281,6 +281,25 @@ func sourceBlocked(ip net.IP, exact map[string]bool, nets []*net.IPNet) bool {
 	return false
 }
 
+// sourceBlockedWithFeeds reports whether a source is subject to enforcement from any
+// path. Feed BLOCK prefixes are pushed straight into kernel maps rather than into the
+// management block ledger, so a display built only from the ledger showed "0 blocked"
+// while XDP was dropping that exact source. A counter that cannot see the enforcement
+// it describes is worse than no counter: it reads as "nothing is happening".
+//
+// The threat index is read through the engine field, which is only ever replaced
+// wholesale by SetThreatIntel, so the lookup is safe under the engine's read lock.
+func (e *KineticEngine) sourceBlockedWithFeeds(ip net.IP, exact map[string]bool, nets []*net.IPNet) bool {
+	if sourceBlocked(ip, exact, nets) {
+		return true
+	}
+	if ip == nil {
+		return false
+	}
+	key := ip.String()
+	return e.threatBlock != nil && e.threatBlock.ContainsString(key)
+}
+
 // SourceSnapshotForWindow returns only sources active in the requested server
 // window. The result is strictly bounded and carries explicit window counters.
 func (e *KineticEngine) SourceSnapshotForWindow(limit int, spec KineticWindowSpec, now time.Time) []KineticSourceSnapshot {
@@ -319,7 +338,7 @@ func (e *KineticEngine) SourceSnapshotForWindow(limit int, spec KineticWindowSpe
 		}
 		_, subnet, _ := SubnetKeys(bucket.SrcIP)
 		ipKey := bucket.SrcIP.String()
-		blocked := sourceBlocked(bucket.SrcIP, exact, nets)
+		blocked := e.sourceBlockedWithFeeds(bucket.SrcIP, exact, nets)
 		family := uint8(4)
 		if bucket.IsV6 {
 			family = 6

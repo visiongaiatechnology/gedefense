@@ -779,6 +779,22 @@ VGT GeDefense 属于自由开源软件：您可以根据自由软件基金会发
 
 企业级部署支持、TIER-0 安全审计认证（VGT SafetySys™）及商业豁免许可咨询：[visiongaiatechnology.de](https://visiongaiatechnology.de)
 
+### 🗺️ 数据归属与本地离线 GeoIP / ASN 数据库
+
+GeDefense 深度内置 100% 本地纯离线运行的 GeoIP 与 Origin-ASN 威胁富化数据库（`/var/lib/vgt/gedefense/geoip.csv`），确保在运行时绝不发起任何外部第三方云端查询或泄露网络遥测：
+
+* **DB-IP Lite 数据集：** 本软件包含由 DB-IP 创建的 GeoLite2 或 DB-IP Lite 离线数据，可在 [https://db-ip.com/](https://db-ip.com/) 获取，基于知识共享署名 4.0 国际许可协议 (CC BY 4.0) 发布。必须保留来源署名 (Attribution)。
+* **Origin ASN 映射数据：** 来源 ASN 路由归属数据由 [sapics/ip-location-db](https://github.com/sapics/ip-location-db) 项目提供，遵循公有领域奉献与许可协议 (PDDL)。
+
+#### 自动化更新本地 GeoIP 数据库
+
+系统运维人员可通过内置的生成与合并脚本随时全量拉取、依最长前缀匹配 (LPM) 紧凑聚合并原子化更新本地数据库：
+
+```bash
+# 下载最新 DB-IP City 与 Origin-ASN 数据集，编译压缩为 < 128 MiB / < 1,000,000 前缀并原子化替换 /var/lib/vgt/gedefense/geoip.csv
+sudo python3 scripts/update-geoip-db.py /var/lib/vgt/gedefense/geoip.csv
+```
+
 ---
 
 <div align="center">

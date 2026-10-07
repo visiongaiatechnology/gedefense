@@ -585,9 +585,25 @@ func (s *L7Service) publishStatus(healthy bool) {
 		status.TLSFingerprintSource = fpSource
 		status.TLSFingerprintSignatures = fpSignatures
 		status.TLSFingerprintProfiles = fpProfiles
+		// The requirement is decided before the verdict, because the verdict consults
+		// it: TLS silence is only a finding when coverage was asked for.
+		status.CoverageRequired = l7CoverageRequired(s.cfg.CoverageRequired, s.cfg.Enabled,
+			s.cfg.InlineEnabled || status.RequestsTotal+status.InlineRequestsTotal > 0 || status.TLSHandshakesTotal > 0)
 		status.Coverage = EvaluateL7Coverage(*status, uptime)
 		status.TrafficPathVerified = status.Coverage == "TRAFFIC_ACTIVE"
 		status.TLSPathVerified = !status.TLSEnabled || status.TLSHandshakesTotal > 0
+		// Attachment and producer presence are published separately from coverage, so
+		// the interface can show engine health, path attachment and verified traffic as
+		// three independent facts instead of one collapsed verdict.
+		status.RequestsSeen = status.RequestsTotal + status.InlineRequestsTotal
+		status.ProducerAttached = status.RequestsTotal > 0
+		status.TrafficPathAttached = status.InlineEnabled || status.RequestsSeen > 0 || status.TLSHandshakesTotal > 0
+		if status.LastInspection != nil {
+			status.LastRequestAt = status.LastInspection
+		}
+		if status.ProducerAttached && status.LastInspection != nil {
+			status.LastProducerSeen = status.LastInspection
+		}
 		switch status.Coverage {
 		case "OFFLINE":
 			status.CoverageReason = "L7 service is not healthy"
@@ -597,6 +613,8 @@ func (s *L7Service) publishStatus(healthy bool) {
 			status.CoverageReason = "L7 service is alive but no HTTP or TLS inspection traffic has traversed it for more than five minutes"
 		case "TLS_NOT_IN_PATH":
 			status.CoverageReason = "HTTP inspection traffic is active, but TLS inspection is enabled and no ClientHello telemetry has reached the TLS sensor"
+		case "READY_NOT_ATTACHED":
+			status.CoverageReason = "L7 engine is healthy; no inline listener or producer is attached, so the engine is available but not in the traffic path"
 		case "HEALTHY_AWAITING_TRAFFIC":
 			status.CoverageReason = "L7 service is healthy and awaiting its first verified inspection"
 		case "TRAFFIC_ACTIVE":
@@ -604,7 +622,31 @@ func (s *L7Service) publishStatus(healthy bool) {
 		default:
 			status.CoverageReason = "L7 subsystem disabled"
 		}
+		// The web surface is discovered here rather than at startup, so a server that
+		// is installed after the service started is still seen on the next pass.
+		status.WebSurface = discoverWebSurface()
+		// MISWIRED is the state that matters most to an operator: this host serves web
+		// traffic, L7 is enabled, and none of that traffic is reaching it. It is derived
+		// from two observations and never asserted from configuration alone.
+		status.Miswired = status.Enabled && status.WebSurface.ExpectsHTTP && !status.TrafficPathAttached
+		status.WebSurfaceNote = describeWebSurface(status.WebSurface, status.TrafficPathAttached)
+		if status.Miswired && status.Coverage != "OFFLINE" {
+			status.CoverageReason = status.WebSurfaceNote
+		}
 	})
+
+	// Whether the traffic path is mandatory is a separate question from whether the
+	// engine is enabled. Treating `enabled` as `required` meant an operator who turned
+	// the engine on before wiring a producer into it got a permanently degraded
+	// platform for a deployment that was simply not finished yet.
+	attached := s.cfg.InlineEnabled
+	{
+		snap := s.state.Snapshot().L7
+		if snap.RequestsTotal > 0 || snap.InlineRequestsTotal > 0 || snap.TLSHandshakesTotal > 0 {
+			attached = true
+		}
+	}
+	coverageRequired := l7CoverageRequired(s.cfg.CoverageRequired, s.cfg.Enabled, attached)
 
 	coverageStatus := CoverageOnline
 	coverageReason := "verified L7 inspection traffic active"
@@ -615,14 +657,23 @@ func (s *L7Service) publishStatus(healthy bool) {
 		coverageStatus, coverageReason, selfTest = CoverageOffline, "L7 service is offline", "failed"
 	} else {
 		snap := s.state.Snapshot().L7
-		if snap.Coverage == "NO_TRAFFIC_WARNING" || snap.Coverage == "HEALTHY_AWAITING_TRAFFIC" || snap.Coverage == "TLS_NOT_IN_PATH" {
-			coverageStatus, coverageReason, selfTest = CoverageDegraded, snap.CoverageReason, "awaiting-traffic"
-		} else if snap.Coverage == "INLINE_DEGRADED" {
+		switch {
+		case snap.Coverage == "INLINE_DEGRADED":
 			coverageStatus, coverageReason, selfTest = CoverageDegraded, snap.CoverageReason, "failed"
+		case snap.Coverage == "READY_NOT_ATTACHED" && !coverageRequired:
+			// The engine is healthy and nothing is attached. Reporting this as
+			// not_applicable is what allows the sidebar and Kinetic to agree: the
+			// platform is nominal, and the L7 layer is available rather than failing.
+			coverageStatus = CoverageNotApplicable
+			coverageReason = "L7 engine is healthy; no traffic path is attached and coverage is not required"
+			selfTest = "ready-not-attached"
+		case snap.Coverage == "NO_TRAFFIC_WARNING" || snap.Coverage == "HEALTHY_AWAITING_TRAFFIC" || snap.Coverage == "TLS_NOT_IN_PATH" || snap.Coverage == "READY_NOT_ATTACHED":
+			// Coverage is required, so silence from an attached path is a real fault.
+			coverageStatus, coverageReason, selfTest = CoverageDegraded, snap.CoverageReason, "awaiting-traffic"
 		}
 	}
 	now := time.Now().UTC()
-	cov := SensorCoverage{Name: "l7_application", Layer: LayerApplicationL7, Status: coverageStatus, Required: s.cfg.Enabled, SelfTest: selfTest, CoverageReason: coverageReason}
+	cov := SensorCoverage{Name: "l7_application", Layer: LayerApplicationL7, Status: coverageStatus, Required: coverageRequired, SelfTest: selfTest, CoverageReason: coverageReason}
 	if coverageStatus == CoverageOnline {
 		cov.LastOK = &now
 	} else if coverageStatus == CoverageOffline || coverageStatus == CoverageDegraded {
@@ -631,6 +682,32 @@ func (s *L7Service) publishStatus(healthy bool) {
 	s.state.SetSensorCoverage(cov)
 }
 
+// l7CoverageRequired decides whether an idle L7 engine degrades the platform.
+//
+// Enabling the engine and wiring it into the traffic path are two decisions, and the
+// earlier code treated them as one: `Required: cfg.Enabled` made every enabled engine
+// mandatory, so an operator who turned L7 on before attaching a producer received a
+// permanently degraded platform for a deployment that was simply not finished.
+//
+//	auto     - mandatory once something is actually attached
+//	required - always mandatory
+//	optional - never mandatory
+//
+// An unrecognised mode falls back to auto, which is the conservative reading: it
+// degrades only when a path exists and has gone silent.
+func l7CoverageRequired(mode string, enabled, attached bool) bool {
+	if !enabled {
+		return false
+	}
+	switch mode {
+	case "required":
+		return true
+	case "optional":
+		return false
+	default:
+		return attached
+	}
+}
 func (s *L7Service) Errors() <-chan error { return s.errors }
 
 func (s *L7Service) Shutdown(ctx context.Context) error {

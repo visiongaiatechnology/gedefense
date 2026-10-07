@@ -430,31 +430,17 @@ tbody tr:hover { background: rgba(69, 176, 220, .055); }
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 9px;
 }
-.hardening-control.toggle-row {
-  min-height: 92px;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 16px;
-  padding: 14px 15px;
-  text-align: left;
-  text-transform: none;
-  letter-spacing: normal;
-  border-radius: 11px;
-  background: rgba(3, 12, 23, .46);
-}
-.hardening-control.toggle-row > span {
-  min-width: 0;
-  display: block;
-  text-align: left;
-}
-.hardening-control.toggle-row b {
+/* The .toggle-row variant of the hardening control was removed with the markup that
+   used it: it selected a stretched native checkbox that no longer exists. Its
+   typography now lives on .hardening-control-copy. */
+.hardening-control b {
   color: #eff9ff;
   font-size: .78rem;
   line-height: 1.25;
   letter-spacing: .005em;
 }
-.hardening-control.toggle-row small {
+.hardening-control small {
+  display: block;
   margin-top: 5px;
   color: #849eb2;
   font-size: .66rem;
@@ -462,7 +448,7 @@ tbody tr:hover { background: rgba(69, 176, 220, .055); }
   text-transform: none;
   letter-spacing: 0;
 }
-.hardening-control.toggle-row em {
+.hardening-control em {
   display: inline-flex;
   margin-top: 8px;
   padding: 3px 7px;
@@ -473,21 +459,44 @@ tbody tr:hover { background: rgba(69, 176, 220, .055); }
   letter-spacing: .07em;
   text-transform: uppercase;
 }
-.hardening-control.platform-control { opacity: .70; }
+/* The hardening switch reuses the Fabric Settings switch primitive. The previous rule
+   stretched a bare native checkbox to 42 px, which rendered as a large empty box next
+   to a real switch elsewhere in the same product - two visual languages for one control.
+   The disabled-and-stretched rule is gone with the markup that needed it. */
+.hardening-control > i { display: none; }
+.hardening-control {
+  min-height: 92px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 15px;
+  border: 1px solid rgba(82, 199, 255, .10);
+  border-radius: 11px;
+  background: rgba(3, 12, 23, .46);
+}
+.hardening-control-copy { min-width: 0; display: block; text-align: left; }
+.hardening-control.platform-control { opacity: .72; }
 .hardening-control.runtime-control:hover { border-color: rgba(94, 213, 255, .28); }
-.hardening-control.toggle-row > i { display: none; }
+.hardening-switch { cursor: pointer; }
+/* A control that cannot be administrated at runtime states that in words. An implied
+   reason behind a greyed widget is not an explanation. */
+.hardening-control-locked {
+  padding: 4px 9px;
+  border: 1px dashed rgba(120, 146, 164, .35);
+  border-radius: 7px;
+  color: #7d94a6;
+  font: 600 .56rem/1.3 ui-monospace, SFMono-Regular, Consolas, monospace;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
 .toggle-row {
   flex-direction: row;
   text-transform: none;
   letter-spacing: normal;
 }
 .toggle-row > span { min-width: 0; text-align: left; }
-.toggle-row input[type="checkbox"] {
-  width: 42px;
-  min-width: 42px;
-  padding: 0;
-  margin: 0;
-}
 .hardening-savebar {
   padding-top: 14px;
   border-top: 1px solid rgba(78, 183, 225, .10);
@@ -776,7 +785,7 @@ dialog::backdrop { background: rgba(1, 6, 13, .77); backdrop-filter: blur(12px) 
 .signal-badge { display: inline-flex; padding: 2px 6px; margin: 1px 3px 1px 0; border-radius: 999px; background: rgba(82, 199, 255, .07); border: 1px solid rgba(82, 199, 255, .14); color: #a9def1; font-size: .58rem; }
 .toast-body { line-height: 1.45; }
 .hardening-control-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-.hardening-control.toggle-row .hardening-control-meta em { margin-top: 0; }
+/* The meta pill sits flush inside the control row; the earlier selector required the`n   removed .toggle-row variant and could never match again. */`n.hardening-control .hardening-control-meta em { margin-top: 0; }
 .hardening-control-state {
   display: inline-flex;
   align-items: center;
@@ -1614,7 +1623,18 @@ dialog::backdrop { background: rgba(1, 6, 13, .77); backdrop-filter: blur(12px) 
 }
 
 /* switch */
-.settings-switch { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; }
+.settings-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  /* A label expands its own hit area to the input it names, so the whole row is the
+     control. The track is marked aria-hidden, which keeps the visible state text as
+     the accessible value rather than a decorative span. */
+  user-select: none;
+}
+.settings-switch:hover .settings-switch-track { border-color: rgba(82, 199, 255, .45); }
+.settings-switch:active .settings-switch-track { transform: scale(.97); }
 .settings-switch input { position: absolute; opacity: 0; width: 1px; height: 1px; }
 .settings-switch-track {
   position: relative;
@@ -1970,3 +1990,219 @@ dialog::backdrop { background: rgba(1, 6, 13, .77); backdrop-filter: blur(12px) 
 @media (max-width: 760px) {
   .kinetic-geo-stage, .kinetic-geo-canvas { min-height: 240px; }
 }
+/* ---------------------------------------------------------------------------
+   Kinetic lower grid — event stream width
+   The stream shared a 1fr/1fr grid with the forensic inspector drawer, which is
+   hidden until a row is opened. Half the width therefore sat permanently under an
+   invisible element. The stream now takes the full width while the drawer is
+   closed and, once it opens, keeps the larger share because it carries the times,
+   rules, sources and decisions against the drawer's single chain.
+--------------------------------------------------------------------------- */
+.kinetic-lower-grid { grid-template-columns: minmax(0, 1fr); }
+.kinetic-lower-grid:has(.kinetic-inspector:not([hidden])) {
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+}
+.kinetic-events-wrap { max-height: 420px; overflow: auto; }
+@media (max-width: 1100px) {
+  .kinetic-lower-grid:has(.kinetic-inspector:not([hidden])) { grid-template-columns: minmax(0, 1fr); }
+}
+/* ---------------------------------------------------------------------------
+   Application Defense — traffic path integration
+   The panel exists because detection is not coverage: it states what was observed on
+   the host, what must be applied, and whether a self-test has proven the path.
+--------------------------------------------------------------------------- */
+.l7-integration { margin: 18px 0; padding: 16px 18px; border: 1px solid rgba(82, 199, 255, .16); border-radius: 14px; background: rgba(4, 16, 30, .5); }
+.l7-integration .section-head { align-items: flex-start; gap: 14px; }
+.l7-integration-lead { margin: 6px 0 0; max-width: 78ch; color: var(--muted); font-size: .74rem; line-height: 1.55; }
+.l7-integration-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.l7-integration-actions .button:disabled { opacity: .55; cursor: progress; }
+.l7-selftest { margin-top: 14px; padding: 12px 14px; border-left: 2px solid var(--line-strong); background: rgba(2, 10, 19, .45); border-radius: 0 10px 10px 0; }
+.l7-selftest-head { display: flex; align-items: center; gap: 10px; }
+.l7-selftest-path { color: var(--muted); font-size: .6rem; letter-spacing: .1em; }
+.l7-selftest-line { margin: 8px 0 0; color: var(--text); font-size: .74rem; line-height: 1.5; }
+.l7-selftest-hint { margin: 8px 0 0; color: var(--amber); font-size: .68rem; }
+.l7-selftest-facts { display: grid; grid-template-columns: max-content 1fr; gap: 3px 14px; margin: 10px 0 0; font-size: .68rem; }
+.l7-selftest-facts dt { color: var(--muted); letter-spacing: .04em; }
+.l7-selftest-facts dd { margin: 0; color: var(--text); }
+.l7-integration-result { margin-top: 14px; }
+.l7-integration-detect { padding: 10px 12px; border-radius: 10px; background: rgba(2, 10, 19, .45); }
+.l7-integration-list { margin: 6px 0 0; padding-left: 18px; color: var(--muted); font-size: .7rem; line-height: 1.6; }
+.l7-integration-warning { margin: 10px 0 0; padding: 8px 11px; border-left: 2px solid var(--amber); color: var(--amber); font-size: .7rem; line-height: 1.5; }
+.l7-snippet { margin-top: 10px; border: 1px solid rgba(82, 199, 255, .14); border-radius: 10px; overflow: hidden; }
+.l7-snippet summary { padding: 10px 13px; cursor: pointer; font-size: .74rem; color: var(--text-bright); }
+.l7-snippet summary:hover { background: rgba(82, 199, 255, .06); }
+.l7-snippet[open] summary { border-bottom: 1px solid rgba(82, 199, 255, .12); }
+.l7-snippet-steps { margin: 10px 0; padding-left: 32px; color: var(--muted); font-size: .7rem; line-height: 1.65; }
+.l7-snippet-note { margin: 8px 13px; color: var(--muted); font-size: .68rem; line-height: 1.5; }
+.l7-snippet-body { margin: 10px 0 0; padding: 12px 13px; background: rgba(1, 6, 12, .8); color: var(--text); font-size: .66rem; line-height: 1.55; overflow-x: auto; max-height: 380px; }
+.l7-snippet-actions { padding: 0 13px 12px; }
+.l7-copy-shim { position: absolute; left: -9999px; top: 0; }
+/* ---------------------------------------------------------------------------
+   Kinetic command plane — left stack
+   The map and the reaction stream describe the same traffic from two angles: where it
+   came from and what the engine decided about it. Keeping them in one column fills
+   the height the map alone left empty beside the taller intelligence stack, instead of
+   leaving a void under the map and the stream stranded at the foot of the page.
+--------------------------------------------------------------------------- */
+.kinetic-left-stack {
+  display: grid;
+  /* The map absorbs the remaining height, the stream keeps its natural size. */
+  grid-template-rows: minmax(240px, 1fr) auto;
+  gap: 14px;
+  min-width: 0;
+}
+.kinetic-left-stack .kinetic-map-panel { min-height: 0; }
+/* In this position the stream is a peer of the map rather than the page footer, so it
+   is capped slightly tighter than when it stood alone. */
+.kinetic-left-stack .kinetic-events-wrap { max-height: 340px; }
+@media (max-width: 1100px) {
+  .kinetic-left-stack { grid-template-rows: auto auto; }
+  .kinetic-left-stack .kinetic-events-wrap { max-height: 320px; }
+}
+/* Connection arcs from each source to this host. The library emits `jvm-line` paths
+   but never sets the attribute its own stylesheet animates on, so geo-map.js tags them
+   after creation. `stroke-dasharray` is what makes the dash travel; without it the
+   animation is invisible. */
+.kinetic-geo-canvas .jvm-line[animation="true"] {
+  animation: geo-arc 2.6s linear infinite;
+}
+@keyframes geo-arc {
+  from { stroke-dashoffset: 24; }
+  to   { stroke-dashoffset: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .kinetic-geo-canvas .jvm-line { animation: none; }
+}
+/* ---------------------------------------------------------------------------
+   Authentication boundary
+   Two planes, not a centred card. The split is not styling: the left plane states
+   facts this host can attest before any credential exists, and the right plane holds
+   the one action. Neither plane exists to fill space, so on a narrow viewport the
+   composition is re-decided rather than squeezed - the credential comes first and the
+   attested facts follow it.
+--------------------------------------------------------------------------- */
+.auth-dialog {
+  width: min(760px, calc(100% - 32px));
+  padding: 0;
+  border-radius: 16px;
+  border: 1px solid rgba(82, 199, 255, .16);
+  background: linear-gradient(158deg, rgba(6, 19, 34, .995), rgba(2, 10, 18, .995));
+  /* One shadow, consistent with a surface floating above the dashboard, rather than a
+     per-element glow. */
+  box-shadow: 0 34px 80px -30px rgba(0, 0, 0, .8);
+}
+.auth-dialog::backdrop { background: rgba(1, 5, 10, .72); backdrop-filter: blur(3px); }
+
+.auth-plane { display: grid; grid-template-columns: minmax(0, 1.32fr) minmax(0, 1fr); }
+
+/* Left plane: identity and the attested facts. Separate surface, not a nested card -
+   the tone shift is what marks the boundary between "what this host is" and "what you
+   are about to authorise". */
+.auth-identity {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  padding: 26px 26px 24px;
+  background: linear-gradient(180deg, rgba(9, 28, 48, .6), rgba(4, 14, 26, .3));
+  border-right: 1px solid rgba(82, 199, 255, .1);
+  border-radius: 16px 0 0 16px;
+}
+.auth-mark { display: flex; flex-direction: column; gap: 3px; }
+.auth-sigil { width: 40px; height: 40px; object-fit: contain; margin-bottom: 10px; }
+.auth-wordmark { margin: 0; color: #f2f9ff; font-size: 1.16rem; font-weight: 700; letter-spacing: -.015em; }
+.auth-descriptor { margin: 0; color: #7d99ac; font-size: .64rem; letter-spacing: .14em; text-transform: uppercase; }
+
+/* The facts use the same definition-list grammar as the dashboard telemetry rails, so
+   the login reads as part of the product rather than as a separate page that happens to
+   share a colour. */
+.auth-facts { display: flex; flex-direction: column; gap: 13px; margin: 0; }
+.auth-fact { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 12px; align-items: baseline; }
+.auth-fact dt { color: #6d8ba0; font-size: .58rem; letter-spacing: .13em; text-transform: uppercase; }
+.auth-fact dd { margin: 0; min-width: 0; color: #cfe3f0; font-size: .72rem; line-height: 1.45; overflow-wrap: anywhere; }
+.auth-custody { margin: auto 0 0; padding-top: 16px; border-top: 1px solid rgba(82, 199, 255, .09); color: #7d99ac; font-size: .66rem; line-height: 1.55; }
+
+/* Right plane: the single action. */
+.auth-grant { display: flex; flex-direction: column; gap: 16px; padding: 26px 24px 24px; }
+.auth-title { margin: 0; color: #f2f9ff; font-size: .92rem; font-weight: 680; letter-spacing: -.005em; }
+.auth-form { display: flex; flex-direction: column; gap: 14px; }
+.auth-field { display: flex; flex-direction: column; gap: 7px; }
+.auth-label { color: #8aa6ba; font-size: .6rem; letter-spacing: .12em; text-transform: uppercase; }
+.auth-field input { width: 100%; }
+
+/* The state line reserves its own height so a rejection does not shift the button out
+   from under the pointer that just clicked it. */
+.auth-state { margin: 0; min-height: 2.4em; color: #8aa6ba; font-size: .69rem; line-height: 1.5; }
+.auth-state[data-state="pending"] { color: #8aa6ba; }
+.auth-state[data-state="rejected"] { color: var(--red); }
+.auth-state[data-state="unreachable"] { color: var(--amber); }
+.auth-state[data-state="accepted"] { color: var(--green); }
+
+.auth-actions { display: flex; flex-direction: column; gap: 10px; align-items: stretch; }
+.auth-submit { width: 100%; }
+.auth-submit[aria-busy="true"] { opacity: .6; cursor: progress; }
+/* The escape hatch is deliberately quiet: it is not an action of equal weight, and an
+   operator who cannot present a key is not the failure this screen is about. */
+.auth-dismiss {
+  align-self: center;
+  padding: 4px 6px;
+  border: 0;
+  background: none;
+  color: #6d8ba0;
+  font: inherit;
+  font-size: .66rem;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.auth-dismiss:hover { color: #a8c4d6; }
+.auth-dismiss:focus-visible { outline: 2px solid var(--primary-ice); outline-offset: 2px; border-radius: 4px; }
+
+/* Narrow: the composition is re-decided, not compressed. The credential leads because
+   that is the task; the attested facts follow it as reference. */
+@media (max-width: 720px) {
+  .auth-plane { grid-template-columns: minmax(0, 1fr); }
+  .auth-identity {
+    order: 2;
+    gap: 16px;
+    padding: 20px 22px 22px;
+    border-right: 0;
+    border-top: 1px solid rgba(82, 199, 255, .1);
+    border-radius: 0 0 16px 16px;
+  }
+  .auth-grant { order: 1; padding: 22px 22px 18px; }
+  .auth-fact { grid-template-columns: 84px minmax(0, 1fr); gap: 10px; }
+}
+/* Coverage line beside the hardening score. A level is a claim; this states the basis
+   it rests on, and marks a capped claim as capped rather than presenting it as equal. */
+.hardening-coverage { margin: 6px 0 0; color: #7d94a6; font-size: .66rem; line-height: 1.5; }
+.hardening-coverage[data-sufficient="no"] { color: var(--amber); }
+/* Emergency stop in the context bar.
+   It is a state control, not a workflow step, so it is separated from the phase buttons.
+   Rendered as an outlined warning rather than a solid red fill: in a security product a
+   saturated red surface is reserved for a condition that is already active, and a
+   permanent one next to the primary action spends that signal on nothing. */
+.button-emergency {
+  padding: 7px 13px;
+  border: 1px solid rgba(255, 100, 124, .42);
+  border-radius: 9px;
+  background: rgba(255, 100, 124, .07);
+  color: #ff9bad;
+  font-size: .62rem;
+  font-weight: 750;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.button-emergency:hover { background: rgba(255, 100, 124, .15); border-color: rgba(255, 100, 124, .65); color: #ffc2cb; }
+.button-emergency:focus-visible { outline: 2px solid #ff647c; outline-offset: 2px; }
+.view-context-actions { display: flex; align-items: center; gap: 10px; }
+/* Control-plane lifecycle surface. A restart is disruptive, so it is laid out as one
+   row: the justification the audit log needs, then the action. The state line reserves
+   its height so a refusal does not move the button out from under the pointer that just
+   clicked it. */
+.restart-surface { display: flex; align-items: flex-end; gap: 14px; flex-wrap: wrap; }
+.restart-surface .flex-1 { min-width: 260px; }
+.restart-state { margin: 0; min-height: 2.4em; color: #8aa6ba; font-size: .69rem; line-height: 1.5; }
+.restart-state[data-state="pending"] { color: #8aa6ba; }
+.restart-state[data-state="accepted"] { color: var(--green); }
+.restart-state[data-state="rejected"] { color: var(--red); }

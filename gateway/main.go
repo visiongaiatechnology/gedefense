@@ -339,9 +339,19 @@ func (g *gateway) livez(w http.ResponseWriter, _ *http.Request) {
 }
 func (g *gateway) version(w http.ResponseWriter, _ *http.Request) { fmt.Fprintln(w, version) }
 
+// loginCopy carries every operator-visible string. The attested facts are part of it
+// because they are content, not decoration: each one is something this gateway can prove
+// about itself before any credential is presented, and an operator reading a trust
+// boundary deserves to read it in their own language.
 type loginCopy struct {
-	SecurePlane, Title, Intro, Failed, PasswordLabel, Submit string
-	Support, SupportIntro, HostLabel, Footer                 string
+	// Identity and the single action.
+	ProductSub, Title, Intro, Failed, PasswordLabel, Submit string
+	// Attested facts, in the order a trust decision needs them.
+	FactsHeading, HostLabel, HostNote                   string
+	ChannelLabel, ChannelTLS, ChannelPlain, ChannelNote string
+	GrantLabel, GrantValue, CustodyLabel, CustodyValue  string
+	// Reference material.
+	Support, SupportIntro, Footer string
 }
 
 func validLanguage(value string) string {
@@ -384,35 +394,66 @@ func copyForLanguage(lang string) loginCopy {
 	switch lang {
 	case "en":
 		return loginCopy{
-			SecurePlane: "SOVEREIGN SECURITY CONTROL PLANE", Title: "Operator access",
-			Intro: "Authenticate to control the local Rust/XDP and XDR defense stack.", Failed: "Authentication failed.",
-			PasswordLabel: "Operator password", Submit: "Open Command Center", Support: "Support VisionGaiaTechnology",
-			SupportIntro: "GeDefense is developed independently. Your support funds sovereign open-source security.", HostLabel: "Protected node", Footer: "Local processing · No cloud dependency · Zero external assets",
+			ProductSub: "Security Fabric Gateway", Title: "Operator access",
+			Intro: "Prove your identity to reach the control plane on this node.", Failed: "Authentication failed. The attempt was recorded.",
+			PasswordLabel: "Operator password", Submit: "Open the control plane",
+			FactsHeading: "Attested at this boundary",
+			HostLabel:    "Node", HostNote: "The address this gateway answers on.",
+			ChannelLabel: "Channel", ChannelTLS: "TLS, certificate verified", ChannelPlain: "unencrypted transport",
+			ChannelNote: "The transport this page was served over.",
+			GrantLabel:  "Grants", GrantValue: "Control-plane access for this session, scoped to the actions your role allows.",
+			CustodyLabel: "Custody", CustodyValue: "The session lives in a cookie on this host only. Nothing is sent to a third party.",
+			Support:      "Support VisionGaiaTechnology",
+			SupportIntro: "GeDefense is developed independently. Your support funds sovereign open-source security.",
+			Footer:       "Local processing · No cloud dependency · No external assets",
 		}
 	case "ru":
 		return loginCopy{
-			SecurePlane: "СУВЕРЕННЫЙ ЦЕНТР УПРАВЛЕНИЯ ЗАЩИТОЙ", Title: "Доступ оператора",
-			Intro: "Авторизуйтесь для управления локальным стеком защиты Rust/XDP и XDR.", Failed: "Ошибка авторизации.",
-			PasswordLabel: "Пароль оператора", Submit: "Открыть центр управления", Support: "Поддержать VisionGaiaTechnology",
-			SupportIntro: "GeDefense развивается независимо. Поддержка финансирует суверенную безопасность с открытым кодом.", HostLabel: "Защищённый узел", Footer: "Локальная обработка · Без облака · Без внешних ресурсов",
+			ProductSub: "Шлюз безопасности", Title: "Доступ оператора",
+			Intro: "Подтвердите личность для доступа к центру управления на этом узле.", Failed: "Ошибка авторизации. Попытка зафиксирована.",
+			PasswordLabel: "Пароль оператора", Submit: "Открыть центр управления",
+			FactsHeading: "Подтверждено на этой границе",
+			HostLabel:    "Узел", HostNote: "Адрес, на котором отвечает этот шлюз.",
+			ChannelLabel: "Канал", ChannelTLS: "TLS, сертификат проверен", ChannelPlain: "незашифрованный канал",
+			ChannelNote: "Транспорт, по которому отдана эта страница.",
+			GrantLabel:  "Права", GrantValue: "Доступ к центру управления на время сессии, в пределах вашей роли.",
+			CustodyLabel: "Хранение", CustodyValue: "Сессия хранится в cookie только на этом узле. Данные не передаются третьим лицам.",
+			Support:      "Поддержать VisionGaiaTechnology",
+			SupportIntro: "GeDefense развивается независимо. Поддержка финансирует суверенную безопасность с открытым кодом.",
+			Footer:       "Локальная обработка · Без облака · Без внешних ресурсов",
 		}
 	case "zh", "zh-CN", "zh-cn":
 		return loginCopy{
-			SecurePlane: "主权安全控制平面", Title: "操作员访问",
-			Intro: "验证身份以控制本地 Rust/XDP 和 XDR 防御体系。", Failed: "身份验证失败。",
-			PasswordLabel: "操作员密码", Submit: "打开控制中心", Support: "支持 VisionGaiaTechnology",
-			SupportIntro: "GeDefense 独立开发。您的支持将资助主权开源安全。", HostLabel: "受保护节点", Footer: "本地处理 · 无云依赖 · 零外部资产",
+			ProductSub: "安全网关", Title: "操作员访问",
+			Intro: "验证身份以访问本节点上的控制平面。", Failed: "身份验证失败。本次尝试已被记录。",
+			PasswordLabel: "操作员密码", Submit: "打开控制平面",
+			FactsHeading: "此边界已确认的事实",
+			HostLabel:    "节点", HostNote: "此网关应答的地址。",
+			ChannelLabel: "通道", ChannelTLS: "TLS，证书已验证", ChannelPlain: "未加密传输",
+			ChannelNote: "提供此页面所用的传输方式。",
+			GrantLabel:  "权限", GrantValue: "本次会话可访问控制平面，范围限于你角色允许的操作。",
+			CustodyLabel: "存储", CustodyValue: "会话仅保存在本节点的 Cookie 中，不会发送给第三方。",
+			Support:      "支持 VisionGaiaTechnology",
+			SupportIntro: "GeDefense 独立开发。您的支持将资助主权开源安全。",
+			Footer:       "本地处理 · 无云依赖 · 零外部资产",
 		}
 	default:
 		return loginCopy{
-			SecurePlane: "SOUVERÄNE SECURITY CONTROL PLANE", Title: "Operator-Zugang",
-			Intro: "Authentifiziere dich zur Steuerung des lokalen Rust/XDP- und XDR-Verteidigungsstacks.", Failed: "Anmeldung fehlgeschlagen.",
-			PasswordLabel: "Operator-Passwort", Submit: "Command Center öffnen", Support: "VisionGaiaTechnology unterstützen",
-			SupportIntro: "GeDefense wird unabhängig entwickelt. Deine Unterstützung finanziert souveräne Open-Source-Sicherheit.", HostLabel: "Geschützter Knoten", Footer: "Lokale Verarbeitung · Keine Cloud-Abhängigkeit · Keine externen Assets",
+			ProductSub: "Security Fabric Gateway", Title: "Operator-Zugang",
+			Intro: "Weise dich aus, um die Control Plane auf diesem Knoten zu erreichen.", Failed: "Anmeldung fehlgeschlagen. Der Versuch wurde aufgezeichnet.",
+			PasswordLabel: "Operator-Passwort", Submit: "Control Plane öffnen",
+			FactsHeading: "An dieser Grenze belegt",
+			HostLabel:    "Knoten", HostNote: "Die Adresse, auf der dieses Gateway antwortet.",
+			ChannelLabel: "Kanal", ChannelTLS: "TLS, Zertifikat geprüft", ChannelPlain: "unverschlüsselt",
+			ChannelNote: "Der Transport, über den diese Seite ausgeliefert wurde.",
+			GrantLabel:  "Umfang", GrantValue: "Zugang zur Control Plane für diese Sitzung, begrenzt auf die Aktionen deiner Rolle.",
+			CustodyLabel: "Verwahrung", CustodyValue: "Die Sitzung liegt in einem Cookie ausschließlich auf diesem Knoten. Nichts geht an Dritte.",
+			Support:      "VisionGaiaTechnology unterstützen",
+			SupportIntro: "GeDefense wird unabhängig entwickelt. Deine Unterstützung finanziert souveräne Open-Source-Sicherheit.",
+			Footer:       "Lokale Verarbeitung · Keine Cloud-Abhängigkeit · Keine externen Assets",
 		}
 	}
 }
-
 func (g *gateway) loginPage(w http.ResponseWriter, r *http.Request) {
 	if g.validSession(r) {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
@@ -436,7 +477,11 @@ func (g *gateway) loginPage(w http.ResponseWriter, r *http.Request) {
 		CSRF, Nonce, Host, Lang, ProductVersion string
 		Copy                                    loginCopy
 		Failed                                  bool
-	}{CSRF: csrf, Nonce: nonce, Host: g.publicHost, Lang: lang, ProductVersion: strings.TrimSuffix(version, "-access"), Copy: copyForLanguage(lang), Failed: r.URL.Query().Get("failed") == "1"}
+		// Secure reports the transport this page was actually served over. The page
+		// states what it observed rather than asserting a policy, because a claim about
+		// TLS that is not read from the connection is worth nothing at a trust boundary.
+		Secure bool
+	}{CSRF: csrf, Nonce: nonce, Host: g.publicHost, Lang: lang, ProductVersion: strings.TrimSuffix(version, "-access"), Copy: copyForLanguage(lang), Failed: r.URL.Query().Get("failed") == "1", Secure: r.TLS != nil}
 	if err := loginTemplate.Execute(w, data); err != nil {
 		log.Printf("login template: %v", err)
 	}
@@ -856,7 +901,23 @@ var loginTemplate = template.Must(template.New("login").Parse(`<!doctype html>
 <html lang="{{.Lang}}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="dark"><meta name="theme-color" content="#05090f">
 <title>GeDefense {{.ProductVersion}} · VisionGaiaTechnology</title><style nonce="{{.Nonce}}">
-:root{color-scheme:dark;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;--bg:#05090f;--panel:rgba(9,17,27,.94);--line:rgba(123,215,255,.16);--cyan:#6ee7ff;--green:#42ffd1;--muted:#7893a4;--text:#edfaff;--red:#ff647c}*{box-sizing:border-box}html,body{min-height:100%}body{margin:0;min-height:100vh;background:radial-gradient(circle at 14% 18%,rgba(31,168,215,.13),transparent 28%),radial-gradient(circle at 86% 74%,rgba(21,255,187,.09),transparent 30%),var(--bg);color:var(--text);overflow-x:hidden}body:before{content:"";position:fixed;inset:0;pointer-events:none;background:linear-gradient(rgba(94,217,255,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(94,217,255,.035) 1px,transparent 1px);background-size:42px 42px;mask-image:radial-gradient(circle at center,#000,transparent 84%)}.shell{width:min(1180px,calc(100% - 32px));min-height:min(760px,calc(100vh - 48px));margin:24px auto;display:grid;grid-template-columns:minmax(0,1.08fr) minmax(390px,.72fr);border:1px solid var(--line);border-radius:28px;overflow:hidden;background:rgba(5,10,16,.78);box-shadow:0 44px 140px rgba(0,0,0,.62),inset 0 1px rgba(255,255,255,.025);backdrop-filter:blur(22px)}.visual{position:relative;padding:54px;display:flex;flex-direction:column;justify-content:space-between;min-height:650px;border-right:1px solid var(--line);overflow:hidden}.visual:after{content:"";position:absolute;width:420px;height:420px;right:-90px;bottom:-120px;border:1px solid rgba(110,231,255,.16);border-radius:50%;box-shadow:0 0 0 44px rgba(110,231,255,.025),0 0 0 88px rgba(66,255,209,.018),inset 0 0 80px rgba(110,231,255,.06)}.brand{display:flex;align-items:center;gap:15px;position:relative;z-index:1}.mark{width:48px;height:48px;position:relative;border:1px solid rgba(110,231,255,.7);transform:rotate(45deg);box-shadow:0 0 30px rgba(110,231,255,.2);border-radius:8px}.mark:before,.mark:after{content:"";position:absolute;inset:9px;border:1px solid rgba(66,255,209,.45);border-radius:50%}.mark:after{inset:18px;background:var(--green);border:0;box-shadow:0 0 22px var(--green)}.brand strong{display:block;font-size:1.08rem;letter-spacing:.01em}.brand small{display:block;color:var(--muted);font-size:.7rem;margin-top:4px}.hero{position:relative;z-index:1;max-width:650px}.eyebrow{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;color:var(--cyan);font-size:.7rem;letter-spacing:.17em;font-weight:800}.hero h1{font-size:clamp(2.6rem,5vw,5.3rem);line-height:.96;margin:16px 0 24px;letter-spacing:-.055em}.hero h1 span{display:block;color:transparent;-webkit-text-stroke:1px rgba(110,231,255,.55)}.hero p{max-width:580px;color:#9bb2bf;line-height:1.75;font-size:.96rem}.stack{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;position:relative;z-index:1}.stack div{border:1px solid var(--line);background:rgba(7,15,23,.55);border-radius:14px;padding:15px}.stack b{display:block;font-size:.72rem;color:var(--green);letter-spacing:.08em}.stack span{display:block;color:var(--muted);font-size:.68rem;margin-top:5px}.access{padding:42px;display:flex;flex-direction:column;justify-content:center;background:linear-gradient(145deg,rgba(12,22,34,.92),rgba(6,12,18,.96))}.lang{display:flex;gap:7px;justify-content:flex-end;margin-bottom:34px}.lang a{color:var(--muted);text-decoration:none;border:1px solid var(--line);border-radius:9px;padding:7px 10px;font-size:.66rem;font-weight:800}.lang a.active,.lang a:hover{color:var(--cyan);border-color:rgba(110,231,255,.45);background:rgba(110,231,255,.06)}.access .eyebrow{margin:0}.access h2{font-size:2rem;margin:10px 0 12px;letter-spacing:-.03em}.intro{color:#91a7b4;line-height:1.65;margin:0 0 28px}.error{padding:12px 13px;margin-bottom:18px;border:1px solid rgba(255,100,124,.38);background:rgba(255,100,124,.08);border-radius:11px;color:#ff9bad;font-size:.82rem}label{display:block;color:#dfeef3;font-size:.76rem;font-weight:700;margin-bottom:9px}input{width:100%;height:54px;border-radius:12px;border:1px solid #243846;background:#071019;color:white;padding:0 15px;font-size:1rem;outline:none}input:focus{border-color:var(--cyan);box-shadow:0 0 0 3px rgba(110,231,255,.1)}button{width:100%;height:54px;border:1px solid rgba(66,255,209,.55);border-radius:12px;margin-top:16px;background:linear-gradient(135deg,#37e9bd,#68f7d5);color:#03120e;font-size:.84rem;font-weight:900;letter-spacing:.035em;cursor:pointer;box-shadow:0 14px 35px rgba(34,255,193,.12)}button:hover{filter:brightness(1.07);transform:translateY(-1px)}.node{margin-top:20px;padding:13px 14px;border:1px solid var(--line);border-radius:12px;background:rgba(4,10,15,.48)}.node span{display:block;color:var(--muted);text-transform:uppercase;font-size:.59rem;letter-spacing:.12em}.node code{display:block;color:var(--cyan);margin-top:7px;font-size:.73rem;word-break:break-all}.support{margin-top:14px;border:1px solid var(--line);border-radius:12px;background:rgba(4,10,15,.42)}.support summary{cursor:pointer;padding:14px;color:#b9d2de;font-size:.75rem;font-weight:800;list-style:none}.support summary::-webkit-details-marker{display:none}.support summary:after{content:"+";float:right;color:var(--cyan)}.support[open] summary:after{content:"−"}.support-body{border-top:1px solid var(--line);padding:14px}.support-body p{font-size:.7rem;color:var(--muted);line-height:1.55;margin:0 0 12px}.support-grid{display:grid;gap:8px}.support-grid a,.support-grid div{display:grid;grid-template-columns:62px 1fr;gap:8px;color:#b9ccd5;text-decoration:none;font-size:.62rem}.support-grid b{color:var(--green)}.support-grid code{overflow-wrap:anywhere;color:#7fa3b5}.footer{margin-top:22px;text-align:center;color:#5f7684;font-size:.6rem;line-height:1.5}.version{color:var(--cyan);font-family:ui-monospace,SFMono-Regular,Consolas,monospace}@media(max-width:850px){.shell{grid-template-columns:1fr}.visual{min-height:360px;padding:34px;border-right:0;border-bottom:1px solid var(--line)}.hero h1{font-size:3rem}.stack{display:none}.access{padding:34px}}@media(max-width:520px){.shell{width:min(100% - 18px,1180px);margin:9px auto;border-radius:20px}.visual{min-height:290px;padding:25px}.hero h1{font-size:2.45rem}.hero p{font-size:.82rem}.access{padding:26px}.lang{margin-bottom:25px}}@media(prefers-reduced-motion:reduce){*{transition:none!important}}
-</style></head><body><main class="shell"><section class="visual"><div class="brand"><div class="mark" aria-hidden="true"></div><div><strong>GeDefense</strong><small>powered by VisionGaiaTechnology · <span class="version">{{.ProductVersion}}</span></small></div></div><div class="hero"><p class="eyebrow">{{.Copy.SecurePlane}}</p><h1>Host defense.<span>At kernel speed.</span></h1><p>Rust XDP · Linux XDR · AES-256-GCM · Pinned TLS 1.3 · PQ hybrid when supported</p></div><div class="stack"><div><b>KERNEL</b><span>eBPF / XDP</span></div><div><b>RESPONSE</b><span>Rust Core / pidfd</span></div><div><b>CONTROL</b><span>Go / Same-Origin</span></div></div></section><section class="access"><nav class="lang" aria-label="Language"><a href="/login?lang=de" class="{{if eq .Lang "de"}}active{{end}}">DE</a><a href="/login?lang=en" class="{{if eq .Lang "en"}}active{{end}}">EN</a><a href="/login?lang=ru" class="{{if eq .Lang "ru"}}active{{end}}">RU</a><a href="/login?lang=zh-CN" class="{{if or (eq .Lang "zh") (eq .Lang "zh-CN")}}active{{end}}">ZH</a></nav><p class="eyebrow">GEDEFENSE {{.ProductVersion}}</p><h2>{{.Copy.Title}}</h2><p class="intro">{{.Copy.Intro}}</p>{{if .Failed}}<div class="error" role="alert">{{.Copy.Failed}}</div>{{end}}<form method="post" action="/login"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="lang" value="{{.Lang}}"><label for="password">{{.Copy.PasswordLabel}}</label><input id="password" name="password" type="password" autocomplete="current-password" minlength="12" maxlength="1024" required autofocus><button type="submit">{{.Copy.Submit}}</button></form><div class="node"><span>{{.Copy.HostLabel}}</span><code>{{.Host}}</code></div><details class="support"><summary>{{.Copy.Support}}</summary><div class="support-body"><p>{{.Copy.SupportIntro}}</p><div class="support-grid"><a href="https://paypal.me/dergoldenelotus" rel="noreferrer noopener"><b>PayPal</b><code>paypal.me/dergoldenelotus</code></a><div><b>Bitcoin</b><code>bc1q3ue5gq822tddmkdrek79adlkm36fatat3lz0dm</code></div><div><b>ETH</b><code>0xD37DEfb09e07bD775EaaE9ccDaFE3a5b2348Fe85</code></div><div><b>USDT</b><code>ERC-20 · 0xD37DEfb09e07bD775EaaE9ccDaFE3a5b2348Fe85</code></div></div></div></details><div class="footer">{{.Copy.Footer}}<br>GeDefense powered by VisionGaiaTechnology</div></section></main></body></html>`))
+:root{color-scheme:dark;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;--bg:#04080d;--plane:#070f17;--rail:rgba(126,196,232,.12);--ice:#6ee7ff;--text:#e9f5fb;--muted:#7d95a6;--dim:#5b7183;--red:#ff647c;--amber:#f4c76a;--green:#37d9ae;--radius-panel:16px;--radius-control:10px}*{box-sizing:border-box}html,body{height:100%}body{margin:0;background-color:var(--bg);color:var(--text);font-size:16px;background-image:radial-gradient(130% 100% at 6% 0%,rgba(22,70,99,.26),transparent 58%);-webkit-font-smoothing:antialiased}/* Full-bleed two-plane canvas rather than a centred rounded card floating on a gradient.   The composition is the page: one plane states what this gateway can attest before any   credential exists, the other holds the single action. There is no decorative grid, no   glow and no ambient motion, because none of those would answer a question an operator   has at an authentication boundary. */.shell{min-height:100vh;display:grid;grid-template-columns:minmax(0,1fr) minmax(360px,468px)}.plane{display:flex;flex-direction:column;padding:clamp(26px,4vw,58px)}.attest{background:linear-gradient(180deg,rgba(9,20,30,.66),rgba(5,11,17,.16))}
+/* The brand sits at the top and the facts occupy the space below it as one block. The
+   plane previously pushed them to opposite ends of the viewport, which left a dead band
+   between them and read as two unrelated groups rather than one column. */
+.facts{margin-top:auto;margin-bottom:auto}
+/* The product statement closes the identity column. It sat under the support accordion
+   on the action plane, where it belonged to nothing; it is a property of this gateway,
+   so it belongs with the facts about this gateway, and it gives the column a foot. */
+.attest-foot{margin:0;color:var(--dim);font-size:.68rem;letter-spacing:.02em}.act{border-left:1px solid var(--rail);background:var(--plane);gap:0}
+.act-body{margin:auto 0;padding:34px 0}
+.act-foot{margin-top:auto}/* Identity. The mark and the wordmark, and nothing competing with them. *//* The mark at signature size. Brand identity is one of the functions an element may
+   serve, and it is served here as a first-class element on the identity plane rather
+   than as a ghost behind the content: a faint oversized watermark would be wallpaper,
+   which is the one thing a background must not be. */
+.brand{display:flex;align-items:center;gap:18px}.mark{width:58px;height:58px;flex:0 0 58px;border:1px solid rgba(110,231,255,.5);border-radius:15px;transform:rotate(45deg);position:relative}.mark:before{content:"";position:absolute;inset:19px;border-radius:50%;background:var(--green)}.brand strong{display:block;font-size:1.3rem;font-weight:690;letter-spacing:-.02em}.brand small{display:block;color:var(--dim);font-size:.74rem;margin-top:5px}/* Attested facts, in the same definition-list grammar as the control plane's telemetry   rails. Reusing that grammar is the point: the gateway and the dashboard read as one   product rather than two interfaces that happen to share a colour. *//* The measure uses the plane instead of floating inside it. The column was 620px wide in
+   a 1324px plane, which is what made the space read as unused rather than as air. */
+.facts{display:flex;flex-direction:column;gap:24px;max-width:820px}.facts h2{margin:0;color:var(--dim);font-size:.6rem;font-weight:700;letter-spacing:.16em;text-transform:uppercase}.facts dl{display:flex;flex-direction:column;gap:16px;margin:0}.fact{display:grid;grid-template-columns:124px minmax(0,1fr);gap:20px;align-items:baseline}.fact dt{color:var(--dim);font-size:.6rem;font-weight:700;letter-spacing:.13em;text-transform:uppercase}.fact dd{margin:0;min-width:0;font-size:.92rem;line-height:1.55}.fact dd small{display:block;color:var(--muted);font-size:.7rem;margin-top:4px;line-height:1.45}/* Monospace carries the one technical identifier, not the whole page. */.fact code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:.82rem;color:var(--ice);overflow-wrap:anywhere}/* The channel states its verdict in words as well; colour alone would exclude anybody   who cannot separate the two hues. */.fact dd[data-channel="secure"]{color:var(--green)}.fact dd[data-channel="plain"]{color:var(--amber)}/* The action plane. One job, one control, one primary button. */.lang{display:flex;gap:6px;justify-content:flex-end;margin:0 0 28px}.lang a{color:var(--dim);text-decoration:none;border:1px solid transparent;border-radius:7px;padding:6px 9px;font-size:.64rem;font-weight:700;letter-spacing:.06em}.lang a:hover{color:var(--text);border-color:var(--rail)}.lang a.active{color:var(--ice);border-color:rgba(110,231,255,.4);background:rgba(110,231,255,.07)}.lang a:focus-visible{outline:2px solid var(--ice);outline-offset:2px}.act h1{margin:0;font-size:1.5rem;font-weight:660;letter-spacing:-.025em}.act .intro{margin:9px 0 0;color:var(--muted);font-size:.83rem;line-height:1.6}form{display:flex;flex-direction:column;gap:14px;margin:24px 0 0}.field{display:flex;flex-direction:column;gap:8px}label{color:var(--muted);font-size:.6rem;font-weight:700;letter-spacing:.13em;text-transform:uppercase}input{width:100%;height:50px;border-radius:var(--radius-control);border:1px solid #223441;background:#061019;color:var(--text);padding:0 14px;font-size:.95rem;font-family:inherit}input:focus{border-color:var(--ice);box-shadow:0 0 0 3px rgba(110,231,255,.12);outline:none}/* The ice accent carries the primary action. Green is reserved for state - using it   here would spend the strongest signal in a security product on "click me". */button{height:50px;border:1px solid rgba(110,231,255,.5);border-radius:var(--radius-control);background:linear-gradient(180deg,rgba(110,231,255,.17),rgba(110,231,255,.09));color:#dff7ff;font-family:inherit;font-size:.82rem;font-weight:700;letter-spacing:.02em;cursor:pointer}button:hover{background:linear-gradient(180deg,rgba(110,231,255,.24),rgba(110,231,255,.13))}button:focus-visible{outline:2px solid var(--ice);outline-offset:2px}button:active{transform:translateY(1px)}/* Failure states say what happened and stay where the action is. */.error{padding:11px 13px;border:1px solid rgba(255,100,124,.38);background:rgba(255,100,124,.08);border-radius:var(--radius-control);color:#ff9bad;font-size:.8rem;line-height:1.5}/* Support is reference material and is disclosed on demand, not competing with the   single action. */.support{margin:36px 0 0;border-top:1px solid var(--rail);padding-top:16px}.support summary{cursor:pointer;color:var(--muted);font-size:.74rem;font-weight:650;list-style:none}.support summary::-webkit-details-marker{display:none}.support summary:after{content:"+";float:right;color:var(--ice)}.support[open] summary:after{content:"\2212"}.support summary:focus-visible{outline:2px solid var(--ice);outline-offset:3px;border-radius:5px}.support-body{padding-top:13px}.support-body p{margin:0 0 12px;color:var(--muted);font-size:.72rem;line-height:1.55}.support-grid{display:grid;gap:8px}.support-grid a,.support-grid div{display:grid;grid-template-columns:62px 1fr;gap:9px;color:#b9ccd5;text-decoration:none;font-size:.66rem}.support-grid a:hover code{color:var(--text)}.support-grid b{color:var(--ice);font-weight:650}.support-grid code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;overflow-wrap:anywhere;color:#7fa3b5}/* Narrow: the composition is re-decided, not compressed. The credential comes first   because that is the task; the attested facts follow as the reference they are. */@media(max-width:900px){.shell{grid-template-columns:1fr}.act{order:1;border-left:0;border-bottom:1px solid var(--rail);padding-bottom:34px}.attest{order:2;gap:34px;padding-top:34px}.fact{grid-template-columns:92px minmax(0,1fr);gap:13px}}@media(max-width:520px){.plane{padding:22px}.fact{grid-template-columns:1fr;gap:3px}.act h1{font-size:1.3rem}}@media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style></head><body><main class="shell"><section class="plane attest"><div class="brand"><div class="mark" aria-hidden="true"></div><div><strong>GeDefense</strong><small>{{.Copy.ProductSub}} · {{.ProductVersion}}</small></div></div><div class="facts"><h2>{{.Copy.FactsHeading}}</h2><dl><div class="fact"><dt>{{.Copy.HostLabel}}</dt><dd><code>{{.Host}}</code><small>{{.Copy.HostNote}}</small></dd></div><div class="fact"><dt>{{.Copy.ChannelLabel}}</dt><dd data-channel="{{if .Secure}}secure{{else}}plain{{end}}">{{if .Secure}}{{.Copy.ChannelTLS}}{{else}}{{.Copy.ChannelPlain}}{{end}}<small>{{.Copy.ChannelNote}}</small></dd></div><div class="fact"><dt>{{.Copy.GrantLabel}}</dt><dd>{{.Copy.GrantValue}}</dd></div><div class="fact"><dt>{{.Copy.CustodyLabel}}</dt><dd>{{.Copy.CustodyValue}}</dd></div></dl></div><p class="attest-foot">{{.Copy.Footer}}</p></section><section class="plane act"><nav class="lang" aria-label="Language"><a href="/login?lang=de" class="{{if eq .Lang "de"}}active{{end}}">DE</a><a href="/login?lang=en" class="{{if eq .Lang "en"}}active{{end}}">EN</a><a href="/login?lang=ru" class="{{if eq .Lang "ru"}}active{{end}}">RU</a><a href="/login?lang=zh-CN" class="{{if or (eq .Lang "zh") (eq .Lang "zh-CN")}}active{{end}}">ZH</a></nav><div class="act-body"><h1>{{.Copy.Title}}</h1><p class="intro">{{.Copy.Intro}}</p>{{if .Failed}}<div class="error" role="alert">{{.Copy.Failed}}</div>{{end}}<form method="post" action="/login"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="lang" value="{{.Lang}}"><div class="field"><label for="password">{{.Copy.PasswordLabel}}</label><input id="password" name="password" type="password" autocomplete="current-password" minlength="12" maxlength="1024" required autofocus></div><button type="submit">{{.Copy.Submit}}</button></form></div><div class="act-foot"><details class="support"><summary>{{.Copy.Support}}</summary><div class="support-body"><p>{{.Copy.SupportIntro}}</p><div class="support-grid"><a href="https://paypal.me/dergoldenelotus" rel="noreferrer noopener"><b>PayPal</b><code>paypal.me/dergoldenelotus</code></a><div><b>Bitcoin</b><code>bc1q3ue5gq822tddmkdrek79adlkm36fatat3lz0dm</code></div><div><b>ETH</b><code>0xD37DEfb09e07bD775EaaE9ccDaFE3a5b2348Fe85</code></div><div><b>USDT</b><code>ERC-20 · 0xD37DEfb09e07bD775EaaE9ccDaFE3a5b2348Fe85</code></div></div></div></details></div></section></main></body></html>`))
 
 // These wrappers are defined in crypto_helpers.go to keep imports explicit.

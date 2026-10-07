@@ -78,7 +78,7 @@ extract_and_verify_payload(){
   archive="$WORK/source.tar.gz"
   tail -n +"$marker" "$SELF" > "$archive"
   actual=$(sha256sum "$archive" | awk '{print $1}')
-  [[ $actual == "$PAYLOAD_SHA256" ]] || fail "Embedded payload checksum mismatch (expected: $PAYLOAD_SHA256, got: $actual)."
+  [[ $actual == "$PAYLOAD_SHA256" ]] || fail "Embedded payload checksum mismatch."
   mkdir -p "$WORK/source"
   safe_extract "$archive" "$WORK/source"
   SOURCE_ROOT="$WORK/source"
@@ -192,6 +192,12 @@ make_inner_payload(){
   install -m 0644 "$SOURCE_ROOT/packaging/tmpfiles/vgt-gedefense-l7.conf" "$payload/tmpfiles/vgt-gedefense-l7.conf"
   install -m 0644 "$SOURCE_ROOT/gedefense.toml" "$payload/templates/gedefense.toml"
   install -m 0644 "$SOURCE_ROOT/malware-hashes.sha256" "$payload/templates/malware-hashes.sha256"
+  if [[ -f "$SOURCE_ROOT/geoip.csv" ]]; then
+    install -m 0644 "$SOURCE_ROOT/geoip.csv" "$payload/templates/geoip.csv"
+  fi
+  if [[ -f "$SOURCE_ROOT/geoip.csv.sha256" ]]; then
+    install -m 0644 "$SOURCE_ROOT/geoip.csv.sha256" "$payload/templates/geoip.csv.sha256"
+  fi
   install -m 0755 "$SOURCE_ROOT/integration/linux/gedefense-app" "$payload/integration/linux/gedefense-app"
   install -m 0755 "$SOURCE_ROOT/integration/linux/gedefense-ensure-ready" "$payload/integration/linux/gedefense-ensure-ready"
   install -m 0644 "$SOURCE_ROOT/integration/linux/gedefense.desktop" "$payload/integration/linux/gedefense.desktop"

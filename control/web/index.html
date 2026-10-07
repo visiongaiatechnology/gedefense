@@ -179,7 +179,8 @@
               <div class="hero-protection-row">
                 <div class="flex-col-end gap-xs">
                   <span id="heroProtectionBadge" class="status-pill muted" data-i18n="overview.hero.observeBadge">REINE ÜBERWACHUNG</span>
-                  <span id="heroProtectionTitle" class="hero-protection-title" data-i18n="overview.hero.observeBadge">MONITORING ONLY</span>
+                  <!-- The title carried the same translation key as the badge above it, so the headline was always a verbatim repeat of the pill. The badge names the state; the title states its consequence. -->
+              <span id="heroProtectionTitle" class="hero-protection-title" data-i18n="overview.hero.observeTitle">Abwehr ist derzeit nicht aktiv</span>
                 </div>
                 <button id="heroProtectionAction" class="button button-primary" type="button" data-i18n="overview.hero.btnActivate">Schutz aktivieren</button>
               </div>
@@ -323,6 +324,10 @@
             <p class="view-context-desc" data-i18n="protection.description">Geführte, stufenweise Freigabe der aktiven GeDefense-Schutzebenen von der reinen Überwachung bis zum automatischen Vollschutz.</p>
             <div class="view-context-actions">
               <span id="protectionCurrentBadge" class="status-pill warn">OBSERVE</span>
+            <!-- The emergency stop sits with the state it acts on, not beside the workflow
+                 buttons. As a permanently solid-red control next to "activate Canary" it
+                 was the loudest thing in the bar and made the primary action ambiguous. -->
+            <button id="btnTriggerEmergency" class="button button-emergency" type="button" data-i18n="emergency.topBtn">EMERGENCY STOP</button>
             </div>
           </div>
 
@@ -382,7 +387,7 @@
             <button id="btnActivateCanary" class="button button-primary" type="button" data-i18n="stepper.btn.activateCanary">Canary aktivieren</button>
             <button id="btnActivateEnforce" class="button button-danger" type="button" hidden data-i18n="stepper.btn.activateEnforce">Enforce aktivieren</button>
             <button id="btnReturnObserve" class="button button-secondary" type="button" hidden data-i18n="stepper.btn.returnObserve">Zurück zu Observe</button>
-            <button id="btnTriggerEmergency" class="button button-danger" type="button" data-i18n="emergency.topBtn">EMERGENCY STOP</button>
+            
           </div>
 
           <article class="glass-panel panel-padded mt-lg">
@@ -452,6 +457,21 @@
           </div>
 
           <article class="glass-panel panel-padded mt-lg">
+            <div id="l7IntegrationPanel" class="l7-integration">
+              <div class="section-head">
+                <div>
+                  <p class="eyebrow" data-i18n="l7.integration.kicker">TRAFFIC PATH INTEGRATION</p>
+                  <h3 class="m-0" data-i18n="l7.integration.title">Webserver anbinden</h3>
+                  <p class="l7-integration-lead" data-i18n="l7.integration.lead">GeDefense inspiziert nur, was den Inspection-Socket erreicht. Ohne Anbindung laeuft der Web-Traffic an der Engine vorbei — unabhaengig davon, wie viele Regeln aktiv sind.</p>
+                </div>
+                <div class="l7-integration-actions">
+                  <button id="btnL7SelfTest" class="button button-quiet fs-xs" type="button" data-i18n="l7.integration.selfTest">Selbsttest ausfuehren</button>
+                  <button id="btnL7Integration" class="button button-quiet fs-xs" type="button" data-i18n="l7.integration.generate">Integration erzeugen</button>
+                </div>
+              </div>
+              <div id="l7SelfTestResult" class="l7-selftest" hidden></div>
+              <div id="l7IntegrationResult" class="l7-integration-result" hidden></div>
+            </div>
             <div class="section-head"><p class="eyebrow" data-i18n="l7.telemetry.kicker">L7 ENGINE TELEMETRY &amp; IPC</p><h3 class="m-0" data-i18n="l7.telemetry.title">Status &amp; Konfigurationsparameter</h3></div>
             <div class="diagnostic-grid mt-md">
               <div class="diag-card">
@@ -483,6 +503,21 @@
                 <span class="diag-label" data-i18n="l7.telemetry.framing">FRAMING &amp; DATA LEAKAGE</span>
                 <div class="diag-val fs-sm">UPSTREAM <span id="l7SecUpstreamErrors">0</span> · RESPONSE <span id="l7SecResponseErrors">0</span></div>
                 <small class="diag-sub" data-i18n="l7.telemetry.framingDetail">Protokoll- &amp; Datenabflussschutz</small>
+              </div>
+              <div class="diag-card">
+                <span class="diag-label" data-i18n="l7.status.trafficPath">TRAFFIC PATH</span>
+                <div class="diag-val"><span id="l7StatusTrafficPathPill" class="status-pill muted">NOT ATTACHED</span></div>
+                <small class="diag-sub" data-i18n="l7.telemetry.trafficPathDetail">Ob überhaupt ein Producer oder Inline-Listener angeschlossen ist</small>
+              </div>
+              <div class="diag-card">
+                <span class="diag-label" data-i18n="l7.status.webSurface">WEB SURFACE</span>
+                <div class="diag-val fs-sm" id="l7StatusWebSurface">NOT SCANNED</div>
+                <small class="diag-sub" id="l7StatusWebSurfaceNote" data-i18n="l7.telemetry.webSurfaceDetail">Erkannte Webserver und lauschende Ports auf diesem Host</small>
+              </div>
+              <div class="diag-card diag-card-wide" id="l7MiswiredCard" hidden>
+                <span class="diag-label" data-i18n="l7.status.miswired">INTEGRATION FEHLT</span>
+                <div class="diag-val fs-sm" id="l7MiswiredText">Web-Traffic vorhanden, aber L7 ist nicht im Pfad</div>
+                <small class="diag-sub" data-i18n="l7.telemetry.miswiredDetail">Der Webserver muss seine Requests an den Inspection-Socket bzw. den Inline-Edge übergeben.</small>
               </div>
               <div class="diag-card">
                 <span class="diag-label" data-i18n="l7.status.coverage">TRAFFIC COVERAGE</span>
@@ -565,6 +600,10 @@
               <div class="flex-col gap-xs">
                 <span class="eyebrow" data-i18n="hardening.postureKicker">LOKALE SCHUTZLAGE</span>
                 <h3 id="hardeningScoreTitle" class="m-0 fs-lg" data-i18n="hardening.analysisRunning">Analyse läuft</h3>
+              <!-- The score is computed only from the controls that could be read, so the
+                   basis is stated beside it. A level without its coverage invites the
+                   reader to assume the whole catalogue was measured. -->
+              <p id="hardeningCoverage" class="hardening-coverage"></p>
                 <small id="hardeningCollected" class="text-muted fs-xs" data-i18n="hardening.noMeasurement">Noch keine Messung</small>
               </div>
             </article>
@@ -1065,6 +1104,7 @@
             </div>
           </div>
           <div class="kinetic-command-grid mt-md">
+            <div class="kinetic-left-stack">
             <article class="glass-panel kinetic-map-panel">
               <div class="section-head kinetic-panel-head">
                 <div>
@@ -1104,6 +1144,33 @@
                 <div><span class="text-muted">Hot Port</span><strong id="kineticHotPort" class="font-mono">---</strong></div>
               </div>
             </article>
+
+            <article class="glass-panel panel-padded flex-col gap-md">
+              <div class="section-head">
+                <div>
+                  <p class="eyebrow" data-i18n="kinetic.feedKicker">LIVE REACTION STREAM</p>
+                  <h3 class="m-0" data-i18n="kinetic.feedTitle">Kinetischer Event-Stream</h3>
+                </div>
+                <span id="kineticEventCountBadge" class="status-pill muted">0 EVENTS</span>
+              </div>
+              <div class="table-wrap kinetic-events-wrap">
+                <table class="table-compact">
+                  <thead>
+                    <tr>
+                      <th data-i18n="table.time">Zeit</th>
+                      <th data-i18n="table.rule">Regel</th>
+                      <th data-i18n="table.source">Quell-IP</th>
+                      <th data-i18n="table.port">Zielport</th>
+                      <th data-i18n="table.hits">Hits (Rate)</th>
+                      <th data-i18n="table.action">Aktion</th>
+                      <th data-i18n="table.reason">Entscheidungsgrund</th>
+                    </tr>
+                  </thead>
+                  <tbody id="kineticEventsTableBody"></tbody>
+                </table>
+              </div>
+            </article>
+            </div>
 
             <aside class="kinetic-intel-stack">
               <article class="glass-panel panel-padded kinetic-intel-card">
@@ -1166,32 +1233,7 @@
             </div>
           </article>
 
-          <div id="kineticStream" class="grid-2 mt-md kinetic-lower-grid">
-            <article class="glass-panel panel-padded flex-col gap-md">
-              <div class="section-head">
-                <div>
-                  <p class="eyebrow" data-i18n="kinetic.feedKicker">LIVE REACTION STREAM</p>
-                  <h3 class="m-0" data-i18n="kinetic.feedTitle">Kinetischer Event-Stream</h3>
-                </div>
-                <span id="kineticEventCountBadge" class="status-pill muted">0 EVENTS</span>
-              </div>
-              <div class="table-wrap kinetic-events-wrap">
-                <table class="table-compact">
-                  <thead>
-                    <tr>
-                      <th data-i18n="table.time">Zeit</th>
-                      <th data-i18n="table.rule">Regel</th>
-                      <th data-i18n="table.source">Quell-IP</th>
-                      <th data-i18n="table.port">Zielport</th>
-                      <th data-i18n="table.hits">Hits (Rate)</th>
-                      <th data-i18n="table.action">Aktion</th>
-                      <th data-i18n="table.reason">Entscheidungsgrund</th>
-                    </tr>
-                  </thead>
-                  <tbody id="kineticEventsTableBody"></tbody>
-                </table>
-              </div>
-            </article>
+          <div id="kineticStream" class="mt-md kinetic-lower-grid">
 
             <article id="kineticDetailDrawer" class="glass-panel panel-padded flex-col gap-md kinetic-inspector" hidden>
               <div class="section-head">
@@ -1940,6 +1982,31 @@
               </table>
             </div>
           </article>
+          <!-- Control-plane lifecycle.
+               Several administrable values are RESTART-class: persisted, reported as
+               restart_required, and deliberately never activated behind the operator's
+               back. That rule is only complete if the restart itself is reachable, so it
+               is offered here rather than from a shell. The action is disruptive, so it
+               states its consequence, requires a justification for the audit log, and
+               reports the platform's answer instead of closing over it. -->
+          <article class="glass-panel panel-padded mt-lg">
+            <div class="section-head flex-between">
+              <div>
+                <p class="eyebrow" data-i18n="system.lifecycleKicker">CONTROL PLANE LIFECYCLE</p>
+                <h3 class="m-0" data-i18n="system.lifecycleTitle">Neustart</h3>
+              </div>
+              <span id="restartGateBadge" class="status-pill muted" data-i18n="dynamic.checking">WIRD GEPRÜFT</span>
+            </div>
+            <p class="fs-xs text-muted mt-xs" data-i18n="system.lifecycleDesc">RESTART-klassige Werte werden gespeichert, aber nie still aktiviert. Ein Neustart übernimmt die gespeicherte Revision. Die Verbindung bricht dabei kurz ab; das Dashboard verbindet sich selbst neu.</p>
+            <div class="restart-surface mt-md">
+              <label class="flex-1">
+                <span class="fs-xs text-muted d-block mb-xs" data-i18n="system.restartReason">Begründung für das Audit-Log</span>
+                <input id="restartReason" autocomplete="off" minlength="8" maxlength="240" placeholder="Gespeicherte L7-Transportänderung übernehmen">
+              </label>
+              <button id="btnRestartControl" class="button button-danger" type="button" data-i18n="system.restartAction">Control Plane neu starten</button>
+            </div>
+            <p id="restartState" class="restart-state mt-sm" role="status" aria-live="polite"></p>
+          </article>
         </section>
       </main>
     </div>
@@ -2069,26 +2136,60 @@
     </form>
   </dialog>
 
-  <dialog id="authDialog" class="modal-dialog">
-    <div class="modal-content">
-      <div class="modal-header modal-header-brand">
-        <img class="modal-brand-logo" src="/assets/gedefense-logo.png" alt="" aria-hidden="true">
-        <div>
-          <p class="eyebrow" data-i18n="auth.eyebrow">OPERATOR ACCESS</p>
-          <h3 class="modal-title" data-i18n="auth.title">Operator Authentifizierung</h3>
-          <p class="modal-subtitle" data-i18n="auth.description">Der Bearer-Token autorisiert privilegierte Steuerungshandlungen und verbleibt ausschließlich im flüchtigen Browserspeicher.</p>
-        </div>
-      </div>
-      <form id="authForm" class="flex-col gap-md" autocomplete="off">
-        <label>
-          <span data-i18n="auth.token">Bearer Token</span>
-          <input id="tokenInput" name="operator_token" type="password" autocomplete="off" spellcheck="false" data-i18n-placeholder="auth.tokenPlaceholder" placeholder="Token aus /var/lib/vgt/gedefense/dashboard.token">
-        </label>
-        <div class="modal-action-row">
-          <button class="button button-quiet" type="button" data-dialog-close data-i18n="dialog.close">Schließen</button>
-          <button id="saveToken" class="button button-primary" type="submit" data-i18n="auth.save">Token speichern</button>
-        </div>
-      </form>
+  <!-- Authentication boundary.
+       Composed as two planes rather than a centred card, because there are two
+       different jobs here: establishing which node is being trusted and over what
+       channel, and presenting the credential. The left plane carries facts this host
+       can actually attest before any token is presented - its own address, the
+       transport in use, where the key lives and what authorising it grants. The right
+       plane carries the single action. Both planes answer a question an operator
+       genuinely has at a trust boundary; nothing here is decorative. -->
+  <dialog id="authDialog" class="modal-dialog auth-dialog">
+    <div class="auth-plane">
+      <section class="auth-identity" aria-labelledby="authTitle">
+        <header class="auth-mark">
+          <img class="auth-sigil" src="/assets/gedefense-logo.png" alt="" aria-hidden="true">
+          <p class="auth-wordmark">GeDefense</p>
+          <p class="auth-descriptor" data-i18n="auth.product">Security Fabric Control Plane</p>
+        </header>
+        <dl class="auth-facts">
+          <div class="auth-fact">
+            <dt data-i18n="auth.node">Knoten</dt>
+            <dd id="authNode" class="font-mono">---</dd>
+          </div>
+          <div class="auth-fact">
+            <dt data-i18n="auth.channel">Kanal</dt>
+            <dd id="authChannel">---</dd>
+          </div>
+          <div class="auth-fact">
+            <dt data-i18n="auth.keySource">Schluesselquelle</dt>
+            <dd class="font-mono">/var/lib/vgt/gedefense/dashboard.token</dd>
+          </div>
+          <div class="auth-fact">
+            <dt data-i18n="auth.scope">Umfang</dt>
+            <dd data-i18n="auth.scopeValue">Steuerungshandlungen, Richtlinien und Enforcement</dd>
+          </div>
+        </dl>
+        <p class="auth-custody" data-i18n="auth.custody">Der Schluessel bleibt im fluechtigen Speicher dieses Tabs und wird beim Neuladen verworfen.</p>
+      </section>
+
+      <section class="auth-grant" aria-labelledby="authTitle">
+        <h3 id="authTitle" class="auth-title" data-i18n="auth.title">Dashboard-Key</h3>
+        <form id="authForm" class="auth-form" autocomplete="off">
+          <label class="auth-field">
+            <span class="auth-label" data-i18n="auth.token">Bearer Token</span>
+            <input id="tokenInput" name="operator_token" type="password" autocomplete="off" spellcheck="false" data-i18n-placeholder="auth.tokenPlaceholder" placeholder="Token aus /var/lib/vgt/gedefense/dashboard.token">
+          </label>
+          <!-- The state line is the only feedback the operator gets before the dialog
+               closes, so it is a real live region rather than a toast that appears
+               after the fact. -->
+          <p id="authState" class="auth-state" role="status" aria-live="polite"></p>
+          <div class="auth-actions">
+            <button id="saveToken" class="button button-primary auth-submit" type="submit" data-i18n="auth.save">Sitzung autorisieren</button>
+            <button class="auth-dismiss" type="button" data-dialog-close data-i18n="auth.dismiss">Ohne Sitzung fortfahren</button>
+          </div>
+        </form>
+      </section>
     </div>
   </dialog>
 

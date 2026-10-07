@@ -256,6 +256,21 @@ func main() {
 	if err := state.AttachEvidenceLedger(evidence); err != nil {
 		log.Fatalf("evidence ledger verification: %v", err)
 	}
+	// A schema upgrade may raise an operator setting on the operator's behalf. That is
+	// recorded here, once the ledger is attached and before anything enforces the new
+	// value, so the change is attributable rather than merely persisted. A failure to
+	// record is reported but does not stop the boot: refusing to start because the audit
+	// trail is unavailable would take the platform down over the very condition the
+	// operator needs it running to inspect.
+	for _, migration := range settings.Get().Migrations {
+		if err := state.RecordEvidence(EvidenceRecord{
+			Severity: "high", Kind: "settings.migration.applied", Source: "control-plane",
+			Message: "Runtime settings schema upgrade changed an operator value",
+			Target:  migration,
+		}); err != nil {
+			log.Printf("settings migration evidence: %v", err)
+		}
+	}
 	fimStorage, err := NewStorageCipher(cfg.Policy.StorageKeyFile, cfg.Node.Name)
 	if err != nil {
 		log.Fatalf("FIM storage: %v", err)
@@ -613,6 +628,11 @@ func main() {
 	srv := NewAPIServer(cfg, state, core, feeds, policy, xdr, release, settings, token)
 	if l7Engine != nil {
 		srv.AttachL7(l7Engine)
+	}
+	if l7Service != nil {
+		// The self-test and the integration generator need the socket topology, which
+		// lives on the service rather than on the engine.
+		srv.AttachL7Service(l7Service)
 	}
 	srv.AttachFeeds(feeds)
 	srv.AttachFIM(fim)

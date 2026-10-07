@@ -4,6 +4,7 @@ package main
 import (
 	"bufio"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -38,12 +39,27 @@ type HardeningDomain struct {
 	Total     int    `json:"total"`
 }
 
+// hardeningMinimumEvidenceWeight is the weight that must remain measurable before the
+// posture may claim more than a basic level. It is deliberately a share of the full
+// catalogue rather than an absolute number, so adding checks does not silently weaken it.
+const hardeningMinimumEvidenceWeight = 60
+
 type HardeningPosture struct {
-	CollectedAt time.Time         `json:"collected_at"`
-	Score       int               `json:"score"`
-	Level       string            `json:"level"`
-	Checks      []HardeningCheck  `json:"checks"`
-	Domains     []HardeningDomain `json:"domains"`
+	CollectedAt time.Time `json:"collected_at"`
+	Score       int       `json:"score"`
+	Level       string    `json:"level"`
+	// Coverage states what the score is computed from. An unmeasurable check is excluded
+	// from both the numerator and the denominator, which is the right treatment for the
+	// score but leaves it silently unrepresentative when most checks cannot be read: a
+	// host where two of twenty-two checks are readable and both pass would otherwise
+	// report HARDENED on almost no evidence. These fields make the basis visible.
+	MeasuredChecks     int               `json:"measured_checks"`
+	TotalChecks        int               `json:"total_checks"`
+	UnavailableChecks  int               `json:"unavailable_checks"`
+	CoverageSufficient bool              `json:"coverage_sufficient"`
+	CoverageNote       string            `json:"coverage_note,omitempty"`
+	Checks             []HardeningCheck  `json:"checks"`
+	Domains            []HardeningDomain `json:"domains"`
 }
 
 type HardeningCollector struct {
@@ -448,8 +464,10 @@ func summarizeHardening(now time.Time, checks []HardeningCheck, thresholds harde
 	totalWeight, protectedWeight := 0, 0
 	type aggregate struct{ score, total, protected, count int }
 	domains := make(map[string]*aggregate)
+	unavailable := 0
 	for _, check := range checks {
 		if check.State == hardeningStateUnavailable {
+			unavailable++
 			continue
 		}
 		totalWeight += check.Weight
@@ -486,6 +504,22 @@ func summarizeHardening(now time.Time, checks []HardeningCheck, thresholds harde
 	case score >= thresholds.Basic:
 		level = "BASIC"
 	}
+
+	// A level is a claim about the host, so it has to rest on enough of the host being
+	// observable to support it. The floor is expressed in weight, not in check count,
+	// because the checks do not carry equal weight in the posture.
+	measured := len(checks) - unavailable
+	coverageSufficient := unavailable == 0 || totalWeight >= hardeningMinimumEvidenceWeight
+	coverageNote := ""
+	if !coverageSufficient {
+		// The score is left as computed - it is an honest statement about the checks that
+		// could be read - but the level is capped, because "HARDENED" asserts the host is
+		// hardened and this evidence cannot support that.
+		coverageNote = fmt.Sprintf("only %d of %d controls could be measured; the level is capped because this evidence cannot support a stronger claim", measured, len(checks))
+		if level == "HARDENED" || level == "STRONG" {
+			level = "BASIC"
+		}
+	}
 	domainIDs := make([]string, 0, len(domains))
 	for id := range domains {
 		domainIDs = append(domainIDs, id)
@@ -503,7 +537,12 @@ func summarizeHardening(now time.Time, checks []HardeningCheck, thresholds harde
 			Protected: entry.protected, Total: entry.count,
 		})
 	}
-	return HardeningPosture{CollectedAt: now, Score: score, Level: level, Checks: checks, Domains: summaries}
+	return HardeningPosture{
+		CollectedAt: now, Score: score, Level: level,
+		MeasuredChecks: measured, TotalChecks: len(checks), UnavailableChecks: unavailable,
+		CoverageSufficient: coverageSufficient, CoverageNote: coverageNote,
+		Checks: checks, Domains: summaries,
+	}
 }
 
 func hardeningDomainTitle(id string) string {

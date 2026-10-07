@@ -6,6 +6,8 @@
 *.exe
 *.run
 *.zip
+/control/control
+/gateway/gateway
 
 # Language caches
 __pycache__/

@@ -191,8 +191,12 @@ func TestFeedActionSemantics(t *testing.T) {
 		"blocklist-de-all":       FeedActionCorrelateOnly,
 		"emerging-threats-block": FeedActionCorrelateOnly,
 		"ipsum-level-1":          FeedActionCorrelateOnly,
-		"firehol-level-1":        FeedActionCorrelateOnly,
-		"tor-bulk-exit":          FeedActionAnnotateOnly,
+		// FireHOL level 1 is a curated aggregate of networks already observed attacking
+		// or abusing hosts, and upstream documents it as safe to block outright.
+		// Correlating it meant recording known-bad sources and then letting them
+		// through, which is the one outcome a threat feed must not produce.
+		"firehol-level-1": FeedActionBlock,
+		"tor-bulk-exit":   FeedActionAnnotateOnly,
 	}
 
 	for _, src := range DefaultThreatFeedSources {

@@ -71,8 +71,12 @@ type PolicyConfig struct {
 }
 
 type L7Config struct {
-	Enabled                      bool
-	Mode                         string
+	Enabled bool
+	Mode    string
+	// CoverageRequired decides whether an idle L7 engine degrades the platform:
+	// "auto" requires the traffic path only once something is attached, "required"
+	// always does, "optional" never does.
+	CoverageRequired             string
 	Socket                       string
 	SocketGroup                  string
 	RequestTimeoutMillis         int
@@ -236,7 +240,11 @@ func defaultConfig() Config {
 			SensitivePaths: []string{"/wp-login.php", "/xmlrpc.php", "/login", "/signin", "/api/login"},
 			InlineEnabled:  false, InlineSocket: "/run/vgt-gedefense-l7/edge.sock", InlineUpstream: "http://127.0.0.1:8080",
 			InlineMaxResponseBytes: 64 << 10,
-			TLSEnabled:             true, TLSAllowedDomains: nil, TLSFloodThreshold: 15, TLSSNIStrikeThreshold: 10, TLSAntiSpoof: true,
+			// auto: the traffic path is required once something is actually wired in.
+			// An engine that is enabled but has nothing attached is deliberately idle,
+			// not broken, and must not degrade the platform.
+			CoverageRequired: "auto",
+			TLSEnabled:       true, TLSAllowedDomains: nil, TLSFloodThreshold: 15, TLSSNIStrikeThreshold: 10, TLSAntiSpoof: true,
 			TLSMaxClientHelloBytes: 64 << 10, TLSJA3File: "",
 		},
 		XDR: XDRConfig{
@@ -652,6 +660,18 @@ func assignConfig(cfg *Config, section, key, raw string) error {
 		ids, e := parseUint32CSV(v)
 		cfg.L7.AllowedPeerGIDs = ids
 		return e
+	case "l7.coverage_required":
+		v, e := str()
+		if e != nil {
+			return e
+		}
+		switch v {
+		case "auto", "required", "optional":
+			cfg.L7.CoverageRequired = v
+			return nil
+		default:
+			return fmt.Errorf("l7.coverage_required must be auto, required or optional")
+		}
 	case "l7.inline_enabled":
 		v, e := parseBool(raw)
 		cfg.L7.InlineEnabled = v
