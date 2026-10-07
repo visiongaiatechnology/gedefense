@@ -4,7 +4,7 @@ set -Eeuo pipefail
 umask 0077
 
 readonly PRODUCT_VERSION="4.2.0"
-readonly PAYLOAD_SHA256="__PAYLOAD_SHA256__"
+readonly PAYLOAD_SHA256="__SOURCE_PAYLOAD_SHA256__"
 readonly GO_VERSION="1.26.8"
 readonly GO_LINUX_AMD64_SHA256="d0f743b33e8d8945e6b1f432edd15785c70507121d6e2a723b21285eddf8b57b"
 readonly GO_URL="https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz"
@@ -78,7 +78,7 @@ extract_and_verify_payload(){
   archive="$WORK/source.tar.gz"
   tail -n +"$marker" "$SELF" > "$archive"
   actual=$(sha256sum "$archive" | awk '{print $1}')
-  [[ $actual == "$PAYLOAD_SHA256" ]] || fail "Embedded payload checksum mismatch."
+  [[ $actual == "$PAYLOAD_SHA256" ]] || fail "Embedded payload checksum mismatch (expected: $PAYLOAD_SHA256, got: $actual)."
   mkdir -p "$WORK/source"
   safe_extract "$archive" "$WORK/source"
   SOURCE_ROOT="$WORK/source"

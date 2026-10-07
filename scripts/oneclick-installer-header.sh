@@ -208,7 +208,7 @@ extract_payload(){
   archive="$WORK/payload.tar.gz"
   tail -n +"$line" "$SELF" > "$archive"
   actual=$(sha256sum "$archive" | awk '{print $1}')
-  [[ $actual == "$PAYLOAD_SHA256" ]] || fail "Payload-Prüfsumme stimmt nicht."
+  [[ $actual == "$PAYLOAD_SHA256" ]] || fail "Payload-Prüfsumme stimmt nicht (erwartet: $PAYLOAD_SHA256, erhalten: $actual, Zeile: $line)."
   mkdir "$WORK/payload"
   python3 - "$archive" "$WORK/payload" <<'PY'
 import pathlib, sys, tarfile
