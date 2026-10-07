@@ -48,7 +48,7 @@ tar --sort=name --format=gnu --mtime="@$EPOCH" --owner=0 --group=0 --numeric-own
 gzip -n -9 -c "$TAR_RAW" > "$TAR_GZ"
 PAYLOAD_SHA=$(sha256sum "$TAR_GZ" | awk '{print $1}')
 HEADER="$WORK/header.sh"
-sed -e "s/__PAYLOAD_SHA256__/$PAYLOAD_SHA/g" "$ROOT/scripts/oneclick-source-bootstrap-header.sh" > "$HEADER"
+sed -e "s/__SOURCE_PAYLOAD_SHA256__/$PAYLOAD_SHA/g" "$ROOT/scripts/oneclick-source-bootstrap-header.sh" > "$HEADER"
 grep -q '^__VGT_SOURCE_PAYLOAD_BELOW__$' "$HEADER"
 head -n "$(awk '/^__VGT_SOURCE_PAYLOAD_BELOW__$/{print NR; exit}' "$HEADER")" "$HEADER" | bash -n
 
