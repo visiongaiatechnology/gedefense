@@ -149,4 +149,3 @@ func TestStyxEgress_ThreatIntelBlock(t *testing.T) {
 		t.Fatalf("expected clean IP permitted in monitored mode, got allowed=%t reason=%s", allowed, reason)
 	}
 }
-

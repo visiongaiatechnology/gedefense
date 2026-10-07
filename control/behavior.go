@@ -64,6 +64,7 @@ type BehaviorModel struct {
 	warmup         uint64
 	zscore         float64
 	minConnections int
+	execBurst      int
 	maxProfiles    int
 	maxPorts       int
 	dropped        uint64
@@ -80,7 +81,7 @@ func NewBehaviorModel(cfg XDRConfig, nodeNames ...string) (*BehaviorModel, error
 		// The model stays initialized so the dashboard can enable or disable
 		// learning live. RuntimeSettings is the authoritative activation gate.
 		enabled: true, warmup: uint64(cfg.BehaviorWarmupSamples),
-		zscore: float64(cfg.BehaviorZScoreMilli) / 1000.0, minConnections: cfg.BehaviorMinConnections,
+		zscore: float64(cfg.BehaviorZScoreMilli) / 1000.0, minConnections: cfg.BehaviorMinConnections, execBurst: 12,
 		maxProfiles: cfg.BehaviorMaxProfiles, maxPorts: cfg.BehaviorMaxPorts,
 		path: cfg.BehaviorProfileFile, profiles: make(map[string]*behaviorProfile),
 	}
@@ -146,7 +147,7 @@ func (m *BehaviorModel) ObserveExec(p ProcessSample, now time.Time) []RuleMatch 
 		profile.ExecTimestamps = append([]time.Time(nil), profile.ExecTimestamps[len(profile.ExecTimestamps)-256:]...)
 	}
 	profile.LastSeen = now.UTC()
-	if len(profile.ExecTimestamps) >= 12 {
+	if len(profile.ExecTimestamps) >= m.execBurst {
 		return []RuleMatch{{ID: "XDR.ANOMALY.EXEC_BURST", Category: "behavior", Score: 45, Summary: "Executable start rate deviates sharply from its normal cadence"}}
 	}
 	return nil
@@ -372,4 +373,52 @@ func (m *BehaviorModel) load() error {
 		}
 	}
 	return nil
+}
+
+// Configure updates bounded behavior-learning thresholds at runtime. When an
+// administrator lowers profile/port capacities, the model evicts oldest state
+// rather than exceeding the new bound.
+func (m *BehaviorModel) Configure(settings XDRFabricSettings) {
+	if m == nil {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.warmup = uint64(settings.BehaviorWarmupSamples)
+	m.zscore = float64(settings.BehaviorZScoreMilli) / 1000.0
+	m.minConnections = settings.BehaviorMinConnections
+	m.execBurst = settings.BehaviorExecBurst
+	m.maxProfiles = settings.BehaviorMaxProfiles
+	m.maxPorts = settings.BehaviorMaxPorts
+	for len(m.profiles) > m.maxProfiles {
+		oldestKey := ""
+		var oldest time.Time
+		for key, profile := range m.profiles {
+			if oldestKey == "" || profile.LastSeen.Before(oldest) {
+				oldestKey, oldest = key, profile.LastSeen
+			}
+		}
+		if oldestKey == "" {
+			break
+		}
+		delete(m.profiles, oldestKey)
+		m.dropped++
+	}
+	for _, profile := range m.profiles {
+		for len(profile.RemotePorts) > m.maxPorts {
+			var candidate uint16
+			var count uint64
+			first := true
+			for port, n := range profile.RemotePorts {
+				if first || n < count {
+					candidate, count, first = port, n, false
+				}
+			}
+			if first {
+				break
+			}
+			delete(profile.RemotePorts, candidate)
+			m.dropped++
+		}
+	}
 }

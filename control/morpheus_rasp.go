@@ -53,12 +53,15 @@ type RASPEvent struct {
 }
 
 type MorpheusRASP struct {
-	mu             sync.RWMutex
-	protectedNames map[string]bool
-	protectedPIDs  map[int]bool
-	yamaScopePath  string
-	correlator     *IncidentCorrelator
-	incidentSink   func(XDRIncident) error
+	mu               sync.RWMutex
+	enabled          bool
+	protectedNames   map[string]bool
+	protectedPIDs    map[int]bool
+	trustedDebuggers map[string]bool
+	containment      bool
+	yamaScopePath    string
+	correlator       *IncidentCorrelator
+	incidentSink     func(XDRIncident) error
 }
 
 func NewMorpheusRASP(
@@ -81,12 +84,47 @@ func NewMorpheusRASP(
 			"keepassxc":          true,
 			"vault":              true,
 		},
-		protectedPIDs: make(map[int]bool),
-		yamaScopePath: yamaScopePath,
-		correlator:    correlator,
-		incidentSink:  incidentSink,
+		enabled:          true,
+		containment:      true,
+		trustedDebuggers: make(map[string]bool),
+		protectedPIDs:    make(map[int]bool),
+		yamaScopePath:    yamaScopePath,
+		correlator:       correlator,
+		incidentSink:     incidentSink,
 	}
 	return m
+}
+
+// ApplyPolicy republishes the administrable RASP posture. Trusted debuggers are
+// exemptions from detection, never a way to disable detection for everyone.
+func (m *MorpheusRASP) ApplyPolicy(settings HardeningRASPSettings) {
+	if m == nil {
+		return
+	}
+	names := make(map[string]bool, len(settings.ProtectedNames))
+	for _, name := range settings.ProtectedNames {
+		names[strings.ToLower(name)] = true
+	}
+	debuggers := make(map[string]bool, len(settings.TrustedDebuggers))
+	for _, name := range settings.TrustedDebuggers {
+		debuggers[strings.ToLower(name)] = true
+	}
+	m.mu.Lock()
+	m.enabled = settings.Enabled
+	m.protectedNames = names
+	m.trustedDebuggers = debuggers
+	m.containment = settings.ContainmentEnabled && !settings.AlertOnly
+	m.mu.Unlock()
+}
+
+// Enabled reports whether the RASP data path participates in evaluation.
+func (m *MorpheusRASP) Enabled() bool {
+	if m == nil {
+		return false
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.enabled
 }
 
 // RegisterProtectedPID marks a daemon or process ID as strictly immutable against ptrace/mem inspection.
@@ -125,9 +163,16 @@ func (m *MorpheusRASP) InspectMemoryAccess(
 	isChildOfSource bool,
 ) (*RASPEvent, error) {
 	m.mu.RLock()
+	enabled := m.enabled
 	isProtectedName := m.protectedNames[strings.ToLower(targetComm)]
 	isProtectedPID := m.protectedPIDs[targetPID]
+	containment := m.containment
+	trustedSource := m.trustedDebuggers[strings.ToLower(sourceComm)]
 	m.mu.RUnlock()
+
+	if !enabled || trustedSource {
+		return nil, nil
+	}
 
 	now := time.Now().UTC()
 
@@ -184,9 +229,9 @@ func (m *MorpheusRASP) InspectMemoryAccess(
 				Summary:       fmt.Sprintf("Process memory scraping blocked: PID %d (%s) attempted memory access on %s (PID %d)", sourcePID, sourceComm, targetComm, targetPID),
 				RuleIDs:       []string{"MORPHEUS.RASP.MEM_SCRAPE", "MORPHEUS.PTRACE_PROTECTED"},
 				Categories:    []string{"privilege_escalation", "credential_access"},
-				Decision:      "block",
-				Action:        "freeze-execution",
-				Outcome:       "intercepted and reported by morpheus rasp",
+				Decision:      boolToDecision(containment, "block", "alert"),
+				Action:        boolToDecision(containment, "freeze-execution", "observe"),
+				Outcome:       boolToDecision(containment, "intercepted and reported by morpheus rasp", "reported by morpheus rasp; containment disabled by policy"),
 				AttackStory:   storyNodes,
 				EvidenceRoot:  recordHash,
 			})
@@ -207,6 +252,9 @@ func (m *MorpheusRASP) InspectMemoryAccess(
 			AttackNode: &storyNode,
 		}
 
+		if !containment {
+			return event, nil
+		}
 		return event, NewMorpheusSecurityException(
 			fmt.Sprintf("unauthorized memory scraping attempt from PID %d against %s", sourcePID, targetComm),
 			nil,
@@ -219,6 +267,15 @@ func (m *MorpheusRASP) InspectMemoryAccess(
 // InspectProcess inspects live process telemetry for memory scraping, unauthorized ptrace, or /proc/<pid>/mem reads against protected daemons.
 func (m *MorpheusRASP) InspectProcess(p ProcessSample) (*RASPEvent, error) {
 	if p.PID <= 1 {
+		return nil, nil
+	}
+	if !m.Enabled() {
+		return nil, nil
+	}
+	m.mu.RLock()
+	trusted := m.trustedDebuggers[strings.ToLower(p.Comm)]
+	m.mu.RUnlock()
+	if trusted {
 		return nil, nil
 	}
 

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/base64"
 	"net"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -526,5 +527,214 @@ func TestDefaultThreatFeedsURLs(t *testing.T) {
 		if _, err := validateFeedSourceURL(u); err != nil {
 			t.Fatalf("default feed URL %q rejected by validator: %v", u, err)
 		}
+	}
+}
+
+func TestFeedManagerSyncSemanticsStrictness(t *testing.T) {
+	tempDir := t.TempDir()
+	fm := NewFeedManager(FeedConfig{MaxEntries: 1000}, tempDir)
+
+	// Invariant: Initial state is NEVER_SYNCED
+	if fm.OverallStatus() != "NEVER_SYNCED" {
+		t.Fatalf("expected NEVER_SYNCED initially, got %s", fm.OverallStatus())
+	}
+	if !fm.LastSuccessfulSyncAt().IsZero() {
+		t.Fatal("expected zero LastSuccessfulSyncAt initially")
+	}
+	if !fm.LastFullySuccessfulSyncAt().IsZero() {
+		t.Fatal("expected zero LastFullySuccessfulSyncAt initially")
+	}
+	if !fm.LastAttemptAt().IsZero() {
+		t.Fatal("expected zero LastAttemptAt initially")
+	}
+
+	// Test Telemetry
+	tel := fm.Telemetry()
+	if tel.OverallStatus != "NEVER_SYNCED" {
+		t.Fatalf("telemetry status %s != NEVER_SYNCED", tel.OverallStatus)
+	}
+
+	// Test Schema Migration from V1 to V2
+	t1 := time.Now().UTC().Truncate(time.Second)
+	v1State := `{
+		"schema": "vgt-gedefense-threat-intel-state-v1",
+		"last_successful_sync_at": "2026-10-01T12:00:00Z",
+		"generation": 42,
+		"fingerprint": "abc12345",
+		"feeds": {
+			"feodo-c2": {
+				"id": "feodo-c2",
+				"action": "BLOCK",
+				"last_good_items": ["203.0.113.1/32"],
+				"last_good_count": 1,
+				"last_good_gen": 1,
+				"last_good_at": "2026-10-01T12:00:00Z",
+				"last_attempt_at": "2026-10-01T12:00:00Z"
+			}
+		}
+	}`
+	v1State = strings.ReplaceAll(v1State, "2026-10-01T12:00:00Z", t1.Format(time.RFC3339))
+	v1Dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(v1Dir, "threat-intel-state.json"), []byte(v1State), 0o600); err != nil {
+		t.Fatalf("failed to write v1 state: %v", err)
+	}
+	fm2 := NewFeedManager(FeedConfig{MaxEntries: 1000}, v1Dir)
+	if fm2.Generation() != 42 {
+		t.Fatalf("expected generation 42 from migrated v1 state, got %d", fm2.Generation())
+	}
+	if !fm2.LastSuccessfulSyncAt().Equal(t1) {
+		t.Fatalf("expected LastSuccessfulSyncAt %v, got %v", t1, fm2.LastSuccessfulSyncAt())
+	}
+	if !fm2.LastFullySuccessfulSyncAt().Equal(t1) {
+		t.Fatalf("expected LastFullySuccessfulSyncAt %v, got %v", t1, fm2.LastFullySuccessfulSyncAt())
+	}
+	if fm2.OverallStatus() != "OK" {
+		t.Fatalf("expected migrated status OK, got %s", fm2.OverallStatus())
+	}
+
+	// Verify feeds status computation
+	feedStates := fm2.SnapshotFeedStates()
+	foundFeodo := false
+	for _, f := range feedStates {
+		if f.ID == "feodo-c2" {
+			foundFeodo = true
+			if f.Status != "OK" {
+				t.Fatalf("expected feodo-c2 status OK, got %s", f.Status)
+			}
+		}
+	}
+	if !foundFeodo {
+		t.Fatal("feodo-c2 not found in snapshot feed states")
+	}
+}
+
+func TestThreatIntelV3PersistsPartialAndKernelCommitTruth(t *testing.T) {
+	dir := t.TempDir()
+	fm := NewFeedManager(FeedConfig{MaxEntries: 1000}, dir)
+	partial := time.Date(2026, 10, 6, 20, 1, 2, 0, time.UTC)
+	full := time.Date(2026, 10, 5, 19, 2, 3, 0, time.UTC)
+
+	fm.mu.Lock()
+	fm.lastAttemptAt = partial
+	fm.lastSuccessfulSyncAt = partial
+	fm.lastPartialSuccessfulSyncAt = partial
+	fm.lastFullySuccessfulSyncAt = full
+	fm.overallStatus = "PARTIAL"
+	fm.kernelApplyLastAt = partial
+	fm.kernelApplyStatus = kernelApplyApplied
+	fm.kernelGeneration = 7
+	fm.lastKernelAdded = 11
+	fm.lastKernelDeleted = 3
+	fm.generation = 7
+	if err := fm.savePersistentStateLocked(); err != nil {
+		fm.mu.Unlock()
+		t.Fatal(err)
+	}
+	fm.mu.Unlock()
+
+	reloaded := NewFeedManager(FeedConfig{MaxEntries: 1000}, dir)
+	tel := reloaded.Telemetry()
+	if !tel.LastPartialSuccessfulSyncAt.Equal(partial) {
+		t.Fatalf("partial sync timestamp=%v want=%v", tel.LastPartialSuccessfulSyncAt, partial)
+	}
+	if !tel.LastFullySuccessfulSyncAt.Equal(full) {
+		t.Fatalf("full sync timestamp=%v want=%v", tel.LastFullySuccessfulSyncAt, full)
+	}
+	if tel.LastKernelAdded != 11 || tel.LastKernelDeleted != 3 {
+		t.Fatalf("kernel diff=+%d/-%d want +11/-3", tel.LastKernelAdded, tel.LastKernelDeleted)
+	}
+	if tel.OverallStatus != "PARTIAL" {
+		t.Fatalf("overall status=%q want PARTIAL", tel.OverallStatus)
+	}
+}
+
+func TestApplyToKernelDeletionFailureRollsBackAndDoesNotPublishGeneration(t *testing.T) {
+	dir := t.TempDir()
+	keyPath := filepath.Join(dir, "core.key")
+	socketPath := filepath.Join(dir, "core.sock")
+
+	client, err := NewCoreClient(socketPath, keyPath, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	listener, err := net.Listen("unix", socketPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+
+	var commands []string
+	var commandsMu sync.Mutex
+	go func() {
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			go func(c net.Conn) {
+				defer c.Close()
+				reader := bufio.NewReader(c)
+				line, err := reader.ReadString('\n')
+				if err != nil {
+					return
+				}
+				fields := strings.Fields(strings.TrimSpace(line))
+				if len(fields) < 6 {
+					return
+				}
+				cmd, target := fields[3], fields[4]
+				commandsMu.Lock()
+				commands = append(commands, cmd+":"+target)
+				commandsMu.Unlock()
+
+				status := "OK"
+				message := "ok"
+				if cmd == "DEL" && target == "203.0.113.2/32" {
+					status = "ERR"
+					message = "simulated deletion failure"
+				}
+				encoded := base64.RawURLEncoding.EncodeToString([]byte(message))
+				responseTag := coreProtocol + "R"
+				mac := coreMAC(client.key, responseTag, fields[2], status, encoded)
+				_, _ = c.Write([]byte(strings.Join([]string{responseTag, fields[2], status, encoded, mac}, " ") + "\n"))
+			}(conn)
+		}
+	}()
+
+	fm := NewFeedManager(FeedConfig{MaxEntries: 100}, dir)
+	fm.feedStates["feodo-c2"].LastGoodItems = []string{"203.0.113.1/32", "203.0.113.2/32"}
+	if _, _, err := fm.ApplyToKernel(client, nil); err != nil {
+		t.Fatalf("initial kernel apply failed: %v", err)
+	}
+	status, _, generation, lastErr := fm.KernelApplyStatus()
+	if status != kernelApplyApplied || generation != 1 || lastErr != "" {
+		t.Fatalf("unexpected initial kernel status: status=%s generation=%d err=%q", status, generation, lastErr)
+	}
+
+	// New generation wants to add .3 and delete .2. The mock rejects the
+	// deletion, so .3 must be rolled back and generation 1 must remain published.
+	fm.feedStates["feodo-c2"].LastGoodItems = []string{"203.0.113.1/32", "203.0.113.3/32"}
+	if _, _, err := fm.ApplyToKernel(client, nil); err == nil {
+		t.Fatal("expected deletion failure")
+	}
+	if fm.Generation() != 1 {
+		t.Fatalf("generation advanced despite failed deletion: %d", fm.Generation())
+	}
+	status, _, generation, lastErr = fm.KernelApplyStatus()
+	if status != kernelApplyError || generation != 1 || lastErr == "" {
+		t.Fatalf("failed apply status not preserved: status=%s generation=%d err=%q", status, generation, lastErr)
+	}
+	if _, ok := fm.appliedKernelEntries["203.0.113.2/32"]; !ok {
+		t.Fatal("previous kernel generation lost failed-deletion entry")
+	}
+	if _, ok := fm.appliedKernelEntries["203.0.113.3/32"]; ok {
+		t.Fatal("rolled-back addition remained in kernel mirror")
+	}
+
+	commandsMu.Lock()
+	defer commandsMu.Unlock()
+	joined := strings.Join(commands, "|")
+	if !strings.Contains(joined, "ADD:203.0.113.3/32|DEL:203.0.113.2/32|DEL:203.0.113.3/32") {
+		t.Fatalf("expected add -> failed delete -> addition rollback sequence, got %v", commands)
 	}
 }

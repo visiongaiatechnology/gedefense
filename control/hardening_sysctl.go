@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"sync"
 )
 
 type SysctlProfile struct {
@@ -16,8 +17,11 @@ type SysctlProfile struct {
 }
 
 type SysctlTransactionApplier struct {
-	core     SysctlCore
-	profiles map[string]SysctlProfile
+	mu                 sync.RWMutex
+	core               SysctlCore
+	profiles           map[string]SysctlProfile
+	defaultProfile     string
+	allowAdHocControls bool
 }
 
 type sysctlControlDefinition struct {
@@ -70,51 +74,29 @@ type SysctlCore interface {
 }
 
 func NewSysctlTransactionApplier(core SysctlCore) *SysctlTransactionApplier {
+	defaults := defaultHardeningFabricSettings(Config{}, "").Sysctl
+	profiles, err := buildSysctlProfiles(defaults.Profiles)
+	if err != nil {
+		// The compiled-in defaults are validated at build time by the settings
+		// schema test; an error here would be a programming fault, not an
+		// operator error.
+		panic(fmt.Sprintf("built-in sysctl profiles are invalid: %v", err))
+	}
 	return &SysctlTransactionApplier{
-		core: core,
-		profiles: map[string]SysctlProfile{
-			"linux-server-balanced": {
-				Name: "linux-server-balanced",
-				Values: map[string]string{
-					"kernel.kptr_restrict":                   "2",
-					"kernel.dmesg_restrict":                  "1",
-					"kernel.randomize_va_space":              "2",
-					"fs.protected_fifos":                     "2",
-					"fs.protected_regular":                   "2",
-					"fs.suid_dumpable":                       "0",
-					"net.ipv4.tcp_syncookies":                "1",
-					"net.ipv4.conf.all.accept_redirects":     "0",
-					"net.ipv4.conf.default.accept_redirects": "0",
-					"net.ipv4.conf.all.send_redirects":       "0",
-					"net.ipv4.conf.default.send_redirects":   "0",
-					"net.ipv6.conf.all.accept_redirects":     "0",
-					"net.ipv6.conf.default.accept_redirects": "0",
-				},
-			},
-			"astraeaos-workstation-strict": {
-				Name: "astraeaos-workstation-strict",
-				Values: map[string]string{
-					"kernel.kptr_restrict":                   "2",
-					"kernel.dmesg_restrict":                  "1",
-					"kernel.randomize_va_space":              "2",
-					"kernel.yama.ptrace_scope":               "2",
-					"kernel.unprivileged_bpf_disabled":       "1",
-					"fs.protected_fifos":                     "2",
-					"fs.protected_regular":                   "2",
-					"fs.suid_dumpable":                       "0",
-					"net.ipv4.tcp_syncookies":                "1",
-					"net.ipv4.conf.all.accept_redirects":     "0",
-					"net.ipv4.conf.default.accept_redirects": "0",
-					"net.ipv4.conf.all.send_redirects":       "0",
-					"net.ipv4.conf.default.send_redirects":   "0",
-					"net.ipv6.conf.all.accept_redirects":     "0",
-					"net.ipv6.conf.default.accept_redirects": "0",
-				},
-			},
-		},
+		core:               core,
+		profiles:           profiles,
+		defaultProfile:     defaults.DefaultProfile,
+		allowAdHocControls: defaults.AllowAdHocControls,
 	}
 }
 
+// profileSet returns the active profile map and the administrable selection
+// policy under one read lock, so a preview or apply never mixes two revisions.
+func (a *SysctlTransactionApplier) profileSet() (map[string]SysctlProfile, string, bool) {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.profiles, a.defaultProfile, a.allowAdHocControls
+}
 func (a *SysctlTransactionApplier) Type() string {
 	return "hardening.sysctl-profile"
 }
@@ -125,7 +107,8 @@ func (a *SysctlTransactionApplier) Preview(
 	if a.core == nil {
 		return nil, nil, errors.New("privileged core is unavailable")
 	}
-	profile, err := decodeSysctlProfileRequest(payload, a.profiles)
+	profiles, defaultProfile, allowAdHoc := a.profileSet()
+	profile, err := decodeSysctlProfileRequest(payload, profiles, defaultProfile, allowAdHoc)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -153,7 +136,7 @@ func (a *SysctlTransactionApplier) Preview(
 	return plan, captured, err
 }
 
-func decodeSysctlProfileRequest(payload json.RawMessage, profiles map[string]SysctlProfile) (SysctlProfile, error) {
+func decodeSysctlProfileRequest(payload json.RawMessage, profiles map[string]SysctlProfile, defaultProfile string, allowAdHoc bool) (SysctlProfile, error) {
 	var request struct {
 		Profile  string   `json:"profile"`
 		Controls []string `json:"controls"`
@@ -167,8 +150,17 @@ func decodeSysctlProfileRequest(payload json.RawMessage, profiles map[string]Sys
 	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
 		return SysctlProfile{}, errors.New("hardening profile request contains trailing data")
 	}
+	if request.Controls != nil && len(request.Controls) == 0 {
+		return SysctlProfile{}, errors.New("control selection must not be empty")
+	}
+	if request.Profile == "" && len(request.Controls) == 0 && defaultProfile != "" {
+		request.Profile = defaultProfile
+	}
 	if (request.Profile == "") == (len(request.Controls) == 0) {
 		return SysctlProfile{}, errors.New("exactly one hardening profile or control selection is required")
+	}
+	if request.Profile == "" && !allowAdHoc {
+		return SysctlProfile{}, errors.New("ad-hoc hardening control selections are disabled by policy")
 	}
 	if request.Profile != "" {
 		if len(request.Profile) > 64 {
@@ -340,7 +332,8 @@ func (a *SysctlTransactionApplier) Reverse(
 		return err
 	}
 	if len(bytes.TrimSpace(afterRaw)) == 0 {
-		profile, exists := a.profiles[beforeProfile]
+		profiles, _, _ := a.profileSet()
+		profile, exists := profiles[beforeProfile]
 		if !exists {
 			return errors.New("hardening recovery profile is unavailable")
 		}

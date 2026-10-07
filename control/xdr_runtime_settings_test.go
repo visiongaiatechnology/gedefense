@@ -59,3 +59,26 @@ func TestBehaviorLearningFollowsRuntimeToggle(t *testing.T) {
 		t.Fatalf("behavior learning did not activate live: profiles=%d", got)
 	}
 }
+
+func TestBehaviorExecBurstThresholdHotReload(t *testing.T) {
+	model := &BehaviorModel{
+		enabled: true, warmup: 2, zscore: 3.5, minConnections: 2,
+		execBurst: 12, maxProfiles: 64, maxPorts: 64, profiles: make(map[string]*behaviorProfile),
+	}
+	settings := defaultRuntimeSettings(defaultConfig()).XDRFabric
+	settings.BehaviorExecBurst = 3
+	settings.BehaviorMaxProfiles = 64
+	settings.BehaviorMaxPorts = 64
+	model.Configure(settings)
+	now := time.Now().UTC()
+	process := ProcessSample{PID: 222, Comm: "burst", Exe: "/usr/bin/burst"}
+	for i := 0; i < 2; i++ {
+		if matches := model.ObserveExec(process, now.Add(time.Duration(i)*time.Second)); len(matches) != 0 {
+			t.Fatalf("exec burst fired before configured threshold: %+v", matches)
+		}
+	}
+	matches := model.ObserveExec(process, now.Add(2*time.Second))
+	if len(matches) != 1 || matches[0].ID != "XDR.ANOMALY.EXEC_BURST" {
+		t.Fatalf("hot-reloaded exec burst threshold not honored: %+v", matches)
+	}
+}

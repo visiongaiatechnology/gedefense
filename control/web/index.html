@@ -7,6 +7,7 @@
   <meta name="theme-color" content="#040914">
   <title>VGT GeDefense · Sovereign Linux Security Platform</title>
   <link rel="stylesheet" href="/assets/app.css">
+      <link rel="stylesheet" href="/assets/vendor/jsvectormap/jsvectormap.css">
   <link rel="stylesheet" href="/assets/v4.css">
   <script type="module" src="/assets/app.js"></script>
 </head>
@@ -51,6 +52,15 @@
             <svg viewBox="0 0 24 24" class="nav-icon-svg"><circle cx="12" cy="12" r="3"/><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
             <b data-i18n="nav.xdr">GeDefense XDR</b>
           </button>
+          <button class="nav-item" type="button" data-view="kinetic">
+            <svg viewBox="0 0 24 24" class="nav-icon-svg"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+            <b data-i18n="nav.kinetic">Kinetic Defense</b>
+            <span class="nav-badge-l7">LIVE</span>
+          </button>
+          <button class="nav-item" type="button" data-view="threat-intel">
+            <svg viewBox="0 0 24 24" class="nav-icon-svg"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+            <b data-i18n="nav.threatIntel">Threat Intelligence</b>
+          </button>
           <button class="nav-item" type="button" data-view="network">
             <svg viewBox="0 0 24 24" class="nav-icon-svg"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
             <b data-i18n="nav.network">Netzwerk</b>
@@ -89,7 +99,7 @@
           </button>
           <button class="nav-item" type="button" data-view="settings">
             <svg viewBox="0 0 24 24" class="nav-icon-svg"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-            <b data-i18n="nav.settings">Einstellungen</b>
+            <b data-i18n="nav.settings">Fabric Settings</b>
           </button>
           <button class="nav-item" type="button" data-view="system">
             <svg viewBox="0 0 24 24" class="nav-icon-svg"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
@@ -106,7 +116,7 @@
             <small id="sidebarMode">OBSERVE</small>
           </div>
         </div>
-        <span class="powered-line">GeDefense <span id="versionText">4.0.1</span></span>
+        <span class="powered-line">GeDefense <span id="versionText">4.2.0</span></span>
         <small class="vgt-credit" data-i18n="brand.powered">powered by VisionGaiaTechnology</small>
       </div>
     </aside>
@@ -155,7 +165,7 @@
         <section class="view active" data-page="overview" aria-labelledby="overviewHeading">
           <div class="hero-cockpit">
             <div class="hero-copy">
-              <p class="eyebrow" data-i18n="overview.kicker">GEDEFENSE 4.0.1 // SOVEREIGN LINUX DEFENSE</p>
+              <p class="eyebrow" data-i18n="overview.kicker">GEDEFENSE 4.1 // SOVEREIGN KINETIC DEFENSE</p>
               <h2 id="overviewHeading" data-i18n="overview.heading">Abwehr, die den Host als Gesamtsystem versteht.</h2>
               <p data-i18n="overview.description">Rust-XDP, signierte Policy-Snapshots, native L7 Application Defense und Linux-XDR korrelieren Netzwerk, Prozesse, Integrität und Verhalten – lokal, nachvollziehbar und ohne Cloud-Abhängigkeit.</p>
               <div class="hero-state">
@@ -181,39 +191,63 @@
             </div>
           </div>
 
-          <div class="metric-grid kpi-6">
-            <article class="metric-card">
-              <span data-i18n="metric.kernel">KERNEL CORE</span>
-              <strong id="coreMetric" data-i18n="dynamic.offline">OFFLINE</strong>
-              <small id="coreDetail" data-i18n="metric.ipc">IPC-Prüfung</small>
-            </article>
-            <article class="metric-card">
-              <span data-i18n="metric.xdr">XDR ENGINE</span>
-              <strong id="xdrMetric" data-i18n="dynamic.starting">STARTING</strong>
-              <small id="xdrDetail" data-i18n="metric.sensorInit">Sensorinitialisierung</small>
-            </article>
-            <article class="metric-card">
-              <span data-i18n="metric.rules">AKTIVE REGELN</span>
-              <strong id="blockCount">0</strong>
-              <small data-i18n="metric.signedCidrs">signierte CIDR-Policies</small>
-            </article>
-            <article class="metric-card clickable-card" id="overviewFeedCard" role="button" tabindex="0">
-              <span data-i18n="metric.threatFeeds">FEED MATRIX</span>
-              <strong id="overviewFeedCount">0</strong>
-              <small id="overviewFeedDetail" data-i18n="metric.threatFeedsDetail">Kernel XDP / cgroup</small>
-            </article>
-            <article class="metric-card">
-              <span data-i18n="metric.anomalies">ANOMALIEN</span>
-              <strong id="anomalyCount">0</strong>
-              <small data-i18n="metric.adaptive">adaptive Abweichungen</small>
-            </article>
-            <article class="metric-card">
-              <span data-i18n="metric.uptime">UPTIME</span>
-              <strong id="uptime">00:00:00</strong>
-              <small id="nodeName" data-i18n="system.defaultNode">VGT Node</small>
-            </article>
-          </div>
+          <div class="defense-telemetry node-board" aria-label="Knotenzustand und Direktzugriffe">
+            <div class="telemetry-group">
+              <h3 class="telemetry-title" data-i18n="overview.groupFabric">Fabric</h3>
+              <dl class="telemetry-list">
+                <div class="telemetry-row">
+                  <dt data-i18n="metric.kernel">Kernel Core</dt>
+                  <dd id="coreMetric" data-i18n="dynamic.offline">OFFLINE</dd>
+                </div>
+              </dl>
+              <button id="overviewXdrCard" class="telemetry-row telemetry-action" type="button">
+                <span class="telemetry-label" data-i18n="metric.xdr">XDR Engine</span>
+                <span class="telemetry-value" id="xdrMetric" data-i18n="dynamic.starting">STARTING</span>
+                <span class="telemetry-trail" aria-hidden="true">›</span>
+              </button>
+              <p class="telemetry-note">
+                <span id="coreDetail" data-i18n="metric.ipc">IPC-Prüfung</span>
+                <span aria-hidden="true"> · </span>
+                <span id="xdrDetail" data-i18n="metric.sensorInit">Sensorinitialisierung</span>
+              </p>
+            </div>
 
+            <div class="telemetry-group">
+              <h3 class="telemetry-title" data-i18n="overview.groupEnforcement">Durchsetzung</h3>
+              <button id="overviewBlockCard" class="telemetry-row telemetry-action" type="button">
+                <span class="telemetry-label" data-i18n="metric.rules">Aktive CIDR-Sperren</span>
+                <span class="telemetry-value" id="blockCount">0</span>
+                <span class="telemetry-trail" aria-hidden="true">›</span>
+              </button>
+              <button id="overviewFeedCard" class="telemetry-row telemetry-action" type="button">
+                <span class="telemetry-label" data-i18n="metric.threatFeeds">Feed-Matrix</span>
+                <span class="telemetry-value" id="overviewFeedCount">0</span>
+                <span class="telemetry-trail" aria-hidden="true">›</span>
+              </button>
+              <p class="telemetry-note" id="overviewFeedDetail" data-i18n="metric.threatFeedsDetail">Kernel XDP / cgroup</p>
+            </div>
+
+            <div class="telemetry-group">
+              <h3 class="telemetry-title" data-i18n="overview.groupDetection">Erkennung</h3>
+              <button id="overviewAnomalyCard" class="telemetry-row telemetry-action" type="button">
+                <span class="telemetry-label" data-i18n="metric.anomalies">Adaptive Anomalien</span>
+                <span class="telemetry-value" id="anomalyCount">0</span>
+                <span class="telemetry-trail" aria-hidden="true">›</span>
+              </button>
+              <p class="telemetry-note" data-i18n="metric.adaptive">adaptive Abweichungen</p>
+            </div>
+
+            <div class="telemetry-group">
+              <h3 class="telemetry-title" data-i18n="overview.groupOperation">Betrieb</h3>
+              <dl class="telemetry-list">
+                <div class="telemetry-row">
+                  <dt data-i18n="metric.uptime">Uptime</dt>
+                  <dd id="uptime">00:00:00</dd>
+                </div>
+              </dl>
+              <p class="telemetry-note" id="nodeName" data-i18n="system.defaultNode">VGT Node</p>
+            </div>
+          </div>
           <div class="overview-grid">
             <article class="glass-panel panel-padded">
               <div class="section-head flex-between">
@@ -352,7 +386,7 @@
           </div>
 
           <article class="glass-panel panel-padded mt-lg">
-            <div class="section-head"><p class="eyebrow" data-i18n="protection.readinessKicker">READINESS AUDIT</p><h3 class="m-0" data-i18n="dialog.activate.preflight">Aktuelle Freigabebedingungen</h3></div>
+            <div id="protectionReadiness" class="section-head"><p class="eyebrow" data-i18n="protection.readinessKicker">READINESS AUDIT</p><h3 class="m-0" data-i18n="dialog.activate.preflight">Aktuelle Freigabebedingungen</h3></div>
             <ul id="protectionBlockersList" class="gate-list mt-sm"></ul>
           </article>
         </section>
@@ -377,16 +411,44 @@
             <span id="l7EffectivePill" class="status-pill warn">OBSERVE</span>
           </div>
 
-          <div class="metric-grid kpi-4">
-            <article class="metric-card"><span data-i18n="l7.kpi.inspected">GEPRÜFTE REQUESTS</span><strong id="l7KpiInspected">0</strong><small data-i18n="l7.kpi.inspectedDetail">HTTP-Transaktionen</small></article>
-            <article class="metric-card"><span data-i18n="l7.kpi.findings">ERKANNTE BEDROHUNGEN</span><strong id="l7KpiFindings">0</strong><small data-i18n="l7.kpi.findingsDetail">Angriffsmuster erkannt</small></article>
-            <article class="metric-card"><span data-i18n="l7.kpi.blocked">BLOCKIERTE REQUESTS</span><strong id="l7KpiBlocked">0</strong><small data-i18n="l7.kpi.blockedDetail">Am Edge abgewiesen</small></article>
-            <article class="metric-card"><span data-i18n="l7.kpi.rateLimited">RATE-LIMITED</span><strong id="l7KpiRateLimited">0</strong><small data-i18n="l7.kpi.rateLimitedDetail">Traffic-Drosselung</small></article>
-          </div>
+          <div class="defense-telemetry" aria-label="Application-Defense-Telemetrie">
+            <div class="telemetry-group">
+              <h3 class="telemetry-title">Traffic</h3>
+              <dl class="telemetry-list">
+                <div class="telemetry-row">
+                  <dt data-i18n="l7.kpi.inspected">Geprüfte Requests</dt>
+                  <dd id="l7KpiInspected" class="font-mono">0</dd>
+                </div>
+                <div class="telemetry-row">
+                  <dt data-i18n="l7.kpi.rateLimited">Rate-limited</dt>
+                  <dd id="l7KpiRateLimited" class="font-mono">0</dd>
+                </div>
+                <div class="telemetry-row">
+                  <dt data-i18n="l7.kpi.rejected">Verworfen</dt>
+                  <dd id="l7KpiRejected" class="font-mono">0</dd>
+                </div>
+              </dl>
+              <p class="telemetry-note" data-i18n="l7.kpi.trafficNote">Rate-Limiting und fehlformatierte Streams werden am Edge abgewiesen.</p>
+            </div>
 
-          <div class="grid-2 mt-md">
-            <article class="metric-card"><span data-i18n="l7.kpi.rejected">VERWORFENE REQUESTS</span><strong id="l7KpiRejected">0</strong><small data-i18n="l7.kpi.rejectedDetail">Fehlformatierte Streams</small></article>
-            <article class="metric-card"><span data-i18n="l7.kpi.responseFindings">RESPONSE FINDINGS</span><strong id="l7KpiResponseFindings">0</strong><small data-i18n="l7.kpi.responseFindingsDetail">Data-Leakage-Prüfungen</small></article>
+            <div class="telemetry-group">
+              <h3 class="telemetry-title">Urteil</h3>
+              <dl class="telemetry-list">
+                <div class="telemetry-row">
+                  <dt data-i18n="l7.kpi.findings">Erkannte Bedrohungen</dt>
+                  <dd id="l7KpiFindings" class="font-mono">0</dd>
+                </div>
+                <div class="telemetry-row">
+                  <dt data-i18n="l7.kpi.blocked">Blockierte Requests</dt>
+                  <dd id="l7KpiBlocked" class="font-mono">0</dd>
+                </div>
+                <div class="telemetry-row">
+                  <dt data-i18n="l7.kpi.responseFindings">Response Findings</dt>
+                  <dd id="l7KpiResponseFindings" class="font-mono">0</dd>
+                </div>
+              </dl>
+              <p class="telemetry-note" data-i18n="l7.kpi.verdictNote">Erkennung, Durchsetzung und Data-Leakage-Prüfung der Antwort.</p>
+            </div>
           </div>
 
           <article class="glass-panel panel-padded mt-lg">
@@ -422,6 +484,26 @@
                 <div class="diag-val fs-sm">UPSTREAM <span id="l7SecUpstreamErrors">0</span> · RESPONSE <span id="l7SecResponseErrors">0</span></div>
                 <small class="diag-sub" data-i18n="l7.telemetry.framingDetail">Protokoll- &amp; Datenabflussschutz</small>
               </div>
+              <div class="diag-card">
+                <span class="diag-label" data-i18n="l7.status.coverage">TRAFFIC COVERAGE</span>
+                <div class="diag-val"><span id="l7StatusCoveragePill" class="status-pill warn">AWAITING</span></div>
+                <small id="l7StatusCoverageReason" class="diag-sub" data-i18n="l7.telemetry.coverageDetail">Verifizierter Inspektionspfad</small>
+              </div>
+              <div class="diag-card">
+                <span class="diag-label" data-i18n="l7.status.tlsPath">TLS SENSORPFAD</span>
+                <div class="diag-val"><span id="l7StatusTLSPathPill" class="status-pill warn">AWAITING</span></div>
+                <small class="diag-sub" data-i18n="l7.telemetry.tlsPathDetail">ClientHello-Telemetrie muss den Unix-Socket erreichen</small>
+              </div>
+              <div class="diag-card">
+                <span class="diag-label" data-i18n="l7.status.tlsHandshakes">TLS HANDSHAKES</span>
+                <div class="diag-val"><span id="l7StatusTLSHandshakes">0</span></div>
+                <small class="diag-sub"><span data-i18n="l7.telemetry.tlsHandshakesDetail">Letzter verifizierter Handshake:</span> <span id="l7StatusTLSLastHandshake">---</span></small>
+              </div>
+              <div class="diag-card">
+                <span class="diag-label" data-i18n="l7.status.tlsFingerprints">TLS FINGERPRINT SET</span>
+                <div class="diag-val fs-sm" id="l7StatusTLSFingerprint">---</div>
+                <small class="diag-sub" data-i18n="l7.telemetry.tlsFingerprintDetail">Lokale JA3-Signaturen und Strukturprofile</small>
+              </div>
             </div>
           </article>
 
@@ -439,7 +521,7 @@
             <div class="section-head flex-between">
               <div>
                 <p class="eyebrow" data-i18n="l7.findings.title">INSPECTED TRAFFIC FINDINGS</p>
-                <h3 class="m-0" data-i18n="l7.findings.title">Erkannte L7-Vorfälle</h3>
+                <h3 id="l7Findings" class="m-0" data-i18n="l7.findings.title">Erkannte L7-Vorfälle</h3>
               </div>
             </div>
             <div class="table-wrap mt-md">
@@ -520,7 +602,7 @@
             <div class="section-head flex-between">
               <div>
                 <p class="eyebrow" data-i18n="hardening.inventoryKicker">CONTROL INVENTORY</p>
-                <h3 class="m-0" data-i18n="hardening.inventoryTitle">Schutzmaßnahmen und Empfehlungen</h3>
+                <h3 id="hardeningInventory" class="m-0" data-i18n="hardening.inventoryTitle">Schutzmaßnahmen und Empfehlungen</h3>
               </div>
               <button id="refreshHardening" class="button button-quiet" type="button" data-i18n="hardening.refresh">Neu prüfen</button>
             </div>
@@ -536,7 +618,7 @@
             <div class="section-head flex-between">
               <div>
                 <p class="eyebrow" data-i18n="hardening.transactionsKicker">DURABLE SECURITY TRANSACTIONS</p>
-                <h3 class="m-0" data-i18n="hardening.transactionsTitle">Sicherheitstransaktionen</h3>
+                <h3 id="hardeningTransactions" class="m-0" data-i18n="hardening.transactionsTitle">Sicherheitstransaktionen</h3>
               </div>
               <span id="transactionHealth" class="status-pill warn" data-i18n="dynamic.initializing">INITIALISIERUNG</span>
             </div>
@@ -737,7 +819,7 @@
               </div>
               <button id="refreshBoot" class="button button-quiet" type="button" data-i18n="boot.refresh">Neu messen</button>
             </div>
-            <div class="table-wrap mt-md">
+            <div id="bootEvidence" class="table-wrap mt-md">
               <table>
                 <thead><tr><th data-i18n="boot.control">Kontrolle</th><th data-i18n="table.status">Status</th><th data-i18n="table.summary">Zusammenfassung</th><th data-i18n="table.source">Quelle</th><th data-i18n="boot.digestEvidence">Digest / Evidenz</th></tr></thead>
                 <tbody id="bootRows"></tbody>
@@ -759,12 +841,44 @@
             </div>
           </div>
 
-          <div class="metric-grid kpi-5">
-            <article class="metric-card"><span data-i18n="xdr.processes">ÜBERWACHTE PROZESSE</span><strong id="xdrProcesses">0</strong><small data-i18n="xdr.processDetail">aktuelle PID-Identitäten</small></article>
-            <article class="metric-card"><span data-i18n="xdr.flows">EXTERNE FLOWS</span><strong id="xdrConnections">0</strong><small data-i18n="xdr.flowDetail">prozesskorreliert</small></article>
-            <article class="metric-card"><span data-i18n="xdr.evaluations">EVALUIERUNGEN</span><strong id="evaluationCount">0</strong><small data-i18n="xdr.pipeline">begrenzte Worker-Pipeline</small></article>
-            <article class="metric-card"><span data-i18n="xdr.queue">QUEUE</span><strong id="queueDepth">0 / 0</strong><small id="queueDrops">0 Drops</small></article>
-            <article class="metric-card"><span data-i18n="xdr.profiles">PROFILE</span><strong id="profileCount">0</strong><small id="warmProfiles">0 warm</small></article>
+          <div class="defense-telemetry" aria-label="XDR-Telemetrie">
+            <div class="telemetry-group">
+              <h3 class="telemetry-title">Sichtbarkeit</h3>
+              <dl class="telemetry-list">
+                <div class="telemetry-row">
+                  <dt data-i18n="xdr.processes">Überwachte Prozesse</dt>
+                  <dd id="xdrProcesses" class="font-mono">0</dd>
+                </div>
+                <div class="telemetry-row">
+                  <dt data-i18n="xdr.flows">Externe Flows</dt>
+                  <dd id="xdrConnections" class="font-mono">0</dd>
+                </div>
+                <div class="telemetry-row">
+                  <dt data-i18n="xdr.profiles">Verhaltensprofile</dt>
+                  <dd id="profileCount" class="font-mono">0</dd>
+                </div>
+              </dl>
+              <p class="telemetry-note" data-i18n="xdr.visibilityNote">PID-Identitäten und prozesskorrelierte Flows aus dem laufenden Scan.</p>
+            </div>
+
+            <div class="telemetry-group">
+              <h3 class="telemetry-title">Pipeline</h3>
+              <dl class="telemetry-list">
+                <div class="telemetry-row">
+                  <dt data-i18n="xdr.evaluations">Evaluierungen</dt>
+                  <dd id="evaluationCount" class="font-mono">0</dd>
+                </div>
+                <div class="telemetry-row">
+                  <dt data-i18n="xdr.queue">Analyse-Queue</dt>
+                  <dd id="queueDepth" class="font-mono">0 / 0</dd>
+                </div>
+                <div class="telemetry-row">
+                  <dt data-i18n="xdr.warmProfiles">Warme Profile</dt>
+                  <dd id="warmProfiles" class="font-mono">0</dd>
+                </div>
+              </dl>
+              <p id="queueDrops" class="telemetry-note">0 Drops</p>
+            </div>
           </div>
 
           <article id="xdrIntegrityPanel" class="glass-panel panel-padded mt-lg" hidden>
@@ -817,7 +931,7 @@
             <div class="section-head flex-between">
               <div>
                 <p class="eyebrow" data-i18n="xdr.baselineKicker">ADAPTIVE BASELINE</p>
-                <h3 class="m-0" data-i18n="xdr.behavior">Verhaltensprofile</h3>
+                <h3 id="xdrBehavior" class="m-0" data-i18n="xdr.behavior">Verhaltensprofile</h3>
               </div>
               <span id="behaviorIntegrity" class="status-pill muted" data-i18n="dynamic.integrityUnknown">INTEGRITY UNKNOWN</span>
             </div>
@@ -834,6 +948,454 @@
                   </tr>
                 </thead>
                 <tbody id="profiles"></tbody>
+              </table>
+            </div>
+          </article>
+        </section>
+
+        <!-- KINETIC DEFENSE LIVE VIEW -->
+        <section class="view" data-page="kinetic" aria-labelledby="kineticHeading" hidden>
+          <div class="view-context-bar kinetic-context-bar">
+            <div>
+              <p class="eyebrow m-0" data-i18n="kinetic.kicker">REALTIME INGRESS DEFENSE FABRIC</p>
+              <h2 id="kineticHeading" class="m-0 fs-xl" data-i18n="kinetic.heading">Kinetic Defense</h2>
+              <p class="view-context-desc" data-i18n="kinetic.description">Echtzeit-Ingress-Sensorik, Sliding-Window-Rate-Limiting, Subnetz-Aggregation und automatisches Containment mit Evidenzbindung.</p>
+            </div>
+            <div class="view-context-actions kinetic-context-actions">
+              <span id="kineticCoverageBadge" class="status-pill muted">VERIFYING</span>
+              <span id="kineticGeoBadge" class="status-pill muted">GEO OFFLINE</span>
+              <span id="kineticHistoryBadge" class="status-pill muted">HISTORY VERIFYING</span>
+              <button id="kineticReconcileBtn" class="button button-quiet" type="button" data-i18n="kinetic.reconcileBtn">Sweep & Abgleich</button>
+            </div>
+          </div>
+
+          <div class="kinetic-command-bar">
+            <div class="kinetic-verdict" role="status" aria-live="polite">
+              <span class="status-dot warning" id="kineticSensorDot"></span>
+              <div class="kinetic-verdict-body">
+                <strong id="kineticSensorSummary">Ingress-Sensor wird verifiziert</strong>
+                <span id="kineticSensorReason">Noch keine bestätigte Kernel-Telemetrie.</span>
+              </div>
+              <dl class="kinetic-verdict-meta font-mono">
+                <div><dt>MODE</dt><dd id="kineticEnforcementMode">OBSERVE</dd></div>
+                <div><dt>CAP</dt><dd id="kineticTrackingCapacity">65.536</dd></div>
+                <div><dt>VIEW</dt><dd id="kineticCurrentWindow">LIVE</dd></div>
+              </dl>
+            </div>
+
+            <div class="kinetic-command-controls" aria-label="Kinetic Live Filter">
+              <div class="kinetic-toolbar-group">
+                <span class="kinetic-toolbar-label" id="kineticWindowLabel">ZEITFENSTER</span>
+                <div class="kinetic-filter-group" role="group" aria-labelledby="kineticWindowLabel">
+                  <button class="button button-quiet active fs-xs" type="button" data-kinetic-window="live">LIVE</button>
+                  <button class="button button-quiet fs-xs" type="button" data-kinetic-window="1m">1M</button>
+                  <button class="button button-quiet fs-xs" type="button" data-kinetic-window="5m">5M</button>
+                  <button class="button button-quiet fs-xs" type="button" data-kinetic-window="15m">15M</button>
+                  <button class="button button-quiet fs-xs" type="button" data-kinetic-window="1h">1H</button>
+                  <button class="button button-quiet fs-xs" type="button" data-kinetic-window="24h">24H</button>
+                </div>
+              </div>
+              <div class="kinetic-toolbar-group">
+                <span class="kinetic-toolbar-label" id="kineticSourceLabel">QUELLEN</span>
+                <div class="kinetic-filter-group" role="group" aria-labelledby="kineticSourceLabel">
+                  <button class="button button-quiet active fs-xs" type="button" data-kinetic-state="all">ALL</button>
+                  <button class="button button-quiet fs-xs" type="button" data-kinetic-state="suspicious">SUSPICIOUS</button>
+                  <button class="button button-quiet fs-xs" type="button" data-kinetic-state="blocked">BLOCKED</button>
+                </div>
+              </div>
+              <div class="kinetic-toolbar-truth">
+                <span id="kineticWindowTruth" class="font-mono">SERVER WINDOW // LIVE</span>
+                <small id="kineticHistoryNote">Historie wird serverseitig verifiziert.</small>
+              </div>
+            </div>
+          </div>
+
+          <div class="defense-telemetry" aria-label="Kinetische Telemetrie">
+            <div class="telemetry-group">
+              <h3 class="telemetry-title">Fenster</h3>
+              <dl class="telemetry-list">
+                <div class="telemetry-row">
+                  <dt data-i18n="kinetic.kpiHits">Ingress-Pakete</dt>
+                  <dd id="kineticHitsTotal" class="font-mono">0</dd>
+                </div>
+                <div class="telemetry-row">
+                  <dt data-i18n="kinetic.kpiAttempts">Verbindungsversuche</dt>
+                  <dd id="kineticAttemptsWindow" class="font-mono">0</dd>
+                </div>
+              </dl>
+              <p class="telemetry-note" data-i18n="kinetic.kpiWindowNote">Serverseitig über das gewählte Fenster aggregiert, keine Browser-Schätzung.</p>
+            </div>
+
+            <div class="telemetry-group">
+              <h3 class="telemetry-title">Detektion</h3>
+              <dl class="telemetry-list">
+                <div class="telemetry-row">
+                  <dt data-i18n="kinetic.kpiActiveIPs">Aktive Quellen</dt>
+                  <dd id="kineticActiveTrackingIPs" class="font-mono">0</dd>
+                </div>
+                <div class="telemetry-row">
+                  <dt data-i18n="kinetic.kpiPortscans">Portscans &amp; Probes</dt>
+                  <dd id="kineticPortscans" class="font-mono">0</dd>
+                </div>
+                <div class="telemetry-row">
+                  <dt data-i18n="kinetic.kpiVelocity">SYN / Velocity Bursts</dt>
+                  <dd id="kineticVelocityBursts" class="font-mono">0</dd>
+                </div>
+                <div class="telemetry-row">
+                  <dt data-i18n="kinetic.kpiSubnets">Subnetz-Korrelationen</dt>
+                  <dd id="kineticSubnetStrikes" class="font-mono">0</dd>
+                </div>
+              </dl>
+              <p class="telemetry-note" data-i18n="kinetic.kpiDetectNote">Bounded Sliding-Window-Tracking · IPv4 /24, IPv6 /64.</p>
+            </div>
+
+            <div class="telemetry-group">
+              <h3 class="telemetry-title">Antwort</h3>
+              <dl class="telemetry-list">
+                <div class="telemetry-row">
+                  <dt data-i18n="kinetic.kpiBlocks">Blockiert</dt>
+                  <dd id="kineticActiveBlocks" class="font-mono">0</dd>
+                </div>
+                <div class="telemetry-row">
+                  <dt data-i18n="kinetic.kpiDrops">Tracking-Drops</dt>
+                  <dd id="kineticTrackingDrops" class="font-mono">0</dd>
+                </div>
+              </dl>
+              <p id="kineticTrackerPressure" class="telemetry-note">Bounded Capacity / Evictions</p>
+            </div>
+          </div>
+          <div class="kinetic-command-grid mt-md">
+            <article class="glass-panel kinetic-map-panel">
+              <div class="section-head kinetic-panel-head">
+                <div>
+                  <p class="eyebrow">LIVE ORIGIN TELEMETRY</p>
+                  <h3 class="m-0">Globale Ingress-Karte</h3>
+                  <p class="kinetic-panel-copy">Geografische Einordnung aktiver Quellen aus der lokalen GeoIP/ASN-Datenbank. Keine Cloud-Abfrage.</p>
+                </div>
+                <div class="kinetic-map-legend" aria-label="Kartenlegende">
+                  <span><i class="kinetic-legend-dot tracking"></i> Tracking</span>
+                  <span><i class="kinetic-legend-dot suspicious"></i> Suspicious</span>
+                  <span><i class="kinetic-legend-dot blocked"></i> Blocked</span>
+                </div>
+              </div>
+
+              <div class="kinetic-world-wrap">
+                <div class="kinetic-geo-stage">
+                  <div id="kineticGeoMap" class="kinetic-geo-canvas" role="img"
+                       aria-label="Weltkarte der beobachteten Ingress-Quellen aus der lokalen GeoIP/ASN-Datenbank"></div>
+                  <div class="kinetic-geo-controls" role="group" aria-label="Kartenansicht">
+                    <button id="kineticGeoZoomIn" class="button button-quiet fs-xs kinetic-geo-zoom" type="button"
+                            aria-label="Karte vergrößern" data-i18n-aria-label="kinetic.geoZoomIn">+</button>
+                    <button id="kineticGeoZoomOut" class="button button-quiet fs-xs kinetic-geo-zoom" type="button"
+                            aria-label="Karte verkleinern" data-i18n-aria-label="kinetic.geoZoomOut">−</button>
+                  </div>
+                </div>
+                <p id="kineticGeoLayerNote" class="kinetic-geo-note font-mono"></p>
+                <div id="kineticMapEmpty" class="kinetic-map-empty" hidden>
+                  <strong>GeoIP noch nicht geladen</strong>
+                  <span>Live-Quellen werden bereits erfasst. Für die Karte lokale GeoIP/ASN-Daten unter dem konfigurierten Pfad bereitstellen.</span>
+                </div>
+              </div>
+
+              <div class="kinetic-map-footer">
+                <div><span class="text-muted">Geo DB</span><strong id="kineticGeoEntries" class="font-mono">0 Einträge</strong></div>
+                <div><span class="text-muted">Kartierbar</span><strong id="kineticGeoMappable" class="font-mono">0 Quellen</strong></div>
+                <div><span class="text-muted">Hot Country</span><strong id="kineticHotCountry" class="font-mono">---</strong></div>
+                <div><span class="text-muted">Hot Port</span><strong id="kineticHotPort" class="font-mono">---</strong></div>
+              </div>
+            </article>
+
+            <aside class="kinetic-intel-stack">
+              <article class="glass-panel panel-padded kinetic-intel-card">
+                <div class="section-head">
+                  <div><p class="eyebrow">SOURCE INTELLIGENCE</p><h3 class="m-0">Top Herkunft</h3></div>
+                  <span id="kineticCountryCount" class="status-pill muted">0 COUNTRIES</span>
+                </div>
+                <div id="kineticTopCountries" class="kinetic-ranked-list mt-md"></div>
+              </article>
+
+              <article class="glass-panel panel-padded kinetic-intel-card">
+                <div class="section-head">
+                  <div><p class="eyebrow">TARGET SURFACE</p><h3 class="m-0">Hot Ports</h3></div>
+                </div>
+                <div id="kineticTopPorts" class="kinetic-ranked-list mt-md"></div>
+              </article>
+
+              <article class="glass-panel panel-padded kinetic-intel-card">
+                <div class="section-head">
+                  <div><p class="eyebrow">DETECTION SIGNALS</p><h3 class="m-0">Top Regeln</h3></div>
+                </div>
+                <div id="kineticTopRules" class="kinetic-ranked-list mt-md"></div>
+              </article>
+
+              <article class="glass-panel panel-padded kinetic-intel-card">
+                <div class="section-head">
+                  <div><p class="eyebrow">SENSOR COVERAGE</p><h3 class="m-0">Datenpfad</h3></div>
+                </div>
+                <div id="kineticSensorMatrix" class="kinetic-sensor-matrix mt-md"></div>
+              </article>
+            </aside>
+          </div>
+
+          <article id="kineticSources" class="glass-panel panel-padded mt-md kinetic-source-panel">
+            <div class="section-head kinetic-source-head">
+              <div>
+                <p class="eyebrow">LIVE SOURCE MATRIX</p>
+                <h3 class="m-0">Aktive Ingress-Quellen</h3>
+                <p class="kinetic-panel-copy">Bounded Top-N der aktuell beobachteten Quellen. Status und Score werden serverseitig berechnet.</p>
+              </div>
+            </div>
+            <div class="table-wrap kinetic-source-table-wrap mt-md">
+              <table class="table-compact kinetic-source-table">
+                <thead>
+                  <tr>
+                    <th>Status</th>
+                    <th>Quell-IP</th>
+                    <th>Geo / ASN</th>
+                    <th>Rate</th>
+                    <th>SYN</th>
+                    <th>Ports</th>
+                    <th>Subnetz</th>
+                    <th>Score</th>
+                    <th>Letztes Signal</th>
+                    <th>Trigger</th>
+                  </tr>
+                </thead>
+                <tbody id="kineticSourcesTableBody"></tbody>
+              </table>
+            </div>
+          </article>
+
+          <div id="kineticStream" class="grid-2 mt-md kinetic-lower-grid">
+            <article class="glass-panel panel-padded flex-col gap-md">
+              <div class="section-head">
+                <div>
+                  <p class="eyebrow" data-i18n="kinetic.feedKicker">LIVE REACTION STREAM</p>
+                  <h3 class="m-0" data-i18n="kinetic.feedTitle">Kinetischer Event-Stream</h3>
+                </div>
+                <span id="kineticEventCountBadge" class="status-pill muted">0 EVENTS</span>
+              </div>
+              <div class="table-wrap kinetic-events-wrap">
+                <table class="table-compact">
+                  <thead>
+                    <tr>
+                      <th data-i18n="table.time">Zeit</th>
+                      <th data-i18n="table.rule">Regel</th>
+                      <th data-i18n="table.source">Quell-IP</th>
+                      <th data-i18n="table.port">Zielport</th>
+                      <th data-i18n="table.hits">Hits (Rate)</th>
+                      <th data-i18n="table.action">Aktion</th>
+                      <th data-i18n="table.reason">Entscheidungsgrund</th>
+                    </tr>
+                  </thead>
+                  <tbody id="kineticEventsTableBody"></tbody>
+                </table>
+              </div>
+            </article>
+
+            <article id="kineticDetailDrawer" class="glass-panel panel-padded flex-col gap-md kinetic-inspector" hidden>
+              <div class="section-head">
+                <div>
+                  <p class="eyebrow" data-i18n="kinetic.drawerKicker">FORENSIC INSPECTOR</p>
+                  <h3 class="m-0" data-i18n="kinetic.drawerTitle">Entscheidungskette</h3>
+                </div>
+                <button id="kineticDrawerClose" class="button button-quiet" type="button">✕</button>
+              </div>
+              <div class="kinetic-inspector-hero">
+                <span id="drawerState" class="status-pill muted">TRACKING</span>
+                <strong id="drawerTargetIP" class="font-mono text-cyan">---</strong>
+                <span id="drawerGeo" class="text-muted fs-xs">---</span>
+              </div>
+              <div class="kinetic-inspector-grid">
+                <div><span data-i18n="kinetic.drawerRule">Regel-ID</span><strong id="drawerRuleID" class="font-mono">---</strong></div>
+                <div><span data-i18n="kinetic.drawerSeverity">Schweregrad</span><strong id="drawerSeverity">---</strong></div>
+                <div><span data-i18n="kinetic.drawerScore">Risiko-Score</span><strong id="drawerScore" class="font-mono">---</strong></div>
+                <div><span data-i18n="kinetic.drawerAction">Durchsetzung</span><strong id="kineticDrawerAction">---</strong></div>
+                <div><span data-i18n="kinetic.drawerTime">Zeitstempel</span><strong id="drawerTime" class="font-mono fs-xs">---</strong></div>
+                <div><span data-i18n="kinetic.drawerPort">Ziel / Protokoll</span><strong id="drawerPortProtocol" class="font-mono fs-xs">---</strong></div>
+                <div><span data-i18n="kinetic.drawerSubnet">Subnetz</span><strong id="drawerSubnet" class="font-mono fs-xs">---</strong></div>
+                <div><span>Hits / Rate</span><strong id="drawerHitsRate" class="font-mono fs-xs">---</strong></div>
+              </div>
+              <div class="kinetic-inspector-section"><span class="text-muted fs-xs" data-i18n="kinetic.drawerDecision">Entscheidungsgrund</span><p id="kineticDrawerDecision" class="fs-xs font-mono text-cyan mt-xs">---</p></div>
+              <div class="kinetic-inspector-section"><span class="text-muted fs-xs" data-i18n="kinetic.drawerFingerprint">Dedupe Fingerprint</span><code id="drawerFingerprint" class="fs-xs font-mono text-break">---</code></div>
+            </article>
+          </div>
+        </section>
+
+
+        <!-- THREAT INTELLIGENCE VIEW -->
+        <section class="view" data-page="threat-intel" aria-labelledby="threatIntelHeading" hidden>
+          <div class="view-context-bar threat-intel-context-bar">
+            <div>
+              <p class="eyebrow m-0" data-i18n="threatIntel.kicker">GLOBAL IOC SYNCHRONIZATION</p>
+              <h2 id="threatIntelHeading" class="m-0 fs-xl" data-i18n="threatIntel.heading">Threat Intelligence</h2>
+              <p class="view-context-desc" data-i18n="threatIntel.description">Verbindliche Status-, Vektor- und Synchronisationsübersicht aller signierten Bedrohungs-Feeds mit Kernel-Applikationskontrolle.</p>
+            </div>
+            <div class="view-context-actions threat-intel-context-actions">
+              <span id="threatIntelSyncStatusBadge" class="status-pill muted">NEVER_SYNCED</span>
+              <span id="threatIntelKernelStatusBadge" class="status-pill muted">NOT_APPLIED</span>
+              <button id="threatIntelSyncBtn" class="button button-primary" type="button" data-i18n="threatIntel.syncBtn">Feeds synchronisieren</button>
+              <button id="threatIntelApplyBtn" class="button button-quiet" type="button" data-i18n="threatIntel.applyBtn">Kernel-Stand veröffentlichen</button>
+              <button id="threatIntelRefreshBtn" class="button button-quiet" type="button" data-i18n="threatIntel.refreshBtn">Aktualisieren</button>
+            </div>
+          </div>
+
+          <div id="threatIntelOperationStrip" class="threat-intel-operation-strip" role="status" aria-live="polite" hidden>
+            <span id="threatIntelOperationState" class="status-pill muted">IDLE</span>
+            <span id="threatIntelOperationDetail" class="font-mono fs-xs">---</span>
+          </div>
+
+          <div id="threatIntelTruthStrip" class="threat-intel-truth-strip" role="status">
+            <div class="threat-intel-truth-main">
+              <span id="threatIntelTruthDot" class="status-dot muted"></span>
+              <div>
+                <strong id="threatIntelTruthTitle" data-i18n="threatIntel.truthNeverTitle">Noch keine Feed-Synchronisation</strong>
+                <span id="threatIntelTruthDetail" data-i18n="threatIntel.truthNeverDetail">Es existiert noch keine bestätigte veröffentlichte Feed-Generation.</span>
+              </div>
+            </div>
+            <div class="threat-intel-truth-meta">
+              <span>FEEDS <strong id="threatIntelSourceSummary">0 / 0 OK</strong></span>
+              <span>KERNEL GEN <strong id="threatIntelKernelGeneration">---</strong></span>
+              <span>APPLIED <strong id="threatIntelKernelAppliedAt">---</strong></span>
+            </div>
+          </div>
+
+          <div class="defense-telemetry" aria-label="Threat-Intelligence-Telemetrie">
+            <div class="telemetry-group">
+              <h3 class="telemetry-title">Vektoren</h3>
+              <div class="vector-composition" role="img" aria-labelledby="threatIntelCompositionLabel">
+                <p id="threatIntelCompositionLabel" class="sr-only">Verteilung der aktiven Indikatoren nach Wirkung</p>
+                <div class="vector-track" aria-hidden="true">
+                  <span class="vector-segment vector-block" id="threatIntelBlockSegment"></span>
+                  <span class="vector-segment vector-correlate" id="threatIntelCorrelateSegment"></span>
+                  <span class="vector-segment vector-annotate" id="threatIntelAnnotateSegment"></span>
+                </div>
+              </div>
+              <dl class="telemetry-list">
+                <div class="telemetry-row">
+                  <dt><i class="telemetry-swatch vector-block" aria-hidden="true"></i><span data-i18n="threatIntel.kpiBlock">Block</span></dt>
+                  <dd id="threatIntelBlockVectors" class="font-mono">0</dd>
+                </div>
+                <div class="telemetry-row">
+                  <dt><i class="telemetry-swatch vector-correlate" aria-hidden="true"></i><span data-i18n="threatIntel.kpiCorrelate">Korrelation</span></dt>
+                  <dd id="threatIntelCorrelateVectors" class="font-mono">0</dd>
+                </div>
+                <div class="telemetry-row">
+                  <dt><i class="telemetry-swatch vector-annotate" aria-hidden="true"></i><span data-i18n="threatIntel.kpiAnnotate">Annotierung</span></dt>
+                  <dd id="threatIntelAnnotateVectors" class="font-mono">0</dd>
+                </div>
+                <div class="telemetry-row telemetry-row-total">
+                  <dt data-i18n="threatIntel.kpiTotal">Gesamt</dt>
+                  <dd id="threatIntelTotalVectors" class="font-mono">0</dd>
+                </div>
+              </dl>
+              <p class="telemetry-note" data-i18n="threatIntel.kpiVectorNote">Wirkung je Indikator: Kernel-Drop, Risiko-Erhöhung oder forensischer Kontext.</p>
+            </div>
+
+            <div class="telemetry-group">
+              <h3 class="telemetry-title">Quellen</h3>
+              <dl class="telemetry-list">
+                <div class="telemetry-row">
+                  <dt data-i18n="threatIntel.kpiHealthySources">Gesund</dt>
+                  <dd id="threatIntelHealthySources" class="font-mono">0 / 0</dd>
+                </div>
+                <div class="telemetry-row">
+                  <dt data-i18n="threatIntel.kpiProblemSources">Gestört</dt>
+                  <dd id="threatIntelProblemSources" class="font-mono">0</dd>
+                </div>
+                <div class="telemetry-row">
+                  <dt data-i18n="threatIntel.kpiGeneration">Generation</dt>
+                  <dd id="threatIntelGeneration" class="font-mono">---</dd>
+                </div>
+                <div class="telemetry-row telemetry-row-wide">
+                  <dt data-i18n="threatIntel.kpiLastSync">Letzter Voll-Sync</dt>
+                  <dd id="threatIntelLastFullSync" class="font-mono">---</dd>
+                </div>
+              </dl>
+              <p class="telemetry-note" data-i18n="threatIntel.kpiSourceNote">OK / konfiguriert · STALE und ERROR gelten als gestört.</p>
+            </div>
+          </div>
+          <div class="threat-intel-ops-grid mt-md">
+            <article class="glass-panel panel-padded threat-intel-ops-card">
+              <div class="section-head">
+                <div>
+                  <p class="eyebrow" data-i18n="threatIntel.syncStateKicker">SYNC STATE</p>
+                  <h3 id="threatIntelSyncState" class="m-0" data-i18n="threatIntel.syncStateTitle">Synchronisationswahrheit</h3>
+                </div>
+              </div>
+              <div class="threat-intel-fact-grid">
+                <div><span data-i18n="threatIntel.lastAttempt">Letzter Versuch</span><strong id="threatIntelLastAttempt" class="font-mono">---</strong></div>
+                <div><span data-i18n="threatIntel.lastGood">Letzter erfolgreicher Sync</span><strong id="threatIntelLastSuccess" class="font-mono">---</strong></div>
+                <div><span data-i18n="threatIntel.lastPartial">Letzter Teilerfolg</span><strong id="threatIntelLastPartialSync" class="font-mono">---</strong></div>
+                <div><span data-i18n="threatIntel.lastFull">Letzter vollständiger Sync</span><strong id="threatIntelLastFullSyncDetail" class="font-mono">---</strong></div>
+                <div><span data-i18n="threatIntel.feedGeneration">Feed Generation</span><strong id="threatIntelGenerationDetail" class="font-mono">---</strong></div>
+              </div>
+            </article>
+
+            <article class="glass-panel panel-padded threat-intel-ops-card">
+              <div class="section-head">
+                <div>
+                  <p class="eyebrow" data-i18n="threatIntel.kernelKicker">KERNEL APPLY</p>
+                  <h3 class="m-0" data-i18n="threatIntel.kernelTitle">Kernel-Konsistenz</h3>
+                </div>
+              </div>
+              <div class="threat-intel-fact-grid">
+                <div><span data-i18n="threatIntel.kernelStatus">Status</span><strong id="threatIntelKernelStateText" class="font-mono">NOT_APPLIED</strong></div>
+                <div><span data-i18n="threatIntel.kernelGeneration">Kernel Generation</span><strong id="threatIntelKernelGenerationDetail" class="font-mono">---</strong></div>
+                <div><span data-i18n="threatIntel.kernelLastApply">Letzte Anwendung</span><strong id="threatIntelKernelAppliedAtDetail" class="font-mono">---</strong></div>
+                <div><span data-i18n="threatIntel.kernelDelta">Letzter Commit + / -</span><strong id="threatIntelKernelDelta" class="font-mono">+0 / -0</strong></div>
+                <div><span data-i18n="threatIntel.generationRelation">Feed / Kernel</span><strong id="threatIntelGenerationRelation" class="font-mono">---</strong></div>
+              </div>
+              <div id="threatIntelKernelErrorRow" class="threat-intel-error-box" hidden>
+                <span data-i18n="threatIntel.kernelError">Kernel-Synchronisationsfehler</span>
+                <strong id="threatIntelKernelErrorMsg" class="font-mono">---</strong>
+              </div>
+            </article>
+
+            <article class="glass-panel panel-padded threat-intel-ops-card">
+              <div class="section-head">
+                <div>
+                  <p class="eyebrow" data-i18n="threatIntel.integrityKicker">INTEGRITY</p>
+                  <h3 class="m-0" data-i18n="threatIntel.integrityTitle">Snapshot-Identität</h3>
+                </div>
+              </div>
+              <div class="threat-intel-fingerprint-block">
+                <span data-i18n="threatIntel.fingerprint">Fingerprint</span>
+                <code id="threatIntelFingerprint" class="font-mono text-cyan">---</code>
+              </div>
+              <p class="threat-intel-card-note" data-i18n="threatIntel.integrityNote">Der Fingerprint gehört zur veröffentlichten Feed-Generation. Ein Kernel-Apply gilt nur bei explizit bestätigtem Apply-State als aktiv.</p>
+            </article>
+          </div>
+
+          <article class="glass-panel panel-padded mt-md threat-intel-source-panel">
+            <div class="section-head threat-intel-source-head">
+              <div>
+                <p class="eyebrow" data-i18n="threatIntel.tableKicker">SYNCHRONIZED SOURCES</p>
+                <h3 class="m-0" data-i18n="threatIntel.tableHeading">Aktive Threat-Intelligence-Quellen</h3>
+                <p class="threat-intel-table-copy" data-i18n="threatIntel.tableCopy">Last-known-good Zustand pro Feed. Fehler überschreiben einen brauchbaren alten Stand nicht stillschweigend.</p>
+              </div>
+              <div class="threat-intel-table-summary">
+                <span><i class="status-dot good"></i><strong id="threatIntelFeedOKCount">0</strong> OK</span>
+                <span><i class="status-dot warning"></i><strong id="threatIntelFeedStaleCount">0</strong> STALE</span>
+                <span><i class="status-dot danger"></i><strong id="threatIntelFeedErrorCount">0</strong> ERROR</span>
+              </div>
+            </div>
+            <div class="table-wrap threat-intel-table-wrap">
+              <table class="table-compact threat-intel-table">
+                <thead>
+                  <tr>
+                    <th data-i18n="threatIntel.colSource">Quelle</th>
+                    <th data-i18n="threatIntel.colMode">Modus</th>
+                    <th data-i18n="threatIntel.colStatus">Status</th>
+                    <th data-i18n="threatIntel.colVectors">Vektoren</th>
+                    <th data-i18n="threatIntel.colGeneration">Generation</th>
+                    <th data-i18n="threatIntel.colLastAttempt">Letzter Versuch</th>
+                    <th data-i18n="threatIntel.colLastSuccess">Last Good</th>
+                    <th data-i18n="threatIntel.colFailures">Fehlerfolge</th>
+                    <th data-i18n="threatIntel.colLastError">Letzter Fehler</th>
+                  </tr>
+                </thead>
+                <tbody id="threatIntelFeedsTableBody"></tbody>
               </table>
             </div>
           </article>
@@ -885,7 +1447,7 @@
               <div class="section-head flex-between">
                 <div>
                   <p class="eyebrow" data-i18n="network.activeContainment">ACTIVE CONTAINMENT</p>
-                  <h3 class="m-0" data-i18n="network.rules">Blockregeln</h3>
+                  <h3 id="networkRules" class="m-0" data-i18n="network.rules">Blockregeln</h3>
                 </div>
                 <span><b id="feedCount">0</b> <span class="fs-xs text-muted" data-i18n="network.feedVectors">Feed-Vektoren</span></span>
               </div>
@@ -940,7 +1502,7 @@
           </div>
 
           <article class="glass-panel panel-padded mt-lg">
-            <div class="section-head"><p class="eyebrow" data-i18n="policy.trustChain">TRUST CHAIN</p><h3 class="m-0" data-i18n="policy.lifecycle">Policy-Lebenszyklus</h3></div>
+            <div id="policyTrustChain" class="section-head"><p class="eyebrow" data-i18n="policy.trustChain">TRUST CHAIN</p><h3 class="m-0" data-i18n="policy.lifecycle">Policy-Lebenszyklus</h3></div>
             <div class="grid-gap-md mt-md">
               <div class="diag-card">
                 <span class="diag-label" data-i18n="policy.cryptoVerification">KRYPTOGRAFISCHE VERIFIKATION</span>
@@ -985,7 +1547,7 @@
             <div class="section-head flex-between">
               <div>
                 <p class="eyebrow" data-i18n="forensics.vaultKicker">ENCRYPTED RESPONSE VAULT</p>
-                <h3 class="m-0" data-i18n="quarantine.heading">Dateiquarantäne</h3>
+                <h3 id="quarantineHeading" class="m-0" data-i18n="quarantine.heading">Dateiquarantäne</h3>
               </div>
               <span id="quarantineHealth" class="status-pill warn" data-i18n="dynamic.initializing">INITIALIZING</span>
             </div>
@@ -1046,7 +1608,7 @@
           </article>
 
           <article class="glass-panel panel-padded mt-lg">
-            <div class="section-head"><p class="eyebrow" data-i18n="forensics.registerKicker">EVIDENCE REGISTER</p><h3 class="m-0" data-i18n="forensics.history">Incident-Historie</h3></div>
+            <div id="forensicsRegister" class="section-head"><p class="eyebrow" data-i18n="forensics.registerKicker">EVIDENCE REGISTER</p><h3 class="m-0" data-i18n="forensics.history">Incident-Historie</h3></div>
             <div class="table-wrap mt-md">
               <table>
                 <thead><tr><th data-i18n="table.time">Zeit</th><th data-i18n="table.id">ID</th><th data-i18n="table.severity">Severity</th><th data-i18n="table.score">Score</th><th data-i18n="table.summary">Zusammenfassung</th><th data-i18n="table.action">Action</th><th data-i18n="table.status">Status</th></tr></thead>
@@ -1095,7 +1657,7 @@
 
           <div class="grid-2 mt-lg">
             <article class="glass-panel panel-padded">
-              <div class="section-head"><p class="eyebrow" data-i18n="release.promotionKicker">STAGED PROMOTION</p><h3 class="m-0" data-i18n="release.change">Phase wechseln</h3></div>
+              <div id="releasePromotion" class="section-head"><p class="eyebrow" data-i18n="release.promotionKicker">STAGED PROMOTION</p><h3 class="m-0" data-i18n="release.change">Phase wechseln</h3></div>
               <form id="releaseForm" class="flex-col gap-md mt-md">
                 <label>
                   <span data-i18n="release.target">Zielphase</span>
@@ -1118,7 +1680,7 @@
             </article>
 
             <article class="glass-panel panel-padded danger-zone">
-              <div class="section-head"><p class="eyebrow" data-i18n="release.failsafeKicker">FAIL-SAFE</p><h3 class="m-0" data-i18n="release.emergency">Emergency Stop</h3></div>
+              <div id="releaseEmergencySection" class="section-head"><p class="eyebrow" data-i18n="release.failsafeKicker">FAIL-SAFE</p><h3 class="m-0" data-i18n="release.emergency">Emergency Stop</h3></div>
               <p class="fs-xs text-muted mt-xs" data-i18n="release.emergencyDescription">Persistiert einen lokalen Stop-Anker und blockiert aktive Reaktion.</p>
               <form id="emergencyForm" class="flex-col gap-md mt-md">
                 <label>
@@ -1159,6 +1721,60 @@
               <span id="settingsRevision" class="status-pill muted">REVISION 0</span>
             </div>
           </div>
+
+          <section class="fabric-surface" aria-labelledby="fabricSurfaceHeading">
+            <div class="section-head flex-between gap-md">
+              <div>
+                <p class="eyebrow" data-i18n="fabric.surfaceKicker">SECURITY FABRIC CONTROL PLANE</p>
+                <h3 id="fabricSurfaceHeading" class="m-0" data-i18n="fabric.surfaceTitle">Fabric-Konfiguration</h3>
+                <p class="view-context-desc" data-i18n="fabric.surfaceDescription">Suche über alle administrierbaren Schlüssel, signierter Export, zweistufiger Import und Abweichungsprüfung zwischen gespeicherter Revision und wirksamer Engine-Konfiguration.</p>
+              </div>
+              <span id="fabricDriftPill" class="status-pill muted">CHECKING</span>
+            </div>
+
+            <div class="fabric-surface-grid">
+              <div class="fabric-surface-panel fabric-search-panel">
+                <label class="fabric-field-label" for="fabricSearchInput" data-i18n="fabric.searchLabel">Konfiguration durchsuchen</label>
+                <input id="fabricSearchInput" class="fabric-search-input" type="search" autocomplete="off"
+                       spellcheck="false" placeholder="TTL, Quarantäne, Rate-Limit …"
+                       data-i18n-placeholder="fabric.searchPlaceholder">
+                <div id="fabricSearchResults" class="fabric-search-results" role="list" aria-live="polite">
+                  <p class="empty-note" data-i18n="fabric.searchHint">Mindestens zwei Zeichen eingeben. Treffer führen direkt in die Einstellungen des Moduls.</p>
+                </div>
+              </div>
+
+              <div class="fabric-surface-panel">
+                <div class="section-head flex-between gap-sm">
+                  <h4 class="m-0" data-i18n="fabric.driftTitle">Konfigurationsabweichung</h4>
+                  <button id="fabricDriftRefresh" class="button button-quiet fs-xs" type="button" data-i18n="fabric.refreshBtn">Prüfen</button>
+                </div>
+                <div id="fabricDriftFindings" class="fabric-drift-list" aria-live="polite">
+                  <p class="empty-note" data-i18n="fabric.driftChecking">Abweichung wird geprüft.</p>
+                </div>
+
+                <div class="section-head flex-between gap-sm mt-md">
+                  <h4 class="m-0" data-i18n="fabric.historyTitle">Revisionshistorie</h4>
+                </div>
+                <div id="fabricSurfaceHistory" class="fabric-history-list" aria-live="polite">
+                  <p class="empty-note" data-i18n="fabric.historyLoading">Historie wird geladen.</p>
+                </div>
+              </div>
+
+              <div class="fabric-surface-panel">
+                <h4 class="m-0" data-i18n="fabric.transferTitle">Export und Import</h4>
+                <p class="fabric-panel-copy" data-i18n="fabric.transferDescription">Der Export enthält ausschließlich administrierbare Werte und wird mit dem Policy-Schlüssel signiert. Ein Import wird erst geprüft, dann als Diff gezeigt und niemals direkt übernommen.</p>
+                <div class="fabric-transfer-actions">
+                  <button id="fabricExportBtn" class="button button-quiet" type="button" data-i18n="fabric.exportBtn">Bundle exportieren</button>
+                  <label class="button button-quiet fabric-file-button" for="fabricImportInput">
+                    <span data-i18n="fabric.importBtn">Bundle prüfen</span>
+                    <input id="fabricImportInput" type="file" accept="application/json,.json" class="sr-only">
+                  </label>
+                </div>
+                <p id="fabricImportStatus" class="fabric-surface-status muted" role="status" aria-live="polite" data-i18n="fabric.importIdle">Kein Bundle geladen.</p>
+                <div id="fabricImportPreview" class="fabric-import-preview"></div>
+              </div>
+            </div>
+          </section>
 
           <form id="settingsForm" class="grid-2">
             <article class="glass-panel panel-padded">
@@ -1233,7 +1849,7 @@
             <div class="section-head flex-between">
               <div>
                 <p class="eyebrow" data-i18n="settings.managementKicker">MANAGEMENT SURVIVAL PATH</p>
-                <h3 class="m-0" data-i18n="settings.allowlist">Management-Allowlist</h3>
+                <h3 id="settingsAllowlist" class="m-0" data-i18n="settings.allowlist">Management-Allowlist</h3>
               </div>
               <span class="fs-xs text-amber" data-i18n="settings.required">Pflicht vor Enforce</span>
             </div>
@@ -1308,7 +1924,7 @@
             <div class="section-head flex-between">
               <div>
                 <p class="eyebrow" data-i18n="system.gaiaKicker">GAIA ISOLATION FABRIC</p>
-                <h3 class="m-0" data-i18n="cells.heading">Gaia Cells</h3>
+                <h3 id="cellsHeading" class="m-0" data-i18n="cells.heading">Gaia Cells</h3>
               </div>
               <span id="cellsHealth" class="status-pill muted" data-i18n="dynamic.notAvailable">NOT AVAILABLE</span>
             </div>
@@ -1383,7 +1999,7 @@
         </label>
         <div class="modal-action-row">
           <button class="button button-quiet" type="button" data-dialog-close data-i18n="dialog.cancel">Abbrechen</button>
-          <button id="btnConfirmActivation" class="button button-primary" type="submit" data-i18n="dialog.activate.confirm">Stufe aktivieren</button>
+          <button id="btnConfirmActivation" class="button button-primary" type="submit" data-i18n="dialog.activate.confirm" disabled>Stufe aktivieren</button>
         </div>
       </form>
     </div>

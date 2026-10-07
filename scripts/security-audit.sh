@@ -45,7 +45,7 @@ import json, re, sys
 root=Path(sys.argv[1])
 i18n=(root/'control'/'web'/'i18n.js').read_text(encoding='utf-8')
 marker='export const catalogs = Object.freeze('
-end_marker=');\nconst messages = catalogs;'
+end_marker=');\n\nlet activeLanguage'
 start=i18n.find(marker)
 end=i18n.find(end_marker,start+len(marker))
 if start < 0 or end < 0:
@@ -85,7 +85,7 @@ html=(web/'index.html').read_text(encoding='utf-8')
 if '<option value="zh-CN">简体中文</option>' not in html:
     raise SystemExit('Simplified Chinese selector option missing')
 for value in [
-    'GeDefense', 'VisionGaiaTechnology', '4.0.1', 'paypal.me/dergoldenelotus',
+    'GeDefense', 'VisionGaiaTechnology', '4.1.0', 'paypal.me/dergoldenelotus',
     'bc1q3ue5gq822tddmkdrek79adlkm36fatat3lz0dm', '0xD37DEfb09e07bD775EaaE9ccDaFE3a5b2348Fe85',
 ]:
     if value not in html:

@@ -15,21 +15,26 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 	"unicode/utf8"
 )
 
 const (
-	coreProtocol                   = "VGT3"
-	maxCoreResponseBytes           = 4096
-	cellLSMDenyNonUnixSocket uint8 = 1
+	coreProtocol                          = "VGT3"
+	maxCoreResponseBytes                  = 4096
+	maxCoreIngressEventsPerResponse       = 12
+	cellLSMDenyNonUnixSocket        uint8 = 1
 )
 
 type CoreClient struct {
-	socket  string
-	timeout time.Duration
-	key     []byte
+	socket string
+	// timeoutNanos is read on every command, so it is held in an atomic rather
+	// than behind a mutex on the IPC hot path. The administrable System namespace
+	// can retune it without a restart.
+	timeoutNanos atomic.Int64
+	key          []byte
 }
 
 type CoreExecEvent struct {
@@ -37,6 +42,28 @@ type CoreExecEvent struct {
 	UID  uint32
 	GID  uint32
 	Comm string
+}
+
+type CoreIngressEvent struct {
+	Family       uint8
+	Protocol     uint8
+	TCPFlags     uint8
+	AttemptCount uint8
+	SrcPort      uint16
+	DstPort      uint16
+	Packets      uint32
+	Bytes        uint32
+	SYNCount     uint32
+	ACKCount     uint32
+	WindowEpoch  uint64
+	Source       net.IP
+	Destination  net.IP
+}
+
+type CoreIngressHealth struct {
+	EventsEmitted       uint64
+	RingDrops           uint64
+	TrackInsertFailures uint64
 }
 
 type CoreEgressDropEvent struct {
@@ -76,7 +103,9 @@ func NewCoreClient(socket, keyPath string, timeout time.Duration) (*CoreClient, 
 	if err != nil {
 		return nil, fmt.Errorf("core IPC key: %w", err)
 	}
-	return &CoreClient{socket: socket, timeout: timeout, key: key}, nil
+	client := &CoreClient{socket: socket, key: key}
+	client.timeoutNanos.Store(int64(timeout))
+	return client, nil
 }
 
 func loadCoreIPCKey(path string) ([]byte, error) {
@@ -148,6 +177,15 @@ func coreMAC(key []byte, fields ...string) string {
 	return hex.EncodeToString(mac.Sum(nil))
 }
 
+// deadline returns the active command deadline.
+func (c *CoreClient) deadline() time.Duration {
+	value := time.Duration(c.timeoutNanos.Load())
+	if value <= 0 {
+		return 2 * time.Second
+	}
+	return value
+}
+
 func (c *CoreClient) command(parts ...string) (string, error) {
 	if len(parts) == 0 || len(parts) > 16 {
 		return "", errors.New("invalid core command arity")
@@ -165,12 +203,12 @@ func (c *CoreClient) command(parts ...string) (string, error) {
 	requestFields := append([]string{coreProtocol, stamp, nonce}, parts...)
 	mac := coreMAC(c.key, requestFields...)
 
-	conn, err := net.DialTimeout("unix", c.socket, c.timeout)
+	conn, err := net.DialTimeout("unix", c.socket, c.deadline())
 	if err != nil {
 		return "", err
 	}
 	defer conn.Close()
-	if err := conn.SetDeadline(time.Now().Add(c.timeout)); err != nil {
+	if err := conn.SetDeadline(time.Now().Add(c.deadline())); err != nil {
 		return "", fmt.Errorf("core IPC deadline configuration failed: %w", err)
 	}
 	line := strings.Join(append(requestFields, mac), " ") + "\n"
@@ -338,6 +376,92 @@ func parseCoreExecEvents(response string) ([]CoreExecEvent, error) {
 			UID:  uint32(uid64),
 			GID:  uint32(gid64),
 			Comm: string(comm),
+		})
+	}
+	return events, nil
+}
+
+func (c *CoreClient) IngressEvents() ([]CoreIngressEvent, error) {
+	response, err := c.command("INGRESS_EVENTS")
+	if err != nil {
+		return nil, err
+	}
+	return parseCoreIngressEvents(response)
+}
+
+func (c *CoreClient) IngressHealth() (CoreIngressHealth, error) {
+	response, err := c.command("INGRESS_HEALTH")
+	if err != nil {
+		return CoreIngressHealth{}, err
+	}
+	return parseCoreIngressHealth(response)
+}
+
+func parseCoreIngressHealth(response string) (CoreIngressHealth, error) {
+	fields := strings.Split(response, ":")
+	if len(fields) != 3 {
+		return CoreIngressHealth{}, errors.New("core returned malformed ingress health")
+	}
+	emitted, err1 := strconv.ParseUint(fields[0], 10, 64)
+	ringDrops, err2 := strconv.ParseUint(fields[1], 10, 64)
+	trackFailures, err3 := strconv.ParseUint(fields[2], 10, 64)
+	if err1 != nil || err2 != nil || err3 != nil {
+		return CoreIngressHealth{}, errors.New("core returned invalid ingress health counters")
+	}
+	return CoreIngressHealth{
+		EventsEmitted: emitted, RingDrops: ringDrops, TrackInsertFailures: trackFailures,
+	}, nil
+}
+
+func parseCoreIngressEvents(response string) ([]CoreIngressEvent, error) {
+	if response == "empty" {
+		return nil, nil
+	}
+	records := strings.Split(response, ",")
+	if len(records) > maxCoreIngressEventsPerResponse {
+		return nil, errors.New("core returned too many ingress events")
+	}
+	events := make([]CoreIngressEvent, 0, len(records))
+	for _, record := range records {
+		fields := strings.Split(record, ":")
+		if len(fields) != 13 {
+			return nil, errors.New("core returned malformed ingress event")
+		}
+		family64, familyErr := strconv.ParseUint(fields[0], 10, 8)
+		protocol64, protocolErr := strconv.ParseUint(fields[1], 10, 8)
+		flags64, flagsErr := strconv.ParseUint(fields[2], 10, 8)
+		attempt64, attemptErr := strconv.ParseUint(fields[3], 10, 8)
+		srcPort64, srcPortErr := strconv.ParseUint(fields[4], 10, 16)
+		dstPort64, dstPortErr := strconv.ParseUint(fields[5], 10, 16)
+		packets64, packetsErr := strconv.ParseUint(fields[6], 10, 32)
+		bytes64, bytesErr := strconv.ParseUint(fields[7], 10, 32)
+		syn64, synErr := strconv.ParseUint(fields[8], 10, 32)
+		ack64, ackErr := strconv.ParseUint(fields[9], 10, 32)
+		windowEpoch, epochErr := strconv.ParseUint(fields[10], 10, 64)
+		source, sourceErr := hex.DecodeString(fields[11])
+		destination, destinationErr := hex.DecodeString(fields[12])
+		family := uint8(family64)
+		expectedAddressBytes := 16
+		if family == 4 {
+			expectedAddressBytes = 4
+		}
+		if familyErr != nil || protocolErr != nil || flagsErr != nil || attemptErr != nil || srcPortErr != nil ||
+			dstPortErr != nil || packetsErr != nil || bytesErr != nil || synErr != nil || ackErr != nil || epochErr != nil ||
+			sourceErr != nil || destinationErr != nil || (family != 4 && family != 6) ||
+			packets64 == 0 || syn64 > packets64 || ack64 > packets64 || attempt64 > packets64 ||
+			(protocol64 == 6 && attempt64 != syn64) || windowEpoch == 0 || len(source) != expectedAddressBytes ||
+			len(destination) != expectedAddressBytes {
+			return nil, errors.New("core returned invalid ingress event fields")
+		}
+		srcIP := make(net.IP, len(source))
+		dstIP := make(net.IP, len(destination))
+		copy(srcIP, source)
+		copy(dstIP, destination)
+		events = append(events, CoreIngressEvent{
+			Family: family, Protocol: uint8(protocol64), TCPFlags: uint8(flags64), AttemptCount: uint8(attempt64),
+			SrcPort: uint16(srcPort64), DstPort: uint16(dstPort64),
+			Packets: uint32(packets64), Bytes: uint32(bytes64), SYNCount: uint32(syn64), ACKCount: uint32(ack64),
+			WindowEpoch: windowEpoch, Source: srcIP, Destination: dstIP,
 		})
 	}
 	return events, nil
@@ -788,7 +912,7 @@ func UserMalwareScan(socketPath, path string, timeout time.Duration) (MalwareSca
 	if socketPath != "/run/gedefense-scan/scan.sock" || timeout < time.Second || timeout > time.Minute {
 		return MalwareScanResult{}, errors.New("user malware scan endpoint rejected")
 	}
-	if err := validateQuarantinePath(path); err != nil {
+	if err := validateQuarantinePathBuiltin(path); err != nil {
 		return MalwareScanResult{}, errors.New("user malware scan path rejected")
 	}
 	token, err := quarantinePathToken(path)
@@ -829,7 +953,7 @@ func UserMalwareScan(socketPath, path string, timeout time.Duration) (MalwareSca
 }
 
 func (c *CoreClient) MalwareScan(path string) (MalwareScanResult, error) {
-	if err := validateQuarantinePath(path); err != nil {
+	if err := validateQuarantinePathBuiltin(path); err != nil {
 		return MalwareScanResult{}, errors.New("malware scan path is outside the permitted boundary")
 	}
 	token, err := quarantinePathToken(path)

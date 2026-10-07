@@ -8,6 +8,7 @@ import (
 	"io"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -24,7 +25,9 @@ type QuarantineCore interface {
 }
 
 type QuarantineTransactionApplier struct {
-	core QuarantineCore
+	mu     sync.Mutex
+	core   QuarantineCore
+	policy quarantinePolicy
 }
 
 type quarantineRequest struct {
@@ -81,7 +84,7 @@ func (a *QuarantineTransactionApplier) Preview(
 	if a.core == nil {
 		return nil, nil, errors.New("privileged quarantine core is unavailable")
 	}
-	request, err := decodeQuarantineRequest(payload)
+	request, err := decodeQuarantineRequest(payload, a.policySnapshot())
 	if err != nil {
 		return nil, nil, err
 	}
@@ -108,11 +111,11 @@ func (a *QuarantineTransactionApplier) Apply(
 	planRaw json.RawMessage,
 	beforeRaw json.RawMessage,
 ) (json.RawMessage, error) {
-	plan, err := decodeQuarantinePlan(planRaw)
+	plan, err := decodeQuarantinePlan(planRaw, a.policySnapshot())
 	if err != nil {
 		return nil, err
 	}
-	before, err := decodeQuarantinePlan(beforeRaw)
+	before, err := decodeQuarantinePlan(beforeRaw, a.policySnapshot())
 	if err != nil || plan != before {
 		return nil, errors.New("quarantine pre-state does not match the authorized plan")
 	}
@@ -128,7 +131,7 @@ func (a *QuarantineTransactionApplier) Verify(
 	planRaw json.RawMessage,
 	afterRaw json.RawMessage,
 ) error {
-	plan, err := decodeQuarantinePlan(planRaw)
+	plan, err := decodeQuarantinePlan(planRaw, a.policySnapshot())
 	if err != nil {
 		return err
 	}
@@ -143,7 +146,7 @@ func (a *QuarantineTransactionApplier) Reverse(
 	beforeRaw json.RawMessage,
 	afterRaw json.RawMessage,
 ) error {
-	before, err := decodeQuarantinePlan(beforeRaw)
+	before, err := decodeQuarantinePlan(beforeRaw, a.policySnapshot())
 	if err != nil {
 		return err
 	}
@@ -156,45 +159,51 @@ func (a *QuarantineTransactionApplier) Reverse(
 	return a.core.QuarantineRestore(before.Path, before.ObjectID, before.Identity)
 }
 
-func decodeQuarantineRequest(raw json.RawMessage) (quarantineRequest, error) {
+func decodeQuarantineRequest(raw json.RawMessage, policy quarantinePolicy) (quarantineRequest, error) {
 	var request quarantineRequest
 	if err := decodeQuarantineJSON(raw, &request); err != nil {
 		return quarantineRequest{}, errors.New("invalid quarantine request")
 	}
-	if err := validateQuarantinePath(request.Path); err != nil {
+	if err := validateQuarantinePath(request.Path, policy); err != nil {
 		return quarantineRequest{}, errors.New("quarantine path is outside the permitted boundary")
 	}
 	return request, nil
 }
 
-func validateQuarantinePath(path string) error {
+// validateQuarantinePath applies the structural rules and the published path
+// policy. The structural rules are immutable; the policy can only add
+// restrictions, because the built-in denylist is appended at evaluation time and
+// is never removed by configuration.
+func validateQuarantinePath(path string, policy quarantinePolicy) error {
 	clean := filepath.Clean(path)
 	if path == "" || len(path) > 2048 || !filepath.IsAbs(path) ||
-		clean != path || strings.ContainsRune(path, '\x00') || quarantinePathForbidden(clean) {
+		clean != path || strings.ContainsRune(path, '\x00') ||
+		policy.pathForbidden(clean) || policy.pathOutsideAllowedRoots(clean) {
 		return errors.New("quarantine path is invalid")
 	}
 	return nil
 }
 
+// quarantinePathForbidden keeps the compiled-in rule set available for callers
+// that have no published policy.
 func quarantinePathForbidden(path string) bool {
-	for _, root := range []string{
-		"/", "/proc", "/sys", "/dev", "/run",
-		"/etc/vgt/gedefense", "/var/lib/vgt/gedefense", "/opt/vgt/gedefense",
-	} {
-		if path == root || (root != "/" && strings.HasPrefix(path, root+"/")) {
-			return true
-		}
-	}
-	return false
+	return quarantinePolicy{}.pathForbidden(path)
 }
 
-func decodeQuarantinePlan(raw json.RawMessage) (quarantinePlan, error) {
+// validateQuarantinePathBuiltin applies only the immutable rules. The malware
+// scan paths use it: they must never inherit an operator relaxation, and the
+// built-in boundary is what protects the host and the control plane itself.
+func validateQuarantinePathBuiltin(path string) error {
+	return validateQuarantinePath(path, quarantinePolicy{})
+}
+
+func decodeQuarantinePlan(raw json.RawMessage, policy quarantinePolicy) (quarantinePlan, error) {
 	var plan quarantinePlan
 	if err := decodeQuarantineJSON(raw, &plan); err != nil ||
 		plan.Schema != quarantineSchema || !validQuarantineObjectID(plan.ObjectID) {
 		return quarantinePlan{}, errors.New("quarantine transaction plan is malformed")
 	}
-	if err := validateQuarantinePath(plan.Path); err != nil {
+	if err := validateQuarantinePath(plan.Path, policy); err != nil {
 		return quarantinePlan{}, errors.New("quarantine transaction path is invalid")
 	}
 	if err := validateQuarantineIdentity(plan.Identity); err != nil {
@@ -237,7 +246,7 @@ func (e *TransactionEngine) QuarantineStatus() QuarantineStatus {
 		if record.Status == "reversed" || record.Status == "failed" {
 			continue
 		}
-		plan, err := decodeQuarantinePlan(record.Plan)
+		plan, err := decodeQuarantinePlan(record.Plan, quarantinePolicy{})
 		if err != nil {
 			healthy = false
 			continue

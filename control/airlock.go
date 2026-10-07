@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -82,12 +83,36 @@ type AirlockInspectionResult struct {
 	ThreatType        string    `json:"threat_type,omitempty"`
 	Sanitized         bool      `json:"sanitized"`
 	Timestamp         time.Time `json:"timestamp"`
+	// QuarantinePath is set when automatic quarantine staged a refused object.
+	QuarantinePath  string `json:"quarantine_path,omitempty"`
+	QuarantineError string `json:"quarantine_error,omitempty"`
+}
+
+// airlockReportOnlyScore keeps a reported-only finding far below any block
+// threshold while still producing evidence.
+const airlockReportOnlyScore = 40
+
+// airlockPolicy is the administrable inspection and staging posture.
+type airlockPolicy struct {
+	enabled bool
+	// published distinguishes "no policy has been handed to this inspector yet" from
+	// "an administrator deliberately switched a detector off". Both would otherwise
+	// be the false zero value, and the safe reading of the two is not the same one.
+	published              bool
+	quarantineDir          string
+	maxFileSize            int64
+	mimeMismatchAction     string
+	polyglotDetection      bool
+	svgActiveContent       bool
+	executableUploadPolicy string
+	autoQuarantine         bool
 }
 
 type AirlockInspector struct {
 	mu            sync.RWMutex
 	quarantineDir string
 	maxFileSize   int64
+	policy        airlockPolicy
 }
 
 func NewAirlockInspector(quarantineDir string, maxFileSize int64) (*AirlockInspector, error) {
@@ -135,6 +160,78 @@ func DetectMagicType(buf []byte) string {
 }
 
 // InspectFile conducts comprehensive Magic-Byte, polyglot and cross-extension verification.
+func (a *AirlockInspector) policySnapshot() airlockPolicy {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	policy := a.policy
+	if policy.maxFileSize <= 0 {
+		policy.maxFileSize = a.maxFileSize
+	}
+	if policy.quarantineDir == "" {
+		policy.quarantineDir = a.quarantineDir
+	}
+	if policy.mimeMismatchAction == "" {
+		policy.mimeMismatchAction = airlockMimeActionReport
+	}
+	if policy.executableUploadPolicy == "" {
+		policy.executableUploadPolicy = airlockExecPolicyReject
+	}
+	if !policy.published {
+		// Fail closed. An inspector that has not been configured yet must inspect:
+		// returning the zero value here silently disabled magic-byte, polyglot and SVG
+		// detection, so every file was reported clean until a policy arrived. A
+		// security control defaults to enforcing, never to permitting.
+		policy.enabled = true
+		policy.polyglotDetection = true
+		policy.svgActiveContent = true
+	}
+	return policy
+}
+
+// ApplyPolicy republishes the administrable inspection and staging posture. The
+// signature set and the polyglot patterns stay fixed; only their participation
+// and the escalation score are administrable.
+func (a *AirlockInspector) ApplyPolicy(settings AirlockFabricSettings) error {
+	if a == nil {
+		return nil
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.policy = airlockPolicy{
+		published:              true,
+		enabled:                settings.Enabled,
+		quarantineDir:          settings.QuarantineDirectory,
+		maxFileSize:            settings.MaxFileSizeBytes,
+		mimeMismatchAction:     settings.MimeMismatchAction,
+		polyglotDetection:      settings.PolyglotDetection,
+		svgActiveContent:       settings.SVGActiveContent,
+		executableUploadPolicy: settings.ExecutableUploadPolicy,
+		autoQuarantine:         settings.AutoQuarantine,
+	}
+	return nil
+}
+
+// Enabled reports whether upload inspection participates in evaluation.
+func (a *AirlockInspector) Enabled() bool {
+	if a == nil {
+		return false
+	}
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.policy.enabled
+}
+
+// escalateScore maps a finding to its enforcement score. The administrable
+// executable upload policy decides whether a disguised executable is refused
+// outright or reported at a score that never crosses a block threshold on its
+// own.
+func (p airlockPolicy) escalateScore(rejectScore int) int {
+	if p.executableUploadPolicy == airlockExecPolicyReject {
+		return rejectScore
+	}
+	return airlockReportOnlyScore
+}
+
 func (a *AirlockInspector) InspectFile(filePath string) (*AirlockInspectionResult, error) {
 	fi, err := os.Stat(filePath)
 	if err != nil {
@@ -143,7 +240,8 @@ func (a *AirlockInspector) InspectFile(filePath string) (*AirlockInspectionResul
 
 	// Pattern 1.5.B: File size measured on actual disk file
 	fileSize := fi.Size()
-	if fileSize <= 0 || fileSize > a.maxFileSize {
+	policy := a.policySnapshot()
+	if fileSize <= 0 || fileSize > policy.maxFileSize {
 		return nil, NewAirlockValidationException(fmt.Sprintf("file size boundary violation: %d bytes", fileSize), nil)
 	}
 
@@ -185,7 +283,8 @@ func (a *AirlockInspector) InspectFile(filePath string) (*AirlockInspectionResul
 
 // InspectBytes inspects an in-memory object without staging attacker-controlled content on disk.
 func (a *AirlockInspector) InspectBytes(filename string, data []byte) (*AirlockInspectionResult, error) {
-	if len(data) == 0 || int64(len(data)) > a.maxFileSize {
+	policy := a.policySnapshot()
+	if len(data) == 0 || int64(len(data)) > policy.maxFileSize {
 		return nil, NewAirlockValidationException(fmt.Sprintf("file size boundary violation: %d bytes", len(data)), nil)
 	}
 	digestBytes := sha256.Sum256(data)
@@ -199,49 +298,70 @@ func (a *AirlockInspector) InspectBytes(filename string, data []byte) (*AirlockI
 		sampleEnd = 65536
 	}
 	detectedMime := DetectMagicType(data[:prefixEnd])
-	return a.evaluateContent(filename, int64(len(data)), digest, detectedMime, data[:sampleEnd])
+	result, err := a.evaluateContent(filename, int64(len(data)), digest, detectedMime, data[:sampleEnd])
+
+	// Preservation-on-reject: when the operator asked for automatic quarantine,
+	// a refused object is staged so the evidence survives the request.
+	if err != nil && result != nil && policy.autoQuarantine && policy.quarantineDir != "" {
+		ext := filepath.Ext(filename)
+		staged, stageErr := a.StageInJail(digest[:16]+ext, bytes.NewReader(data))
+		if stageErr == nil {
+			result.QuarantinePath = staged
+		} else {
+			result.QuarantineError = stageErr.Error()
+		}
+	}
+	return result, err
 }
 
 func (a *AirlockInspector) evaluateContent(filename string, fileSize int64, digest, detectedMime string, body []byte) (*AirlockInspectionResult, error) {
+	policy := a.policySnapshot()
 	ext := strings.ToLower(filepath.Ext(filename))
 	result := &AirlockInspectionResult{
 		IsClean: true, DetectedMime: detectedMime, DeclaredExtension: ext, FileSize: fileSize,
 		SHA256: digest, RiskScore: 0, Timestamp: time.Now().UTC(),
 	}
+	if !policy.enabled {
+		return result, nil
+	}
 
 	if detectedMime == "application/x-executable" && (ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".pdf" || ext == ".txt") {
 		result.IsClean = false
-		result.RiskScore = 250
+		result.RiskScore = clampScore(policy.escalateScore(250))
 		result.ThreatType = "DISGUISED_EXECUTABLE_PAYLOAD"
 		return result, NewAirlockSecurityException("ELF executable disguised as user document", nil)
 	}
-	if ext == ".png" && detectedMime != "image/png" {
-		result.IsClean = false
-		result.RiskScore = 150
-		result.ThreatType = "MIME_EXTENSION_MISMATCH"
-		return result, NewAirlockSecurityException(fmt.Sprintf("file declared %s but magic bytes indicate %s", ext, detectedMime), nil)
-	}
-	if (ext == ".jpg" || ext == ".jpeg") && detectedMime != "image/jpeg" {
-		result.IsClean = false
-		result.RiskScore = 150
-		result.ThreatType = "MIME_EXTENSION_MISMATCH"
-		return result, NewAirlockSecurityException(fmt.Sprintf("file declared %s but magic bytes indicate %s", ext, detectedMime), nil)
-	}
-	if ext == ".pdf" && detectedMime != "application/pdf" {
-		result.IsClean = false
-		result.RiskScore = 150
-		result.ThreatType = "MIME_EXTENSION_MISMATCH"
-		return result, NewAirlockSecurityException(fmt.Sprintf("file declared %s but magic bytes indicate %s", ext, detectedMime), nil)
-	}
-	for _, re := range dangerousPolyglotPatterns {
-		if re.Match(body) {
+	if policy.mimeMismatchAction == airlockMimeActionReport {
+		if ext == ".png" && detectedMime != "image/png" {
 			result.IsClean = false
-			result.RiskScore = 200
-			result.ThreatType = "POLYGLOT_SCRIPT_INJECTION"
-			return result, NewAirlockSecurityException("polyglot script payload embedded in binary body", nil)
+			result.RiskScore = 150
+			result.ThreatType = "MIME_EXTENSION_MISMATCH"
+			return result, NewAirlockSecurityException(fmt.Sprintf("file declared %s but magic bytes indicate %s", ext, detectedMime), nil)
+		}
+		if (ext == ".jpg" || ext == ".jpeg") && detectedMime != "image/jpeg" {
+			result.IsClean = false
+			result.RiskScore = 150
+			result.ThreatType = "MIME_EXTENSION_MISMATCH"
+			return result, NewAirlockSecurityException(fmt.Sprintf("file declared %s but magic bytes indicate %s", ext, detectedMime), nil)
+		}
+		if ext == ".pdf" && detectedMime != "application/pdf" {
+			result.IsClean = false
+			result.RiskScore = 150
+			result.ThreatType = "MIME_EXTENSION_MISMATCH"
+			return result, NewAirlockSecurityException(fmt.Sprintf("file declared %s but magic bytes indicate %s", ext, detectedMime), nil)
 		}
 	}
-	if ext == ".svg" || detectedMime == "image/svg+xml" {
+	if policy.polyglotDetection {
+		for _, re := range dangerousPolyglotPatterns {
+			if re.Match(body) {
+				result.IsClean = false
+				result.RiskScore = 200
+				result.ThreatType = "POLYGLOT_SCRIPT_INJECTION"
+				return result, NewAirlockSecurityException("polyglot script payload embedded in binary body", nil)
+			}
+		}
+	}
+	if policy.svgActiveContent && (ext == ".svg" || detectedMime == "image/svg+xml") {
 		if svgXXEEntity.Match(body) {
 			result.IsClean = false
 			result.RiskScore = 250
@@ -301,9 +421,47 @@ func SanitizeSVG(input []byte) ([]byte, bool) {
 	return output, modified
 }
 
+// openJailDestination creates the staging file for the quarantine vault.
+//
+// O_CREATE|O_EXCL refuses an existing path and a symbolic link in the same step,
+// so a link planted inside the vault cannot redirect the write outside it and a
+// race between a check and the open cannot exist. An existing object is never
+// truncated either: quarantined content is evidence, so a colliding name receives
+// a fresh random suffix instead of destroying what is already stored.
+// openJailDestination creates the staging file for the quarantine vault.
+//
+// The file name comes from an upload, so the whole path is resolved one component
+// at a time relative to the vault descriptor. A single Lstat on the directory plus
+// O_EXCL on the final name would protect only the last component; a symlinked
+// parent directory would still redirect the write while the exclusive create
+// succeeded. An existing object is never truncated either: quarantined content is
+// evidence, so a colliding name receives a fresh random suffix instead.
+func openJailDestination(dir, name string) (string, *os.File, error) {
+	for attempt := 0; attempt < 4; attempt++ {
+		base := name
+		if attempt > 0 {
+			suffix, err := randomBytesHex(8)
+			if err != nil {
+				return "", nil, NewAirlockStorageException("failed to allocate a jail name", err)
+			}
+			base = name + "." + suffix
+		}
+		file, err := openBeneath(dir, base, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+		if err == nil {
+			return filepath.Join(dir, base), file, nil
+		}
+		if !errors.Is(err, os.ErrExist) {
+			return "", nil, NewAirlockStorageException("failed to open jail destination", err)
+		}
+	}
+	return "", nil, NewAirlockStorageException("quarantine vault could not allocate a free name", nil)
+}
+
 // StageInJail stages an incoming download in the quarantine vault under 0600 permissions (Pattern 1.5.E compliance).
 func (a *AirlockInspector) StageInJail(filename string, r io.Reader) (string, error) {
-	if a.quarantineDir == "" {
+	policy := a.policySnapshot()
+	quarantineDir := policy.quarantineDir
+	if quarantineDir == "" {
 		return "", NewAirlockStorageException("quarantine directory unconfigured", nil)
 	}
 
@@ -312,38 +470,36 @@ func (a *AirlockInspector) StageInJail(filename string, r io.Reader) (string, er
 		return "", NewAirlockValidationException("invalid staged filename", nil)
 	}
 
-	// Ensure quarantine directory exists and evaluate symlinks to eliminate TOCTOU jail escapes (Pattern 1.5.E)
-	if err := os.MkdirAll(a.quarantineDir, 0o700); err != nil {
+	if err := os.MkdirAll(quarantineDir, 0o700); err != nil {
 		return "", NewAirlockStorageException("failed to prepare quarantine directory", err)
 	}
-	resolvedDir, err := filepath.EvalSymlinks(a.quarantineDir)
+	// Resolving the configured root once gives a stable anchor for the walk and
+	// makes the write and the cleanup agree on the same directory. The escape
+	// protection is not this call: openBeneath refuses a symbolic link in every
+	// component below the anchor, including the ones a caller could influence.
+	resolvedDir, err := filepath.EvalSymlinks(quarantineDir)
 	if err != nil {
-		resolvedDir = filepath.Clean(a.quarantineDir)
+		resolvedDir = filepath.Clean(quarantineDir)
 	}
 
-	destination := filepath.Join(resolvedDir, cleanName)
-	if !strings.HasPrefix(destination, resolvedDir+string(filepath.Separator)) {
-		return "", NewAirlockSecurityException("destination escaped quarantine jail", nil)
-	}
-
-	out, err := os.OpenFile(destination, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	destination, out, err := openJailDestination(resolvedDir, cleanName)
 	if err != nil {
-		return "", NewAirlockStorageException("failed to open jail destination", err)
+		return "", err
 	}
 	defer out.Close()
 
 	// Enforce hard size boundary pre-flight during streaming copy (Pattern 1.5.B)
-	limitReader := io.LimitReader(r, a.maxFileSize+1)
+	limitReader := io.LimitReader(r, policy.maxFileSize+1)
 	written, err := io.Copy(out, limitReader)
 	if err != nil {
 		_ = out.Close()
-		_ = os.Remove(destination)
+		_ = removeBeneath(resolvedDir, filepath.Base(destination))
 		return "", NewAirlockStorageException("failed to write payload into jail", err)
 	}
-	if written > a.maxFileSize {
+	if written > policy.maxFileSize {
 		_ = out.Close()
-		_ = os.Remove(destination)
-		return "", NewAirlockValidationException(fmt.Sprintf("file size boundary violation: exceeds limit of %d bytes", a.maxFileSize), nil)
+		_ = removeBeneath(resolvedDir, filepath.Base(destination))
+		return "", NewAirlockValidationException(fmt.Sprintf("file size boundary violation: exceeds limit of %d bytes", policy.maxFileSize), nil)
 	}
 
 	return destination, nil

@@ -75,6 +75,8 @@ func (d *l7ResponseDetector) Detect(statusCode int, headers map[string][]string,
 	return findings
 }
 
+// InspectResponse evaluates an inline response prefix and applies the operator
+// rule registry from the same snapshot that governs the request path.
 func (e *L7Engine) InspectResponse(ctx context.Context, req l7NormalizedRequest, statusCode int, headers map[string][]string, bodyPrefix []byte) ([]L7Finding, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -85,6 +87,12 @@ func (e *L7Engine) InspectResponse(ctx context.Context, req l7NormalizedRequest,
 	findings := e.responseDetector.Detect(statusCode, headers, bodyPrefix)
 	if len(findings) == 0 {
 		return nil, nil
+	}
+	if snapshot := e.live.current(); snapshot != nil {
+		findings, _ = snapshot.applyRuleOverrides(findings)
+		if len(findings) == 0 {
+			return nil, nil
+		}
 	}
 	_, _, unique := aggregateL7Findings(findings)
 	if e.xdr != nil {

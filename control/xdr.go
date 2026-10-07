@@ -75,6 +75,16 @@ func (e *XDREngine) SetReleaseController(release *ReleaseController) {
 }
 
 func NewXDREngine(cfg Config, state *State, core *CoreClient, feeds *FeedManager, policy *PolicyStore, settings *SettingsStore, configPath string) (*XDREngine, error) {
+	runtime := defaultRuntimeSettings(cfg)
+	if settings != nil {
+		runtime = settings.Get()
+	}
+	// Restart-class Fabric settings become the active boot configuration here.
+	// They are deliberately not hot-swapped later because worker channels and
+	// integrity watch roots are constructed once at engine startup.
+	cfg.XDR.WorkerCount = runtime.XDRFabric.WorkerCount
+	cfg.XDR.QueueCapacity = runtime.XDRFabric.QueueCapacity
+	cfg.XDR.ProtectedPaths = append([]string(nil), runtime.XDRFabric.ProtectedPaths...)
 	baseline, err := LoadXDRBaseline(cfg.XDR.BaselineFile)
 	if err != nil {
 		return nil, fmt.Errorf("xdr baseline: %w", err)
@@ -87,6 +97,7 @@ func NewXDREngine(cfg Config, state *State, core *CoreClient, feeds *FeedManager
 	if err != nil {
 		return nil, fmt.Errorf("xdr behavior model: %w", err)
 	}
+	behavior.Configure(runtime.XDRFabric)
 	highCap := cfg.XDR.QueueCapacity / 4
 	if highCap < 16 {
 		highCap = 16
@@ -201,7 +212,15 @@ func NewXDREngine(cfg Config, state *State, core *CoreClient, feeds *FeedManager
 	if airlock, err := NewAirlockInspector(filepath.Join(storageDir, "airlock_quarantine"), 100<<20); err == nil {
 		e.airlock = airlock
 	}
-	if chronos, err := NewChronosScanner([]string{"/usr/bin", "/etc"}, filepath.Join(storageDir, "chronos_checkpoint.json"), 100, time.Millisecond); err == nil {
+	// The digest inventory is operational state, so the checkpoint is sealed with
+	// the same storage cipher the FIM baseline and evidence ledger use.
+	var chronosCipher *StorageCipher
+	if storageKeyPath != "" {
+		if cipher, cipherErr := NewStorageCipher(storageKeyPath, cfg.Node.Name); cipherErr == nil && cipher != nil {
+			chronosCipher = cipher
+		}
+	}
+	if chronos, err := NewChronosScanner([]string{"/usr/bin", "/etc"}, filepath.Join(storageDir, "chronos_checkpoint.json"), 100, time.Millisecond, chronosCipher); err == nil {
 		e.chronos = chronos
 	}
 
@@ -465,7 +484,7 @@ func (e *XDREngine) Run(ctx context.Context) {
 				e.state.SetXDRStatus(XDRStatus{Enabled: false, Mode: "disabled", Sensor: "disabled-by-operator", ProtectedObjects: len(e.protected), QueueCapacity: cap(e.highJobs) + cap(e.normalJobs), Behavior: e.behavior.Summary()})
 				continue
 			}
-			p, err := scanLinuxProcesses(e.cfg.XDR.MaxCommandBytes)
+			p, err := scanLinuxProcesses(runtime.XDRFabric.MaxCommandBytes)
 			if err != nil {
 				e.markDegraded("process sensor unavailable: " + err.Error())
 				continue
@@ -517,7 +536,7 @@ func (e *XDREngine) Run(ctx context.Context) {
 						e.state.SetXDRStatus(XDRStatus{Enabled: true, Mode: runtimeXDRMode, Sensor: xdrSensorMode(execSensorOnline, egressSensorOnline, malwareSensorOnline, e.cfg.Cells.Enabled, cellLSMEventOnline && cellLSMPolicyOnline), ProtectedObjects: len(e.protected), QueueCapacity: cap(e.highJobs) + cap(e.normalJobs), Behavior: e.behavior.Summary()})
 					}
 					for _, event := range events {
-						process, readErr := readExecProcess(event, e.cfg.XDR.MaxCommandBytes)
+						process, readErr := readExecProcess(event, runtime.XDRFabric.MaxCommandBytes)
 						if readErr != nil || process.PID == e.selfPID || e.allowedProcess(process.Exe) {
 							continue
 						}
@@ -551,8 +570,10 @@ func (e *XDREngine) Run(ctx context.Context) {
 					if batch.Dropped > 0 {
 						e.recordMalwareOverflow(batch.Dropped)
 					}
-					for _, event := range batch.Events {
-						e.recordMalwareEvent(event)
+					if runtime.XDRFabric.MalwareCorrelation {
+						for _, event := range batch.Events {
+							e.recordMalwareEvent(event)
+						}
 					}
 				}
 			}
@@ -621,7 +642,7 @@ func (e *XDREngine) Run(ctx context.Context) {
 			connections, total := correlateLinuxConnections(processes)
 			queued := 0
 			for key, p := range processes {
-				if queued >= e.cfg.XDR.MaxEvaluationsPerScan {
+				if queued >= runtime.XDRFabric.MaxEvaluationsPerScan {
 					e.noteDrop("network scan evaluation budget exhausted")
 					break
 				}
@@ -640,12 +661,18 @@ func (e *XDREngine) Run(ctx context.Context) {
 		case <-integrityTick.C:
 			e.checkProtected()
 		case <-chronosTick.C:
-			if e.chronos != nil && runtime.XDREnabled {
+			if e.chronos != nil && e.chronos.Enabled() && runtime.XDREnabled {
 				cp, err := e.chronos.Scan(ctx, true)
 				if err != nil && !errors.Is(err, context.Canceled) {
+					severity := "warning"
+					if cp != nil && cp.Phase == "BOUNDED" {
+						// A bounded walk is a policy outcome, not a fault: the digest
+						// set is partial and says so instead of reporting success.
+						severity = "info"
+					}
 					e.state.AddEvent(Event{
-						Severity: "warning", Kind: "chronos.scan_failed", Source: "fim",
-						Message: fmt.Sprintf("Chronos FIM scan error: %v", err),
+						Severity: severity, Kind: "chronos.scan_failed", Source: "fim",
+						Message: fmt.Sprintf("Chronos FIM scan did not complete: %v", err),
 					})
 				} else if cp != nil && cp.Phase == "COMPLETED" {
 					e.state.AddEvent(Event{
@@ -747,6 +774,8 @@ func (e *XDREngine) noteDrop(reason string) {
 }
 
 func (e *XDREngine) evaluateNewProcesses(processes map[string]ProcessSample) {
+	runtime := e.runtimeSettings()
+	budget := runtime.XDRFabric.MaxEvaluationsPerScan
 	e.mu.Lock()
 	current := make(map[string]struct{}, len(processes))
 	if !e.seeded {
@@ -764,10 +793,10 @@ func (e *XDREngine) evaluateNewProcesses(processes map[string]ProcessSample) {
 			continue
 		}
 		e.seen[key] = struct{}{}
-		if p.PID == e.selfPID || e.allowedProcess(p.Exe) {
+		if p.PID == e.selfPID || allowedProcessRuntime(p.Exe, runtime.XDRFabric.AllowProcesses) {
 			continue
 		}
-		if len(jobs) < e.cfg.XDR.MaxEvaluationsPerScan {
+		if len(jobs) < budget {
 			jobs = append(jobs, evaluationJob{process: p, source: "exec"})
 		}
 	}
@@ -780,19 +809,23 @@ func (e *XDREngine) evaluateNewProcesses(processes map[string]ProcessSample) {
 	for _, job := range jobs {
 		e.submit(job, true)
 	}
-	if len(jobs) >= e.cfg.XDR.MaxEvaluationsPerScan {
+	if len(jobs) >= budget {
 		e.noteDrop("process scan evaluation budget exhausted")
 	}
 }
 
-func (e *XDREngine) allowedProcess(exe string) bool {
+func allowedProcessRuntime(exe string, allowedProcesses []string) bool {
 	exe = filepath.Clean(strings.TrimSuffix(exe, " (deleted)"))
-	for _, allowed := range e.cfg.XDR.AllowProcesses {
+	for _, allowed := range allowedProcesses {
 		if filepath.Clean(allowed) == exe {
 			return true
 		}
 	}
 	return false
+}
+
+func (e *XDREngine) allowedProcess(exe string) bool {
+	return allowedProcessRuntime(exe, e.runtimeSettings().XDRFabric.AllowProcesses)
 }
 
 func (e *XDREngine) evaluate(p ProcessSample, conns []NetConnection, source string) {
@@ -937,7 +970,7 @@ func (e *XDREngine) evaluate(p ProcessSample, conns []NetConnection, source stri
 	incident := XDRIncident{
 		ID: incidentID, Time: now, Severity: severity, Score: decision.Score, ResponseScore: decision.ResponseScore, KillSignals: decision.KillSignals,
 		PID: p.PID, PPID: p.PPID, StartTicks: p.StartTicks, UID: p.UID, Process: p.Comm, Executable: p.Exe,
-		Parent: p.ParentExe, Remote: decision.Remote, CommandPreview: e.rules.RedactCommand(p.Cmdline, e.cfg.XDR.CommandPreviewBytes),
+		Parent: p.ParentExe, Remote: decision.Remote, CommandPreview: e.rules.RedactCommand(p.Cmdline, runtime.XDRFabric.CommandPreviewBytes),
 		CommandSHA256: p.CmdSHA256, RuleIDs: decision.RuleIDs, Categories: decision.Categories, Summary: decision.Summary,
 		Decision: decision.Decision, Action: "none", Outcome: "observed",
 		ExecutionChainID: execChainID, AttackStory: storyNodes, EvidenceRoot: recordHash,
@@ -1128,7 +1161,15 @@ func (e *XDREngine) quarantineRemote(remote string, incident XDRIncident) error 
 		}
 		enforced = true
 	}
-	block, err := e.state.AddBlock(target, "XDR containment: "+strings.Join(incident.RuleIDs, ","), "xdr", 15*time.Minute, enforced, e.cfg.Defense.MaxBlockEntries)
+	maxBlocks := e.cfg.Defense.MaxBlockEntries
+	if runtime := e.runtimeSettings(); runtime.Network.MaxBlockEntries > 0 {
+		maxBlocks = runtime.Network.MaxBlockEntries
+	}
+	containTTL := 15 * time.Minute
+	if runtime := e.runtimeSettings(); runtime.XDRFabric.ContainmentTTLSeconds > 0 {
+		containTTL = time.Duration(runtime.XDRFabric.ContainmentTTLSeconds) * time.Second
+	}
+	block, err := e.state.AddBlock(target, "XDR containment: "+strings.Join(incident.RuleIDs, ","), "xdr", containTTL, enforced, maxBlocks)
 	if err != nil {
 		if enforced {
 			if rollbackErr := e.core.Delete(target); rollbackErr != nil {
@@ -1183,7 +1224,7 @@ func (e *XDREngine) claimFingerprint(key string) bool {
 	if until, ok := e.dedupe[key]; ok && now.Before(until) {
 		return false
 	}
-	e.dedupe[key] = now.Add(time.Duration(e.cfg.XDR.DedupeSeconds) * time.Second)
+	e.dedupe[key] = now.Add(time.Duration(e.runtimeSettings().XDRFabric.DedupeSeconds) * time.Second)
 	return true
 }
 
@@ -1314,4 +1355,23 @@ func (e *XDREngine) incidentRecoveryAllowed() bool {
 	}
 	_, ok := e.degradeCauses["incident_log"]
 	return ok
+}
+
+// ApplyRuntimeSettings applies the hot-reloadable XDR settings. Queue capacity,
+// worker count and integrity watch roots are persisted but require a controlled
+// service restart because the underlying channels/watchers are created at boot.
+// The Host Security namespace is projected onto the RASP, deception and Airlock
+// engines from the same revision, so one apply never leaves them inconsistent.
+func (e *XDREngine) ApplyRuntimeSettings(settings RuntimeSettings) error {
+	if e == nil {
+		return nil
+	}
+	if err := e.rules.Configure(settings); err != nil {
+		return err
+	}
+	if e.behavior != nil {
+		e.behavior.Configure(settings.XDRFabric)
+	}
+	hardening := effectiveHardeningSettings(settings)
+	return applyHardeningPolicy(hardening, e.morpheus, e.airlock, e.deception)
 }

@@ -68,33 +68,39 @@ type BootTrustReport struct {
 }
 
 type bootTrustProbe struct {
-	root  string
-	linux bool
-	now   func() time.Time
+	root   string
+	linux  bool
+	now    func() time.Time
+	policy bootTrustPolicy
 }
 
 type BootTrustCollector struct {
-	mu      sync.Mutex
-	probe   bootTrustProbe
-	ttl     time.Duration
-	expires time.Time
-	cached  BootTrustReport
+	mu       sync.Mutex
+	probe    bootTrustProbe
+	ttl      time.Duration
+	expires  time.Time
+	cached   BootTrustReport
+	settings BootTrustFabricSettings
 }
 
 func NewBootTrustCollector(ttl time.Duration) *BootTrustCollector {
 	if ttl < time.Second {
 		ttl = 5 * time.Minute
 	}
+	settings := defaultBootTrustFabricSettings()
+	settings.TTLSeconds = int(ttl / time.Second)
 	return &BootTrustCollector{
-		probe: bootTrustProbe{linux: runtime.GOOS == "linux", now: time.Now},
-		ttl:   ttl,
+		probe:    bootTrustProbe{linux: runtime.GOOS == "linux", now: time.Now},
+		ttl:      ttl,
+		settings: settings,
 	}
 }
 
 func newBootTrustCollectorForTest(root string, linux bool, now func() time.Time) *BootTrustCollector {
 	return &BootTrustCollector{
-		probe: bootTrustProbe{root: root, linux: linux, now: now},
-		ttl:   5 * time.Minute,
+		probe:    bootTrustProbe{root: root, linux: linux, now: now},
+		ttl:      5 * time.Minute,
+		settings: defaultBootTrustFabricSettings(),
 	}
 }
 
@@ -106,7 +112,12 @@ func (c *BootTrustCollector) Collect() BootTrustReport {
 	if !c.expires.IsZero() && now.Before(c.expires) {
 		return cloneBootTrustReport(c.cached)
 	}
-	report := c.probe.collect(now)
+	// The published requirement set is projected onto the probe for this pass, so
+	// a re-probe always evaluates the current policy rather than the one that was
+	// active when the collector was constructed.
+	probe := c.probe
+	probe.policy = c.settings.policy().effective()
+	report := probe.collect(now)
 	c.cached = cloneBootTrustReport(report)
 	c.expires = now.Add(c.ttl)
 	return report
@@ -177,7 +188,7 @@ func distroEvidence(report BootTrustReport) BootTrustEvidence {
 }
 
 func (p bootTrustProbe) readOSRelease() map[string]string {
-	data, err := p.readBounded("/etc/os-release", maxBootTextBytes)
+	data, err := p.readBounded("/etc/os-release", p.policy.effective().maxEvidenceText)
 	if err != nil {
 		return map[string]string{}
 	}
@@ -224,6 +235,12 @@ func (p bootTrustProbe) secureBootEvidence() BootTrustEvidence {
 		if value == 1 {
 			state = bootStateEnabled
 			summary = "UEFI Secure Boot variable reports enabled; signature-chain measurement is separate evidence."
+		} else if p.policy.effective().requireSecureBoot {
+			// A disabled anchor the operator declared mandatory is a policy
+			// violation, so it is reported as WARNING rather than as a neutral
+			// platform observation.
+			state = bootStateWarning
+			summary = "UEFI Secure Boot is disabled but is required by policy."
 		}
 		return BootTrustEvidence{
 			ID: "secure-boot", State: state, Summary: summary,
@@ -247,6 +264,16 @@ func (p bootTrustProbe) secureBootEvidence() BootTrustEvidence {
 func (p bootTrustProbe) lockdownEvidence() BootTrustEvidence {
 	data, err := p.readBounded("/sys/kernel/security/lockdown", 4096)
 	if err != nil {
+		policy := p.policy.effective()
+		if policy.requireLockdown {
+			// The requirement cannot be proven, so it must not be reported as a
+			// neutral platform gap.
+			return BootTrustEvidence{
+				ID: "kernel-lockdown", State: bootStateWarning,
+				Summary: "Kernel lockdown is required by policy but its state cannot be observed.",
+				Source:  "/sys/kernel/security/lockdown",
+			}
+		}
 		return BootTrustEvidence{
 			ID: "kernel-lockdown", State: bootStateUnknown,
 			Summary: "Kernel lockdown state is unavailable.",
@@ -255,18 +282,20 @@ func (p bootTrustProbe) lockdownEvidence() BootTrustEvidence {
 	}
 	value := strings.TrimSpace(string(data))
 	state := bootStateWarning
+	summary := "Kernel lockdown runtime state observed."
 	if strings.Contains(value, "[integrity]") || strings.Contains(value, "[confidentiality]") {
 		state = bootStateEnabled
+	} else if p.policy.effective().requireLockdown {
+		summary = "Kernel lockdown is inactive but is required by policy."
 	}
 	return BootTrustEvidence{
-		ID: "kernel-lockdown", State: state,
-		Summary: "Kernel lockdown runtime state observed.",
-		Source:  "/sys/kernel/security/lockdown", Evidence: truncateBootEvidence(value, 128),
+		ID: "kernel-lockdown", State: state, Summary: summary,
+		Source: "/sys/kernel/security/lockdown", Evidence: truncateBootEvidence(value, 128),
 	}
 }
 
 func (p bootTrustProbe) cmdlineEvidence() BootTrustEvidence {
-	data, err := p.readBounded("/proc/cmdline", maxBootTextBytes)
+	data, err := p.readBounded("/proc/cmdline", p.policy.effective().maxEvidenceText)
 	if err != nil {
 		return BootTrustEvidence{
 			ID: "kernel-cmdline", State: bootStateUnknown,
@@ -275,11 +304,9 @@ func (p bootTrustProbe) cmdlineEvidence() BootTrustEvidence {
 		}
 	}
 	sum := sha256.Sum256(data)
-	required := map[string]bool{
-		"init_on_alloc=1":            false,
-		"init_on_free=1":             false,
-		"randomize_kstack_offset=on": false,
-		"module.sig_enforce=1":       false,
+	required := make(map[string]bool, len(p.policy.effective().requiredArguments))
+	for _, argument := range p.policy.effective().requiredArguments {
+		required[argument] = false
 	}
 	for _, token := range strings.Fields(string(data)) {
 		if _, ok := required[token]; ok {
@@ -324,8 +351,17 @@ func (p bootTrustProbe) tpmEvidence() BootTrustEvidence {
 
 func (p bootTrustProbe) attestationEvidence() BootTrustEvidence {
 	const source = "/run/astraeaos/boot-attestation.json"
-	data, err := p.readBounded(source, maxBootTextBytes)
+	data, err := p.readBounded(source, p.policy.effective().maxEvidenceText)
 	if err != nil {
+		// When the operator declared attestation required, an absent attestation is
+		// a policy violation rather than a platform property.
+		if p.policy.effective().requireAttestation {
+			return BootTrustEvidence{
+				ID: "measured-boot-attestation", State: bootStateWarning,
+				Summary: "Local TPM2 boot attestation is required by policy but is not available.",
+				Source:  source,
+			}
+		}
 		return BootTrustEvidence{
 			ID: "measured-boot-attestation", State: bootStateNotAvailable,
 			Summary: "No verified local TPM2 boot attestation is available.",
@@ -357,9 +393,10 @@ func (p bootTrustProbe) attestationEvidence() BootTrustEvidence {
 			Source:  source,
 		}
 	}
-	selectionValid := len(value.PCRSelection) == len(requiredPCRSelection)
+	policy := p.policy.effective()
+	selectionValid := len(value.PCRSelection) == len(policy.requiredPCRs)
 	if selectionValid {
-		for index, expected := range requiredPCRSelection {
+		for index, expected := range policy.requiredPCRs {
 			if value.PCRSelection[index] != expected {
 				selectionValid = false
 				break
@@ -383,7 +420,7 @@ func (p bootTrustProbe) attestationEvidence() BootTrustEvidence {
 		ID: "measured-boot-attestation", State: bootStateEnabled,
 		Summary:  "Secure Boot and TPM2 PCR measurements were verified for the current boot.",
 		Source:   source,
-		Evidence: "PCRs 0,2,4,7,9,11,12; policy-key=" + value.PCRPublicKeySHA256[:16],
+		Evidence: "PCRs " + formatPCRSelection(policy.requiredPCRs) + "; policy-key=" + value.PCRPublicKeySHA256[:16],
 		Digest:   hex.EncodeToString(digest[:]),
 	}
 }
@@ -440,7 +477,7 @@ func (p bootTrustProbe) kernelImageEvidence() BootTrustEvidence {
 		candidates = append(candidates, "/usr/lib/modules/"+release+"/vmlinuz")
 	}
 	for _, candidate := range candidates {
-		digest, size, err := p.hashRegular(candidate, maxKernelBytes)
+		digest, size, err := p.hashRegular(candidate, p.policy.effective().maxKernelImageBytes)
 		if err != nil {
 			continue
 		}

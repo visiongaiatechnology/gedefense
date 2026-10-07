@@ -2,9 +2,9 @@
 # Maintainer: VisionGaia Technology
 
 pkgname=gedefense
-pkgver=4.0.1
-_release=4.0.1
-pkgrel=19
+pkgver=4.1.0
+_release=4.1.0
+pkgrel=1
 pkgdesc='GeDefense Linux security platform: XDP, XDR, evidence and response plane'
 arch=('x86_64')
 url='https://github.com/VisionGaiaTechnology'

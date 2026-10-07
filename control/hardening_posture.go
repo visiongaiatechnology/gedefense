@@ -84,7 +84,7 @@ func (c *HardeningCollector) Collect(snapshot Snapshot, boot BootTrustReport) Ha
 		statePostureCheck("integrity.fim", "integrity", "File Integrity Monitoring", 8, snapshot.FIM.Enabled, snapshot.FIM.Health == "HEALTHY", snapshot.FIM.Health, "Create and continuously verify the encrypted FIM baseline."),
 		statePostureCheck("integrity.evidence", "integrity", "Signed Evidence Ledger", 8, snapshot.Evidence.Enabled, snapshot.Evidence.Healthy, evidenceHealth(snapshot.Evidence), "Restore the encrypted and signed evidence ledger before mutations."),
 	}
-	return summarizeHardening(c.now(), checks)
+	return summarizeHardening(c.now(), checks, defaultHardeningThresholds())
 }
 
 func (c *HardeningCollector) pairedMinimumCheck(id, domain, title, first, second string, minimum, weight int, recommendation string) HardeningCheck {
@@ -417,7 +417,34 @@ func containsKernelArgument(cmdline, expected string) bool {
 	return false
 }
 
-func summarizeHardening(now time.Time, checks []HardeningCheck) HardeningPosture {
+// hardeningThresholds are the administrable score boundaries that classify a
+// posture. They are passed in rather than hard-coded so an operator can align
+// the classification with the deployment's own compliance target.
+type hardeningThresholds struct {
+	Hardened int
+	Strong   int
+	Basic    int
+}
+
+func defaultHardeningThresholds() hardeningThresholds {
+	return hardeningThresholds{Hardened: 90, Strong: 75, Basic: 50}
+}
+
+func (s HardeningPostureSettings) thresholds() hardeningThresholds {
+	thresholds := defaultHardeningThresholds()
+	if s.HardenedThreshold > 0 {
+		thresholds.Hardened = s.HardenedThreshold
+	}
+	if s.StrongThreshold > 0 {
+		thresholds.Strong = s.StrongThreshold
+	}
+	if s.BasicThreshold > 0 {
+		thresholds.Basic = s.BasicThreshold
+	}
+	return thresholds
+}
+
+func summarizeHardening(now time.Time, checks []HardeningCheck, thresholds hardeningThresholds) HardeningPosture {
 	totalWeight, protectedWeight := 0, 0
 	type aggregate struct{ score, total, protected, count int }
 	domains := make(map[string]*aggregate)
@@ -452,11 +479,11 @@ func summarizeHardening(now time.Time, checks []HardeningCheck) HardeningPosture
 	}
 	level := "CRITICAL"
 	switch {
-	case score >= 90:
+	case score >= thresholds.Hardened:
 		level = "HARDENED"
-	case score >= 75:
+	case score >= thresholds.Strong:
 		level = "STRONG"
-	case score >= 50:
+	case score >= thresholds.Basic:
 		level = "BASIC"
 	}
 	domainIDs := make([]string, 0, len(domains))

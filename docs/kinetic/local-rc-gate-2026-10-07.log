@@ -1,0 +1,45 @@
+ok  	github.com/visiongaiatechnology/gedefense/control	(cached)
+[PASS] control unit/integration tests
+[PASS] control go vet
+ok  	github.com/visiongaiatechnology/gedefense/control	(cached)
+[PASS] control race detector
+ok  	github.com/visiongaiatechnology/gedefense/control	(cached)
+[PASS] B13/B14 security matrix
+[PASS] frontend JavaScript syntax
+[PASS] shell syntax
+GeDefense 4.1.0 universal Linux integration: PASS
+[PASS] Linux integration contracts
+GitHub release contracts: PASS (2 workflows)
+[PASS] GitHub release contracts
+i18n validation passed: de, en, ru, zh-CN · 894 keys/language · 771 statically referenced keys
+[PASS] i18n contracts
+VGT GeDefense Beta 5 static security regression audit
+  PASS  no unsafe DOM HTML sinks, eval, javascript URLs or inline handlers
+  PASS  DE/EN/RU/zh-CN catalog parity, translation coverage and branding/support anchors
+  PASS  manual operator bearer remains volatile and is never persisted by the browser UI
+  PASS  no shell/command execution primitives in Go control/gateway or Rust core/eBPF
+  PASS  native L7 plane is stdlib-only, panic-free, runtime-bounded and dependency-free at the integration boundary
+  PASS  fuzz targets and locked Rust dependency resolution are release-gated
+  PASS  verified authoritative kernel fail-safe and alert-only custom rule boundaries present
+  PASS  HTTPS-only feeds with proxy disabled and dial-time local/private IP rejection
+  PASS  login/session/CSRF/Host checks and reverse-proxy header scrubbing present
+  PASS  Argon2id credentials and AES-256-GCM AAD-bound operational storage present
+  PASS  Evidence Ledger, hardened FIM, mutation gates and AstraeaOS authority contract present
+  PASS  encrypted Transaction Engine and typed compare-set sysctl broker present
+  PASS  encrypted quarantine, case engine, persistent hardening and Gaia Cells v1 adapter present
+  PASS  fanotify on-access guard, peer-bound quarantine scan and content classification present
+  PASS  quarantine vault traversal works without broad DAC bypass capabilities
+  PASS  strict dashboard and login Content Security Policies present
+  PASS  installer provisions guarded secrets, hides host/CIDR defaults and captures activation diagnostics
+  PASS  kernel exec EDR, GaiaCells BPF-LSM and signed-package integrity controls present
+SECURITY AUDIT PASS
+[PASS] static security audit
+[PENDING] gateway Go 1.26 module tests/vet (current 1.23.2)
+[PENDING] Rust common/core tests (cargo/rustc unavailable)
+[PENDING] release eBPF build (cargo/rustc unavailable)
+[PENDING] target-kernel verifier/XDP attach and installed-host qualification
+[PENDING] authorized external live packet-drop proof
+[PENDING] 24h Observe/Canary deployment soak
+
+GeDefense Kinetic RC gate summary: PASS=10 PENDING=6 FAIL=0 MODE=local
+Release-candidate source gates passed, but production certification remains BLOCKED by the PENDING gates above.

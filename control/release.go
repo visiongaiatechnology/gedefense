@@ -95,8 +95,22 @@ func (r *ReleaseController) runtimeSettingsLocked() RuntimeSettings {
 	return defaultRuntimeSettings(r.cfg)
 }
 
+func (r *ReleaseController) effectiveReleaseConfigLocked() ReleaseConfig {
+	cfg := r.cfg.Release
+	runtime := r.runtimeSettingsLocked()
+	if runtime.FabricVersion >= fabricSettingsVersion {
+		cfg.MinimumObserveSeconds = runtime.Protection.MinimumObserveSeconds
+		cfg.MinimumCanarySeconds = runtime.Protection.MinimumCanarySeconds
+		cfg.CoreFailureThreshold = runtime.Protection.CoreFailureThreshold
+		cfg.MaxEvaluationDropPermille = runtime.Protection.MaxEvaluationDropPermille
+		cfg.AutoDegrade = runtime.AutoDegrade
+	}
+	return cfg
+}
+
 func (r *ReleaseController) currentBlockersLocked(target string, includeDuration bool) []string {
 	snap := r.state.Snapshot()
+	releaseCfg := r.effectiveReleaseConfigLocked()
 	var blockers []string
 	if _, err := os.Stat(r.cfg.Release.EmergencyStopFile); err == nil {
 		blockers = append(blockers, "emergency stop is active")
@@ -136,8 +150,16 @@ func (r *ReleaseController) currentBlockersLocked(target string, includeDuration
 		} else if !snap.AllowlistReady {
 			blockers = append(blockers, "kernel management allowlist is not synchronized")
 		}
+		if snap.Coverage.OverallStatus == CoverageOffline || snap.Coverage.OverallStatus == CoverageDegraded {
+			blockers = append(blockers, fmt.Sprintf("kinetic sensor coverage is not nominal: %s", snap.Coverage.Summary))
+		}
 	}
-	if r.status.CoreMisses >= r.cfg.Release.CoreFailureThreshold {
+	if target == ReleasePhaseCanary || target == ReleasePhaseEnforce {
+		if cov, exists := snap.Coverage.Sensors["xdp_ingress"]; exists && cov.Required && cov.Status != CoverageOnline {
+			blockers = append(blockers, "Kinetic ingress sensor is unavailable")
+		}
+	}
+	if r.status.CoreMisses >= releaseCfg.CoreFailureThreshold {
 		blockers = append(blockers, "core heartbeat failure threshold reached")
 	}
 	if r.status.Phase == ReleasePhaseDegraded && !r.status.FailSafeVerified {
@@ -149,7 +171,7 @@ func (r *ReleaseController) currentBlockersLocked(target string, includeDuration
 	}
 	if snap.XDR.EvaluationsTotal > 0 {
 		dropPermille := snap.XDR.EvaluationDrops * 1000 / snap.XDR.EvaluationsTotal
-		if dropPermille > uint64(r.cfg.Release.MaxEvaluationDropPermille) {
+		if dropPermille > uint64(releaseCfg.MaxEvaluationDropPermille) {
 			blockers = append(blockers, fmt.Sprintf("XDR evaluation drop rate is %d permille", dropPermille))
 		}
 	}
@@ -157,14 +179,14 @@ func (r *ReleaseController) currentBlockersLocked(target string, includeDuration
 		elapsed := time.Since(r.status.Since)
 		switch target {
 		case ReleasePhaseCanary:
-			minimum := time.Duration(r.cfg.Release.MinimumObserveSeconds) * time.Second
+			minimum := time.Duration(releaseCfg.MinimumObserveSeconds) * time.Second
 			if r.status.Phase != ReleasePhaseObserve && r.status.Phase != ReleasePhaseDegraded {
 				blockers = append(blockers, "canary promotion requires observe phase")
 			} else if elapsed < minimum {
 				blockers = append(blockers, fmt.Sprintf("observe soak time remaining: %s", (minimum-elapsed).Round(time.Second)))
 			}
 		case ReleasePhaseEnforce:
-			minimum := time.Duration(r.cfg.Release.MinimumCanarySeconds) * time.Second
+			minimum := time.Duration(releaseCfg.MinimumCanarySeconds) * time.Second
 			if r.status.Phase != ReleasePhaseCanary {
 				blockers = append(blockers, "enforce promotion requires canary phase")
 			} else if elapsed < minimum {
@@ -341,16 +363,17 @@ func (r *ReleaseController) reconcileLocked(enforcement string) error {
 func (r *ReleaseController) ObserveCore(success bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	releaseCfg := r.effectiveReleaseConfigLocked()
 	if success {
 		r.status.CoreMisses = 0
 		if r.status.Phase == ReleasePhaseDegraded && !r.status.FailSafeVerified {
 			reason := strings.TrimSuffix(r.status.Detail, "; kernel fail-safe verification failed")
 			_ = r.degradeLocked(reason)
 		}
-	} else if r.status.CoreMisses < r.cfg.Release.CoreFailureThreshold+1 {
+	} else if r.status.CoreMisses < releaseCfg.CoreFailureThreshold+1 {
 		r.status.CoreMisses++
 	}
-	if r.runtimeSettingsLocked().AutoDegrade && r.status.Phase != ReleasePhaseObserve && r.status.CoreMisses >= r.cfg.Release.CoreFailureThreshold {
+	if releaseCfg.AutoDegrade && r.status.Phase != ReleasePhaseObserve && r.status.CoreMisses >= releaseCfg.CoreFailureThreshold {
 		_ = r.degradeLocked("authenticated core heartbeat threshold exceeded")
 	}
 	r.refreshLocked()
@@ -508,6 +531,7 @@ type ReleaseReadiness struct {
 func (r *ReleaseController) Readiness(target string) (ReleaseReadiness, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	releaseCfg := r.effectiveReleaseConfigLocked()
 	target = strings.ToLower(strings.TrimSpace(target))
 	if target == "" {
 		switch r.status.Phase {
@@ -528,9 +552,9 @@ func (r *ReleaseController) Readiness(target string) (ReleaseReadiness, error) {
 	var minSoak time.Duration
 	switch target {
 	case ReleasePhaseCanary:
-		minSoak = time.Duration(r.cfg.Release.MinimumObserveSeconds) * time.Second
+		minSoak = time.Duration(releaseCfg.MinimumObserveSeconds) * time.Second
 	case ReleasePhaseEnforce:
-		minSoak = time.Duration(r.cfg.Release.MinimumCanarySeconds) * time.Second
+		minSoak = time.Duration(releaseCfg.MinimumCanarySeconds) * time.Second
 	}
 
 	var soakRemaining int64
@@ -545,7 +569,7 @@ func (r *ReleaseController) Readiness(target string) (ReleaseReadiness, error) {
 	return ReleaseReadiness{
 		Target:               target,
 		Ready:                len(blockers) == 0,
-		Blockers:             append([]string(nil), blockers...),
+		Blockers:             append([]string{}, blockers...),
 		CurrentPhase:         r.status.Phase,
 		ReadyAt:              readyAt,
 		SoakRemainingSeconds: soakRemaining,

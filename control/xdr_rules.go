@@ -24,6 +24,24 @@ type XDRRuleEngine struct {
 	revision     uint64
 	modules      map[string]bool
 	customRules  []commandRule
+	overrides    map[string]XDRRuleOverride
+}
+
+var supportedXDRRuleOverrides = map[string]struct{}{
+	"KD.LINUX.PIPE_SHELL": {}, "KD.LINUX.ENCODED_EXEC": {}, "KD.LINUX.REVERSE_SHELL": {},
+	"KD.LINUX.LD_PRELOAD": {}, "KD.LINUX.CREDENTIAL_ACCESS": {}, "KD.LINUX.DESTRUCTIVE": {},
+	"KD.LINUX.PERSISTENCE": {}, "KD.LINUX.BPF_LOAD": {},
+	"XDR.EXE_DELETED": {}, "XDR.MEMFD_EXEC": {}, "XDR.TEMP_EXEC": {}, "XDR.WEB_SHELL_LINEAGE": {},
+	"XDR.NAME_PATH_MISMATCH": {}, "XDR.THREAT_INTEL_C2": {},
+	"XDR.ANOMALY.EXEC_BURST": {}, "XDR.ANOMALY.CONNECTION_FANOUT": {},
+	"XDR.ANOMALY.REMOTE_DIVERSITY": {}, "XDR.ANOMALY.PORT_DIVERSITY": {},
+	"BASELINE.HASH_MISMATCH": {}, "BASELINE.NETWORK_DEVIATION": {}, "BASELINE.NETWORK_FORBIDDEN": {},
+	"BASELINE.PARENT_MISMATCH": {}, "BASELINE.UID_MISMATCH": {}, "L7.CORRELATED_REMOTE": {},
+}
+
+func xdrRuleOverrideIDAllowed(id string) bool {
+	_, ok := supportedXDRRuleOverrides[id]
+	return ok
 }
 
 func NewXDRRuleEngine() *XDRRuleEngine {
@@ -78,10 +96,18 @@ func (e *XDRRuleEngine) Configure(settings RuntimeSettings) error {
 			score: rule.Score, killEligible: false, re: compiled,
 		})
 	}
+	overrides := make(map[string]XDRRuleOverride, len(settings.XDRFabric.RuleOverrides))
+	for _, override := range settings.XDRFabric.RuleOverrides {
+		if !xdrRuleOverrideIDAllowed(override.ID) {
+			continue
+		}
+		overrides[override.ID] = override
+	}
 	e.mu.Lock()
 	e.revision = settings.Revision
 	e.modules = effectiveRuleModules(settings)
 	e.customRules = custom
+	e.overrides = overrides
 	e.mu.Unlock()
 	return nil
 }
@@ -156,7 +182,26 @@ func (e *XDRRuleEngine) EvaluateProcess(p ProcessSample, connections []NetConnec
 	if e.moduleEnabled("baseline") && baseline != nil {
 		matches = append(matches, baseline.Evaluate(p, connections)...)
 	}
+	matches = e.applyOverridesLocked(matches)
 	return combineMatches(matches)
+}
+
+func (e *XDRRuleEngine) applyOverridesLocked(matches []RuleMatch) []RuleMatch {
+	if len(e.overrides) == 0 || len(matches) == 0 {
+		return matches
+	}
+	out := make([]RuleMatch, 0, len(matches))
+	for _, match := range matches {
+		override, ok := e.overrides[match.ID]
+		if ok {
+			if !override.Enabled {
+				continue
+			}
+			match.Score = override.Score
+		}
+		out = append(out, match)
+	}
+	return out
 }
 
 func commMatchesExecutable(comm, executableBase string) bool {

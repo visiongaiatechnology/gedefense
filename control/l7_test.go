@@ -172,7 +172,8 @@ func TestL7MultipartUploadUsesAirlockWithoutDiskStaging(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	findings, err := (l7UploadDetector{cfg: cfg, airlock: airlock}).Detect(context.Background(), normalized)
+	snapshot := buildL7RuntimeSnapshot(defaultL7FabricSettings(cfg), 0)
+	findings, err := (l7UploadDetector{live: newL7Runtime(defaultL7FabricSettings(cfg), 0), airlock: airlock}).Detect(context.Background(), normalized, snapshot)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -289,7 +290,7 @@ func TestL7MultipartGenericDetectionIgnoresFileContents(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if findings, detectErr := patterns.Detect(context.Background(), normalized); detectErr != nil {
+	if findings, detectErr := patterns.Detect(context.Background(), normalized, nil); detectErr != nil {
 		t.Fatal(detectErr)
 	} else if findingByID(findings, "L7.SQLI.BOOLEAN_TAUTOLOGY") {
 		t.Fatalf("file bytes must not be treated as generic form-field SQLi: %#v", findings)

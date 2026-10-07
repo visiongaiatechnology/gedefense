@@ -23,6 +23,7 @@ func settingsAPIFixture(t *testing.T) (*APIServer, *SettingsStore, *ReleaseContr
 	if err != nil {
 		t.Fatal(err)
 	}
+	release.settings = settings
 	server := NewAPIServer(cfg, state, nil, nil, policy, nil, release, settings, "0123456789abcdef0123456789abcdef")
 	return server, settings, release
 }

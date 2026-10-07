@@ -35,14 +35,16 @@ type L7InspectionRequest struct {
 }
 
 type L7Finding struct {
-	RuleID         string `json:"rule_id"`
-	Category       string `json:"category"`
-	Severity       string `json:"severity"`
-	Score          int    `json:"score"`
-	Confidence     int    `json:"confidence"`
-	Location       string `json:"location"`
-	EvidenceSHA256 string `json:"evidence_sha256"`
-	Summary        string `json:"summary"`
+	RuleID          string `json:"rule_id"`
+	Category        string `json:"category"`
+	Severity        string `json:"severity"`
+	Score           int    `json:"score"`
+	Confidence      int    `json:"confidence"`
+	Location        string `json:"location"`
+	EvidenceSHA256  string `json:"evidence_sha256"`
+	FingerprintType string `json:"fingerprint_type,omitempty"`
+	Fingerprint     string `json:"fingerprint,omitempty"`
+	Summary         string `json:"summary"`
 }
 
 type L7InspectionResponse struct {
@@ -54,6 +56,18 @@ type L7InspectionResponse struct {
 	Reason     string      `json:"reason"`
 	BodySHA256 string      `json:"body_sha256,omitempty"`
 	Findings   []L7Finding `json:"findings"`
+}
+
+type L7TLSClientHelloRequest struct {
+	Version           int    `json:"version"`
+	ClientIP          string `json:"client_ip"`
+	ClientHelloBase64 string `json:"client_hello_base64"`
+}
+
+type L7TLSClientHelloResponse struct {
+	Decision string                `json:"decision"`
+	Summary  TLSClientHelloSummary `json:"summary"`
+	Findings []L7Finding           `json:"findings"`
 }
 
 type L7Status struct {
@@ -79,6 +93,19 @@ type L7Status struct {
 	ResponsesInspectedTotal       uint64     `json:"responses_inspected_total"`
 	ResponseFindingsTotal         uint64     `json:"response_findings_total"`
 	ResponseInspectionErrorsTotal uint64     `json:"response_inspection_errors_total"`
+	Coverage                      string     `json:"coverage"`
+	CoverageReason                string     `json:"coverage_reason,omitempty"`
+	TrafficPathVerified           bool       `json:"traffic_path_verified"`
+	TLSEnabled                    bool       `json:"tls_enabled"`
+	TLSPathVerified               bool       `json:"tls_path_verified"`
+	TLSHandshakesTotal            uint64     `json:"tls_handshakes_total"`
+	TLSFindingsTotal              uint64     `json:"tls_findings_total"`
+	TLSLastHandshake              *time.Time `json:"tls_last_handshake,omitempty"`
+	TLSLastError                  string     `json:"tls_last_error,omitempty"`
+	TLSFingerprintVersion         int        `json:"tls_fingerprint_version"`
+	TLSFingerprintSource          string     `json:"tls_fingerprint_source,omitempty"`
+	TLSFingerprintSignatures      int        `json:"tls_fingerprint_signatures"`
+	TLSFingerprintProfiles        int        `json:"tls_fingerprint_profiles"`
 }
 
 type l7Candidate struct {

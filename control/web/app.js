@@ -46,8 +46,12 @@ import { appendTraffic, drawTraffic } from './charts.js';
 import { initializeI18n, locale, setLanguage, t } from './i18n.js';
 import { initProtectionCenter, loadProtectionState } from './protection.js';
 import { initL7Module, loadL7View } from './l7.js';
+import { initKineticModule, loadKineticView } from './kinetic.js';
+import { handleThreatIntelStreamEvent, initThreatIntelModule, loadThreatIntelView } from './threat-intel.js';
 import { initXDRModule, loadXDRView } from './xdr.js';
 import { initOperationFeedback } from './operations.js';
+import { initFabricSettingsTabs } from './fabric-settings.js';
+import { initFabricSurface } from './fabric-surface.js';
 import {
   badge,
   byID,
@@ -68,7 +72,12 @@ let runtimeSettings = null;
 let streamController = null;
 let pollTimer = 0;
 let reconnectTimer = 0;
+let reconnectAttempt = 0;
+let streamRefreshTimer = 0;
+let refreshInFlight = null;
 let selectedTransaction = null;
+let connectionState = 'LIVE'; // 'LIVE' | 'POLLING_FALLBACK' | 'CONTROL_UNREACHABLE'
+let consecutiveRestFailures = 0;
 
 function setConnectionState(online, detail = '') {
   const banner = byID('connectionBanner');
@@ -103,6 +112,8 @@ const viewMeta = {
   overview: ['view.overview.eyebrow', 'view.overview.title'],
   protection: ['view.protection.eyebrow', 'view.protection.title'],
   l7: ['view.l7.eyebrow', 'view.l7.title'],
+  kinetic: ['view.kinetic.eyebrow', 'view.kinetic.title'],
+  'threat-intel': ['view.threatIntel.eyebrow', 'view.threatIntel.title'],
   hardening: ['view.hardening.eyebrow', 'view.hardening.title'],
   integrity: ['view.integrity.eyebrow', 'view.integrity.title'],
   boot: ['view.boot.eyebrow', 'view.boot.title'],
@@ -144,6 +155,8 @@ function activateView(name) {
   if (selected === 'overview') requestAnimationFrame(() => drawTraffic(byID('trafficChart')));
   if (selected === 'protection') loadProtectionState(snapshot).catch(handleActionError);
   if (selected === 'l7') loadL7View(snapshot).catch(handleActionError);
+  if (selected === 'kinetic') loadKineticView().catch(handleActionError);
+  if (selected === 'threat-intel') loadThreatIntelView().catch(handleActionError);
   if (selected === 'xdr') loadXDRView(snapshot).catch(handleActionError);
   if (selected === 'hardening') Promise.all([loadHardening(), loadTransactions()]).catch(handleActionError);
   if (selected === 'integrity') loadIntegrity().catch(handleActionError);
@@ -731,9 +744,27 @@ async function loadHardening() {
   return payload;
 }
 
+// The FIM engine reports VERIFIED / PENDING / NO_BASELINE / TAMPERED /
+// DEGRADED / QUARANTINED. "HEALTHY" is the evidence-ledger vocabulary and was
+// never produced here, so a perfectly verified baseline used to be rendered as
+// an action-required failure.
+const FIM_TONE = {
+  VERIFIED: 'good',
+  PENDING: 'warn',
+  NO_BASELINE: 'warn',
+  TAMPERED: 'danger',
+  DEGRADED: 'danger',
+  QUARANTINED: 'danger'
+};
+
+function fimState(status) {
+  const health = String(status?.health || 'UNAVAILABLE').toUpperCase();
+  return { health, tone: FIM_TONE[health] || 'muted', verified: health === 'VERIFIED' };
+}
+
 function renderFIM(status) {
-  const healthy = status?.health === 'HEALTHY';
-  badge('fimHealth', String(status?.health || 'UNAVAILABLE'), healthy ? 'good' : 'danger');
+  const state = fimState(status);
+  badge('fimHealth', state.health, state.tone);
   text('fimBaselineCount', number(status?.baseline_count));
   text('fimGeneration', number(status?.generation));
   const findings = Array.isArray(status?.last_scan?.findings) ? status.last_scan.findings : [];
@@ -861,7 +892,7 @@ async function loadIntegrity() {
   const packageHealthy = !packages?.last_scan ||
     (!packages?.running && Number(packages?.modified || 0) === 0 &&
       Number(packages?.missing || 0) === 0 && Number(packages?.errors || 0) === 0);
-  const healthy = fim?.health === 'HEALTHY' && Boolean(evidence?.status?.healthy) && packageHealthy && renderMalwareProtection();
+  const healthy = fimState(fim).verified && Boolean(evidence?.status?.healthy) && packageHealthy && renderMalwareProtection();
   badge('integrityHealth', healthy ? t('hardening.state.protected') : t('dynamic.actionRequired'), healthy ? 'good' : 'danger');
   return { fim, evidence, packages };
 }
@@ -912,7 +943,7 @@ function updateSnapshot(data) {
   const policy = data.policy || {};
   const behavior = xdr.behavior || {};
   const release = data.release || {};
-  text('versionText', data.version || '4.0.1');
+  text('versionText', data.version || '4.2.0');
   if (data.settings) applySettings(data.settings);
   text('nodeName', data.node_name || 'VGT Node');
   text('uptime', formatUptime(data.uptime_seconds));
@@ -982,11 +1013,19 @@ function updateSnapshot(data) {
   text('anomalyCount', number(xdr.anomalies_total));
   text('xdrProcesses', number(xdr.processes));
   text('xdrConnections', number(xdr.open_connections));
-  text('evaluationCount', number(xdr.evaluations_total));
-  text('queueDepth', `${number(xdr.queue_depth)} / ${number(xdr.queue_capacity)}`);
-  text('queueDrops', t('dynamic.drops', { value: number(xdr.evaluation_drops) }));
-  text('profileCount', number(behavior.profiles));
-  text('warmProfiles', t('dynamic.warm', { value: number(behavior.warm_profiles) }));
+  const qDepth = Number(xdr.queue_depth || 0);
+  const qCap = Number(xdr.queue_capacity || 0);
+  const qDrops = Number(xdr.evaluation_drops || 0);
+  text('queueDepth', `${number(qDepth)} / ${number(qCap)}`);
+  const qDropEl = byID('queueDrops');
+  if (qDropEl) {
+    qDropEl.textContent = qDrops > 0
+      ? t('dynamic.drops', { value: number(qDrops) })
+      : `${number(qDrops)} Drops · optimal`;
+    qDropEl.className = qDrops > 0 ? 'text-danger font-semibold' : 'text-muted';
+  }
+  text('profileCount', number(behavior.profiles ?? xdr.profiles_total ?? 0));
+  text('warmProfiles', number(behavior.warm_profiles ?? xdr.profiles_warm ?? 0));
   badge('xdrModeBadge', String(xdr.mode || 'disabled').toUpperCase(), xdr.degraded ? 'danger' : xdr.mode === 'enforce' ? 'good' : 'warning');
   badge('behaviorIntegrity', behavior.integrity_ok ? t('dynamic.macVerified') : t('dynamic.integrityFailure'), behavior.integrity_ok ? 'good' : 'danger');
 
@@ -1031,13 +1070,16 @@ function updateSnapshot(data) {
   renderIncidents(data.incidents || [], acknowledge);
 
   const l7 = data.l7 || {};
-  text('overviewL7Inspected', number(l7.inspected_requests || 0));
+  text('overviewL7Inspected', number(l7.requests_total || 0));
   text('overviewL7Findings', number(l7.findings_total || 0));
-  text('overviewL7Blocked', number(l7.blocked_requests || 0));
+  text('overviewL7Blocked', number(l7.blocked_total || 0));
   const overviewL7Pill = byID('overviewL7Pill');
   if (overviewL7Pill) {
-    overviewL7Pill.className = `status-pill ${l7.healthy ? 'good' : (l7.enabled ? 'danger' : 'muted')}`;
-    overviewL7Pill.textContent = l7.healthy ? 'HEALTHY' : (l7.enabled ? 'DEGRADED' : 'INACTIVE');
+    const coverage = String(l7.coverage || '').toUpperCase();
+    const coverageGood = coverage === 'TRAFFIC_ACTIVE';
+    const coverageDisabled = !l7.enabled || coverage === 'DISABLED';
+    overviewL7Pill.className = `status-pill ${coverageGood ? 'good' : (coverageDisabled ? 'muted' : (coverage === 'OFFLINE' ? 'danger' : 'warn'))}`;
+    overviewL7Pill.textContent = coverageGood ? 'ACTIVE' : (coverageDisabled ? 'INACTIVE' : (coverage === 'TLS_NOT_IN_PATH' ? 'TLS NOT IN PATH' : 'DEGRADED'));
   }
 
   loadProtectionState(data).catch(() => {});
@@ -1046,14 +1088,28 @@ function updateSnapshot(data) {
   if (activePage === 'l7') {
     loadL7View(data).catch(() => {});
   }
+  // Kinetic Defense owns its own bounded live refresh loop. Triggering four
+  // additional Kinetic API requests from every global status refresh caused
+  // request amplification whenever SSE events arrived in quick succession.
+  // The view is loaded once on activation and then refreshed by kinetic.js.
+  if (activePage === 'threat-intel') {
+    loadThreatIntelView().catch(() => {});
+  }
   if (activePage === 'xdr') {
     loadXDRView(data).catch(() => {});
   }
 }
 
-async function refresh() {
+async function refreshOnce() {
   try {
-    updateSnapshot(await getStatus());
+    const snap = await getStatus();
+    consecutiveRestFailures = 0;
+    if (connectionState === 'CONTROL_UNREACHABLE') {
+      connectionState = 'POLLING_FALLBACK';
+    }
+    // As long as REST is responding, hide the fatal red Control Plane offline banner
+    setConnectionState(true);
+    updateSnapshot(snap);
   } catch (error) {
     if (error instanceof APIError && error.status === 401) {
       badge('systemBadge', t('dynamic.locked'), 'warning');
@@ -1061,15 +1117,47 @@ async function refresh() {
       if (!byID('authDialog').open) byID('authDialog').showModal();
       return;
     }
-    badge('systemBadge', t('dynamic.apiOffline'), 'danger');
-    text('sidebarState', t('dynamic.apiOffline'));
-    setConnectionState(false, error?.message || t('connection.offlineDetail'));
+    consecutiveRestFailures++;
+    // Only show red Control Plane offline banner if consecutive REST failures threshold reached (Point 86)
+    if (consecutiveRestFailures >= 3) {
+      connectionState = 'CONTROL_UNREACHABLE';
+      badge('systemBadge', t('dynamic.apiOffline'), 'danger');
+      text('sidebarState', t('dynamic.apiOffline'));
+      setConnectionState(false, error?.message || t('connection.offlineDetail'));
+    }
   }
+}
+
+function refresh() {
+  if (refreshInFlight) return refreshInFlight;
+  refreshInFlight = refreshOnce().finally(() => {
+    refreshInFlight = null;
+  });
+  return refreshInFlight;
+}
+
+function scheduleStreamRefresh() {
+  // SSE is an event stream, not permission to issue one complete /status
+  // request per event. Coalesce event bursts into roughly one refresh per second and let the
+  // Kinetic view use its own bounded endpoint polling.
+  if (streamRefreshTimer) return;
+  streamRefreshTimer = globalThis.setTimeout(() => {
+    streamRefreshTimer = 0;
+    refresh().catch(() => {});
+  }, 750);
 }
 
 function scheduleStreamReconnect() {
   globalThis.clearTimeout(reconnectTimer);
-  reconnectTimer = globalThis.setTimeout(() => connectStream(), 5000);
+  const backoff = Math.min(30000, 1000 * Math.pow(1.8, reconnectAttempt) + Math.random() * 500);
+  reconnectAttempt++;
+  reconnectTimer = globalThis.setTimeout(() => connectStream(), backoff);
+}
+
+function startFallbackPolling() {
+  globalThis.clearInterval(pollTimer);
+  refresh().catch(() => {});
+  pollTimer = globalThis.setInterval(() => refresh().catch(() => {}), 3000);
 }
 
 async function connectStream() {
@@ -1077,16 +1165,30 @@ async function connectStream() {
   if (streamController) streamController.abort();
   streamController = new AbortController();
   const controller = streamController;
-  globalThis.clearInterval(pollTimer);
   try {
     await streamSnapshots({
       signal: controller.signal,
-      onSnapshot: updateSnapshot,
-      onEvent: () => refresh()
+      onSnapshot: payload => {
+        // A successful live snapshot proves the SSE path has recovered. Stop
+        // fallback polling immediately; otherwise every reconnect permanently
+        // leaves an extra /status poller behind.
+        globalThis.clearInterval(pollTimer);
+        pollTimer = 0;
+        reconnectAttempt = 0;
+        consecutiveRestFailures = 0;
+        connectionState = 'LIVE';
+        setConnectionState(true);
+        updateSnapshot(payload);
+      },
+      onEvent: event => {
+        handleThreatIntelStreamEvent(event);
+        scheduleStreamRefresh();
+      }
     });
     if (controller.signal.aborted) return;
-    setConnectionState(false, t('connection.streamEnded'));
-    pollTimer = globalThis.setInterval(refresh, 3000);
+    // Stream closed by server or finished; initiate fallback polling
+    connectionState = 'POLLING_FALLBACK';
+    startFallbackPolling();
     scheduleStreamReconnect();
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') return;
@@ -1094,8 +1196,9 @@ async function connectStream() {
       byID('authDialog').showModal();
       return;
     }
-    setConnectionState(false, error?.message || t('connection.offlineDetail'));
-    pollTimer = globalThis.setInterval(refresh, 3000);
+    // Stream error; fallback to polling without immediately showing red offline banner
+    connectionState = 'POLLING_FALLBACK';
+    startFallbackPolling();
     scheduleStreamReconnect();
   }
 }
@@ -1472,16 +1575,10 @@ function bindActions() {
   }
   on('overviewToL7Btn', 'click', () => activateView('l7'));
   on('heroProtectionAction', 'click', () => activateView('protection'));
-  on('overviewFeedCard', 'click', () => activateView('network'));
-  const feedCard = byID('overviewFeedCard');
-  if (feedCard) {
-    feedCard.addEventListener('keydown', event => {
-      if (event.key === 'Enter' || event.key === ' ') {
-        event.preventDefault();
-        activateView('network');
-      }
-    });
-  }
+  on('overviewFeedCard', 'click', () => activateView('threat-intel'));
+  on('overviewBlockCard', 'click', () => activateView('network'));
+  on('overviewAnomalyCard', 'click', () => activateView('xdr'));
+  on('overviewXdrCard', 'click', () => activateView('xdr'));
   document.querySelectorAll('[data-dialog-close]').forEach(button => {
     button.addEventListener('click', () => button.closest('dialog')?.close());
   });
@@ -1501,8 +1598,14 @@ function initialize() {
   try { initializeI18n(); } catch (_) {}
   try { initProtectionCenter(); } catch (_) {}
   try { initL7Module(); } catch (_) {}
+  try { initKineticModule(); } catch (_) {}
+  try { initThreatIntelModule(); } catch (_) {}
   try { initXDRModule(); } catch (_) {}
   try { initOperationFeedback(); } catch (_) {}
+  Promise.resolve()
+    .then(() => initFabricSettingsTabs())
+  .then(() => initFabricSurface())
+    .catch(() => undefined);
   try { bindActions(); } catch (_) {}
   const requested = location.hash.replace('#', '');
   activateView(requested || 'overview');

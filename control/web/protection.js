@@ -376,7 +376,9 @@ export async function openActivationDialog(target) {
     else descEl.textContent = t('stepper.observe.desc');
   }
 
-  // Preflight check
+  // Preflight check: fail closed. Activation is enabled only after a successful server readiness response.
+  const confirmBtn = byID('btnConfirmActivation');
+  if (confirmBtn) confirmBtn.disabled = true;
   const preflightRoot = byID('dialogPreflightList');
   if (preflightRoot) {
     const item = el('li', 'preflight-item preflight-loading');
@@ -390,9 +392,8 @@ export async function openActivationDialog(target) {
   try {
     const readiness = await getReleaseReadiness(target);
     renderPreflightList(preflightRoot, readiness);
-    const confirmBtn = byID('btnConfirmActivation');
     if (confirmBtn) {
-      confirmBtn.disabled = !readiness.ready;
+      confirmBtn.disabled = readiness?.ready !== true;
     }
   } catch (err) {
     if (preflightRoot) {
@@ -417,13 +418,15 @@ function renderPreflightList(root, readiness) {
   if (!root) return;
   root.replaceChildren();
 
+  const blockers = Array.isArray(readiness?.blockers) ? readiness.blockers.map(value => String(value)) : [];
+  const hasBlocker = needle => blockers.some(blocker => blocker.toLowerCase().includes(String(needle).toLowerCase()));
   const checks = [
-    { label: t('dialog.activate.coreOk'), ok: !readiness.blockers.some(b => b.includes('core')) },
-    { label: t('dialog.activate.policyOk'), ok: !readiness.blockers.some(b => b.includes('policy')) },
-    { label: t('dialog.activate.evidenceOk'), ok: !readiness.blockers.some(b => b.includes('evidence')) },
-    { label: t('dialog.activate.l7Ok'), ok: !readiness.blockers.some(b => b.includes('L7')) },
-    { label: t('dialog.activate.allowlistOk'), ok: !readiness.blockers.some(b => b.includes('allowlist')) },
-    { label: t('dialog.activate.soakOk'), ok: !readiness.blockers.some(b => b.includes('soak')) }
+    { label: t('dialog.activate.coreOk'), ok: !hasBlocker('core') },
+    { label: t('dialog.activate.policyOk'), ok: !hasBlocker('policy') },
+    { label: t('dialog.activate.evidenceOk'), ok: !hasBlocker('evidence') },
+    { label: t('dialog.activate.l7Ok'), ok: !hasBlocker('l7') },
+    { label: t('dialog.activate.allowlistOk'), ok: !hasBlocker('allowlist') },
+    { label: t('dialog.activate.soakOk'), ok: !hasBlocker('soak') }
   ];
 
   checks.forEach(c => {

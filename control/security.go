@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"os"
 	"path/filepath"
@@ -47,6 +48,20 @@ func loadOrCreateToken(path string) (string, error) {
 		return "", err
 	}
 	return token, nil
+}
+
+// randomBytesHex returns n cryptographically random bytes as lowercase hex.
+// A failure of the system random source is fatal: every caller uses the result
+// as a name or token that must not be guessable.
+func randomBytesHex(n int) (string, error) {
+	if n <= 0 || n > 64 {
+		return "", errors.New("random byte count is outside the accepted range")
+	}
+	buffer := make([]byte, n)
+	if _, err := rand.Read(buffer); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(buffer), nil
 }
 
 func tokenEqual(got, want string) bool {

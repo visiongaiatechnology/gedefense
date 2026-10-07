@@ -70,9 +70,11 @@ func TestHardeningPostureMeasuresLocalControlsWithoutLeakingBootSecrets(t *testi
 }
 
 func TestHardeningControlSelectionBuildsDeterministicAllowlistedProfile(t *testing.T) {
+	applier := NewSysctlTransactionApplier(nil)
+	profiles, defaultProfile, allowAdHoc := applier.profileSet()
 	profile, err := decodeSysctlProfileRequest(
 		[]byte(`{"controls":["network.syn-cookies","kernel.aslr","kernel.kptr"]}`),
-		NewSysctlTransactionApplier(nil).profiles,
+		profiles, defaultProfile, allowAdHoc,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -90,7 +92,7 @@ func TestHardeningControlSelectionBuildsDeterministicAllowlistedProfile(t *testi
 		`{"controls":["kernel.not-allowlisted"]}`,
 		`{"profile":"linux-server-balanced","controls":["kernel.aslr"]}`,
 	} {
-		if _, err := decodeSysctlProfileRequest([]byte(invalid), NewSysctlTransactionApplier(nil).profiles); err == nil {
+		if _, err := decodeSysctlProfileRequest([]byte(invalid), profiles, defaultProfile, allowAdHoc); err == nil {
 			t.Fatalf("invalid hardening selection accepted: %s", invalid)
 		}
 	}

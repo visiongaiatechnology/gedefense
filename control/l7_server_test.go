@@ -4,6 +4,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"net"
 	"net/http"
@@ -13,6 +14,68 @@ import (
 	"testing"
 	"time"
 )
+
+func TestL7TLSClientHelloUnixSocketEndToEnd(t *testing.T) {
+	cfg := l7TestConfig()
+	cfg.Socket = filepath.Join(t.TempDir(), "inspect.sock")
+	cfg.RequirePeerCredentials = true
+	cfg.AllowedPeerUIDs = []uint32{uint32(os.Getuid())}
+	cfg.TLSAllowedDomains = []string{"example.com"}
+	engine, err := NewL7Engine(cfg, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := NewState("test", Config{L7: cfg, XDR: defaultConfig().XDR, Release: defaultConfig().Release})
+	service, err := NewL7Service(cfg, engine, state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := service.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		_ = service.Shutdown(ctx)
+	}()
+
+	transport := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+		var dialer net.Dialer
+		return dialer.DialContext(ctx, "unix", cfg.Socket)
+	}}
+	client := &http.Client{Transport: transport, Timeout: 2 * time.Second}
+	pkt := buildSyntheticClientHello("example.com", []uint16{0x002f}, nil, false)
+	envelope, err := json.Marshal(L7TLSClientHelloRequest{
+		Version: l7ProtocolVersion, ClientIP: "203.0.113.80", ClientHelloBase64: base64.StdEncoding.EncodeToString(pkt),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request, err := http.NewRequest(http.MethodPost, "http://unix/v1/tls/clienthello", bytes.NewReader(envelope))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	response, err := client.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("unexpected TLS endpoint status: %s", response.Status)
+	}
+	var result L7TLSClientHelloResponse
+	if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Summary.SNI != "example.com" || result.Summary.JA3Hash == "" {
+		t.Fatalf("unexpected TLS summary: %#v", result.Summary)
+	}
+	status := state.L7Status()
+	if !status.TLSPathVerified || status.TLSHandshakesTotal != 1 {
+		t.Fatalf("TLS path was not verified after real Unix-socket ingestion: %#v", status)
+	}
+}
 
 func TestL7UnixSocketEndToEndWithPeerCredentials(t *testing.T) {
 	cfg := l7TestConfig()

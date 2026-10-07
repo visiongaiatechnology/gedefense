@@ -34,6 +34,7 @@ type PackageIntegrityScanner struct {
 	dbRoot string
 	fsRoot string
 	status PackageIntegrityStatus
+	policy packagePolicy
 }
 
 func NewPackageIntegrityScanner() *PackageIntegrityScanner {
@@ -45,6 +46,7 @@ func newPackageIntegrityScanner(dbRoot, fsRoot string) *PackageIntegrityScanner 
 		dbRoot: dbRoot,
 		fsRoot: fsRoot,
 		status: PackageIntegrityStatus{Available: packageIntegritySupported(), Findings: []PackageIntegrityFinding{}},
+		policy: defaultIntegrityFabricSettings(Config{}).Packages.policy(),
 	}
 }
 

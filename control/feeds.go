@@ -77,6 +77,17 @@ type ThreatFeedSource struct {
 	Action      FeedAction `json:"action"`
 	Format      string     `json:"format"` // "json", "lines", "ipsum"
 	Description string     `json:"description"`
+
+	// Priority and TrustWeight decide evaluation order and therefore which
+	// entries survive the global entry budget. Lower priority wins; trust
+	// weight breaks ties. Both are administrable through Fabric Settings.
+	Priority    int `json:"priority,omitempty"`
+	TrustWeight int `json:"trust_weight,omitempty"`
+	// RefreshMinutes, MaxEntries and MaxDownloadBytes are per-feed overrides.
+	// Zero means "inherit the global Threat Intelligence bound".
+	RefreshMinutes   int `json:"refresh_minutes,omitempty"`
+	MaxEntries       int `json:"max_entries,omitempty"`
+	MaxDownloadBytes int `json:"max_download_bytes,omitempty"`
 }
 
 // Default 9 sovereign Threat Intelligence Feeds with explicit action semantics
@@ -168,8 +179,15 @@ const (
 	threatIntelLockTTL         = 15 * time.Minute
 	threatIntelCronKey         = "vis_threat_intel_cron_sync"
 	threatIntelLockKey         = "vis_threat_intel_sync_lock"
-	threatIntelStateSchema     = "vgt-gedefense-threat-intel-state-v1"
+	threatIntelStateSchemaV1   = "vgt-gedefense-threat-intel-state-v1"
+	threatIntelStateSchemaV2   = "vgt-gedefense-threat-intel-state-v2"
+	threatIntelStateSchemaV3   = "vgt-gedefense-threat-intel-state-v3"
+	threatIntelStateSchema     = threatIntelStateSchemaV3
 	threatIntelDefaultStateDir = "/var/lib/vgt/gedefense"
+	kernelApplyNotApplied      = "NOT_APPLIED"
+	kernelApplyApplied         = "APPLIED"
+	kernelApplyError           = "ERROR"
+	kernelApplyDivergent       = "DIVERGENT"
 )
 
 // ThreatIntelLock enforces live owner protection. TTL is strictly for crash recovery.
@@ -512,31 +530,106 @@ type FeedGenerationState struct {
 	LastAttemptAt    time.Time  `json:"last_attempt_at"`
 	LastError        string     `json:"last_error,omitempty"`
 	ConsecutiveFails int        `json:"consecutive_fails"`
+	Status           string     `json:"status,omitempty"` // "OK", "STALE", "CRITICAL", "ERROR", "NEVER_SYNCED"
+	// LastGoodFingerprint allows the administrable generation policy to detect a
+	// byte-identical re-download without churning the published generation.
+	LastGoodFingerprint string `json:"last_good_fingerprint,omitempty"`
+}
+
+// computeFeedStatus derives the operational state of one feed. It is
+// time-aware: a feed whose last-known-good generation has aged past the
+// administrable warning or critical threshold is reported as such instead of
+// pretending to be healthy because the last attempt happened to succeed long
+// ago.
+func computeFeedStatus(s *FeedGenerationState, settings ThreatIntelFabricSettings) string {
+	if s == nil || s.LastAttemptAt.IsZero() {
+		return "NEVER_SYNCED"
+	}
+	now := time.Now().UTC()
+	if !s.LastGoodAt.IsZero() && settings.StaleCriticalMinutes > 0 {
+		if now.Sub(s.LastGoodAt) >= time.Duration(settings.StaleCriticalMinutes)*time.Minute {
+			return "CRITICAL"
+		}
+	}
+	if !s.LastGoodAt.IsZero() && settings.StaleWarningMinutes > 0 {
+		if now.Sub(s.LastGoodAt) >= time.Duration(settings.StaleWarningMinutes)*time.Minute {
+			return "STALE"
+		}
+	}
+	if s.LastError != "" || s.ConsecutiveFails > 0 {
+		if s.LastGoodGen > 0 {
+			return "STALE"
+		}
+		return "ERROR"
+	}
+	return "OK"
 }
 
 type ThreatIntelPersistentState struct {
-	Schema               string                          `json:"schema"`
-	LastSuccessfulSyncAt time.Time                       `json:"last_successful_sync_at"`
-	Generation           uint64                          `json:"generation"`
-	Fingerprint          string                          `json:"fingerprint"`
-	Feeds                map[string]*FeedGenerationState `json:"feeds"`
+	Schema                      string                          `json:"schema"`
+	OverallStatus               string                          `json:"overall_status"`
+	LastAttemptAt               time.Time                       `json:"last_attempt_at"`
+	LastSuccessfulSyncAt        time.Time                       `json:"last_successful_sync_at"`
+	LastPartialSuccessfulSyncAt time.Time                       `json:"last_partial_successful_sync_at,omitempty"`
+	LastFullySuccessfulSyncAt   time.Time                       `json:"last_fully_successful_sync_at"`
+	KernelApplyLastAt           time.Time                       `json:"kernel_apply_last_at,omitempty"`
+	KernelApplyStatus           string                          `json:"kernel_apply_status,omitempty"`
+	KernelGeneration            uint64                          `json:"kernel_generation,omitempty"`
+	LastKernelAdded             int                             `json:"last_kernel_added"`
+	LastKernelDeleted           int                             `json:"last_kernel_deleted"`
+	LastKernelError             string                          `json:"last_kernel_error,omitempty"`
+	Generation                  uint64                          `json:"generation"`
+	Fingerprint                 string                          `json:"fingerprint"`
+	Feeds                       map[string]*FeedGenerationState `json:"feeds"`
+}
+
+type ThreatIntelTelemetry struct {
+	OverallStatus               string                `json:"overall_status"`
+	LastAttemptAt               time.Time             `json:"last_attempt_at"`
+	LastSuccessfulSyncAt        time.Time             `json:"last_successful_sync_at"`
+	LastPartialSuccessfulSyncAt time.Time             `json:"last_partial_successful_sync_at,omitempty"`
+	LastFullySuccessfulSyncAt   time.Time             `json:"last_fully_successful_sync_at"`
+	KernelApplyLastAt           time.Time             `json:"kernel_apply_last_at,omitempty"`
+	KernelApplyStatus           string                `json:"kernel_apply_status,omitempty"`
+	KernelGeneration            uint64                `json:"kernel_generation,omitempty"`
+	LastKernelAdded             int                   `json:"last_kernel_added"`
+	LastKernelDeleted           int                   `json:"last_kernel_deleted"`
+	LastKernelError             string                `json:"last_kernel_error,omitempty"`
+	Generation                  uint64                `json:"generation"`
+	Fingerprint                 string                `json:"fingerprint"`
+	BlockVectors                int                   `json:"block_vectors"`
+	CorrelateVectors            int                   `json:"correlate_vectors"`
+	AnnotateVectors             int                   `json:"annotate_vectors"`
+	TotalVectors                int                   `json:"total_vectors"`
+	Feeds                       []FeedGenerationState `json:"feeds"`
 }
 
 type FeedManager struct {
-	mu                   sync.RWMutex
-	cfg                  FeedConfig
-	client               *http.Client
-	statePath            string
-	lock                 ThreatIntelLock
-	feedStates           map[string]*FeedGenerationState
-	blockIndex           *ThreatIndex // FeedActionBlock -> Kernel XDP + cgroup egress + Styx DROP_THREAT_INTEL
-	correlateIndex       *ThreatIndex // FeedActionCorrelateOnly + Block -> XDR Incident Scoring
-	annotateIndex        *ThreatIndex // FeedActionAnnotateOnly -> Forensic Flow Tagging
-	index                *ThreatIndex // Backward compatibility alias -> blockIndex
-	appliedKernelEntries map[string]struct{}
-	generation           uint64
-	fingerprint          string
-	lastSuccessfulSyncAt time.Time
+	mu                          sync.RWMutex
+	cfg                         FeedConfig
+	live                        *threatIntelRuntime
+	client                      *http.Client
+	statePath                   string
+	lock                        ThreatIntelLock
+	feedStates                  map[string]*FeedGenerationState
+	blockIndex                  *ThreatIndex // FeedActionBlock -> Kernel XDP + cgroup egress + Styx DROP_THREAT_INTEL
+	correlateIndex              *ThreatIndex // FeedActionCorrelateOnly + Block -> XDR Incident Scoring
+	annotateIndex               *ThreatIndex // FeedActionAnnotateOnly -> Forensic Flow Tagging
+	index                       *ThreatIndex // Backward compatibility alias -> blockIndex
+	appliedKernelEntries        map[string]struct{}
+	generation                  uint64
+	fingerprint                 string
+	overallStatus               string
+	lastAttemptAt               time.Time
+	lastSuccessfulSyncAt        time.Time
+	lastPartialSuccessfulSyncAt time.Time
+	lastFullySuccessfulSyncAt   time.Time
+	kernelApplyLastAt           time.Time
+	kernelApplyStatus           string
+	kernelGeneration            uint64
+	lastKernelAdded             int
+	lastKernelDeleted           int
+	lastKernelError             string
 }
 
 func NewFeedManager(cfg FeedConfig, stateDir ...string) *FeedManager {
@@ -579,8 +672,11 @@ func NewFeedManager(cfg FeedConfig, stateDir ...string) *FeedManager {
 	corrIdx := NewThreatIndex()
 	annotIdx := NewThreatIndex()
 
+	fabric := defaultThreatIntelFabricSettings(cfg, DefaultThreatFeedSources)
+
 	mgr := &FeedManager{
 		cfg:                  cfg,
+		live:                 newThreatIntelRuntime(fabric, 0),
 		client:               &http.Client{Transport: tr, Timeout: 20 * time.Second, CheckRedirect: checkFeedRedirect},
 		statePath:            sFile,
 		feedStates:           make(map[string]*FeedGenerationState),
@@ -589,6 +685,8 @@ func NewFeedManager(cfg FeedConfig, stateDir ...string) *FeedManager {
 		annotateIndex:        annotIdx,
 		index:                blockIdx,
 		appliedKernelEntries: make(map[string]struct{}),
+		overallStatus:        "NEVER_SYNCED",
+		kernelApplyStatus:    kernelApplyNotApplied,
 		fingerprint:          "0000000000000000000000000000000000000000000000000000000000000000",
 	}
 
@@ -600,20 +698,42 @@ func NewFeedManager(cfg FeedConfig, stateDir ...string) *FeedManager {
 		}
 	}
 
-	// Invariant 7: Load persisted last-known-good generation and lastSuccessfulSyncAt
+	// Invariant 7: Load persisted last-known-good generation and sync timestamps
 	_ = mgr.loadPersistentState()
 	return mgr
 }
 
+// feedPolicyContextKey carries the configuration snapshot that authorised a
+// fetch, so a redirect is always evaluated against the revision that started the
+// request rather than against whatever revision is current when the redirect
+// arrives.
+type feedPolicyContextKey struct{}
+
+// checkFeedRedirect enforces the administrable transport policy. HTTPS, the 443
+// destination port, the public-host requirement and resolved-address
+// anti-poisoning remain unconditional.
 func checkFeedRedirect(req *http.Request, via []*http.Request) error {
-	if len(via) > 2 {
-		return NewThreatIntelSecurityException("too many redirects", nil)
+	policy, _ := req.Context().Value(feedPolicyContextKey{}).(*threatIntelSnapshot)
+	maxRedirects := 2
+	allowCrossHost := false
+	if policy != nil {
+		maxRedirects = policy.settings.Transport.MaxRedirects
+		allowCrossHost = policy.settings.Transport.AllowCrossHostRedirect
 	}
-	if len(via) > 0 && req.URL.Hostname() != via[0].URL.Hostname() {
-		return NewThreatIntelSecurityException("cross-host redirect refused", nil)
+	if len(via) > maxRedirects {
+		return NewThreatIntelSecurityException("too many redirects", nil)
 	}
 	if req.URL.Scheme != "https" {
 		return NewThreatIntelSecurityException("non-HTTPS redirect refused", nil)
+	}
+	if len(via) > 0 && !strings.EqualFold(req.URL.Hostname(), via[0].URL.Hostname()) && !allowCrossHost {
+		return NewThreatIntelSecurityException("cross-host redirect refused", nil)
+	}
+	if _, err := validateFeedSourceURL(req.URL.String()); err != nil {
+		return err
+	}
+	if policy != nil && !policy.hostAllowed(req.URL.Hostname()) {
+		return NewThreatIntelSecurityException("redirect host is outside the configured allowlist", nil)
 	}
 	return nil
 }
@@ -623,12 +743,47 @@ func (m *FeedManager) CorrelateIndex() *ThreatIndex { return m.correlateIndex }
 func (m *FeedManager) AnnotateIndex() *ThreatIndex  { return m.annotateIndex }
 func (m *FeedManager) Index() *ThreatIndex          { return m.blockIndex }
 
-func (m *FeedManager) Generation() uint64        { m.mu.RLock(); defer m.mu.RUnlock(); return m.generation }
-func (m *FeedManager) Fingerprint() string       { m.mu.RLock(); defer m.mu.RUnlock(); return m.fingerprint }
+func (m *FeedManager) Generation() uint64  { m.mu.RLock(); defer m.mu.RUnlock(); return m.generation }
+func (m *FeedManager) Fingerprint() string { m.mu.RLock(); defer m.mu.RUnlock(); return m.fingerprint }
+func (m *FeedManager) OverallStatus() string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if m.overallStatus != "" {
+		return m.overallStatus
+	}
+	if m.lastAttemptAt.IsZero() {
+		return "NEVER_SYNCED"
+	}
+	return "OK"
+}
+func (m *FeedManager) LastAttemptAt() time.Time {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.lastAttemptAt
+}
 func (m *FeedManager) LastSuccessfulSyncAt() time.Time {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.lastSuccessfulSyncAt
+}
+func (m *FeedManager) LastPartialSuccessfulSyncAt() time.Time {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.lastPartialSuccessfulSyncAt
+}
+func (m *FeedManager) LastFullySuccessfulSyncAt() time.Time {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.lastFullySuccessfulSyncAt
+}
+func (m *FeedManager) KernelApplyStatus() (string, time.Time, uint64, string) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	status := m.kernelApplyStatus
+	if status == "" {
+		status = kernelApplyNotApplied
+	}
+	return status, m.kernelApplyLastAt, m.kernelGeneration, m.lastKernelError
 }
 
 func (m *FeedManager) LockStatus() (bool, time.Time, string, time.Duration) {
@@ -638,14 +793,71 @@ func (m *FeedManager) LockStatus() (bool, time.Time, string, time.Duration) {
 func (m *FeedManager) SnapshotFeedStates() []FeedGenerationState {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
+	settings := m.live.activeSettings()
 	out := make([]FeedGenerationState, 0, len(m.feedStates))
 	for _, s := range m.feedStates {
 		cloned := *s
 		cloned.LastGoodItems = nil // omit raw IP array in telemetry status
+		cloned.Status = computeFeedStatus(s, settings)
 		out = append(out, cloned)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out
+}
+
+func (m *FeedManager) Telemetry() ThreatIntelTelemetry {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	settings := m.live.activeSettings()
+	feeds := make([]FeedGenerationState, 0, len(m.feedStates))
+	for _, s := range m.feedStates {
+		cloned := *s
+		cloned.LastGoodItems = nil
+		cloned.Status = computeFeedStatus(s, settings)
+		feeds = append(feeds, cloned)
+	}
+	sort.Slice(feeds, func(i, j int) bool { return feeds[i].ID < feeds[j].ID })
+
+	bCount := m.blockIndex.Count()
+	cCount := m.correlateIndex.Count()
+	aCount := m.annotateIndex.Count()
+
+	status := m.overallStatus
+	if status == "" {
+		if m.lastAttemptAt.IsZero() {
+			status = "NEVER_SYNCED"
+		} else if !m.lastFullySuccessfulSyncAt.IsZero() {
+			status = "OK"
+		} else {
+			status = "PARTIAL"
+		}
+	}
+
+	kernelStatus := m.kernelApplyStatus
+	if kernelStatus == "" {
+		kernelStatus = kernelApplyNotApplied
+	}
+
+	return ThreatIntelTelemetry{
+		OverallStatus:               status,
+		LastAttemptAt:               m.lastAttemptAt,
+		LastSuccessfulSyncAt:        m.lastSuccessfulSyncAt,
+		LastPartialSuccessfulSyncAt: m.lastPartialSuccessfulSyncAt,
+		LastFullySuccessfulSyncAt:   m.lastFullySuccessfulSyncAt,
+		KernelApplyLastAt:           m.kernelApplyLastAt,
+		KernelApplyStatus:           kernelStatus,
+		KernelGeneration:            m.kernelGeneration,
+		LastKernelAdded:             m.lastKernelAdded,
+		LastKernelDeleted:           m.lastKernelDeleted,
+		LastKernelError:             m.lastKernelError,
+		Generation:                  m.generation,
+		Fingerprint:                 m.fingerprint,
+		BlockVectors:                bCount,
+		CorrelateVectors:            cCount,
+		AnnotateVectors:             aCount,
+		TotalVectors:                bCount + cCount + aCount,
+		Feeds:                       feeds,
+	}
 }
 
 func (m *FeedManager) loadPersistentState() error {
@@ -657,18 +869,52 @@ func (m *FeedManager) loadPersistentState() error {
 	if err := json.Unmarshal(data, &doc); err != nil {
 		return err
 	}
-	if doc.Schema != threatIntelStateSchema {
+	if doc.Schema != threatIntelStateSchemaV1 && doc.Schema != threatIntelStateSchemaV2 && doc.Schema != threatIntelStateSchemaV3 {
 		return errors.New("state schema mismatch")
 	}
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	if doc.Schema == threatIntelStateSchemaV1 {
+		if doc.LastAttemptAt.IsZero() {
+			doc.LastAttemptAt = doc.LastSuccessfulSyncAt
+		}
+		if doc.LastFullySuccessfulSyncAt.IsZero() {
+			doc.LastFullySuccessfulSyncAt = doc.LastSuccessfulSyncAt
+		}
+		if doc.OverallStatus == "" {
+			if doc.LastSuccessfulSyncAt.IsZero() {
+				doc.OverallStatus = "NEVER_SYNCED"
+			} else {
+				doc.OverallStatus = "OK"
+			}
+		}
+	}
+
+	m.lastAttemptAt = doc.LastAttemptAt
 	m.lastSuccessfulSyncAt = doc.LastSuccessfulSyncAt
+	m.lastPartialSuccessfulSyncAt = doc.LastPartialSuccessfulSyncAt
+	m.lastFullySuccessfulSyncAt = doc.LastFullySuccessfulSyncAt
+	m.overallStatus = doc.OverallStatus
+	m.kernelApplyLastAt = doc.KernelApplyLastAt
+	// Early 4.1 builds persisted "OK" while the API/UI contract used
+	// "APPLIED". Normalize that legacy value during load so operators never see
+	// a muted/unknown kernel state after an otherwise successful migration.
+	if doc.KernelApplyStatus == "OK" {
+		doc.KernelApplyStatus = kernelApplyApplied
+	}
+	m.kernelApplyStatus = doc.KernelApplyStatus
+	if m.kernelApplyStatus == "" {
+		m.kernelApplyStatus = kernelApplyNotApplied
+	}
+	m.kernelGeneration = doc.KernelGeneration
+	m.lastKernelAdded = doc.LastKernelAdded
+	m.lastKernelDeleted = doc.LastKernelDeleted
+	m.lastKernelError = doc.LastKernelError
 	m.generation = doc.Generation
 	m.fingerprint = doc.Fingerprint
 
-	var blockItems, corrItems, annotItems []string
 	for id, state := range doc.Feeds {
 		if existing, ok := m.feedStates[id]; ok {
 			existing.LastGoodItems = state.LastGoodItems
@@ -676,19 +922,16 @@ func (m *FeedManager) loadPersistentState() error {
 			existing.LastGoodGen = state.LastGoodGen
 			existing.LastGoodAt = state.LastGoodAt
 			existing.LastAttemptAt = state.LastAttemptAt
-
-			switch existing.Action {
-			case FeedActionBlock:
-				blockItems = append(blockItems, state.LastGoodItems...)
-				corrItems = append(corrItems, state.LastGoodItems...)
-			case FeedActionCorrelateOnly:
-				corrItems = append(corrItems, state.LastGoodItems...)
-			case FeedActionAnnotateOnly:
-				annotItems = append(annotItems, state.LastGoodItems...)
-			}
+			existing.LastError = state.LastError
+			existing.ConsecutiveFails = state.ConsecutiveFails
+			existing.LastGoodFingerprint = state.LastGoodFingerprint
+			existing.Status = computeFeedStatus(existing, m.live.activeSettings())
 		}
 	}
 
+	// Recompose through the deterministic, priority-ordered composition so a
+	// restart publishes exactly the generation the runtime would have published.
+	blockItems, corrItems, annotItems := m.composeGenerationsLocked(m.live.activeSettings())
 	m.blockIndex.Replace(blockItems)
 	m.correlateIndex.Replace(corrItems)
 	m.annotateIndex.Replace(annotItems)
@@ -697,18 +940,32 @@ func (m *FeedManager) loadPersistentState() error {
 
 func (m *FeedManager) savePersistentStateLocked() error {
 	doc := ThreatIntelPersistentState{
-		Schema:               threatIntelStateSchema,
-		LastSuccessfulSyncAt: m.lastSuccessfulSyncAt,
-		Generation:           m.generation,
-		Fingerprint:          m.fingerprint,
-		Feeds:                m.feedStates,
+		Schema:                      threatIntelStateSchema,
+		OverallStatus:               m.overallStatus,
+		LastAttemptAt:               m.lastAttemptAt,
+		LastSuccessfulSyncAt:        m.lastSuccessfulSyncAt,
+		LastPartialSuccessfulSyncAt: m.lastPartialSuccessfulSyncAt,
+		LastFullySuccessfulSyncAt:   m.lastFullySuccessfulSyncAt,
+		KernelApplyLastAt:           m.kernelApplyLastAt,
+		KernelApplyStatus:           m.kernelApplyStatus,
+		KernelGeneration:            m.kernelGeneration,
+		LastKernelAdded:             m.lastKernelAdded,
+		LastKernelDeleted:           m.lastKernelDeleted,
+		LastKernelError:             m.lastKernelError,
+		Generation:                  m.generation,
+		Fingerprint:                 m.fingerprint,
+		Feeds:                       m.feedStates,
 	}
 	data, err := json.MarshalIndent(doc, "", "  ")
 	if err != nil {
 		return err
 	}
-	_ = os.MkdirAll(filepath.Dir(m.statePath), 0o700)
-	return os.WriteFile(m.statePath, data, 0o600)
+	if err := os.MkdirAll(filepath.Dir(m.statePath), 0o700); err != nil {
+		return err
+	}
+	// Feed state is the record of which indicators were published; it goes through
+	// the same symlink-refusing atomic writer as every other store.
+	return atomicWriteFile(m.statePath, data, 0o600)
 }
 
 // SyncWithLock acquires the lock with live-owner invariant and executes synchronization.
@@ -739,12 +996,29 @@ func (m *FeedManager) syncInternal(ctx context.Context) ([]string, map[string]er
 		err   error
 	}
 
-	sources := DefaultThreatFeedSources
-	sem := make(chan struct{}, 3)
+	// One sync resolves exactly one configuration snapshot. A revision published
+	// while this sync runs is observed by the next sync, never by half of this
+	// one.
+	snapshot := m.live.current()
+	if snapshot == nil {
+		return nil, map[string]error{"configuration": errors.New("threat intelligence configuration unavailable")}
+	}
+	sources := snapshot.orderedSources()
+	if len(sources) == 0 {
+		return nil, map[string]error{"configuration": errors.New("no threat intelligence source is enabled")}
+	}
+	concurrency := snapshot.settings.ConcurrentDownloads
+	if concurrency < 1 {
+		concurrency = 1
+	}
+	sem := make(chan struct{}, concurrency)
 	out := make(chan result, len(sources))
 	var wg sync.WaitGroup
 
 	now := time.Now().UTC()
+	m.mu.Lock()
+	m.lastAttemptAt = now
+	m.mu.Unlock()
 
 	for _, src := range sources {
 		src := src
@@ -753,7 +1027,7 @@ func (m *FeedManager) syncInternal(ctx context.Context) ([]string, map[string]er
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
-			items, err := m.fetchSource(ctx, src)
+			items, err := m.fetchSource(ctx, src, snapshot)
 			out <- result{id: src.ID, url: src.URL, items: items, err: err}
 		}()
 	}
@@ -766,10 +1040,20 @@ func (m *FeedManager) syncInternal(ctx context.Context) ([]string, map[string]er
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	successCount := 0
+	failCount := 0
+
 	for r := range out {
 		feedState := m.feedStates[r.id]
 		if feedState == nil {
-			feedState = &FeedGenerationState{ID: r.id, Action: FeedActionCorrelateOnly}
+			source, known := snapshot.byID[r.id]
+			action := FeedActionCorrelateOnly
+			name := r.id
+			if known {
+				action = source.Action
+				name = source.Name
+			}
+			feedState = &FeedGenerationState{ID: r.id, Name: name, Action: action}
 			m.feedStates[r.id] = feedState
 		}
 		feedState.LastAttemptAt = now
@@ -777,100 +1061,171 @@ func (m *FeedManager) syncInternal(ctx context.Context) ([]string, map[string]er
 		// Invariant 2: Failed, empty, malformed or truncated downloads must NEVER replace
 		// the current active generation.
 		if r.err != nil {
+			failCount++
 			errs[r.url] = r.err
 			feedState.LastError = r.err.Error()
 			feedState.ConsecutiveFails++
+			feedState.Status = computeFeedStatus(feedState, snapshot.settings)
 			continue
 		}
 		if len(r.items) == 0 {
+			failCount++
 			errEmpty := errors.New("empty download rejected: active generation preserved")
 			errs[r.url] = errEmpty
 			feedState.LastError = errEmpty.Error()
 			feedState.ConsecutiveFails++
+			feedState.Status = computeFeedStatus(feedState, snapshot.settings)
 			continue
 		}
 
 		// Valid download: promote to new last-known-good generation
+		successCount++
 		feedState.LastGoodItems = r.items
 		feedState.LastGoodCount = len(r.items)
-		feedState.LastGoodGen++
+		digest := computeFingerprint(r.items)
+		// Generation policy: a byte-identical re-download refreshes freshness but
+		// does not churn the generation when the operator selected "stable".
+		if shouldAdvanceGeneration(feedState, digest, snapshot.settings.Validation) {
+			feedState.LastGoodGen++
+		}
+		feedState.LastGoodFingerprint = digest
 		feedState.LastGoodAt = now
 		feedState.LastError = ""
 		feedState.ConsecutiveFails = 0
+		feedState.Status = "OK"
 	}
 
-	// Recompose active generations across all sources
-	var blockUnion, corrUnion, annotUnion []string
-	blockSet := make(map[string]struct{})
-	corrSet := make(map[string]struct{})
-	annotSet := make(map[string]struct{})
-
-	for _, s := range m.feedStates {
-		switch s.Action {
-		case FeedActionBlock:
-			for _, it := range s.LastGoodItems {
-				if len(blockSet) < m.cfg.MaxEntries {
-					blockSet[it] = struct{}{}
-					corrSet[it] = struct{}{}
-				}
-			}
-		case FeedActionCorrelateOnly:
-			for _, it := range s.LastGoodItems {
-				if len(corrSet) < m.cfg.MaxEntries {
-					corrSet[it] = struct{}{}
-				}
-			}
-		case FeedActionAnnotateOnly:
-			for _, it := range s.LastGoodItems {
-				if len(annotSet) < m.cfg.MaxEntries {
-					annotSet[it] = struct{}{}
-				}
-			}
-		}
+	// Rule 14 / Point 64–67: Correct sync timestamp and status semantics
+	if failCount == 0 && successCount == len(sources) {
+		m.lastSuccessfulSyncAt = now
+		m.lastFullySuccessfulSyncAt = now
+		m.overallStatus = "OK"
+	} else if successCount > 0 && failCount > 0 {
+		m.lastSuccessfulSyncAt = now
+		m.lastPartialSuccessfulSyncAt = now
+		// Invariant: partial sync does NOT update lastFullySuccessfulSyncAt!
+		m.overallStatus = "PARTIAL"
+	} else if successCount == 0 {
+		// Invariant: total failure updates NEITHER lastSuccessfulSyncAt NOR lastFullySuccessfulSyncAt!
+		m.overallStatus = "ERROR"
 	}
 
-	for it := range blockSet {
-		blockUnion = append(blockUnion, it)
-	}
-	for it := range corrSet {
-		corrUnion = append(corrUnion, it)
-	}
-	for it := range annotSet {
-		annotUnion = append(annotUnion, it)
-	}
-
-	// Update in-memory correlation and annotation indices immediately
+	// Recompose active generations across all sources in deterministic priority
+	// order, then publish the correlation and annotation indices immediately.
+	blockUnion, corrUnion, annotUnion := m.composeGenerationsLocked(snapshot.settings)
 	m.correlateIndex.Replace(corrUnion)
 	m.annotateIndex.Replace(annotUnion)
-
-	// Update lastSuccessfulSyncAt
-	m.lastSuccessfulSyncAt = now
 	_ = m.savePersistentStateLocked()
 
 	return blockUnion, errs
 }
 
+// composeGenerationsLocked rebuilds the three published generations from the
+// current last-known-good state. Sources are visited in priority order, so the
+// global entry budget is spent on the most trusted sources first and the same
+// input always produces the same generation. The previous implementation
+// iterated a map, which made the surviving subset of a capped union
+// non-deterministic between syncs.
+func (m *FeedManager) composeGenerationsLocked(settings ThreatIntelFabricSettings) (block, correlate, annotate []string) {
+	stateByID := make(map[string]*FeedGenerationState, len(m.feedStates))
+	ids := make([]string, 0, len(m.feedStates))
+	for id, state := range m.feedStates {
+		stateByID[id] = state
+		ids = append(ids, id)
+	}
+	rank := make(map[string]int, len(settings.Feeds))
+	for index, feed := range settings.Feeds {
+		rank[feed.ID] = index
+	}
+	sort.Slice(ids, func(i, j int) bool {
+		ri, iKnown := rank[ids[i]]
+		rj, jKnown := rank[ids[j]]
+		if iKnown != jKnown {
+			return iKnown
+		}
+		if iKnown && ri != rj {
+			return ri < rj
+		}
+		return ids[i] < ids[j]
+	})
+
+	budget := settings.MaxTotalEntries
+	blockSet := make(map[string]struct{})
+	corrSet := make(map[string]struct{})
+	annotSet := make(map[string]struct{})
+	for _, id := range ids {
+		state := stateByID[id]
+		if state == nil {
+			continue
+		}
+		switch state.Action {
+		case FeedActionBlock:
+			for _, item := range state.LastGoodItems {
+				if budget > 0 && len(blockSet) >= budget {
+					break
+				}
+				blockSet[item] = struct{}{}
+				corrSet[item] = struct{}{}
+			}
+		case FeedActionCorrelateOnly:
+			for _, item := range state.LastGoodItems {
+				if budget > 0 && len(corrSet) >= budget {
+					break
+				}
+				corrSet[item] = struct{}{}
+			}
+		case FeedActionAnnotateOnly:
+			for _, item := range state.LastGoodItems {
+				if budget > 0 && len(annotSet) >= budget {
+					break
+				}
+				annotSet[item] = struct{}{}
+			}
+		}
+	}
+
+	block = make([]string, 0, len(blockSet))
+	for item := range blockSet {
+		block = append(block, item)
+	}
+	correlate = make([]string, 0, len(corrSet))
+	for item := range corrSet {
+		correlate = append(correlate, item)
+	}
+	annotate = make([]string, 0, len(annotSet))
+	for item := range annotSet {
+		annotate = append(annotate, item)
+	}
+	sort.Strings(block)
+	sort.Strings(correlate)
+	sort.Strings(annotate)
+	return block, correlate, annotate
+}
+
 // Invariant 5: Kernel diff updates must apply additions before deletions and must never
 // publish a new userspace generation until the corresponding kernel update succeeded.
+// Rollback on a failed diff is a hard safety invariant and is deliberately not
+// administrable.
 func (m *FeedManager) ApplyToKernel(core *CoreClient, allowlist []string) (int, int, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// Gather target BLOCK items from all active last-good generations of FeedActionBlock feeds
-	candidateSet := make(map[string]struct{})
-	for _, s := range m.feedStates {
-		if s.Action == FeedActionBlock {
-			for _, it := range s.LastGoodItems {
-				candidateSet[it] = struct{}{}
-			}
-		}
+	settings := m.live.activeSettings()
+
+	// Gather target BLOCK items through the deterministic, priority-ordered
+	// composition so the published kernel set does not depend on map iteration
+	// order.
+	blockItems, _, _ := m.composeGenerationsLocked(settings)
+	candidateSet := make(map[string]struct{}, len(blockItems))
+	for _, item := range blockItems {
+		candidateSet[item] = struct{}{}
 	}
 
 	// 1. Calculate Additions & Deletions
 	toAdd := make([]string, 0)
 	toDel := make([]string, 0)
 
-	for it := range candidateSet {
+	for _, it := range blockItems {
 		if _, exists := m.appliedKernelEntries[it]; !exists {
 			toAdd = append(toAdd, it)
 		}
@@ -885,15 +1240,43 @@ func (m *FeedManager) ApplyToKernel(core *CoreClient, allowlist []string) (int, 
 	sort.Strings(toAdd)
 	sort.Strings(toDel)
 
+	// Guard rail: a diff larger than the administrable budget is refused as a
+	// whole. A partially applied kernel generation would be worse than none.
+	if budget := settings.Kernel.MaximumDiffPerSync; budget > 0 && len(toAdd)+len(toDel) > budget {
+		err := NewThreatIntelKernelSyncException(
+			fmt.Sprintf("kernel diff of %d entries exceeds the configured budget of %d per sync", len(toAdd)+len(toDel), budget), nil)
+		m.kernelApplyLastAt = time.Now().UTC()
+		m.kernelApplyStatus = kernelApplyError
+		m.lastKernelError = err.Error()
+		_ = m.savePersistentStateLocked()
+		return 0, 0, err
+	}
+
+	previousApplied := make(map[string]struct{}, len(m.appliedKernelEntries))
+	for item := range m.appliedKernelEntries {
+		previousApplied[item] = struct{}{}
+	}
+
 	// 2. Apply ADDITIONS FIRST
 	addedItems := make([]string, 0, len(toAdd))
 	if core != nil {
 		for _, item := range toAdd {
 			if err := core.Add(item); err != nil {
 				// Addition failed: rollback newly added items immediately and abort publication
+				rollbackFailed := false
 				for _, rollbackItem := range addedItems {
-					_ = core.Delete(rollbackItem)
+					if rollbackErr := core.Delete(rollbackItem); rollbackErr != nil {
+						rollbackFailed = true
+					}
 				}
+				m.kernelApplyLastAt = time.Now().UTC()
+				m.kernelApplyStatus = kernelApplyError
+				m.lastKernelError = err.Error()
+				if rollbackFailed {
+					m.kernelApplyStatus = kernelApplyDivergent
+					m.lastKernelError = fmt.Sprintf("%v; addition rollback incomplete", err)
+				}
+				_ = m.savePersistentStateLocked()
 				return 0, 0, NewThreatIntelKernelSyncException(
 					fmt.Sprintf("kernel block addition failed for %s; rolled back: %v", item, err),
 					err,
@@ -905,24 +1288,48 @@ func (m *FeedManager) ApplyToKernel(core *CoreClient, allowlist []string) (int, 
 		addedItems = append(addedItems, toAdd...)
 	}
 
-	// 3. Apply DELETIONS SECOND
-	deleted := 0
+	// 3. Apply DELETIONS SECOND. Do not mutate the published in-memory kernel
+	// mirror until every deletion succeeds. If one deletion fails, restore the
+	// previous generation as far as possible and mark any incomplete rollback as
+	// DIVERGENT instead of lying with a successful apply state.
+	deletedItems := make([]string, 0, len(toDel))
 	if core != nil {
 		for _, item := range toDel {
-			if err := core.Delete(item); err == nil {
-				delete(m.appliedKernelEntries, item)
-				deleted++
+			if err := core.Delete(item); err != nil {
+				rollbackFailed := false
+				for _, deletedItem := range deletedItems {
+					if rollbackErr := core.Add(deletedItem); rollbackErr != nil {
+						rollbackFailed = true
+					}
+				}
+				for _, addedItem := range addedItems {
+					if rollbackErr := core.Delete(addedItem); rollbackErr != nil {
+						rollbackFailed = true
+					}
+				}
+				m.appliedKernelEntries = previousApplied
+				m.kernelApplyLastAt = time.Now().UTC()
+				m.kernelApplyStatus = kernelApplyError
+				m.lastKernelError = err.Error()
+				if rollbackFailed {
+					m.kernelApplyStatus = kernelApplyDivergent
+					m.lastKernelError = fmt.Sprintf("%v; deletion rollback incomplete", err)
+				}
+				_ = m.savePersistentStateLocked()
+				return 0, 0, NewThreatIntelKernelSyncException(
+					fmt.Sprintf("kernel block deletion failed for %s; previous generation restored where possible: %v", item, err),
+					err,
+				)
 			}
+			deletedItems = append(deletedItems, item)
 		}
 	} else {
-		for _, item := range toDel {
-			delete(m.appliedKernelEntries, item)
-			deleted++
-		}
+		deletedItems = append(deletedItems, toDel...)
 	}
 
-	// 4. Update applied entries with successful additions
-	for _, item := range addedItems {
+	// 4. Commit the kernel mirror only after the whole diff succeeded.
+	m.appliedKernelEntries = make(map[string]struct{}, len(candidateSet))
+	for item := range candidateSet {
 		m.appliedKernelEntries[item] = struct{}{}
 	}
 
@@ -932,35 +1339,25 @@ func (m *FeedManager) ApplyToKernel(core *CoreClient, allowlist []string) (int, 
 		activeBlockList = append(activeBlockList, it)
 	}
 
-	activeCorrSet := make(map[string]struct{})
-	activeAnnotSet := make(map[string]struct{})
-	for _, s := range m.feedStates {
-		for _, it := range s.LastGoodItems {
-			switch s.Action {
-			case FeedActionBlock, FeedActionCorrelateOnly:
-				activeCorrSet[it] = struct{}{}
-			case FeedActionAnnotateOnly:
-				activeAnnotSet[it] = struct{}{}
-			}
-		}
-	}
-	activeCorrList := make([]string, 0, len(activeCorrSet))
-	for it := range activeCorrSet {
-		activeCorrList = append(activeCorrList, it)
-	}
-	activeAnnotList := make([]string, 0, len(activeAnnotSet))
-	for it := range activeAnnotSet {
-		activeAnnotList = append(activeAnnotList, it)
-	}
+	activeCorrList, activeAnnotList := func() ([]string, []string) {
+		_, correlate, annotate := m.composeGenerationsLocked(settings)
+		return correlate, annotate
+	}()
 
 	m.blockIndex.Replace(activeBlockList)
 	m.correlateIndex.Replace(activeCorrList)
 	m.annotateIndex.Replace(activeAnnotList)
 	m.generation++
 	m.fingerprint = computeFingerprint(activeBlockList)
+	m.kernelApplyLastAt = time.Now().UTC()
+	m.kernelApplyStatus = kernelApplyApplied
+	m.kernelGeneration = m.generation
+	m.lastKernelAdded = len(addedItems)
+	m.lastKernelDeleted = len(deletedItems)
+	m.lastKernelError = ""
 	_ = m.savePersistentStateLocked()
 
-	return len(addedItems), deleted, nil
+	return len(addedItems), len(deletedItems), nil
 }
 
 func (m *FeedManager) ClearFromKernel(core *CoreClient) (int, error) {
@@ -981,6 +1378,12 @@ func (m *FeedManager) ClearFromKernel(core *CoreClient) (int, error) {
 	m.annotateIndex.Replace(nil)
 	m.generation++
 	m.fingerprint = computeFingerprint(nil)
+	m.kernelApplyLastAt = time.Now().UTC()
+	m.kernelApplyStatus = kernelApplyNotApplied
+	m.kernelGeneration = m.generation
+	m.lastKernelAdded = 0
+	m.lastKernelDeleted = cleared
+	m.lastKernelError = ""
 	_ = m.savePersistentStateLocked()
 	return cleared, nil
 }
@@ -1012,92 +1415,259 @@ func validateFeedSourceURL(source string) (*url.URL, error) {
 }
 
 func parseJSONThreatFeed(r io.Reader, maxEntries int) ([]string, error) {
-	dec := json.NewDecoder(r)
 	set := make(map[string]struct{})
+	stats := threatFeedStats{}
+	if err := collectJSONThreatEntries(r, maxEntries, ThreatIntelValidationSettings{
+		IPv4Enabled: true, IPv6Enabled: true, GenerationPolicy: "bump",
+	}, set, &stats); err != nil {
+		return nil, err
+	}
+	items := make([]string, 0, len(set))
+	for item := range set {
+		items = append(items, item)
+	}
+	sort.Strings(items)
+	return items, nil
+}
+
+// collectJSONThreatEntries walks a JSON feed and applies the same
+// administrable validation policy as the line-oriented path.
+func collectJSONThreatEntries(r io.Reader, maxEntries int, policy ThreatIntelValidationSettings, set map[string]struct{}, stats *threatFeedStats) error {
+	dec := json.NewDecoder(r)
 	for {
 		t, err := dec.Token()
 		if err != nil {
 			if errors.Is(err, io.EOF) {
-				break
+				return nil
 			}
-			return nil, err
+			return newFeedTransientError("feed JSON read failed", err)
 		}
-		if str, ok := t.(string); ok {
-			str = strings.TrimSpace(str)
-			if item, valid := parseThreatToken(str); valid {
-				set[item] = struct{}{}
-				if len(set) >= maxEntries {
-					break
-				}
-			}
+		str, ok := t.(string)
+		if !ok {
+			continue
+		}
+		str = strings.TrimSpace(str)
+		if str == "" {
+			continue
+		}
+		stats.Candidates++
+		item, valid := parseThreatToken(str)
+		if !valid {
+			stats.Malformed++
+			continue
+		}
+		if !policy.ipv4Allowed(item) || !policy.ipv6Allowed(item) {
+			stats.Filtered++
+			continue
+		}
+		stats.Accepted++
+		set[item] = struct{}{}
+		if len(set) >= maxEntries {
+			return nil
 		}
 	}
-	items := make([]string, 0, len(set))
-	for x := range set {
-		items = append(items, x)
+}
+
+// feedTransientError marks a failure that is worth retrying: a network fault or
+// a temporary upstream status. Deterministic rejections (validation or security)
+// are never retried.
+type feedTransientError struct {
+	Message string
+	Err     error
+}
+
+func (e *feedTransientError) Error() string {
+	if e.Err != nil {
+		return fmt.Sprintf("%s: %v", e.Message, e.Err)
 	}
-	return items, nil
+	return e.Message
+}
+
+func (e *feedTransientError) Unwrap() error { return e.Err }
+
+func newFeedTransientError(message string, err error) *feedTransientError {
+	return &feedTransientError{Message: message, Err: err}
+}
+
+// threatFeedRetryable reports whether a failed attempt may be repeated.
+func threatFeedRetryable(err error) bool {
+	if err == nil {
+		return false
+	}
+	var transient *feedTransientError
+	return errors.As(err, &transient)
+}
+
+// threatFeedStats records how a download behaved so the administrable
+// validation policy can reject a corrupt feed without discarding the active
+// generation.
+type threatFeedStats struct {
+	Candidates int
+	Accepted   int
+	Malformed  int
+	Filtered   int
+}
+
+func (s threatFeedStats) malformedPermille() int {
+	if s.Candidates <= 0 {
+		return 0
+	}
+	return s.Malformed * 1000 / s.Candidates
+}
+
+func (s threatFeedStats) acceptedPermille() int {
+	if s.Candidates <= 0 {
+		return 1000
+	}
+	return s.Accepted * 1000 / s.Candidates
 }
 
 // Invariant 8: Feed fetching requires strict connection/read deadlines, bounded response size,
 // bounded token/line size and restricted redirects.
-func (m *FeedManager) fetchSource(ctx context.Context, src ThreatFeedSource) ([]string, error) {
+func (m *FeedManager) fetchSource(ctx context.Context, src ThreatFeedSource, snapshot *threatIntelSnapshot) ([]string, error) {
+	if snapshot == nil {
+		return nil, NewThreatIntelValidationException("threat intelligence configuration unavailable", nil)
+	}
+	policy := snapshot.settings
 	u, err := validateFeedSourceURL(src.URL)
 	if err != nil {
 		return nil, err
 	}
-	feedCtx, cancel := context.WithTimeout(ctx, 25*time.Second)
+	if !snapshot.hostAllowed(u.Hostname()) {
+		return nil, NewThreatIntelSecurityException("feed host is outside the configured allowlist", nil)
+	}
+
+	attempts := policy.Retry.Attempts
+	if attempts < 1 {
+		attempts = 1
+	}
+	var lastErr error
+	for attempt := 1; attempt <= attempts; attempt++ {
+		if attempt > 1 {
+			backoff := time.Duration(policy.Retry.BackoffSeconds) * time.Second * time.Duration(1<<uint(minInt(attempt-2, 4)))
+			timer := time.NewTimer(backoff)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return nil, ctx.Err()
+			case <-timer.C:
+			}
+		}
+		items, fetchErr := m.fetchSourceOnce(ctx, src, snapshot, u)
+		if fetchErr == nil {
+			return items, nil
+		}
+		lastErr = fetchErr
+		if !threatFeedRetryable(fetchErr) {
+			return nil, fetchErr
+		}
+	}
+	return nil, lastErr
+}
+
+func (m *FeedManager) fetchSourceOnce(ctx context.Context, src ThreatFeedSource, snapshot *threatIntelSnapshot, u *url.URL) ([]string, error) {
+	policy := snapshot.settings
+	maxEntries, maxBytes, timeoutSeconds := snapshot.feedBounds(src)
+
+	feedCtx, cancel := context.WithTimeout(ctx, time.Duration(timeoutSeconds)*time.Second)
 	defer cancel()
+	feedCtx = context.WithValue(feedCtx, feedPolicyContextKey{}, snapshot)
 
 	req, err := http.NewRequestWithContext(feedCtx, http.MethodGet, u.String(), nil)
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", "VGT-GeDefense/4.0.1 sovereign-threat-intel")
+	req.Header.Set("User-Agent", "VGT-GeDefense/4.2.0 sovereign-threat-intel")
 	req.Header.Set("Accept", "text/plain, application/json, */*")
 
 	resp, err := m.client.Do(req)
 	if err != nil {
-		return nil, err
+		var validation *ThreatIntelValidationException
+		var security *ThreatIntelSecurityException
+		if errors.As(err, &validation) || errors.As(err, &security) {
+			return nil, err
+		}
+		return nil, newFeedTransientError("feed request failed", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
+		if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
+			return nil, newFeedTransientError(fmt.Sprintf("HTTP %d", resp.StatusCode), nil)
+		}
+		return nil, NewThreatIntelValidationException(fmt.Sprintf("feed returned HTTP %d", resp.StatusCode), nil)
+	}
+	if !snapshot.contentAllowed(resp.Header.Get("Content-Type")) {
+		return nil, NewThreatIntelSecurityException("feed content type is outside the configured policy", nil)
 	}
 
-	lr := io.LimitReader(resp.Body, m.cfg.MaxDownloadBytes+1)
+	lr := io.LimitReader(resp.Body, maxBytes+1)
 
 	isJSON := src.Format == "json" || strings.HasSuffix(strings.ToLower(u.Path), ".json") ||
 		strings.Contains(strings.ToLower(resp.Header.Get("Content-Type")), "application/json")
 
-	if isJSON {
-		return parseJSONThreatFeed(lr, m.cfg.MaxEntries)
-	}
-
-	sc := bufio.NewScanner(lr)
-	sc.Buffer(make([]byte, 4096), 64*1024)
+	stats := threatFeedStats{}
 	set := make(map[string]struct{})
-	var read int64
-	for sc.Scan() {
-		lineBytes := sc.Bytes()
-		read += int64(len(lineBytes) + 1)
-		if read > m.cfg.MaxDownloadBytes {
-			return nil, NewThreatIntelSecurityException("feed exceeds bounded size limit", nil)
+	if isJSON {
+		if err := collectJSONThreatEntries(lr, maxEntries, policy.Validation, set, &stats); err != nil {
+			return nil, err
 		}
-		if x, ok := parseThreatLine(string(lineBytes)); ok {
-			set[x] = struct{}{}
-			if len(set) >= m.cfg.MaxEntries {
-				break
+	} else {
+		sc := bufio.NewScanner(lr)
+		sc.Buffer(make([]byte, 4096), 64*1024)
+		var read int64
+		for sc.Scan() {
+			lineBytes := sc.Bytes()
+			read += int64(len(lineBytes) + 1)
+			if read > maxBytes {
+				return nil, NewThreatIntelSecurityException("feed exceeds bounded size limit", nil)
+			}
+			value, kind := classifyThreatLine(string(lineBytes), policy.Validation)
+			switch kind {
+			case threatLineAccepted:
+				stats.Candidates++
+				stats.Accepted++
+				set[value] = struct{}{}
+				if len(set) >= maxEntries {
+					return finalizeThreatFeed(set, stats, policy.Validation)
+				}
+			case threatLineMalformed:
+				stats.Candidates++
+				stats.Malformed++
+			case threatLineFiltered:
+				stats.Candidates++
+				stats.Filtered++
 			}
 		}
+		if err := sc.Err(); err != nil {
+			return nil, newFeedTransientError("feed stream read failed", err)
+		}
 	}
-	if err := sc.Err(); err != nil {
-		return nil, err
+	return finalizeThreatFeed(set, stats, policy.Validation)
+}
+
+// finalizeThreatFeed applies the validation policy to a completed download. A
+// feed that is corrupt beyond the configured malformed threshold, or that
+// yields fewer valid entries than the configured ratio, is rejected so the
+// active last-known-good generation is preserved.
+func finalizeThreatFeed(set map[string]struct{}, stats threatFeedStats, policy ThreatIntelValidationSettings) ([]string, error) {
+	if stats.Candidates == 0 {
+		return nil, nil
+	}
+	if stats.Malformed*1000 > policy.MalformedEntryPermille*stats.Candidates {
+		return nil, NewThreatIntelValidationException(
+			fmt.Sprintf("feed integrity failure: %d of %d entries are malformed (%d per mille, limit %d)",
+				stats.Malformed, stats.Candidates, stats.malformedPermille(), policy.MalformedEntryPermille), nil)
+	}
+	if stats.acceptedPermille() < policy.MinimumValidEntryPermille {
+		return nil, NewThreatIntelValidationException(
+			fmt.Sprintf("feed validity failure: only %d per mille of entries were usable (minimum %d)",
+				stats.acceptedPermille(), policy.MinimumValidEntryPermille), nil)
 	}
 	items := make([]string, 0, len(set))
-	for x := range set {
-		items = append(items, x)
+	for item := range set {
+		items = append(items, item)
 	}
+	sort.Strings(items)
 	return items, nil
 }
