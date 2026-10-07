@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -9,9 +10,10 @@ import (
 func newTestResponseEngine(t *testing.T) (*KineticResponseEngine, *State) {
 	t.Helper()
 	cfg := defaultConfig()
+	cfg.Release.EmergencyStopFile = filepath.Join(t.TempDir(), "EMERGENCY_STOP")
 	cfg.Kinetic.EnforcementMode = "block"
 	cfg.Defense.Allowlist = []string{"192.0.2.50", "198.51.100.0/24"}
-	state := NewState("4.1.0", cfg)
+	state := NewState("4.2.0", cfg)
 	armKineticResponseState(state)
 	resp := NewKineticResponseEngine(cfg, state, &mockNetworkBlockCore{blocked: make(map[string]bool)})
 	return resp, state
@@ -231,13 +233,14 @@ func (m *mockNetworkBlockCore) Delete(target string) error {
 
 func TestKineticResponseManagementAllowlistImmunityAcrossCIDRs(t *testing.T) {
 	cfg := defaultConfig()
+	cfg.Release.EmergencyStopFile = filepath.Join(t.TempDir(), "EMERGENCY_STOP")
 	cfg.Kinetic.EnforcementMode = "block"
 	cfg.Defense.Allowlist = []string{
 		"192.0.2.50",
 		"198.51.100.0/24",
 		"2001:db8:42::/64",
 	}
-	state := NewState("4.1.0", cfg)
+	state := NewState("4.2.0", cfg)
 	resp := NewKineticResponseEngine(cfg, state, nil)
 
 	protected := []string{
@@ -318,8 +321,9 @@ func TestKineticResponseAllowlistConcurrentReadsAndUpdates(t *testing.T) {
 
 func TestKineticResponseRequiresLiveReleaseEnforcement(t *testing.T) {
 	cfg := defaultConfig()
+	cfg.Release.EmergencyStopFile = filepath.Join(t.TempDir(), "EMERGENCY_STOP")
 	cfg.Kinetic.EnforcementMode = "block"
-	state := NewState("4.1.0", cfg)
+	state := NewState("4.2.0", cfg)
 	now := time.Now().UTC()
 	state.SetCore(true, "test")
 	state.SetAllowlistReady(true)
@@ -393,8 +397,9 @@ func TestKineticSubnetRequiresMultipleContributors(t *testing.T) {
 
 func TestKineticRollbackRestoresExistingManualBlockExactly(t *testing.T) {
 	cfg := defaultConfig()
+	cfg.Release.EmergencyStopFile = filepath.Join(t.TempDir(), "EMERGENCY_STOP")
 	cfg.Kinetic.EnforcementMode = "block"
-	state := NewState("4.1.0", cfg)
+	state := NewState("4.2.0", cfg)
 	armKineticResponseState(state)
 	now := time.Now().UTC()
 	manual, err := state.AddBlockAt("203.0.113.80", "operator maintenance block", "operator", 4*time.Hour, false, cfg.Defense.MaxBlockEntries, now.Add(-time.Minute))
@@ -465,8 +470,9 @@ func TestKineticRollbackDoesNotCreatePhantomRepeatOffender(t *testing.T) {
 
 func TestKineticKernelApplyFailureCompensatesAndSignalsDivergence(t *testing.T) {
 	cfg := defaultConfig()
+	cfg.Release.EmergencyStopFile = filepath.Join(t.TempDir(), "EMERGENCY_STOP")
 	cfg.Kinetic.EnforcementMode = "block"
-	state := NewState("4.1.0", cfg)
+	state := NewState("4.2.0", cfg)
 	armKineticResponseState(state)
 	core := &mockNetworkBlockCore{blocked: make(map[string]bool), addErr: errors.New("add failed")}
 	resp := NewKineticResponseEngine(cfg, state, core)

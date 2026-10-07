@@ -246,9 +246,10 @@ func TestEvidenceEndToEndPipeline(t *testing.T) {
 	}
 
 	cfg := defaultConfig()
+	cfg.Release.EmergencyStopFile = filepath.Join(dir, "EMERGENCY_STOP")
 	cfg.Policy.RequireSigned = false
 	cfg.Kinetic.EnforcementMode = "block"
-	state := NewState("4.1.0", cfg)
+	state := NewState("4.2.0", cfg)
 	if err := state.AttachEvidenceLedger(ledger); err != nil {
 		t.Fatalf("failed to attach evidence ledger: %v", err)
 	}
