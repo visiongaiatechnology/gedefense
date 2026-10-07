@@ -169,8 +169,8 @@ build_go_release(){
   local go_bin=$1 build="$WORK/go-build"
   mkdir -p "$build"
   log "Running Go unit/vet gates with pinned Go ${GO_VERSION}."
-  (cd "$SOURCE_ROOT/control" && (umask 0022 && GOTOOLCHAIN=local "$go_bin" test ./...) && GOTOOLCHAIN=local "$go_bin" vet ./...)
-  (cd "$SOURCE_ROOT/gateway" && CGO_ENABLED=1 (umask 0022 && GOTOOLCHAIN=local "$go_bin" test ./...) && CGO_ENABLED=1 GOTOOLCHAIN=local "$go_bin" vet ./...)
+  (cd "$SOURCE_ROOT/control" && umask 0022 && GOTOOLCHAIN=local "$go_bin" test ./... && GOTOOLCHAIN=local "$go_bin" vet ./...)
+  (cd "$SOURCE_ROOT/gateway" && umask 0022 && CGO_ENABLED=1 GOTOOLCHAIN=local "$go_bin" test ./... && CGO_ENABLED=1 GOTOOLCHAIN=local "$go_bin" vet ./...)
   log "Building release Go binaries."
   (cd "$SOURCE_ROOT/control" && CGO_ENABLED=0 GOTOOLCHAIN=local "$go_bin" build -trimpath -buildvcs=false -ldflags='-s -w -buildid=' -o "$build/gedefense-control" .)
   (cd "$SOURCE_ROOT/gateway" && CGO_ENABLED=1 GOTOOLCHAIN=local "$go_bin" build -trimpath -buildvcs=false -ldflags='-s -w -buildid= -extldflags=-Wl,--build-id=none' -o "$build/gedefense-access" .)
