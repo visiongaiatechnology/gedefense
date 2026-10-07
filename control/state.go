@@ -600,15 +600,24 @@ func (s *State) RecordEvidence(record EvidenceRecord) error {
 	}
 	_, err := ledger.Append(record)
 	s.mu.Lock()
-	if err != nil {
+	switch {
+	case err == nil:
+		s.evidenceErr = nil
+		s.evidenceStatus = ledger.Status()
+	case errors.Is(err, errEvidenceBudgetExhausted):
+		// A full ledger is a capacity condition. The chain is intact, the signatures are
+		// valid and nothing is lost - the retention budget has simply been reached. It
+		// must not be reported as an integrity failure, and it must not degrade XDR.
+		s.evidenceErr = err
+		s.evidenceStatus = ledger.Status()
+		s.evidenceStatus.Full = true
+	default:
 		s.evidenceErr = err
 		s.evidenceStatus = ledger.Status()
 		s.evidenceStatus.Healthy = false
 		s.evidenceStatus.Error = "evidence integrity unavailable"
 		s.xdr.Degraded = true
 		s.xdr.DegradedReason = "mandatory evidence ledger unavailable"
-	} else {
-		s.evidenceStatus = ledger.Status()
 	}
 	s.mu.Unlock()
 	return err
@@ -618,6 +627,27 @@ func (s *State) EvidenceHealthy() error {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.evidenceErr
+}
+
+// EvidenceGateCondition reports why the evidence gate is closed, in terms precise
+// enough to act on.
+//
+// Both conditions used to present the same public string, "mandatory evidence ledger
+// unavailable", and the two have nothing in common operationally: a full ledger is
+// cleared by raising its retention budget, a corrupt one is not cleared by anything the
+// operator can do from the interface. Reporting them identically left an operator with
+// every mutation refused and no indication that the remedy was a setting they own. The
+// second return value is nil when the gate is open.
+func (s *State) EvidenceGateCondition() (string, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.evidenceErr == nil {
+		return "", nil
+	}
+	if errors.Is(s.evidenceErr, errEvidenceBudgetExhausted) {
+		return "evidence ledger retention budget reached", s.evidenceErr
+	}
+	return "mandatory evidence ledger unavailable", s.evidenceErr
 }
 
 // SetEvidenceStatus publishes a freshly verified ledger status without recording

@@ -17,7 +17,7 @@ REPOSITORY_DIRECTORY = "Repository"
 RELEASE_DIRECTORY = "Release Assets"
 SOURCE_MANIFEST = "SOURCE-MANIFEST.sha256"
 UPLOAD_MANIFEST = "UPLOAD-MANIFEST.sha256"
-MAX_SOURCE_FILE_BYTES = 64 * 1024 * 1024
+MAX_SOURCE_FILE_BYTES = 100 * 1024 * 1024
 
 SOURCE_DIRECTORIES = (
     ".github",
@@ -43,16 +43,19 @@ SOURCE_FILES = (
     "DEPENDENCIES.md",
     "gedefense.toml",
     "GEDEFENSE-ASTRAEAOS-INTEGRATION.md",
+    "geoip.csv",
+    "geoip.csv.sha256",
     "GITHUB-UPLOAD-ANLEITUNG.md",
     "LICENSE",
     "malware-hashes.sha256",
     "Makefile",
     "MIGRATION-NOTES.md",
     "Next.md",
+    "ONECLICK-INSTALL.md",
     "OPERATIONS.md",
     "PRODUCTION-BETA-GATE.md",
-    "README.md",
     "README.de.md",
+    "README.md",
     "README.ru.md",
     "README.zh.md",
     "RELEASE-NOTES.md",
@@ -92,6 +95,9 @@ EXCLUDED_FILES = {
     "wsl-qa.sh",
     "wsl-vuln.sh",
     "wsl-probe.sh",
+    "wsl-race.sh",
+    "wsl-gate.sh",
+    "wsl-login-qa.sh",
     "extract.sh",
     "qa-server.py",
     "GEDEFENSE_4.2_TESTBEFUNDE.md",
@@ -99,6 +105,9 @@ EXCLUDED_FILES = {
     "GEDEFENSE_4.2_FIX_VERIFICATION.md",
     "OPENAI_REWORK_PROGRESS.md",
     "GeDefense_4.2_SECURITY_FABRIC_CONTROL_PLANE_PLAN.md",
+    "emergency_stop.sh",
+    "control",
+    "gateway",
 }
 
 EXCLUDED_SUFFIXES = (
@@ -255,11 +264,6 @@ def main(include_release_assets: bool = False) -> int:
         resolved_upload = upload.resolve(strict=True)
         if resolved_upload.parent != root or resolved_upload.name != UPLOAD_DIRECTORY:
             raise StageError(f"existing staging target escaped the workspace boundary: {upload}")
-        try:
-            verify_manifest(upload, UPLOAD_MANIFEST)
-        except Exception:
-            pass
-        shutil.rmtree(upload)
 
     temporary = root / f".github-upload-{os.getpid()}-{secrets.token_hex(8)}"
     temporary.mkdir()
@@ -294,15 +298,54 @@ def main(include_release_assets: bool = False) -> int:
         scan_forbidden_markers(temporary)
         write_manifest(temporary, UPLOAD_MANIFEST)
         verify_manifest(temporary, UPLOAD_MANIFEST)
-        try:
-            os.replace(temporary, upload)
-        except OSError:
-            if upload.exists():
-                shutil.rmtree(upload, ignore_errors=True)
-            shutil.copytree(temporary, upload)
-            shutil.rmtree(temporary, ignore_errors=True)
+        def _remove_readonly(func, path, excinfo):
+            import stat
+            try:
+                os.chmod(path, stat.S_IWRITE)
+                func(path)
+            except Exception:
+                pass
+
+        repository_dst = upload / REPOSITORY_DIRECTORY
+        release_dst = upload / RELEASE_DIRECTORY
+        upload.mkdir(parents=True, exist_ok=True)
+        repository_dst.mkdir(parents=True, exist_ok=True)
+        if release_dst.exists():
+            shutil.rmtree(release_dst, onerror=_remove_readonly)
+        shutil.copytree(temporary / RELEASE_DIRECTORY, release_dst)
+
+        for child in list(repository_dst.iterdir()):
+            if child.name == ".git":
+                continue
+            if child.is_dir():
+                shutil.rmtree(child, onerror=_remove_readonly)
+            else:
+                child.unlink()
+
+        for child in (temporary / REPOSITORY_DIRECTORY).iterdir():
+            if child.name == ".git":
+                continue
+            dst = repository_dst / child.name
+            if child.is_dir():
+                shutil.copytree(child, dst)
+            else:
+                shutil.copy2(child, dst)
+
+        for child in temporary.iterdir():
+            if child.name in (REPOSITORY_DIRECTORY, RELEASE_DIRECTORY):
+                continue
+            shutil.copy2(child, upload / child.name)
+
+        shutil.rmtree(temporary, onerror=_remove_readonly)
     except Exception:
-        shutil.rmtree(temporary, ignore_errors=True)
+        def _cleanup_readonly(func, path, excinfo):
+            import stat
+            try:
+                os.chmod(path, stat.S_IWRITE)
+                func(path)
+            except Exception:
+                pass
+        shutil.rmtree(temporary, onerror=_cleanup_readonly)
         raise
 
     repository_files = sum(1 for path in (upload / REPOSITORY_DIRECTORY).rglob("*") if path.is_file())
@@ -321,5 +364,7 @@ if __name__ == "__main__":
             raise StageError("usage: stage-github-upload.py [--with-release-assets]")
         raise SystemExit(main(include_release_assets="--with-release-assets" in arguments))
     except (OSError, StageError) as error:
+        import traceback
+        traceback.print_exc()
         print(f"ERROR: {error}", file=sys.stderr)
         raise SystemExit(1)

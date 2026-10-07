@@ -64,6 +64,9 @@ def main():
         "wsl-qa.sh",
         "wsl-vuln.sh",
         "wsl-probe.sh",
+        "wsl-race.sh",
+        "wsl-gate.sh",
+        "wsl-login-qa.sh",
         "extract.sh",
         "qa-server.py",
         "GEDEFENSE_4.2_TESTBEFUNDE.md",
@@ -94,6 +97,7 @@ def main():
         digest = sha256_file(abs_path)
         manifest_lines.append(f"{digest}  {rel_path.as_posix()}\n")
     manifest_data = "".join(manifest_lines).encode("utf-8")
+    (root / "SOURCE-MANIFEST.sha256").write_bytes(manifest_data)
 
     # Fixed reproducible timestamp: 2026-10-06 17:30:00 UTC
     dt = datetime.datetime(2026, 10, 6, 17, 30, 0, tzinfo=datetime.timezone.utc)

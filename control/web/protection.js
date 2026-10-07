@@ -108,7 +108,7 @@ function renderProtectionHero(snapshot) {
       heroBadge.textContent = t('overview.hero.emergencyBadge');
       heroBadge.className = 'status-pill danger';
     }
-    if (heroTitle) heroTitle.textContent = t('emergency.title');
+    if (heroTitle) heroTitle.textContent = t('overview.hero.emergencyTitle');
     if (heroDesc) heroDesc.textContent = t('overview.hero.emergencyDesc');
     if (heroBtn) {
       heroBtn.textContent = t('emergency.clearBtn');
@@ -123,14 +123,19 @@ function renderProtectionHero(snapshot) {
       heroBadge.textContent = t('overview.hero.enforceBadge');
       heroBadge.className = 'status-pill good';
     }
-    if (heroTitle) heroTitle.textContent = t('overview.hero.enforceBadge');
+    if (heroTitle) heroTitle.textContent = t('overview.hero.enforceTitle');
     if (heroDesc) heroDesc.textContent = t('overview.hero.enforceDesc');
     if (heroBtn) {
       heroBtn.textContent = t('overview.hero.btnActive');
       heroBtn.className = 'button button-quiet';
+      // "Protection is active" is a statement, not an action, so the button leads to the
+      // view that explains it. It previously looked up the view element and then ignored
+      // the result, setting a hash instead - a control that promised navigation and did
+      // nothing visible. It now uses the same view switch the navigation itself uses, so
+      // the two cannot drift apart.
       heroBtn.onclick = () => {
-        const target = byID('protectionView');
-        if (target) location.hash = 'protection';
+        const link = document.querySelector('[data-view="protection"]');
+        if (link) link.click();
       };
     }
   } else if (phase === 'canary') {
@@ -138,7 +143,7 @@ function renderProtectionHero(snapshot) {
       heroBadge.textContent = t('overview.hero.canaryBadge');
       heroBadge.className = 'status-pill warn';
     }
-    if (heroTitle) heroTitle.textContent = t('overview.hero.canaryBadge');
+    if (heroTitle) heroTitle.textContent = t('overview.hero.canaryTitle');
     if (heroDesc) heroDesc.textContent = t('overview.hero.canaryDesc');
     if (heroBtn) {
       heroBtn.textContent = t('overview.hero.btnEnforce');
@@ -150,7 +155,7 @@ function renderProtectionHero(snapshot) {
       heroBadge.textContent = t('overview.hero.degradedBadge');
       heroBadge.className = 'status-pill danger';
     }
-    if (heroTitle) heroTitle.textContent = t('overview.hero.degradedBadge');
+    if (heroTitle) heroTitle.textContent = t('overview.hero.degradedTitle');
     if (heroDesc) heroDesc.textContent = t('overview.hero.degradedDesc');
     if (heroBtn) {
       heroBtn.textContent = t('overview.hero.btnActivate');
@@ -163,7 +168,7 @@ function renderProtectionHero(snapshot) {
       heroBadge.textContent = t('overview.hero.observeBadge');
       heroBadge.className = 'status-pill muted';
     }
-    if (heroTitle) heroTitle.textContent = t('overview.hero.observeBadge');
+    if (heroTitle) heroTitle.textContent = t('overview.hero.observeTitle');
     if (heroDesc) heroDesc.textContent = t('overview.hero.observeDesc');
     if (heroBtn) {
       heroBtn.textContent = t('overview.hero.btnActivate');
@@ -204,16 +209,16 @@ async function renderProtectionStepper(snapshot) {
       currentBadge.textContent = t('emergency.topBtn');
       currentBadge.className = 'status-pill danger pulse-danger';
     } else if (phase === 'enforce') {
-      currentBadge.textContent = 'ENFORCE';
+      currentBadge.textContent = t('protection.phase.enforce');
       currentBadge.className = 'status-pill good';
     } else if (phase === 'canary') {
-      currentBadge.textContent = 'CANARY';
+      currentBadge.textContent = t('protection.phase.canary');
       currentBadge.className = 'status-pill warn';
     } else if (phase === 'degraded') {
-      currentBadge.textContent = 'DEGRADED';
+      currentBadge.textContent = t('protection.phase.degraded');
       currentBadge.className = 'status-pill danger';
     } else {
-      currentBadge.textContent = 'OBSERVE';
+      currentBadge.textContent = t('protection.phase.observe');
       currentBadge.className = 'status-pill muted';
     }
   }

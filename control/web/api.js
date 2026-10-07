@@ -175,6 +175,16 @@ export const acknowledgeIncident = id => api(`/api/v1/xdr/incidents/${encodeURIC
 export const getRelease = () => api('/api/v1/release');
 export const getReleaseReadiness = target => api(`/api/v1/release/readiness${target ? `?target=${encodeURIComponent(target)}` : ''}`);
 export const getL7Findings = (limit = 50) => api(`/api/v1/l7/findings?limit=${encodeURIComponent(limit)}`);
+// The self-test has an effect on the inspection counters, so it is a POST. It is rate
+// limited server-side and reports every outcome, including NOT_ATTACHED, in a 200 body.
+// restartSystem asks the control plane to restart itself so the persisted revision
+// becomes active. The acknowledgement arrives before the process exits, so the caller can
+// show a pending state instead of a failure reported against a closing socket.
+export const restartSystem = reason =>
+  api('/api/v1/system/restart', { method: 'POST', json: { reason: String(reason || '') } });
+
+export const runL7SelfTest = () => api('/api/v1/l7/selftest', { method: 'POST', json: {} });
+export const getL7Integration = () => api('/api/v1/l7/integration', { feedback: true });
 export const transitionRelease = input => api('/api/v1/release/transition', { method: 'POST', json: input });
 export const emergencyStop = reason => api('/api/v1/release/emergency-stop', { method: 'POST', json: { reason } });
 export const getSettings = () => api('/api/v1/settings');

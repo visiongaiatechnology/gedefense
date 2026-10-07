@@ -71,6 +71,14 @@ allowed_peer_gids = ""
 
 # Optional native inline path. No webserver plugin or external runtime is required.
 # Prefer a local application Unix socket; explicit loopback HTTP is also supported.
+# Whether an idle L7 engine degrades the platform.
+#   auto     = the traffic path becomes mandatory once something is actually attached
+#              (an inline listener, or a producer that has delivered a request).
+#              An enabled-but-unattached engine stays available and does not degrade.
+#   required = the traffic path is always mandatory; silence is always a fault.
+#   optional = never mandatory; coverage never degrades the platform.
+coverage_required = "auto"
+
 inline_enabled = false
 inline_socket = "/run/vgt-gedefense-l7/edge.sock"
 inline_upstream = "http://127.0.0.1:8080"

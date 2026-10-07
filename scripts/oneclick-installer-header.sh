@@ -208,7 +208,7 @@ extract_payload(){
   archive="$WORK/payload.tar.gz"
   tail -n +"$line" "$SELF" > "$archive"
   actual=$(sha256sum "$archive" | awk '{print $1}')
-  [[ $actual == "$PAYLOAD_SHA256" ]] || fail "Payload-Prüfsumme stimmt nicht (erwartet: $PAYLOAD_SHA256, erhalten: $actual, Zeile: $line)."
+  [[ $actual == "$PAYLOAD_SHA256" ]] || fail "Payload-Prüfsumme stimmt nicht."
   mkdir "$WORK/payload"
   python3 - "$archive" "$WORK/payload" <<'PY'
 import pathlib, sys, tarfile
@@ -460,6 +460,12 @@ build_rust_stack(){
 
 write_config_and_baseline(){
   install -o root -g gedefense -m 0640 "$PAYLOAD/templates/malware-hashes.sha256" "$MALWARE_HASH_FILE"
+  if [[ -f "$PAYLOAD/templates/geoip.csv" ]]; then
+    install -o gedefense -g gedefense -m 0640 "$PAYLOAD/templates/geoip.csv" "$STATE/geoip.csv"
+  fi
+  if [[ -f "$PAYLOAD/templates/geoip.csv.sha256" ]]; then
+    install -o gedefense -g gedefense -m 0640 "$PAYLOAD/templates/geoip.csv.sha256" "$STATE/geoip.csv.sha256"
+  fi
   python3 - "$PAYLOAD/templates/gedefense.toml" "$CONFIG_FILE" "$INTERFACE" "$MANAGEMENT_ALLOWLIST" "$(hostname -s)" <<'PY'
 import pathlib, re, sys
 template,out,iface,allowlist,hostname=sys.argv[1:]

@@ -24,6 +24,7 @@ import {
   getRelease,
   getSettings,
   getStatus,
+  restartSystem,
   getToken,
   getTransactions,
   previewTransaction,
@@ -46,6 +47,7 @@ import { appendTraffic, drawTraffic } from './charts.js';
 import { initializeI18n, locale, setLanguage, t } from './i18n.js';
 import { initProtectionCenter, loadProtectionState } from './protection.js';
 import { initL7Module, loadL7View } from './l7.js';
+import { initL7IntegrationModule, refreshL7IntegrationPanel } from './l7-integration.js';
 import { initKineticModule, loadKineticView } from './kinetic.js';
 import { handleThreatIntelStreamEvent, initThreatIntelModule, loadThreatIntelView } from './threat-intel.js';
 import { initXDRModule, loadXDRView } from './xdr.js';
@@ -624,7 +626,12 @@ function emptyTable(body, columns, message) {
 }
 
 function updateHardeningSelectionCount() {
+  // Counts every selectable control, not only the checked ones: the badge reports the
+  // size of the selection the operator can act on, and a zero after this change means
+  // the list is genuinely empty rather than merely unchecked.
   const selected = document.querySelectorAll('#hardeningSwitches input[data-runtime-managed="true"]:checked').length;
+  const selectable = document.querySelectorAll('#hardeningSwitches input[data-runtime-managed="true"]').length;
+  if (selectable > 0 && selected === 0) { text('hardeningSelectionCount', t('hardening.noneSelected', { count: selectable })); return; }
   text('hardeningSelectionCount', t('hardening.selectedCount', { count: selected }));
 }
 
@@ -641,10 +648,11 @@ function renderHardeningSwitches(checks) {
   const controls = checks.map(check => {
     const configurable = configurableHardeningControls.has(String(check.id || ''));
     const protectedState = check.state === 'PROTECTED';
-    const row = document.createElement('label');
-    row.className = `toggle-row hardening-control ${configurable ? 'runtime-control' : 'platform-control'}`;
+    const row = document.createElement('div');
+    row.className = `hardening-control ${configurable ? 'runtime-control' : 'platform-control'}`;
 
     const copy = document.createElement('span');
+    copy.className = 'hardening-control-copy';
     const title = document.createElement('b');
     title.textContent = String(check.title || check.id || 'Kontrolle');
     const detail = document.createElement('small');
@@ -657,24 +665,66 @@ function renderHardeningSwitches(checks) {
     domain.textContent = configurable ? t('hardening.scope.runtimePersistent') : t('hardening.scope.installBootFirmware');
     const state = document.createElement('span');
     state.className = `hardening-control-state ${protectedState ? 'is-protected' : configurable ? 'is-available' : 'is-platform'}`;
-    state.textContent = protectedState ? t('hardening.state.protected') : configurable ? t('dynamic.available') : t('hardening.state.platform');
+    // The pill states the measured verdict rather than the availability, because that is
+    // what the operator is deciding on.
+    state.textContent = protectedState
+      ? t('hardening.state.protected')
+      : check.state === 'UNPROTECTED'
+        ? t('hardening.state.unprotected')
+        : configurable
+          ? t('dynamic.available')
+          : t('hardening.state.platform');
     meta.append(domain, state);
     copy.append(title, detail, meta);
+    row.append(copy);
+
+    if (!configurable) {
+      // These controls are not administrable at runtime at all: they live in firmware,
+      // the bootloader or the kernel command line. They are shown so the posture is
+      // complete, and they carry no control because there is nothing to toggle. The
+      // reason is stated in the row rather than only implied by a disabled widget.
+      const locked = document.createElement('span');
+      locked.className = 'hardening-control-locked';
+      locked.textContent = t('hardening.notRuntimeAdministrable');
+      row.append(locked);
+      return row;
+    }
+
+    // The switch reuses the primitive the Fabric Settings workbench already uses: a
+    // <label> wrapping a visually hidden checkbox, a visual track and a state word.
+    //
+    // The previous markup exposed a bare native checkbox stretched to 42 px, which read
+    // as broken next to the rest of the product, and it disabled every control that was
+    // already PROTECTED. That second part was the real defect: the button in this form
+    // verifies a selection, it does not apply one, so refusing to let an operator include
+    // an already-hardened control made ten switches look dead on a hardened host for no
+    // security reason.
+    const wrap = document.createElement('label');
+    wrap.className = 'settings-switch hardening-switch';
 
     const input = document.createElement('input');
     input.type = 'checkbox';
     input.checked = protectedState;
-    input.disabled = !configurable || protectedState;
     input.dataset.controlId = String(check.id || '');
-    input.dataset.runtimeManaged = String(configurable);
+    input.dataset.runtimeManaged = 'true';
     input.setAttribute('aria-label', String(check.title || check.id || 'Kontrolle'));
-    input.addEventListener('change', updateHardeningSelectionCount);
-    const switchVisual = document.createElement('i');
-    switchVisual.setAttribute('aria-hidden', 'true');
-    row.append(copy, input, switchVisual);
+
+    const track = document.createElement('span');
+    track.className = 'settings-switch-track';
+    track.setAttribute('aria-hidden', 'true');
+    const stateWord = document.createElement('span');
+    stateWord.className = 'settings-switch-state';
+    stateWord.textContent = input.checked ? t('hardening.switchOn') : t('hardening.switchOff');
+
+    input.addEventListener('change', () => {
+      stateWord.textContent = input.checked ? t('hardening.switchOn') : t('hardening.switchOff');
+      updateHardeningSelectionCount();
+    });
+
+    wrap.append(input, track, stateWord);
+    row.append(wrap);
     return row;
-  });
-  container.replaceChildren(...controls);
+  });  container.replaceChildren(...controls);
   updateHardeningSelectionCount();
 }
 
@@ -682,6 +732,21 @@ function renderHardening(payload) {
   const score = Math.max(0, Math.min(100, Number(payload?.score || 0)));
   text('hardeningScore', score);
   text('hardeningScoreTitle', String(payload?.level || 'UNAVAILABLE'));
+
+  // The coverage line states what the score rests on, and names the cap explicitly when
+  // one applied. Without it a capped level and a genuine one look identical.
+  const coverageNode = byID('hardeningCoverage');
+  if (coverageNode) {
+    const measured = Number(payload?.measured_checks ?? 0);
+    const total = Number(payload?.total_checks ?? 0);
+    const unavailable = Number(payload?.unavailable_checks ?? 0);
+    const sufficient = payload?.coverage_sufficient !== false;
+    const parts = [t('hardening.coverageLine', { measured, total })];
+    if (unavailable > 0) parts.push(t('hardening.coverageUnavailable', { count: unavailable }));
+    if (!sufficient && payload?.coverage_note) parts.push(String(payload.coverage_note));
+    coverageNode.textContent = parts.join(' · ');
+    coverageNode.setAttribute('data-sufficient', sufficient ? 'yes' : 'no');
+  }
   text('hardeningCollected', payload?.collected_at ? formatTime(payload.collected_at) : t('hardening.noMeasurement'));
   badge('hardeningLevel', String(payload?.level || 'UNAVAILABLE'), score >= 90 ? 'good' : score >= 50 ? 'warning' : 'danger');
   const ring = byID('hardeningScoreRing');
@@ -999,7 +1064,12 @@ function updateSnapshot(data) {
     text('coreMode', t('dynamic.rustOffline'));
   }
 
-  const degraded = Boolean(xdr.degraded) || (data.policy && !policy.verified);
+  // The global status must not contradict a view. Kinetic reports DEGRADED from
+  // State.Coverage, so the sidebar has to read the same source; otherwise the
+  // platform announces SYSTEM NOMINAL while a sensor rail says DEGRADED.
+  const coverage = data.coverage || {};
+  const coverageNominal = coverage.nominal !== false && String(coverage.overall_status || '') !== 'degraded' && String(coverage.overall_status || '') !== 'offline';
+  const degraded = Boolean(xdr.degraded) || (data.policy && !policy.verified) || !coverageNominal;
   const nominal = data.core_connected && !degraded;
   badge('systemBadge', nominal ? t('dynamic.nominal') : degraded ? t('dynamic.degraded') : t('dynamic.controlOnly'), nominal ? 'good' : degraded ? 'danger' : 'warning');
   text('sidebarState', nominal ? t('dynamic.nominal') : degraded ? t('dynamic.degraded') : t('dynamic.controlOnly'));
@@ -1114,7 +1184,7 @@ async function refreshOnce() {
     if (error instanceof APIError && error.status === 401) {
       badge('systemBadge', t('dynamic.locked'), 'warning');
       text('sidebarState', t('dynamic.operatorLocked'));
-      if (!byID('authDialog').open) byID('authDialog').showModal();
+      openAuthDialog();
       return;
     }
     consecutiveRestFailures++;
@@ -1250,6 +1320,113 @@ function on(id, event, handler) {
   if (node) node.addEventListener(event, handler);
 }
 
+// ------------------------------------------------------------------ authentication
+
+// setAuthState drives the one live region on the authentication surface. It is a state
+// machine rather than a toast because the operator has to be able to tell a rejected
+// key from an unreachable control plane before deciding what to do next.
+function setAuthState(state, message) {
+  const node = byID('authState');
+  if (!node) return;
+  if (!state) {
+    node.textContent = '';
+    node.removeAttribute('data-state');
+    return;
+  }
+  node.setAttribute('data-state', state);
+  node.textContent = message || '';
+}
+
+// populateAuthFacts fills the identity plane from what this host can attest before any
+// credential exists. Nothing here is inferred: the node is the origin the dashboard was
+// served from, and the channel is the transport it was served over.
+function populateAuthFacts() {
+  const origin = globalThis.location ? String(globalThis.location.host || '') : '';
+  text('authNode', origin || t('auth.nodeUnknown'));
+
+  const channel = byID('authChannel');
+  if (!channel) return;
+  const secure = Boolean(globalThis.location && globalThis.location.protocol === 'https:');
+  channel.textContent = secure ? t('auth.channelTLS') : t('auth.channelPlain');
+  // The distinction matters operationally, so it is carried in the text and not only in
+  // the colour of the row.
+  channel.setAttribute('data-secure', secure ? 'yes' : 'no');
+}
+
+// setRestartState drives the single live region on the lifecycle surface.
+function setRestartState(state, message) {
+  const node = byID('restartState');
+  if (!node) return;
+  if (!state) {
+    node.textContent = '';
+    node.removeAttribute('data-state');
+    return;
+  }
+  node.setAttribute('data-state', state);
+  node.textContent = message || '';
+}
+
+function openAuthDialog() {
+  populateAuthFacts();
+  setAuthState(null, '');
+  const dialog = byID('authDialog');
+  if (dialog && !dialog.open) dialog.showModal();
+}
+
+// authorizeSession presents a candidate key and verifies it before claiming anything.
+//
+// The previous flow stored whatever was typed, closed the dialog and reported success
+// without ever contacting the control plane - so a wrong key produced a confirmation
+// and a locked dashboard. A credential is now proven against a protected endpoint
+// first, and the dialog only closes once the control plane has accepted it. On refusal
+// the previous key is restored, so a failed attempt cannot silently replace a working
+// session with a broken one.
+async function authorizeSession() {
+  const input = byID('tokenInput');
+  const submit = byID('saveToken');
+  const candidate = input ? String(input.value || '').trim() : '';
+
+  if (!candidate) {
+    setAuthState('rejected', t('auth.empty'));
+    input?.focus();
+    return;
+  }
+
+  const previous = getToken();
+  setAuthState('pending', t('auth.verifying'));
+  if (submit) {
+    submit.setAttribute('aria-busy', 'true');
+    submit.disabled = true;
+  }
+  setToken(candidate);
+
+  try {
+    await getStatus();
+    setAuthState('accepted', t('auth.accepted'));
+    byID('authDialog')?.close();
+    toast(t('toast.sessionUpdated'), 'good');
+    refresh();
+    connectStream();
+  } catch (error) {
+    setToken(previous);
+    const status = error && typeof error.status === 'number' ? error.status : 0;
+    if (status === 401 || status === 403) {
+      setAuthState('rejected', t('auth.rejected'));
+    } else if (status === 0) {
+      setAuthState('unreachable', t('auth.unreachable'));
+    } else {
+      setAuthState('unreachable', t('auth.refused').replace('{status}', String(status)));
+    }
+    input?.focus();
+    input?.select();
+  } finally {
+    if (submit) {
+      submit.removeAttribute('aria-busy');
+      submit.disabled = false;
+    }
+  }
+}
+
 function bindActions() {
   document.querySelectorAll('[data-view]').forEach(button => {
     button.addEventListener('click', () => activateView(button.getAttribute('data-view')));
@@ -1257,7 +1434,7 @@ function bindActions() {
   on('authButton', 'click', () => {
     const input = byID('tokenInput');
     if (input) input.value = getToken();
-    byID('authDialog')?.showModal();
+    openAuthDialog();
   });
   on('supportButton', 'click', () => byID('supportDialog')?.showModal());
   on('languageSelect', 'change', event => setLanguage(event.currentTarget.value));
@@ -1273,12 +1450,45 @@ function bindActions() {
   });
   on('authForm', 'submit', event => {
     event.preventDefault();
-    const input = byID('tokenInput');
-    if (input) setToken(input.value);
-    byID('authDialog')?.close();
-    toast(t('toast.sessionUpdated'), 'good');
-    refresh();
-    connectStream();
+    void authorizeSession();
+  });
+  // Internal restart. The platform's answer is reported verbatim, including a refusal:
+  // the endpoint declines while protection is enforcing, while no supervisor would bring
+  // the process back, or while the evidence ledger is unavailable, and each of those has
+  // a different remedy. Paraphrasing them here would hide the one the operator needs.
+  on('btnRestartControl', 'click', async () => {
+    const input = byID('restartReason');
+    const button = byID('btnRestartControl');
+    const reason = input ? String(input.value || '').trim() : '';
+    if (reason.length < 8) {
+      setRestartState('rejected', t('system.restart.needsReason'));
+      input?.focus();
+      return;
+    }
+    if (button) {
+      button.disabled = true;
+      button.setAttribute('aria-busy', 'true');
+    }
+    setRestartState('pending', t('system.restart.pending'));
+    try {
+      const result = await restartSystem(reason);
+      const seconds = Math.max(1, Math.round(Number(result?.pending_milliseconds || 0) / 1000));
+      setRestartState('accepted', t('system.restart.accepted', { seconds }));
+      toast(t('system.restart.acceptedToast'), 'good');
+    } catch (error) {
+      const status = error && typeof error.status === 'number' ? error.status : 0;
+      setRestartState('rejected', status === 429
+        ? t('system.restart.rateLimited')
+        : status === 409
+          ? t('system.restart.blockedByPhase')
+          : status === 503
+            ? t('system.restart.unavailable')
+            : (error && error.message) || t('toast.operationFailed'));
+      if (button) {
+        button.disabled = false;
+        button.removeAttribute('aria-busy');
+      }
+    }
   });
   on('connectionRetry', 'click', () => {
     refresh();
@@ -1598,6 +1808,11 @@ function initialize() {
   try { initializeI18n(); } catch (_) {}
   try { initProtectionCenter(); } catch (_) {}
   try { initL7Module(); } catch (_) {}
+  try { initL7IntegrationModule(); } catch (_) {}
+  // The attested facts do not change during a session, so they are filled once at
+  // startup rather than only on the path that opens the dialog. Populating them on a
+  // single entry point left them blank whenever the surface was reached another way.
+  try { populateAuthFacts(); } catch (_) {}
   try { initKineticModule(); } catch (_) {}
   try { initThreatIntelModule(); } catch (_) {}
   try { initXDRModule(); } catch (_) {}

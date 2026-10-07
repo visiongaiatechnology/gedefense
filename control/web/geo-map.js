@@ -61,6 +61,12 @@ const REGION_STROKE = 'rgba(82, 199, 255, .18)';
 const TRACKED_FILL = '#5bd4ff';
 const SUSPICIOUS_FILL = '#f4c76a';
 const BLOCKED_FILL = '#ff6482';
+// The origin marker is deliberately a different shape and colour from a source: it is
+// not a threat, it is where the threats are arriving. Drawing it as one of them would
+// put this host on its own map of attackers.
+const ORIGIN_NAME = 'gedefense-origin';
+const ORIGIN_FILL = '#7ef7c8';
+const ORIGIN_RING = 'rgba(126, 247, 200, .28)';
 
 let registered = false;
 let instance = null;
@@ -70,6 +76,7 @@ let lastSignature = '';
 // without reaching back into the caller.
 let lastCountries = new Map();
 let lastMarkers = new Map();
+let lastOrigin = null;
 
 function byId(id) {
   return document.getElementById(id);
@@ -175,7 +182,11 @@ function ensureInstance() {
     // undefined, so every later addMarkers call has nowhere to draw and the live
     // source layer stays permanently empty while reporting a non-zero count.
     markers: [],
+    // Arcs are drawn from each source to this host. The line style is the arc shape;
+    // the dash animation is applied to the created paths after the fact, because the
+    // library never sets the attribute its own stylesheet animates on.
     lines: [],
+    lineStyle: { curvature: 0.42, stroke: 'rgba(255, 100, 130, .5)', strokeWidth: 1.1, strokeLinecap: 'round' },
     regionStyle: {
       initial: { fill: REGION_BASE_FILL, fillOpacity: 1, stroke: REGION_STROKE, strokeWidth: 0.4 },
       hover: { fillOpacity: 0.82, cursor: 'pointer' }
@@ -276,7 +287,71 @@ function applyMarkers(map, sources) {
   }));
 
   markPulsing(ordered.map(entry => entry.source));
+  applyOriginLines(map, ordered);
+
   return { tracked: tracked.length, blocked: blocked.length };
+}
+
+// applyOriginLines draws the arcs from every placed source to this host.
+//
+// The library connects lines by marker NAME, not by coordinate, so the source markers
+// carry their address as their name and the origin marker carries a reserved one. When
+// the host position could not be resolved there is nothing to draw to, and the map
+// says so through the layer note rather than inventing a destination.
+function applyOriginLines(map, ordered) {
+  if (map.removeLines) map.removeLines();
+  if (!lastOrigin || !lastOrigin.known) return;
+  if (!ordered.length) return;
+
+  const originCoords = [Number(lastOrigin.lat), Number(lastOrigin.lon)];
+  if (!Number.isFinite(originCoords[0]) || !Number.isFinite(originCoords[1])) return;
+
+  // The origin is its own marker so it has a position for the lines to terminate at.
+  map.addMarkers([{
+    name: ORIGIN_NAME,
+    coords: originCoords,
+    style: { initial: { r: 6, fill: ORIGIN_FILL, fillOpacity: 1, stroke: ORIGIN_RING, strokeWidth: 9, strokeOpacity: 0.5 } }
+  }]);
+
+  const arcs = [];
+  for (const entry of ordered) {
+    const name = String(entry.source.ip || entry.source.source || '');
+    if (!name) continue;
+    arcs.push({
+      from: name,
+      to: ORIGIN_NAME,
+      style: {
+        stroke: isBlocked(entry.source) ? 'rgba(255, 100, 130, .55)' : 'rgba(91, 212, 255, .38)',
+        strokeWidth: isBlocked(entry.source) ? 1.3 : 1
+      }
+    });
+  }
+  if (arcs.length) map.addLines(arcs);
+  animateArcs();
+}
+
+// animateArcs tags the created paths so the stylesheet's dash animation applies.
+// The library emits `jvm-line` paths but never sets the `animation` attribute its own
+// stylesheet keys on, so without this step the arcs are static.
+function animateArcs() {
+  // The paths are queried under the map container rather than through the library's
+  // own group id. That id is an implementation detail the vendored code owns and could
+  // rename; the container is ours and the line class is part of the library's public
+  // stylesheet contract.
+  const container = byId('kineticGeoMap');
+  if (!container) return;
+  const paths = container.querySelectorAll('.jvm-line');
+  if (!paths.length) return;
+  const reduced = prefersReducedMotion();
+  for (const node of paths) {
+    if (reduced) {
+      node.removeAttribute('animation');
+      node.style.strokeDasharray = '';
+      continue;
+    }
+    node.setAttribute('animation', 'true');
+    node.style.strokeDasharray = '7 5';
+  }
 }
 
 function clearPulsing() {
@@ -320,7 +395,11 @@ export function updateKineticGeoMap(payload) {
 
   const countries = Array.isArray(payload?.countries) ? payload.countries : [];
   const sources = Array.isArray(payload?.sources) ? payload.sources : [];
-  const signature = signatureOf(countries, sources);
+  // The origin travels with every snapshot. A missing origin is not an error: it means
+  // this host's position could not be resolved, and the arcs are simply not drawn.
+  lastOrigin = payload?.origin && payload.origin.known ? payload.origin : null;
+  const originNote = String(payload?.origin_note || '');
+  const signature = signatureOf(countries, sources) + `|${lastOrigin ? lastOrigin.lat + "," + lastOrigin.lon : "no-origin"}`;
   if (signature === lastSignature) return null;
 
   const placedCountries = applyCountryHeat(map, countries);
@@ -331,6 +410,8 @@ export function updateKineticGeoMap(payload) {
     countries: placedCountries,
     tracked: placed.tracked,
     blocked: placed.blocked,
+    originKnown: Boolean(lastOrigin),
+    originNote,
     limits: GEO_MAP_LIMITS
   };
 }
@@ -340,6 +421,7 @@ export function updateKineticGeoMap(payload) {
 export function clearKineticGeoMap() {
   if (!instance) return;
   instance.removeMarkers();
+  if (instance.removeLines) instance.removeLines();
   for (const code of Object.keys(instance.regions || {})) {
     instance.regions[code].element.setStyle('fill', REGION_BASE_FILL);
   }

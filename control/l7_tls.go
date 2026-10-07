@@ -788,7 +788,20 @@ func EvaluateL7Coverage(status L7Status, uptimeSeconds int64) string {
 	}
 	httpTraffic := status.RequestsTotal + status.InlineRequestsTotal
 	traffic := httpTraffic + status.TLSHandshakesTotal
-	if status.TLSEnabled && uptimeSeconds > 300 && httpTraffic > 0 && status.TLSHandshakesTotal == 0 {
+	// Nothing is wired into the engine: no inline listener, and not one request has
+	// ever arrived. That is a deliberate or not-yet-finished deployment, and it is a
+	// different fact from "something is attached and silent". Reporting the first as
+	// NO_TRAFFIC_WARNING is what made an intentionally idle engine degrade the whole
+	// platform.
+	if !status.InlineEnabled && httpTraffic == 0 && status.TLSHandshakesTotal == 0 {
+		return "READY_NOT_ATTACHED"
+	}
+	// TLS telemetry is only absent if it was required. Reporting TLS_NOT_IN_PATH for
+	// a host that never intended to feed ClientHellos made a deliberate configuration
+	// look like a broken path - the same mistake as treating an idle engine as a
+	// mandatory sensor. CoverageRequired carries the decision; a host that wants TLS
+	// visibility sets it, and only then is silence a finding.
+	if status.TLSEnabled && status.CoverageRequired && uptimeSeconds > 300 && httpTraffic > 0 && status.TLSHandshakesTotal == 0 {
 		return "TLS_NOT_IN_PATH"
 	}
 	if traffic == 0 && uptimeSeconds > 300 {

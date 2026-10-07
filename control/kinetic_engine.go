@@ -1227,7 +1227,7 @@ func (e *KineticEngine) SourceSnapshot(limit int) []KineticSourceSnapshot {
 		}
 		_, subnet, _ := SubnetKeys(bucket.SrcIP)
 		ipKey := bucket.SrcIP.String()
-		state := sourceState(bucket, blocked[ipKey])
+		state := sourceState(bucket, blocked[ipKey] || (e.threatBlock != nil && e.threatBlock.ContainsString(ipKey)))
 		family := uint8(4)
 		if bucket.IsV6 {
 			family = 6
@@ -1238,7 +1238,10 @@ func (e *KineticEngine) SourceSnapshot(limit int) []KineticSourceSnapshot {
 			Hits15m: e.windowHitsLocked(bucket, 15*time.Minute), Hits1h: e.windowHitsLocked(bucket, time.Hour), RatePerSec: bucket.Velocity1s,
 			SYNs: bucket.SYNCount, ACKs: bucket.ACKCount, Ports: ports, Service: service,
 			Score: bucket.Score, LastRule: bucket.LastStrikeRule, Subnet: subnet,
-			Blocked: blocked[ipKey],
+			// Enforcement has two paths - the management block ledger and the feed
+			// block index the kernel is fed from - and the display must reflect both.
+			// Reporting only the ledger hid every feed-driven drop.
+			Blocked: blocked[ipKey] || (e.threatBlock != nil && e.threatBlock.ContainsString(ipKey)),
 		})
 	}
 	sort.Slice(out, func(i, j int) bool {

@@ -52,7 +52,14 @@ type APIServer struct {
 	kineticCancel    context.CancelFunc
 	geo              *GeoResolver
 	l7               *L7Engine
-	fim              *FIMEngine
+	// restartHook is invoked immediately before an internal restart exits the process.
+	// It exists so a test can observe the restart without ending the test process.
+	restartHook func()
+	// The socket topology and the administrable path live on the service, not on the
+	// engine, so the self-test and the integration generator need the service. Without
+	// it both endpoints would have to reconstruct configuration they do not own.
+	l7Service *L7Service
+	fim       *FIMEngine
 
 	packageMu     sync.Mutex
 	packageCancel context.CancelFunc
@@ -155,6 +162,14 @@ func NewAPIServer(cfg Config, state *State, core *CoreClient, feeds *FeedManager
 	mux.HandleFunc("GET /api/v1/release", s.auth(s.releaseStatus))
 	mux.HandleFunc("GET /api/v1/release/readiness", s.auth(s.releaseReadiness))
 	mux.HandleFunc("GET /api/v1/l7/findings", s.auth(s.l7Findings))
+	// The self-test is a POST because it consumes engine admission and moves the
+	// inspection counters it reports on.
+	mux.HandleFunc("POST /api/v1/l7/selftest", s.auth(s.l7SelfTest))
+	// Restarting is an operator mutation, so it goes through the same authentication,
+	// replay guard and evidence gate as every other one.
+	mux.HandleFunc("POST /api/v1/system/restart", s.auth(s.systemRestart))
+	mux.HandleFunc("GET /api/v1/l7/integration", s.auth(s.l7Integration))
+	mux.HandleFunc("POST /api/v1/l7/integration", s.auth(s.l7Integration))
 	mux.HandleFunc("POST /api/v1/release/transition", s.auth(s.releaseTransition))
 	mux.HandleFunc("POST /api/v1/release/emergency-stop", s.auth(s.releaseEmergencyStop))
 	mux.HandleFunc("POST /api/v1/release/emergency-stop/clear", s.auth(s.releaseEmergencyStopClear))
@@ -212,6 +227,10 @@ func NewAPIServer(cfg Config, state *State, core *CoreClient, feeds *FeedManager
 // catalogue from the component that actually enforces them. It is called after
 // construction because the L7 engine is created later than the HTTP server.
 func (s *APIServer) AttachL7(engine *L7Engine) { s.l7 = engine }
+
+// AttachL7Service gives the API the socket topology and policy owner, which the
+// self-test and the integration generator both need.
+func (s *APIServer) AttachL7Service(service *L7Service) { s.l7Service = service }
 
 // caseEngine returns the case engine when it is attached.
 func (s *APIServer) caseEngine() *CaseEngine {
@@ -684,6 +703,20 @@ func (s *APIServer) hostAllowed(hostport string) bool {
 	return false
 }
 
+// evidenceGateExempt lists the endpoints that stay reachable while the evidence ledger
+// is unavailable. Every entry is a route out of that condition, not an ordinary
+// mutation; the audit guarantee is unchanged for everything else. See the call site for
+// why each one is here.
+func evidenceGateExempt(path string) bool {
+	switch path {
+	case "/api/v1/release/emergency-stop", // stopping the platform cannot need its audit trail
+		"/api/v1/l7/selftest",        // a diagnostic must survive the condition it diagnoses
+		"/api/v1/settings/integrity": // the remedy for a full ledger is itself a mutation
+		return true
+	}
+	return false
+}
+
 func (s *APIServer) auth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if o := r.Header.Get("Origin"); o != "" {
@@ -708,16 +741,34 @@ func (s *APIServer) auth(next http.HandlerFunc) http.HandlerFunc {
 				return
 			}
 			if s.state != nil && s.state.EvidenceLedger() != nil {
-				emergencyStop := r.URL.Path == "/api/v1/release/emergency-stop"
-				if err := s.state.EvidenceHealthy(); err != nil && !emergencyStop {
-					apiError(w, http.StatusServiceUnavailable, "mandatory evidence ledger unavailable", err)
+				// A closed evidence gate must not seal the exits from its own condition.
+				//
+				// The gate exists so an operator mutation is never accepted without an
+				// audit record, and that stays true for everything else. Three endpoints
+				// have to remain reachable while the ledger is unavailable, because each
+				// is a way out of the condition rather than an ordinary action:
+				//
+				//   emergency stop  - stopping the platform cannot depend on its audit
+				//                     trail being writable.
+				//   L7 self-test    - a diagnostic that cannot run while the platform is
+				//                     degraded is not a diagnostic. Without this the
+				//                     operator sees "mandatory evidence ledger unavailable"
+				//                     reported as a traffic-path failure, which diagnoses
+				//                     the wrong subsystem entirely.
+				//   integrity apply - a full ledger is remedied by raising its budget or
+				//                     rotating it, and both are mutations. Gating the
+				//                     remedy behind the condition deadlocked the operator
+				//                     with no route out through the interface at all.
+				exempt := evidenceGateExempt(r.URL.Path)
+				if message, err := s.state.EvidenceGateCondition(); err != nil && !exempt {
+					apiError(w, http.StatusServiceUnavailable, message, err)
 					return
 				}
 				if err := s.state.RecordEvidence(EvidenceRecord{
 					Severity: "high", Kind: "operator.mutation.intent", Source: "access-gateway",
 					Message: "Authenticated operator mutation accepted for processing",
 					Target:  r.Method + " " + r.URL.Path, RequestID: r.Header.Get("X-VGT-Request-ID"),
-				}); err != nil && !emergencyStop {
+				}); err != nil && !exempt {
 					apiError(w, http.StatusServiceUnavailable, "mandatory evidence commit failed", err)
 					return
 				}
@@ -758,12 +809,12 @@ var webAssetAllowlist = map[string]bool{
 	"geo-map.js":         true,
 	"i18n.js":            true,
 	"kinetic.js":         true,
-	"l7.js":              true,
-	"operations.js":      true,
-	"protection.js":      true,
-	"render.js":          true,
-	"threat-intel.js":    true,
-	"v4.css":             true,
+	"l7-integration.js":  true, "l7.js": true,
+	"operations.js":   true,
+	"protection.js":   true,
+	"render.js":       true,
+	"threat-intel.js": true,
+	"v4.css":          true,
 	"vendor/jsvectormap/js/components/base.js":                  true,
 	"vendor/jsvectormap/js/components/concerns/interactable.js": true,
 	"vendor/jsvectormap/js/components/line.js":                  true,
@@ -2571,7 +2622,7 @@ func aggregateKineticCountries(sources []KineticSourceSnapshot) []kineticCountry
 
 func (s *APIServer) getKineticMap(w http.ResponseWriter, r *http.Request) {
 	if s.kinetic == nil {
-		writeJSON(w, http.StatusOK, map[string]any{"countries": []kineticCountryAggregate{}, "sources": []KineticSourceSnapshot{}, "geo": s.geo.Status()})
+		writeJSON(w, http.StatusOK, map[string]any{"countries": []kineticCountryAggregate{}, "sources": []KineticSourceSnapshot{}, "geo": s.geo.Status(), "origin": s.resolveKineticOrigin()})
 		return
 	}
 	var sources []KineticSourceSnapshot
@@ -2589,7 +2640,14 @@ func (s *APIServer) getKineticMap(w http.ResponseWriter, r *http.Request) {
 	}
 	s.enrichKineticSources(sources)
 	countries := aggregateKineticCountries(sources)
-	writeJSON(w, http.StatusOK, map[string]any{"countries": countries, "sources": sources, "geo": s.geo.Status(), "window": windowName})
+	// The host's own position travels with the map so the client can draw the origin
+	// marker and the arcs. It is resolved from this host's addresses, never guessed,
+	// and carries a reason when it could not be resolved.
+	origin := s.resolveKineticOrigin()
+	writeJSON(w, http.StatusOK, map[string]any{
+		"countries": countries, "sources": sources, "geo": s.geo.Status(),
+		"window": windowName, "origin": origin, "origin_note": describeOrigin(origin),
+	})
 }
 
 func (s *APIServer) enrichKineticSources(sources []KineticSourceSnapshot) {

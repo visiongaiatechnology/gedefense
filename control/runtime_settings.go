@@ -37,7 +37,7 @@ type CustomRule struct {
 	Score    int    `json:"score"`
 }
 
-const fabricSettingsVersion = 9
+const fabricSettingsVersion = 10
 const runtimeSettingsHistoryLimit = 32
 
 type KineticRuntimeSettings struct {
@@ -107,7 +107,11 @@ type XDRFabricSettings struct {
 }
 
 type RuntimeSettings struct {
-	FabricVersion          int                       `json:"fabric_version,omitempty"`
+	FabricVersion int `json:"fabric_version,omitempty"`
+	// Migrations names every operator-visible value this document had changed on its
+	// behalf during an upgrade. It is reported so an upgrade is never a silent edit of
+	// somebody else's configuration.
+	Migrations             []string                  `json:"migrations,omitempty"`
 	Revision               uint64                    `json:"revision"`
 	UpdatedAt              time.Time                 `json:"updated_at"`
 	XDREnabled             bool                      `json:"xdr_enabled"`
@@ -474,6 +478,32 @@ func upgradeRuntimeSettings(settings *RuntimeSettings, defaults RuntimeSettings)
 	if settings.System == nil {
 		system := systemDefaults(defaults)
 		settings.System = &system
+	}
+	// v10 narrows one feed action.
+	//
+	// FireHOL Level 1 is an aggregate of networks already observed attacking or abusing
+	// hosts, and upstream documents it as safe to block. Correlating it meant the engine
+	// recorded known-bad sources and then let them through. The compiled-in default was
+	// corrected, but the default only reaches a fresh installation: an existing document
+	// carries the old value forever, which is why the correction never took effect.
+	//
+	// Exactly one entry is touched, matched by ID, and it is only raised - never lowered -
+	// so a deployment that had already escalated the feed by hand is left alone.
+	//
+	// The caller records the change in the evidence ledger. An operator setting is being
+	// changed on the operator's behalf, and that is not something to do silently.
+	if settings.FabricVersion < 10 && settings.ThreatIntel != nil {
+		for index := range settings.ThreatIntel.Feeds {
+			feed := &settings.ThreatIntel.Feeds[index]
+			if feed.ID != fireholLevelOneFeedID {
+				continue
+			}
+			if feed.Action != string(FeedActionBlock) {
+				feed.Action = string(FeedActionBlock)
+				settings.Migrations = append(settings.Migrations,
+					"feed "+fireholLevelOneFeedID+": action raised to BLOCK (upstream documents this list as safe to block; correlating it recorded known-bad sources and then admitted them)")
+			}
+		}
 	}
 	settings.FabricVersion = fabricSettingsVersion
 	return true

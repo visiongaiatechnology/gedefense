@@ -90,6 +90,11 @@ type ThreatFeedSource struct {
 	MaxDownloadBytes int `json:"max_download_bytes,omitempty"`
 }
 
+// fireholLevelOneFeedID names the one feed whose default action was corrected from
+// correlate to block. It is a constant because the settings migration matches on it by
+// name, and a typo there would migrate nothing while still reporting success.
+const fireholLevelOneFeedID = "firehol-level-1"
+
 // Default 9 sovereign Threat Intelligence Feeds with explicit action semantics
 var DefaultThreatFeedSources = []ThreatFeedSource{
 	{
@@ -149,12 +154,17 @@ var DefaultThreatFeedSources = []ThreatFeedSource{
 		Description: "Aggregated threat intelligence score for correlation",
 	},
 	{
-		ID:          "firehol-level-1",
-		Name:        "FireHOL Level 1",
-		URL:         "https://iplists.firehol.org/files/firehol_level1.netset",
-		Action:      FeedActionCorrelateOnly,
+		ID:   fireholLevelOneFeedID,
+		Name: "FireHOL Level 1",
+		URL:  "https://iplists.firehol.org/files/firehol_level1.netset",
+		// FireHOL level 1 is a curated aggregate of networks already observed attacking
+		// or abusing hosts - hijacked netblocks, confirmed attackers and bogons - and
+		// upstream documents it as safe to block outright. Correlating it instead meant
+		// the engine recorded known-bad sources and then let them through, which is the
+		// one outcome a threat feed must not produce.
+		Action:      FeedActionBlock,
 		Format:      "lines",
-		Description: "FireHOL level 1 IP list for correlation",
+		Description: "FireHOL level 1: curated attacker networks and bogons, enforced as a block prefix set",
 	},
 	{
 		ID:          "tor-bulk-exit",

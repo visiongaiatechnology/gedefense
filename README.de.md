@@ -779,6 +779,22 @@ VGT GeDefense ist freie Software: Sie können sie unter den Bedingungen der GNU 
 
 Enterprise-Bereitstellungen, TIER-0-Audits (VGT SafetySys™) und kommerzielle Ausnahmelizenzen: [visiongaiatechnology.de](https://visiongaiatechnology.de)
 
+### 🗺️ Daten-Attribution & Lokale GeoIP / ASN Datenbank
+
+GeDefense beinhaltet eine vollständig offline betriebene, lokal ausgewertete GeoIP- und Origin-ASN-Datenbank (`/var/lib/vgt/gedefense/geoip.csv`), die null Cloud-Laufzeitabfragen oder externe Telemetrie garantiert:
+
+* **DB-IP Lite:** Dieses Produkt enthält GeoLite2- oder DB-IP Lite-Daten von DB-IP, verfügbar unter [https://db-ip.com/](https://db-ip.com/) unter der Creative Commons Attribution 4.0 International License (CC BY 4.0). Namensnennung / Attribution erforderlich.
+* **Origin-ASN-Daten:** Origin-ASN-Zuordnungsdaten bereitgestellt von [sapics/ip-location-db](https://github.com/sapics/ip-location-db) unter der Public Domain Dedication and License (PDDL).
+
+#### Aktualisierung der lokalen GeoIP-Datenbank
+
+Sie können die lokale GeoIP-Datenbank jederzeit mit dem beiliegenden Updater-Skript aktualisieren und per Longest-Prefix-Match atomar einspielen:
+
+```bash
+# Lädt die neuesten DB-IP City und Origin-ASN Datensätze herunter, kompiliert eine < 128 MiB / < 1.000.000 Prefixe CSV und ersetzt /var/lib/vgt/gedefense/geoip.csv atomar
+sudo python3 scripts/update-geoip-db.py /var/lib/vgt/gedefense/geoip.csv
+```
+
 ---
 
 <div align="center">

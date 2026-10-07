@@ -168,10 +168,19 @@ func TestL7CoverageEvaluation(t *testing.T) {
 		t.Fatalf("expected OFFLINE, got %s", res)
 	}
 
-	// 3. Healthy but no traffic after 500s uptime
+	// 3. Healthy, nothing attached, no traffic after 500s uptime. This is the case
+	// that used to report NO_TRAFFIC_WARNING and thereby degraded an intentionally
+	// idle engine. No inline listener and not one request ever means the engine is
+	// available but not in the traffic path - a different fact from a silent path.
 	s3 := L7Status{Enabled: true, Healthy: true, RequestsTotal: 0}
-	if res := EvaluateL7Coverage(s3, 500); res != "NO_TRAFFIC_WARNING" {
-		t.Fatalf("expected NO_TRAFFIC_WARNING, got %s", res)
+	if res := EvaluateL7Coverage(s3, 500); res != "READY_NOT_ATTACHED" {
+		t.Fatalf("expected READY_NOT_ATTACHED, got %s", res)
+	}
+
+	// 3b. The same engine with the inline path attached and silent IS a fault.
+	s3b := L7Status{Enabled: true, Healthy: true, InlineEnabled: true, InlineHealthy: true}
+	if res := EvaluateL7Coverage(s3b, 500); res != "NO_TRAFFIC_WARNING" {
+		t.Fatalf("expected NO_TRAFFIC_WARNING for an attached but silent path, got %s", res)
 	}
 
 	// 4. Traffic active
@@ -291,13 +300,24 @@ func TestTLSJA3FindingUsesFingerprintFieldsNotEvidenceDigest(t *testing.T) {
 }
 
 func TestL7CoverageReportsTLSNotInPath(t *testing.T) {
-	status := L7Status{Enabled: true, Healthy: true, TLSEnabled: true, RequestsTotal: 42, TLSHandshakesTotal: 0}
+	// TLS silence is a finding only when TLS coverage was requested. Reporting it for
+	// every host that happens to have tls_enabled set made a deliberate configuration
+	// look like a broken path - the same over-reach as treating an idle engine as a
+	// mandatory sensor. The first case is the real finding; the second proves the
+	// requirement is what decides, not the flag.
+	status := L7Status{Enabled: true, Healthy: true, TLSEnabled: true, RequestsTotal: 42, TLSHandshakesTotal: 0, CoverageRequired: true}
 	if got := EvaluateL7Coverage(status, 500); got != "TLS_NOT_IN_PATH" {
 		t.Fatalf("expected TLS_NOT_IN_PATH, got %s", got)
 	}
 	status.TLSHandshakesTotal = 1
 	if got := EvaluateL7Coverage(status, 500); got != "TRAFFIC_ACTIVE" {
 		t.Fatalf("expected TRAFFIC_ACTIVE after verified TLS telemetry, got %s", got)
+	}
+
+	// Coverage not required: the same silence is not a finding.
+	notRequired := L7Status{Enabled: true, Healthy: true, TLSEnabled: true, RequestsTotal: 42, TLSHandshakesTotal: 0, CoverageRequired: false}
+	if got := EvaluateL7Coverage(notRequired, 500); got == "TLS_NOT_IN_PATH" {
+		t.Fatal("TLS silence was reported although TLS coverage was never required")
 	}
 }
 
@@ -409,8 +429,28 @@ func TestL7EnabledCoverageSensorIsRequired(t *testing.T) {
 	if !ok {
 		t.Fatal("expected L7 sensor coverage")
 	}
-	if !cov.Required {
-		t.Fatal("enabled L7 must participate in mandatory coverage truth")
+	// Enabling the engine and attaching it to the traffic path are two decisions.
+	// Under the default `auto` mode an enabled engine with nothing attached is
+	// available, not mandatory: treating it as mandatory is what produced a
+	// permanently degraded platform for an unfinished deployment. The second half of
+	// this test proves the fix is not a way to hide a path that really is broken.
+	if cov.Required {
+		t.Fatal("an enabled but unattached L7 engine must not be mandatory under auto mode")
+	}
+	if cov.Status != CoverageNotApplicable {
+		t.Fatalf("unattached L7 coverage status = %q, want not_applicable", cov.Status)
+	}
+
+	// Explicitly requiring coverage restores the mandatory reading.
+	cfg.CoverageRequired = "required"
+	required, err := NewL7Service(cfg, engine, state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	required.publishStatus(true)
+	strict, _ := state.SensorCoverage("l7_application")
+	if !strict.Required {
+		t.Fatal("coverage_required=required must make the L7 sensor mandatory")
 	}
 }
 

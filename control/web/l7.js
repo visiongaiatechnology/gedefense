@@ -84,6 +84,48 @@ function renderL7StatusHeader(snapshot) {
   }
   text('l7StatusCoverageReason', l7.coverage_reason || t('l7.telemetry.coverageDetail'));
 
+  // Engine health, path attachment and the discovered web surface are rendered from
+  // their own fields. Deriving any of them from the coverage verdict is what made the
+  // earlier interface claim a state the backend had not observed.
+  const pathPill = byID('l7StatusTrafficPathPill');
+  if (pathPill) {
+    if (!l7.enabled) {
+      pathPill.className = 'status-pill muted';
+      pathPill.textContent = t('dynamic.disabled');
+    } else if (l7.traffic_path_attached) {
+      pathPill.className = 'status-pill good';
+      pathPill.textContent = t('l7.path.attached');
+    } else {
+      pathPill.className = 'status-pill warn';
+      pathPill.textContent = t('l7.path.notAttached');
+    }
+  }
+
+  const surface = l7.web_surface || {};
+  const surfaceNode = byID('l7StatusWebSurface');
+  if (surfaceNode) {
+    if (!surface.scanned) {
+      surfaceNode.textContent = t('l7.web.notScanned');
+    } else if (!surface.expects_http) {
+      surfaceNode.textContent = t('l7.web.none');
+    } else {
+      const parts = [];
+      if (Array.isArray(surface.servers) && surface.servers.length) {
+        parts.push(surface.servers.map(s => `${s.name} x${s.count}`).join(' · '));
+      }
+      if (Array.isArray(surface.web_ports) && surface.web_ports.length) {
+        parts.push(`PORTS ${surface.web_ports.join(' / ')}`);
+      }
+      surfaceNode.textContent = parts.length ? parts.join(' · ') : t('l7.web.portsOnly');
+    }
+  }
+  text('l7StatusWebSurfaceNote', l7.web_surface_note || t('l7.telemetry.webSurfaceDetail'));
+
+  const miswiredCard = byID('l7MiswiredCard');
+  if (miswiredCard) {
+    miswiredCard.hidden = !l7.miswired;
+  }
+
   const tlsPathPill = byID('l7StatusTLSPathPill');
   if (tlsPathPill) {
     if (!l7.tls_enabled) {
@@ -113,6 +155,7 @@ function renderL7StatusHeader(snapshot) {
 function coverageClass(coverage) {
   switch (coverage) {
     case 'TRAFFIC_ACTIVE': return 'good';
+    case 'READY_NOT_ATTACHED': return 'muted';
     case 'DISABLED': return 'muted';
     case 'OFFLINE': return 'danger';
     case 'INLINE_DEGRADED':
@@ -131,6 +174,7 @@ function coverageLabel(coverage) {
     INLINE_DEGRADED: 'l7.coverage.inlineDegraded',
     TLS_NOT_IN_PATH: 'l7.coverage.tlsNotInPath',
     NO_TRAFFIC_WARNING: 'l7.coverage.noTraffic',
+    READY_NOT_ATTACHED: 'l7.coverage.readyNotAttached',
     HEALTHY_AWAITING_TRAFFIC: 'l7.coverage.awaiting',
     TRAFFIC_ACTIVE: 'l7.coverage.active',
   }[coverage];

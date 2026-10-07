@@ -93,19 +93,32 @@ type L7Status struct {
 	ResponsesInspectedTotal       uint64     `json:"responses_inspected_total"`
 	ResponseFindingsTotal         uint64     `json:"response_findings_total"`
 	ResponseInspectionErrorsTotal uint64     `json:"response_inspection_errors_total"`
-	Coverage                      string     `json:"coverage"`
-	CoverageReason                string     `json:"coverage_reason,omitempty"`
-	TrafficPathVerified           bool       `json:"traffic_path_verified"`
-	TLSEnabled                    bool       `json:"tls_enabled"`
-	TLSPathVerified               bool       `json:"tls_path_verified"`
-	TLSHandshakesTotal            uint64     `json:"tls_handshakes_total"`
-	TLSFindingsTotal              uint64     `json:"tls_findings_total"`
-	TLSLastHandshake              *time.Time `json:"tls_last_handshake,omitempty"`
-	TLSLastError                  string     `json:"tls_last_error,omitempty"`
-	TLSFingerprintVersion         int        `json:"tls_fingerprint_version"`
-	TLSFingerprintSource          string     `json:"tls_fingerprint_source,omitempty"`
-	TLSFingerprintSignatures      int        `json:"tls_fingerprint_signatures"`
-	TLSFingerprintProfiles        int        `json:"tls_fingerprint_profiles"`
+	// Coverage, attachment and the discovered web surface are three separate facts and
+	// are published as such, so a consumer can never derive one from another. An
+	// operator sees engine health, whether a path is attached, and whether the host
+	// even has web traffic to inspect.
+	Coverage                 string     `json:"coverage"`
+	TrafficPathAttached      bool       `json:"traffic_path_attached"`
+	CoverageRequired         bool       `json:"coverage_required"`
+	ProducerAttached         bool       `json:"producer_attached"`
+	LastProducerSeen         *time.Time `json:"last_producer_seen,omitempty"`
+	RequestsSeen             uint64     `json:"requests_seen"`
+	LastRequestAt            *time.Time `json:"last_request_at,omitempty"`
+	WebSurface               WebSurface `json:"web_surface"`
+	WebSurfaceNote           string     `json:"web_surface_note,omitempty"`
+	Miswired                 bool       `json:"miswired"`
+	CoverageReason           string     `json:"coverage_reason,omitempty"`
+	TrafficPathVerified      bool       `json:"traffic_path_verified"`
+	TLSEnabled               bool       `json:"tls_enabled"`
+	TLSPathVerified          bool       `json:"tls_path_verified"`
+	TLSHandshakesTotal       uint64     `json:"tls_handshakes_total"`
+	TLSFindingsTotal         uint64     `json:"tls_findings_total"`
+	TLSLastHandshake         *time.Time `json:"tls_last_handshake,omitempty"`
+	TLSLastError             string     `json:"tls_last_error,omitempty"`
+	TLSFingerprintVersion    int        `json:"tls_fingerprint_version"`
+	TLSFingerprintSource     string     `json:"tls_fingerprint_source,omitempty"`
+	TLSFingerprintSignatures int        `json:"tls_fingerprint_signatures"`
+	TLSFingerprintProfiles   int        `json:"tls_fingerprint_profiles"`
 }
 
 type l7Candidate struct {

@@ -14,7 +14,11 @@ Group=gedefense
 SupplementaryGroups=gedefense-l7
 ExecStartPre=/opt/vgt/gedefense/current/bin/gedefense-control --config=/etc/vgt/gedefense/gedefense.toml --preflight
 ExecStart=/opt/vgt/gedefense/current/bin/gedefense-control --config=/etc/vgt/gedefense/gedefense.toml
-Restart=on-failure
+# Restart=always, not on-failure: the internal restart is a clean self-exit, and a
+# successful exit code would leave the control plane stopped under on-failure. This is
+# what makes the restart action in the dashboard able to bring the persisted revision
+# live without shell access.
+Restart=always
 RestartSec=3s
 TimeoutStartSec=300s
 TimeoutStopSec=15s

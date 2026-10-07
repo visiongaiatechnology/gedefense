@@ -62,9 +62,23 @@ type evidenceCheckpoint struct {
 	HeadHash string `json:"head_hash"`
 }
 
+// errEvidenceBudgetExhausted is a capacity condition, not an integrity condition.
+//
+// The two were previously the same thing: reaching the size budget set integrityErr,
+// which quarantines the ledger permanently and - through State.RecordEvidence - reports
+// XDR as degraded with "mandatory evidence ledger unavailable". A full ledger is not a
+// corrupt ledger, and treating it as one had a second, worse effect: integrityErr is
+// sticky, so raising the administrable budget afterwards could not clear it. The
+// operator's own retention control became unusable at exactly the moment it was needed.
+var errEvidenceBudgetExhausted = errors.New("evidence ledger size budget exhausted")
+
 type EvidenceStatus struct {
-	Enabled     bool   `json:"enabled"`
-	Healthy     bool   `json:"healthy"`
+	Enabled bool `json:"enabled"`
+	Healthy bool `json:"healthy"`
+	// Full reports that the retention budget is reached. It is deliberately separate
+	// from Healthy: a full ledger is still a valid chain and must not be presented as a
+	// damaged one.
+	Full        bool   `json:"full,omitempty"`
 	Records     uint64 `json:"records"`
 	HeadHash    string `json:"head_hash,omitempty"`
 	PublicKey   string `json:"public_key,omitempty"`
@@ -87,8 +101,11 @@ type EvidenceLedger struct {
 	expectedSize int64
 	maxBytes     int64
 	integrityErr error
-	recent       []EvidenceRecord
-	policy       EvidenceFabricSettings
+	// budgetExhausted tracks the capacity condition separately from integrityErr, so a
+	// full ledger never quarantines and never has to be cleared by hand.
+	budgetExhausted bool
+	recent          []EvidenceRecord
+	policy          EvidenceFabricSettings
 }
 
 func NewEvidenceLedger(path, keyPath, storageKeyPath, nodeName string, maxBytes int64) (*EvidenceLedger, error) {
@@ -416,9 +433,13 @@ func (l *EvidenceLedger) Append(record EvidenceRecord) (EvidenceRecord, error) {
 	}
 	nextSize := l.expectedSize + int64(len(line)+1)
 	if nextSize > l.effectiveMaxBytesLocked() {
-		l.integrityErr = errors.New("evidence ledger size budget exhausted")
-		return EvidenceRecord{}, l.integrityErr
+		// Nothing is written and nothing is quarantined. The record is refused with a
+		// condition the caller can tell apart from corruption, and the ledger keeps
+		// taking writes as soon as the budget is raised.
+		l.budgetExhausted = true
+		return EvidenceRecord{}, errEvidenceBudgetExhausted
 	}
+	l.budgetExhausted = false
 	file, err := os.OpenFile(l.path, os.O_CREATE|os.O_APPEND|os.O_WRONLY|noFollowFlag, 0o600)
 	if err != nil {
 		return EvidenceRecord{}, err
@@ -531,8 +552,14 @@ func (l *EvidenceLedger) Status() EvidenceStatus {
 	status := EvidenceStatus{
 		Enabled: true, Healthy: l.integrityErr == nil, Records: l.sequence,
 		HeadHash: l.headHash, PublicKey: hex.EncodeToString(l.publicKey),
-		MaxBytes: l.maxBytes, StoredBytes: l.expectedSize,
+		MaxBytes: l.effectiveMaxBytesLocked(), StoredBytes: l.expectedSize,
 	}
+	// The effective budget is reported, not the compiled-in one: an operator who raised
+	// the retention limit needs to see the limit that is actually in force.
+	// budgetExhausted is the accurate witness: a refused write does not advance
+	// expectedSize, so a size comparison would report "not full" for a ledger that has
+	// just refused a record for capacity.
+	status.Full = l.integrityErr == nil && l.budgetExhausted
 	if l.integrityErr != nil {
 		status.Error = "evidence integrity unavailable"
 	}

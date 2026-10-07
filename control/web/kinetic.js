@@ -222,7 +222,9 @@ function renderKineticMap(mapData, sources) {
 
   const placed = updateKineticGeoMap({
     countries: Array.isArray(mapData?.countries) ? mapData.countries : [],
-    sources: mappable
+    sources: mappable,
+    origin: mapData?.origin,
+    origin_note: mapData?.origin_note
   });
 
   if (empty) {
@@ -244,9 +246,14 @@ function renderKineticMap(mapData, sources) {
   const note = byID('kineticGeoLayerNote');
   if (note) {
     const shown = placed ? placed.tracked + placed.blocked : 0;
-    note.textContent = mappable.length > shown
-      ? `${formatNumber(shown)} von ${formatNumber(mappable.length)} Quellen kartiert · Grenzen ${limits.tracked} Tracking / ${limits.blocked} Blockiert`
-      : `${formatNumber(shown)} Quellen kartiert · Grenzen ${limits.tracked} Tracking / ${limits.blocked} Blockiert`;
+    const bounds = `Grenzen ${limits.tracked} Tracking / ${limits.blocked} Blockiert`;
+    const counts = mappable.length > shown
+      ? `${formatNumber(shown)} von ${formatNumber(mappable.length)} Quellen kartiert`
+      : `${formatNumber(shown)} Quellen kartiert`;
+    // The origin state is part of the note, so an unresolved host position is stated
+    // rather than silently leaving the arcs out.
+    const originPart = placed && placed.originKnown && placed.originNote ? ` · ${placed.originNote}` : '';
+    note.textContent = `${counts} · ${bounds}${originPart}`;
   }
 
   const countries = Array.isArray(mapData?.countries) ? mapData.countries : [];
