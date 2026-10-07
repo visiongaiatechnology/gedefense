@@ -272,11 +272,11 @@ checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 
 [[package]]
 name = "gedefense-common"
-version = "4.1.0"
+version = "4.2.0"
 
 [[package]]
 name = "gedefense-core"
-version = "4.1.0"
+version = "4.2.0"
 dependencies = [
  "aes-gcm",
  "aya",
@@ -290,7 +290,7 @@ dependencies = [
 
 [[package]]
 name = "gedefense-ebpf"
-version = "4.1.0"
+version = "4.2.0"
 dependencies = [
  "aya-ebpf",
  "gedefense-common",
