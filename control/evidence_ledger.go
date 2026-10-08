@@ -131,16 +131,44 @@ func NewEvidenceLedger(path, keyPath, storageKeyPath, nodeName string, maxBytes 
 	if err != nil {
 		return nil, err
 	}
+	// Construction must not reject a ledger the running service would accept.
+	//
+	// The administrable budget is not known yet at this point - the settings document is
+	// applied afterwards - so checking against the constructor argument alone refused a
+	// ledger that had legitimately grown under a raised policy. The failure was fatal and
+	// happened before anything could report it: NewEvidenceLedger returned an error, the
+	// caller exited, and the service would not start until the file was cut back by hand.
+	// The operator was locked out by the very budget they had been told to raise.
+	//
+	// The order is deliberate: permissive at construction, strict at runtime, where the
+	// effective budget is finally known. A budget that is later lowered is still enforced
+	// by the append path against effectiveMaxBytesLocked().
+	constructionBudget := maxBytes
+	if fallback := defaultIntegrityFabricSettings(Config{}).Evidence.MaxBytes; fallback > constructionBudget {
+		constructionBudget = fallback
+	}
+	// The effective budget starts as this constructor budget, floored the same way.
+	//
+	// The policy used to be seeded with the compiled-in default alone, and
+	// effectiveMaxBytesLocked prefers the policy whenever it is set. A ledger built with
+	// the operator's raised budget therefore still enforced 64 MiB: the administration
+	// surface reported 256 MiB, the ledger stopped at 64 MiB, and once the file reached it
+	// every append failed while Status() still called the ledger healthy. The platform
+	// silently stopped recording evidence - the incident log and the forensic ledger both
+	// went quiet - and every start logged "evidence ledger size budget exhausted" without
+	// naming the disagreement that caused it. The two budgets have to start out equal.
+	fabricDefaults := defaultIntegrityFabricSettings(Config{}).Evidence
+	fabricDefaults.MaxBytes = constructionBudget
 	ledger := &EvidenceLedger{
 		path: path, headPath: path + ".head", keyPath: keyPath, publicPath: keyPath + ".pub",
 		privateKey: privateKey, publicKey: publicKey, crypto: storage, maxBytes: maxBytes,
-		policy: defaultIntegrityFabricSettings(Config{}).Evidence,
+		policy: fabricDefaults,
 		recent: make([]EvidenceRecord, 0, 256),
 	}
 	if err := ledger.writeOrVerifyPublicKey(); err != nil {
 		return nil, err
 	}
-	head, sequence, recent, size, verifyErr := verifyEvidenceFiles(path, ledger.headPath, publicKey, storage, maxBytes)
+	head, sequence, recent, size, verifyErr := verifyEvidenceFiles(path, ledger.headPath, publicKey, storage, constructionBudget)
 	ledger.headHash = head
 	ledger.sequence = sequence
 	ledger.recent = recent
@@ -530,7 +558,14 @@ func (l *EvidenceLedger) Verify() error {
 	if l.integrityErr != nil {
 		return l.integrityErr
 	}
-	head, sequence, _, size, err := verifyEvidenceFiles(l.path, l.headPath, l.publicKey, l.crypto, l.maxBytes)
+	// The same limit the append path enforces. These two disagreed: Append consulted
+	// effectiveMaxBytesLocked(), which prefers the administrable policy, while Verify
+	// consulted the constructor value alone. An operator who raised the budget, let the
+	// ledger grow past the old bound and then restarted the service had it rejected at
+	// boot as "exceeds its size budget" - the ledger they had just been told to enlarge,
+	// refused by the process that was told to accept it. One budget, read the same way
+	// from both sides.
+	head, sequence, _, size, err := verifyEvidenceFiles(l.path, l.headPath, l.publicKey, l.crypto, l.effectiveMaxBytesLocked())
 	if err == nil && (head != l.headHash || sequence != l.sequence || size != l.expectedSize) {
 		err = errors.New("evidence ledger advanced outside the trusted writer")
 	}

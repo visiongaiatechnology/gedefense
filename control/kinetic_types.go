@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -94,10 +95,15 @@ func EvaluateCoverage(sensors map[string]SensorCoverage) SystemCoverage {
 	if hasOfflineRequired {
 		out.OverallStatus = CoverageOffline
 		out.Nominal = false
+		// The names are sorted before they are joined. The sensors arrive in a map, so the
+		// summary named them in a different order on every refresh while its own contract
+		// says it determines the status deterministically.
+		sort.Strings(offlineNames)
 		out.Summary = fmt.Sprintf("Critical mandatory sensors offline: %s", strings.Join(offlineNames, ", "))
 	} else if hasDegradedRequired {
 		out.OverallStatus = CoverageDegraded
 		out.Nominal = false
+		sort.Strings(degradedNames)
 		out.Summary = fmt.Sprintf("Mandatory sensors degraded: %s", strings.Join(degradedNames, ", "))
 	} else {
 		out.OverallStatus = CoverageOnline

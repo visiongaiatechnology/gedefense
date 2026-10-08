@@ -71,20 +71,32 @@ type L7TLSClientHelloResponse struct {
 }
 
 type L7Status struct {
-	Enabled                       bool       `json:"enabled"`
-	Mode                          string     `json:"mode"`
-	Healthy                       bool       `json:"healthy"`
-	Socket                        string     `json:"socket,omitempty"`
-	RequestsTotal                 uint64     `json:"requests_total"`
-	FindingsTotal                 uint64     `json:"findings_total"`
-	BlockedTotal                  uint64     `json:"blocked_total"`
-	RateLimitedTotal              uint64     `json:"rate_limited_total"`
-	RejectedTotal                 uint64     `json:"rejected_total"`
-	ActiveConnections             int32      `json:"active_connections"`
-	LastInspection                *time.Time `json:"last_inspection,omitempty"`
-	LastError                     string     `json:"last_error,omitempty"`
-	InlineEnabled                 bool       `json:"inline_enabled"`
-	InlineHealthy                 bool       `json:"inline_healthy"`
+	Enabled           bool       `json:"enabled"`
+	Mode              string     `json:"mode"`
+	Healthy           bool       `json:"healthy"`
+	Socket            string     `json:"socket,omitempty"`
+	RequestsTotal     uint64     `json:"requests_total"`
+	FindingsTotal     uint64     `json:"findings_total"`
+	BlockedTotal      uint64     `json:"blocked_total"`
+	RateLimitedTotal  uint64     `json:"rate_limited_total"`
+	RejectedTotal     uint64     `json:"rejected_total"`
+	ActiveConnections int32      `json:"active_connections"`
+	LastInspection    *time.Time `json:"last_inspection,omitempty"`
+	LastError         string     `json:"last_error,omitempty"`
+	InlineEnabled     bool       `json:"inline_enabled"`
+	InlineHealthy     bool       `json:"inline_healthy"`
+	// SelfTestOutcome and SelfTestAt record the last time the inspection path was
+	// measured end to end rather than inferred from events.
+	//
+	// InlineHealthy is event-driven and sticky: it is set when the listener starts and
+	// when a request traverses it, and cleared by any error, but nothing ever re-derives
+	// it. A single transient accept error therefore left the inline path reported as
+	// degraded indefinitely, and no amount of evidence to the contrary changed that - a
+	// passing self-test proved the path worked and had no influence on the verdict at
+	// all. Recording the measurement lets the stronger evidence win, within a bounded
+	// window so a stale pass cannot mask a path that has since broken.
+	SelfTestOutcome               string     `json:"self_test_outcome,omitempty"`
+	SelfTestAt                    *time.Time `json:"self_test_at,omitempty"`
 	InlineSocket                  string     `json:"inline_socket,omitempty"`
 	InlineRequestsTotal           uint64     `json:"inline_requests_total"`
 	InlineBlockedTotal            uint64     `json:"inline_blocked_total"`

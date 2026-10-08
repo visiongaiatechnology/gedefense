@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 env:
-  PRODUCT_VERSION: 4.2.0
+  PRODUCT_VERSION: 4.2.1
 
 jobs:
   go-frontend-security:

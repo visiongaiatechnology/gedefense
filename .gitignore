@@ -7,7 +7,9 @@
 *.run
 *.zip
 /control/control
+/control/gedefense-control
 /gateway/gateway
+/gateway/gedefense-access
 
 # Language caches
 __pycache__/
@@ -52,6 +54,9 @@ qa/
 GEDEFENSE_4.2_TESTBEFUNDE.md
 GEDEFENSE_4.2_CHANGELOG_KONSOLIDIERT.md
 GEDEFENSE_4.2_FIX_VERIFICATION.md
+GEDEFENSE_4.2.1_CHANGELOG_KONSOLIDIERT.md
+GEDEFENSE_4.2.1_ACCESS_LOGIN_CSRF_FIX.md
+GEDEFENSE_4.2.1_XDR_SELFTAMPER_UND_EVIDENCE_BUDGET.md
 OPENAI_REWORK_PROGRESS.md
 GeDefense_4.2_SECURITY_FABRIC_CONTROL_PLANE_PLAN.md
 emergency_stop.sh

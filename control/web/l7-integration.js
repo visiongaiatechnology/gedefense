@@ -85,6 +85,10 @@ function outcomeClass(outcome) {
     case 'PASS': return 'good';
     case 'FAIL': return 'danger';
     case 'BLOCKED': return 'warn';
+    // Inspection works and forwarding cannot. That is a deployment gap rather than a
+    // broken engine, and colouring it like a failure would send the operator to the
+    // wrong half of the path.
+    case 'UPSTREAM_UNREACHABLE': return 'warn';
     case 'DISABLED': return 'muted';
     default: return 'warn';
   }
@@ -128,6 +132,18 @@ function renderSelfTest(result) {
   if (result.http_status) addFact(t('l7.integration.httpStatus'), String(result.http_status));
   if (typeof result.latency_millis === 'number') addFact(t('l7.integration.latency'), `${result.latency_millis} ms`);
   if (result.engine_answer) addFact(t('l7.integration.engineAnswer'), String(result.engine_answer));
+
+  // The forwarding leg is a separate fact from the inspection verdict, so it gets its own
+  // row rather than being folded into the outcome. An operator reading PASS needs to know
+  // whether the path can actually carry the traffic the inspection just approved.
+  if (result.upstream) {
+    addFact(t('l7.integration.upstreamLabel'), String(result.upstream));
+    addFact(
+      t('l7.integration.upstreamReachable'),
+      result.upstream_reachable ? t('l7.integration.reachable') : t('l7.integration.unreachable')
+    );
+    if (result.upstream_detail) addFact(t('l7.integration.upstreamDetail'), String(result.upstream_detail));
+  }
   host.append(facts);
 
   // The "without PASS there is no evidence" hint only applies when the test actually
@@ -135,6 +151,9 @@ function renderSelfTest(result) {
   // repeating the traffic-path hint would misdirect the operator.
   if (outcome === 'FAIL') {
     host.append(el('p', 'l7-selftest-hint', t('l7.integration.selfTestHint')));
+  }
+  if (outcome === 'UPSTREAM_UNREACHABLE') {
+    host.append(el('p', 'l7-selftest-hint', t('l7.integration.selfTestUpstreamHint')));
   }
 }
 

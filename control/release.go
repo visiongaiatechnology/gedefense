@@ -28,6 +28,19 @@ type ReleaseStatus struct {
 	KernelPolicyState string     `json:"kernel_policy_state"`
 	LastTransition    *time.Time `json:"last_transition,omitempty"`
 	Detail            string     `json:"detail"`
+	// FailSafeReason and FailSafeAt preserve why the platform fell back and when.
+	//
+	// Detail is recomputed on every refresh from the current blockers, so the cause of a
+	// fail-safe was overwritten within seconds of it happening - and once the blockers
+	// cleared it read "release gates satisfied" while the platform was still sitting in
+	// Observe. The operator was told a fail-safe had fired and never told what fired it.
+	//
+	// The fall-back is a latch by design: a fault drops the platform to Observe and an
+	// operator promotes it again. That is defensible. Reporting a stale reason as the
+	// present state is not, so the cause is kept separate from the live detail and
+	// carries the moment it was observed.
+	FailSafeReason string     `json:"fail_safe_reason,omitempty"`
+	FailSafeAt     *time.Time `json:"fail_safe_at,omitempty"`
 }
 
 type ReleaseCore interface {
@@ -130,7 +143,12 @@ func (r *ReleaseController) currentBlockersLocked(target string, includeDuration
 	if r.cfg.L7.Enabled && target != ReleasePhaseObserve && target != ReleasePhaseDegraded && !snap.L7.Healthy {
 		blockers = append(blockers, "L7 inspection service is unavailable")
 	}
-	if r.cfg.L7.InlineEnabled && target != ReleasePhaseObserve && target != ReleasePhaseDegraded && !snap.L7.InlineHealthy {
+	// A recent passing self-test is accepted in place of the flag. The flag is an
+	// inference from events and can be stale; the self-test drove a request through the
+	// listener and confirmed the counter moved. Blocking promotion on the weaker of two
+	// signals is what left the platform degraded while the path was demonstrably working.
+	if r.cfg.L7.InlineEnabled && target != ReleasePhaseObserve && target != ReleasePhaseDegraded &&
+		!snap.L7.InlineHealthy && !InlinePathVerifiedBySelfTest(snap.L7, time.Now().UTC()) {
 		blockers = append(blockers, "L7 inline service is unavailable")
 	}
 	for _, block := range snap.Blocks {
@@ -207,6 +225,11 @@ func (r *ReleaseController) refreshLocked() {
 		r.status.Detail = "emergency stop active"
 	} else if len(blockers) > 0 {
 		r.status.Detail = blockers[0]
+	} else if r.status.Phase == ReleasePhaseDegraded && r.status.FailSafeReason != "" {
+		// Nothing is currently blocking, yet the platform is still in Observe because of
+		// an earlier fall-back. Saying "release gates satisfied" here told the operator
+		// the opposite of what they were looking at.
+		r.status.Detail = "no current blocker; promotion requires operator action after the fail-safe of " + r.status.FailSafeAt.Format(time.RFC3339)
 	} else {
 		r.status.Detail = "release gates satisfied"
 	}
@@ -417,7 +440,25 @@ func (r *ReleaseController) markDegradedLocked(reason, kernelState string, verif
 	r.status.KernelPolicyState = kernelState
 	r.status.Detail = reason
 	r.status.Blockers = []string{reason}
+	// Recorded once, at the moment of the fall-back, and never recomputed. It is the
+	// answer to "why is this platform in Observe", which the live detail cannot give
+	// because it describes the present, not the event.
+	r.status.FailSafeReason = reason
+	r.status.FailSafeAt = &now
 	r.state.SetReleaseStatus(r.status)
+
+	// The fall-back is also a forensic event, not only a phase change. It disables every
+	// active response on the host, which is the most consequential thing the platform
+	// does on its own, and it was leaving no trace an operator could investigate: the
+	// Forensics view counted zero incidents after a fail-safe because only the XDR
+	// process pipeline ever created one.
+	r.state.AddIncident(XDRIncident{
+		ID: randomID(), Time: now, Severity: "critical",
+		RuleIDs:  []string{"RELEASE.FAIL_SAFE"},
+		Summary:  "Protection fell back to Observe: " + reason,
+		Decision: "fail_safe", Action: "response_disabled",
+		Outcome: "kernel blocklist verified empty; platform remains in Observe until an operator promotes it",
+	})
 }
 
 func (r *ReleaseController) degradeLocked(reason string) error {

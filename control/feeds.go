@@ -1444,11 +1444,12 @@ func parseJSONThreatFeed(r io.Reader, maxEntries int) ([]string, error) {
 // administrable validation policy as the line-oriented path.
 func collectJSONThreatEntries(r io.Reader, maxEntries int, policy ThreatIntelValidationSettings, set map[string]struct{}, stats *threatFeedStats) error {
 	dec := json.NewDecoder(r)
+	metadata := 0
 	for {
 		t, err := dec.Token()
 		if err != nil {
 			if errors.Is(err, io.EOF) {
-				return nil
+				break
 			}
 			return newFeedTransientError("feed JSON read failed", err)
 		}
@@ -1458,6 +1459,24 @@ func collectJSONThreatEntries(r io.Reader, maxEntries int, policy ThreatIntelVal
 		}
 		str = strings.TrimSpace(str)
 		if str == "" {
+			continue
+		}
+		// A JSON feed carries more than addresses, and the extra fields are not
+		// malformed entries.
+		//
+		// Every string in the document used to be counted as a candidate, so a feed that
+		// pairs each prefix with its metadata scored as though it were corrupt. Spamhaus
+		// publishes {"cidr":"1.10.16.0/20","sblid":"SBL256894","rir":"apnic"} - one address
+		// to five non-addresses - and was rejected at 833 per mille malformed against a
+		// limit of 250. The feed was perfectly healthy; the parser was reading its labels
+		// as data, and the integrity guard that exists to catch a feed changing shape was
+		// firing on a feed that had not changed at all.
+		//
+		// A value that cannot be an address is skipped, exactly as a comment line is
+		// skipped on the line-oriented path. A value that is address-shaped and still
+		// fails validation stays malformed, so the guard keeps its teeth.
+		if !couldBeNetworkToken(str) {
+			metadata++
 			continue
 		}
 		stats.Candidates++
@@ -1476,6 +1495,35 @@ func collectJSONThreatEntries(r io.Reader, maxEntries int, policy ThreatIntelVal
 			return nil
 		}
 	}
+	// Skipping non-addresses must not become a way for a feed of pure noise to pass as
+	// empty. A document that carried content but yielded not one address is a broken
+	// feed, and saying so is the whole point of the validation policy.
+	if stats.Candidates == 0 && metadata > 0 {
+		return NewThreatIntelValidationException(
+			fmt.Sprintf("feed validity failure: %d values were read and none of them was a network address", metadata), nil)
+	}
+	return nil
+}
+
+// couldBeNetworkToken reports whether a value is made only of the characters an address
+// or prefix can contain. It is deliberately a character test rather than a parse: the
+// question is whether the value was meant to be an address at all, and a value that
+// answers no is metadata rather than a corrupt entry.
+func couldBeNetworkToken(value string) bool {
+	if len(value) > 128 {
+		return false
+	}
+	for _, r := range value {
+		switch {
+		case r >= '0' && r <= '9':
+		case r >= 'a' && r <= 'f':
+		case r >= 'A' && r <= 'F':
+		case r == '.' || r == ':' || r == '/':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // feedTransientError marks a failure that is worth retrying: a network fault or
@@ -1587,7 +1635,7 @@ func (m *FeedManager) fetchSourceOnce(ctx context.Context, src ThreatFeedSource,
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", "VGT-GeDefense/4.2.0 sovereign-threat-intel")
+	req.Header.Set("User-Agent", "VGT-GeDefense/4.2.1 sovereign-threat-intel")
 	req.Header.Set("Accept", "text/plain, application/json, */*")
 
 	resp, err := m.client.Do(req)

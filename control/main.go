@@ -16,7 +16,7 @@ import (
 	"time"
 )
 
-const version = "4.2.0"
+const version = "4.2.1"
 
 func detectInterface(requested string) (string, error) {
 	if requested != "" && requested != "auto" {
@@ -243,12 +243,16 @@ func main() {
 		log.Fatalf("Gaia Cells adapter attachment: %v", err)
 	}
 	evidenceDir := filepath.Dir(cfg.Policy.StateFile)
+	evidenceBudget := int64(effectiveIntegritySettings(settings.Get()).Evidence.MaxBytes)
+	if evidenceBudget <= 0 {
+		evidenceBudget = 64 << 20
+	}
 	evidence, err := NewEvidenceLedger(
 		filepath.Join(evidenceDir, "evidence.jsonl"),
 		filepath.Join(evidenceDir, "evidence.ed25519"),
 		cfg.Policy.StorageKeyFile,
 		cfg.Node.Name,
-		64<<20,
+		evidenceBudget,
 	)
 	if err != nil {
 		log.Fatalf("evidence ledger: %v", err)

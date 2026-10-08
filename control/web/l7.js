@@ -217,7 +217,15 @@ function renderL7EffectiveBlocking(snapshot) {
 function renderL7KPIs(snapshot) {
   const l7 = snapshot.l7 || {};
 
-  text('l7KpiInspected', Number(l7.requests_total || 0).toLocaleString(locale()));
+  // Inspected requests are both counters, not one of them.
+  //
+  // The inline listener keeps its own count, and the coverage verdict is computed from the
+  // sum of the two. Showing only the request counter made the panel report "0 geprüfte
+  // Requests" directly beneath its own "TRAFFIC AKTIV" badge while the inline path had in
+  // fact inspected 174 requests, which reads as a contradiction of the panel by itself.
+  const inspected = Number(l7.requests_total || 0) + Number(l7.inline_requests_total || 0);
+
+  text('l7KpiInspected', inspected.toLocaleString(locale()));
   text('l7KpiFindings', Number(l7.findings_total || 0).toLocaleString(locale()));
   text('l7KpiBlocked', Number(l7.blocked_total || 0).toLocaleString(locale()));
   text('l7KpiRateLimited', Number(l7.rate_limited_total || 0).toLocaleString(locale()));
@@ -229,7 +237,7 @@ function renderL7KPIs(snapshot) {
   text('l7SecResponseErrors', String(l7.response_inspection_errors_total || 0));
 
   // Overview quick-card metrics
-  text('overviewL7Inspected', Number(l7.requests_total || 0).toLocaleString(locale()));
+  text('overviewL7Inspected', inspected.toLocaleString(locale()));
   text('overviewL7Findings', Number(l7.findings_total || 0).toLocaleString(locale()));
   text('overviewL7Blocked', Number(l7.blocked_total || 0).toLocaleString(locale()));
 }

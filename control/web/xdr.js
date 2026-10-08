@@ -144,9 +144,22 @@ function renderIntegrityReport(report) {
     badge.textContent = ledger?.quarantined ? 'QUARANTINED' : 'DEGRADED';
   }
   text('xdrIntegritySummary', ledger?.recoverable ? t('xdr.integrity.recoverable') : t('xdr.integrity.manual'));
-  const code = String(ledger?.reason_code || 'INTEGRITY_FAILURE');
-  const translated = t(`xdr.integrity.code.${code}`);
-  text('xdrIntegrityReason', translated.startsWith('xdr.integrity.code.') ? code : translated);
+
+  // The cause has to be the cause. This panel reported the incident ledger's reason code -
+  // and, when the ledger had none because it was perfectly healthy, the literal
+  // "INTEGRITY_FAILURE" - while XDR was in fact degraded by something else entirely, such
+  // as a protected object that no longer matched its baseline. The operator was sent to
+  // examine a ledger that had nothing wrong with it. When the ledger is not the unhealthy
+  // part, the report's own degraded_reason is what is shown.
+  const ledgerIsCause = Boolean(ledger && !ledger.healthy);
+  const reportReason = String(report?.degraded_reason || '').trim();
+  if (ledgerIsCause || !reportReason) {
+    const code = String(ledger?.reason_code || 'INTEGRITY_FAILURE');
+    const translated = t(`xdr.integrity.code.${code}`);
+    text('xdrIntegrityReason', translated.startsWith('xdr.integrity.code.') ? code : translated);
+  } else {
+    text('xdrIntegrityReason', reportReason);
+  }
   text('xdrIntegrityRecord', ledger?.failure_record ? String(ledger.failure_record) : '---');
   text('xdrIntegrityVerified', String(ledger?.verified_records || 0));
 
