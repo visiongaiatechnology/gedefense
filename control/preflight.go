@@ -66,10 +66,9 @@ func runPreflight(cfg Config, configPath string, requireEmergencyClear bool) Pre
 	add("bpffs-mounted", mounted, true, "/sys/fs/bpf")
 	allowlistConfigured := len(cfg.Defense.Allowlist) > 0
 	add("management-allowlist", allowlistConfigured, requireEmergencyClear, fmt.Sprintf("%d normalized CIDR entries", len(cfg.Defense.Allowlist)))
-	artifactRoot := strings.TrimSpace(os.Getenv("VGT_RELEASE_ROOT"))
-	if artifactRoot == "" {
-		artifactRoot = "/opt/vgt/gedefense/current"
-	}
+	// The same helper the baseline check uses, so the preflight and the tamper response
+	// cannot disagree about which files this product is made of.
+	artifactRoot := productArtifactRoot()
 	for _, path := range []string{filepath.Join(artifactRoot, "bin/gedefense-control"), filepath.Join(artifactRoot, "libexec/gedefense-core"), filepath.Join(artifactRoot, "lib/gedefense/gedefense-ebpf")} {
 		info, err := os.Lstat(path)
 		ok := err == nil && info.Mode().IsRegular() && info.Mode()&os.ModeSymlink == 0 && rootOwnedNotWritable(info)

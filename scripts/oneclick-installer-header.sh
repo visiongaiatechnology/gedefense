@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# VGT GeDefense 4.2.0 Universal Linux One-Click Installer
+# VGT GeDefense 4.2.1 Universal Linux One-Click Installer
 set -Eeuo pipefail
 umask 0077
 
-readonly SETUP_VERSION="4.2.0"
-readonly PRODUCT_VERSION="4.2.0"
+readonly SETUP_VERSION="4.2.1"
+readonly PRODUCT_VERSION="4.2.1"
 readonly PAYLOAD_SHA256="__PAYLOAD_SHA256__"
 readonly CONTROL_SHA256="__CONTROL_SHA256__"
 readonly ACCESS_SHA256="__ACCESS_SHA256__"
@@ -527,10 +527,7 @@ stage_release(){
 tls_identity_compatible(){
   [[ -f $CERT_FILE && -f $TLS_KEY_FILE && ! -L $CERT_FILE && ! -L $TLS_KEY_FILE ]] || return 1
   openssl x509 -in "$CERT_FILE" -noout -checkend 86400 >/dev/null 2>&1 || return 1
-  local details certificate_public key_public
-  details=$(openssl x509 -in "$CERT_FILE" -noout -text 2>/dev/null) || return 1
-  [[ "$details" == *'Public Key Algorithm: id-ecPublicKey'* ]] || return 1
-  [[ "$details" == *'ASN1 OID: secp384r1'* || "$details" == *'NIST CURVE: P-384'* ]] || return 1
+  local certificate_public key_public
   if [[ $PUBLIC_HOST == *:* || $PUBLIC_HOST =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
     openssl x509 -in "$CERT_FILE" -noout -checkip "$PUBLIC_HOST" >/dev/null 2>&1 || return 1
   else

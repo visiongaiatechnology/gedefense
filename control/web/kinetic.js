@@ -138,6 +138,34 @@ function renderEnforcement(status) {
   }
 
   const number = value => formatNumber(Number(value || 0));
+
+  // The enforcement mode is the master gate over every counter below it. It is read from
+  // the ingress layer the runtime publishes, not from the configured setting: what was
+  // configured and what the release phase permits are different facts, and only the
+  // second one explains the numbers.
+  const layer = status?.layers?.ingress_network || {};
+  const enforcement = String(layer.enforcement_mode || '');
+
+  // A column of zeros means one of two things, and they are not interchangeable: nothing
+  // was detected, or detection ran and the response stage was never entered. In observe
+  // mode the engine returns "track" for every decision, so handleKineticDecisions skips
+  // each event before the response engine is reached - which is why the suppression
+  // counter is zero as well. Saying that is the difference between a panel an operator
+  // can read and one they have to ask about.
+  const responseNote = byID('kineticResponseNote');
+  if (responseNote) {
+    const detected = Number(status?.hits_total || 0);
+    if (enforcement === 'observe') {
+      responseNote.textContent = t('kinetic.enforcement.observeNote', { detected: number(detected) });
+      responseNote.setAttribute('data-state', 'observe');
+    } else if (enforcement) {
+      responseNote.textContent = t('kinetic.enforcement.activeNote');
+      responseNote.setAttribute('data-state', 'active');
+    } else {
+      responseNote.textContent = '';
+      responseNote.removeAttribute('data-state');
+    }
+  }
   const fill = (hostID, rows) => {
     const host = byID(hostID);
     if (!host) return;
@@ -282,8 +310,30 @@ function renderCoverage(data) {
   if (dot) dot.className = `status-dot ${statusDotClass(st)}`;
   if (summary) summary.textContent = coverage.summary || `Ingress Coverage ${st.toUpperCase()}`;
 
-  const sensor = coverage.sensors?.xdp_ingress || data?.coverage?.sensors?.['xdp_ingress'];
-  if (reason) reason.textContent = sensor?.coverage_reason || sensor?.last_error || 'Keine verifizierte Sensorbegründung verfügbar.';
+  // The reason has to belong to the sensor the summary named.
+  //
+  // This line read coverage.sensors['xdp_ingress'] unconditionally, so a summary saying
+  // "Mandatory sensors degraded: l7_application" was explained by the healthy ingress
+  // producer's sentence - a degraded headline above a positive explanation. That is how the
+  // Kinetic page came to contradict the Application Defense page in the same session while
+  // both were reading the same snapshot. The precedence is the server's: offline and
+  // disabled outrank degraded.
+  if (reason) reason.textContent = coverageReason(coverage) || coverage.summary || t('kinetic.coverage.noReason');
+}
+
+// coverageReason returns the sentence belonging to the sensor that made the platform
+// non-nominal, or an empty string when every mandatory sensor is operational.
+function coverageReason(coverage) {
+  const rank = { offline: 0, disabled: 1, degraded: 2 };
+  const sensors = coverage?.sensors || {};
+  const blamed = Object.keys(sensors)
+    .filter(name => sensors[name]?.required === true
+      && rank[String(sensors[name]?.status || '').toLowerCase()] !== undefined)
+    .sort((a, b) => rank[String(sensors[a].status).toLowerCase()] - rank[String(sensors[b].status).toLowerCase()]
+      || a.localeCompare(b));
+  if (!blamed.length) return '';
+  const sensor = sensors[blamed[0]];
+  return String(sensor.coverage_reason || sensor.last_error || '');
 }
 
 function renderGeoStatus(geo) {

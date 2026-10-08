@@ -1,6 +1,6 @@
 # Current Task
 
-VGT GeDefense 4.2.0 — Security Fabric Control Plane & Comprehensive Audit Remediation.
+VGT GeDefense 4.2.1 — Stability, Evidence and Interface Fixes.
 
 ## Completed
 
@@ -13,7 +13,7 @@ VGT GeDefense 4.2.0 — Security Fabric Control Plane & Comprehensive Audit Reme
 - UI/UX Supreme Redesign des Command Center Dashboards: Ablösung des Kartenrasters durch semantische Datenbänder und Zustandsfarben.
 - Toolchain-Sicherheitsboden auf Go ≥ 1.26.6 / 1.27 angehoben; Beseitigung aller Standardbibliothek-CVEs auf den Ingress-Pfaden.
 - Unit-, Vet-, Race- und CI-Vertragstests in Go und WSL erfolgreich bestanden (100% grün).
-- READMEs (EN, DE, RU, ZH), VERSION (4.2.0), CHANGELOG.md und Packaging-Manifeste aktualisiert.
+- READMEs (EN, DE, RU, ZH), VERSION (4.2.1), CHANGELOG.md und Packaging-Manifeste aktualisiert.
 - Saubere Synchronisation und Bereinigung aller internen Verifikationsskripte und Arbeitsdokumente.
 
 ## Current State
@@ -22,11 +22,11 @@ Status: **DIAMANT VGT SUPREME** für den Control-Plane-, Kinetic- und Gateway-St
 Releases synchronisiert unter:
 - Git Working Tree: `c:\Users\Masterboard\Downloads\GeDefenseLinuxV3Beta` (Remote `origin/main`)
 - Aktueller Rework-Ordner: `C:\Users\Masterboard\Downloads\GeDefense-4.1.0-KINETIC-REWORK-RC`
-- Server [PROD-NODE]: GeDefense 4.2.0 aktiv und GeoIP online.
+- Server [PROD-NODE]: GeDefense 4.2.1 aktiv und GeoIP online.
 
 ## Next
 
-1. Git Commit & Tag `v4.2.0` erstellen und zu `https://github.com/visiongaiatechnology/gedefense.git` pushen.
-2. Neues Release auf GitHub mit Release Notes und Tag `v4.2.0` publizieren.
+1. Git Commit & Tag `v4.2.1` erstellen und zu `https://github.com/visiongaiatechnology/gedefense.git` pushen.
+2. Neues Release auf GitHub mit Release Notes und Tag `v4.2.1` publizieren.
 3. Release-ZIP und OneClick aktualisieren.
 4. LinkedIn-Beitrag zur Veröffentlichung bereitstellen.

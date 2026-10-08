@@ -862,7 +862,34 @@ function renderFIM(status) {
 function renderEvidence(payload) {
   const status = payload?.status || payload || {};
   const records = Array.isArray(payload?.records) ? payload.records : [];
-  badge('evidenceHealth', status.healthy ? 'VERIFIED' : 'DEGRADED', status.healthy ? 'good' : 'danger');
+  // A full ledger and a damaged ledger both stop every mutation, and the remedies have
+  // nothing in common: one is a retention budget the operator owns, the other is not
+  // something they can clear from the interface. Reporting both as DEGRADED left the
+  // operator with a blocked product and no route forward, which is the state this panel
+  // was found in.
+  if (status.full && status.healthy) {
+    badge('evidenceHealth', t('evidence.state.full'), 'warning');
+  } else if (status.healthy) {
+    badge('evidenceHealth', t('evidence.state.verified'), 'good');
+  } else {
+    badge('evidenceHealth', t('evidence.state.damaged'), 'danger');
+  }
+  // The remedy is stated where the condition is reported. It is a setting the operator
+  // owns, and saying which one is the difference between a locked product and a fixable
+  // one. The budget path is exempt from the evidence gate, so it works while the ledger
+  // is full - the operator is not being sent somewhere they cannot reach.
+  const fullNotice = byID('evidenceFullNotice');
+  if (fullNotice) {
+    if (status.full) {
+      fullNotice.hidden = false;
+      text('evidenceFullDetail', t('evidence.fullDetail', {
+        stored: number(status.stored_bytes),
+        budget: number(status.max_bytes)
+      }));
+    } else {
+      fullNotice.hidden = true;
+    }
+  }
   text('evidenceRecords', number(status.records));
   text('evidenceBytes', `${number(status.stored_bytes)} B`);
   text('evidenceHead', status.head_hash ? String(status.head_hash).slice(0, 16) : '---');
@@ -1008,7 +1035,7 @@ function updateSnapshot(data) {
   const policy = data.policy || {};
   const behavior = xdr.behavior || {};
   const release = data.release || {};
-  text('versionText', data.version || '4.2.0');
+  text('versionText', data.version || '4.2.1');
   if (data.settings) applySettings(data.settings);
   text('nodeName', data.node_name || 'VGT Node');
   text('uptime', formatUptime(data.uptime_seconds));
@@ -1037,10 +1064,57 @@ function updateSnapshot(data) {
   } else {
     text('overviewFeedDetail', t('metric.threatFeedsDetail'));
   }
+  // Kinetic telemetry on the landing page.
+  //
+  // The row is grouped by the question each column answers, and these are the three that
+  // were missing: what the engine enforced, what it recognised, and whether the kernel
+  // channel delivering to it is keeping up. Every value is read from the snapshot the
+  // control plane already publishes - nothing is recomputed or estimated here.
+  const kinetic = data.kinetic || {};
+  text('overviewBansEnforced', number(kinetic.bans_enforced_total));
+  text('overviewHits', number(kinetic.hits_total));
+  text('overviewPortscans', number(kinetic.portscans_total));
+  text('overviewKernelEvents', number(kinetic.kernel_events_emitted));
+
+  // Ring losses are tonally marked because a non-zero value is the one number here that
+  // says the sensor is dropping observation, which is a different condition from simply
+  // having seen nothing.
+  const ringDrops = Number(kinetic.kernel_ring_drops || 0);
+  const ringEl = byID('overviewRingDrops');
+  if (ringEl) {
+    ringEl.textContent = number(ringDrops);
+    ringEl.className = ringDrops > 0 ? 'text-warning' : '';
+  }
+
+  // The detection note carries the two signals the row has no space for, so a busy host
+  // is legible without adding a fourth column.
+  const detectionNote = byID('overviewDetectionDetail');
+  if (detectionNote) {
+    const subnet = Number(kinetic.subnet_strikes_total || 0);
+    const velocity = Number(kinetic.velocity_bursts_total || 0);
+    detectionNote.textContent = (subnet > 0 || velocity > 0)
+      ? t('metric.detectionDetail', { subnet: number(subnet), velocity: number(velocity) })
+      : t('metric.adaptive');
+  }
+
+  // Which hook the kernel attached, read from the core's own health response. An
+  // unreported mode is stated as unreported rather than described as native.
+  const pathEl = byID('overviewEnforcementPath');
+  if (pathEl) {
+    const mode = String(kinetic.ingress_mode || '');
+    const modeKey = {
+      NATIVE_XDP: 'kinetic.enforcement.modeNative',
+      GENERIC_XDP: 'kinetic.enforcement.modeGeneric',
+      TC_INGRESS: 'kinetic.enforcement.modeTc'
+    }[mode];
+    pathEl.textContent = modeKey
+      ? t('metric.enforcementPath', { path: t(modeKey) })
+      : t('metric.enforcementPathUnknown');
+  }
+
   text('iface', data.telemetry?.interface || '---');
   text('rxRate', formatRate(data.telemetry?.rx_rate || 0));
-  text('txRate', formatRate(data.telemetry?.tx_rate || 0));
-  const cpu = Number(data.telemetry?.cpu_percent || 0);
+  text('txRate', formatRate(data.telemetry?.tx_rate || 0));  const cpu = Number(data.telemetry?.cpu_percent || 0);
   const memory = Number(data.telemetry?.memory_percent || 0);
   text('cpuText', `${cpu.toFixed(1)}%`);
   text('memText', `${memory.toFixed(1)}%`);
@@ -1788,6 +1862,12 @@ function bindActions() {
   on('overviewFeedCard', 'click', () => activateView('threat-intel'));
   on('overviewBlockCard', 'click', () => activateView('network'));
   on('overviewAnomalyCard', 'click', () => activateView('xdr'));
+  // The kinetic counters lead to the view that explains them. A row carrying the
+  // navigation trail has to navigate: a control that looks like a link and does nothing
+  // is the defect this row was rebuilt to avoid.
+  on('overviewBansCard', 'click', () => activateView('kinetic'));
+  on('overviewHitsCard', 'click', () => activateView('kinetic'));
+  on('overviewPortscansCard', 'click', () => activateView('kinetic'));
   on('overviewXdrCard', 'click', () => activateView('xdr'));
   document.querySelectorAll('[data-dialog-close]').forEach(button => {
     button.addEventListener('click', () => button.closest('dialog')?.close());

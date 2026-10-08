@@ -10,7 +10,7 @@ import {
   transitionRelease
 } from './api.js';
 import { t } from './i18n.js';
-import { byID, el, text, toast } from './render.js';
+import { byID, el, formatTime, text, toast } from './render.js';
 
 let currentPhase = 'observe';
 let countdownTimer = 0;
@@ -156,7 +156,16 @@ function renderProtectionHero(snapshot) {
       heroBadge.className = 'status-pill danger';
     }
     if (heroTitle) heroTitle.textContent = t('overview.hero.degradedTitle');
-    if (heroDesc) heroDesc.textContent = t('overview.hero.degradedDesc');
+    // The generic sentence says a fail-safe happened; it does not say what caused it or
+    // when. Both are recorded, so both are shown. Without them the operator is told the
+    // host fell back and left to guess why.
+    if (heroDesc) {
+      const reason = String(rel.fail_safe_reason || '').trim();
+      const at = rel.fail_safe_at ? formatTime(rel.fail_safe_at) : '';
+      const cause = reason ? ' ' + t('overview.hero.degradedCause', { reason }) : '';
+      const when = at ? ' ' + t('overview.hero.degradedWhen', { at }) : '';
+      heroDesc.textContent = t('overview.hero.degradedDesc') + cause + when;
+    }
     if (heroBtn) {
       heroBtn.textContent = t('overview.hero.btnActivate');
       heroBtn.className = 'button button-warning';

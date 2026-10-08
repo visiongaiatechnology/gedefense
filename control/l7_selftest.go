@@ -55,6 +55,10 @@ const (
 	L7SelfTestFail        L7SelfTestOutcome = "FAIL"
 	L7SelfTestNotAttached L7SelfTestOutcome = "NOT_ATTACHED"
 	L7SelfTestDisabled    L7SelfTestOutcome = "DISABLED"
+	// L7SelfTestUpstreamUnreachable means inspection works and forwarding cannot. The
+	// two are separate facts and collapsing them is what let a green self-test sit on
+	// top of a path that could not carry a single request.
+	L7SelfTestUpstreamUnreachable L7SelfTestOutcome = "UPSTREAM_UNREACHABLE"
 )
 
 // L7SelfTestResult is the evidence the operator receives.
@@ -70,6 +74,12 @@ type L7SelfTestResult struct {
 	CounterMoved   bool              `json:"counter_moved"`
 	LatencyMillis  int64             `json:"latency_millis"`
 	At             time.Time         `json:"at"`
+	// The forwarding leg. Inspection answering is not the same as the path carrying
+	// traffic: the edge proves the former and cannot prove the latter, because the
+	// reserved self-test path is answered by the edge itself and never forwarded.
+	Upstream          string `json:"upstream,omitempty"`
+	UpstreamReachable bool   `json:"upstream_reachable"`
+	UpstreamDetail    string `json:"upstream_detail,omitempty"`
 }
 
 // RunSelfTest probes the configured inspection path. It never returns an error: every
@@ -124,7 +134,82 @@ func (s *L7Service) RunSelfTest(ctx context.Context) L7SelfTestResult {
 		result.Outcome = L7SelfTestFail
 		result.Detail = "the endpoint answered but no inspection counter moved, so the request did not traverse the inspection path"
 	}
+
+	// The forwarding leg is checked separately, and only on the inline path.
+	//
+	// The inline probe cannot cover it: the reserved self-test path is answered by the
+	// edge itself, so a request can be inspected perfectly and never be forwarded. A
+	// host was configured with an upstream nothing was listening on, and the self-test
+	// reported PASS throughout - inspection was genuinely fine, the path still could not
+	// carry traffic, and the operator was told the opposite of what mattered.
+	if result.Path == "inline" {
+		result = s.probeInlineUpstream(probeCtx, result)
+	}
+
+	// The verdict is recorded on the status, not only returned. A measurement that is
+	// thrown away cannot correct the inference it was taken to check.
+	s.recordSelfTestEvidence(result)
 	return result
+}
+
+// probeInlineUpstream dials the target the edge would forward to.
+//
+// It connects and closes, and sends nothing. The question is whether the address accepts
+// a connection at all, which is the precondition the deployment depends on and the one
+// thing inspection cannot observe about itself.
+func (s *L7Service) probeInlineUpstream(ctx context.Context, result L7SelfTestResult) L7SelfTestResult {
+	raw := strings.TrimSpace(s.cfg.InlineUpstream)
+	result.Upstream = raw
+
+	// Every way of failing to establish reachability funnels through this, so none of
+	// them can leave a PASS standing. They are one fact to an operator - an inspected
+	// request has nowhere to go - and an early return that forgot to override the verdict
+	// would reintroduce the very defect this probe exists to close. It did: the first
+	// version of this function reported an unusable upstream as unreachable and still
+	// left the outcome at PASS.
+	fail := func(detail string) L7SelfTestResult {
+		result.UpstreamReachable = false
+		result.UpstreamDetail = detail
+		// Only overrides a pass. A probe that already failed keeps its own, more
+		// specific, reason: reporting the upstream when inspection itself is broken
+		// would point the operator at the wrong half of the path.
+		if result.Outcome == L7SelfTestPass {
+			result.Outcome = L7SelfTestUpstreamUnreachable
+			result.Detail = "inspection works, but the path cannot carry a request: " + detail
+		}
+		return result
+	}
+
+	if raw == "" {
+		return fail("no inline upstream is configured, so the edge has nowhere to forward an inspected request")
+	}
+	_, network, address, err := parseL7InlineUpstream(raw)
+	if err != nil {
+		return fail("the configured inline upstream is not usable: " + err.Error())
+	}
+
+	dialer := &net.Dialer{Timeout: l7SelfTestTimeout}
+	conn, err := dialer.DialContext(ctx, network, address)
+	if err != nil {
+		return fail(fmt.Sprintf("nothing accepted a connection at %s (%s), so an inspected request cannot be forwarded", address, network))
+	}
+	_ = conn.Close()
+	result.UpstreamReachable = true
+	result.UpstreamDetail = fmt.Sprintf("%s (%s) accepted a connection", address, network)
+	return result
+}
+
+// recordSelfTestEvidence publishes the outcome and the time it was observed.
+func (s *L7Service) recordSelfTestEvidence(result L7SelfTestResult) {
+	if s == nil || s.state == nil {
+		return
+	}
+	now := time.Now().UTC()
+	outcome := result.Outcome
+	s.state.UpdateL7Status(func(status *L7Status) {
+		status.SelfTestOutcome = string(outcome)
+		status.SelfTestAt = &now
+	})
 }
 
 // probeProducer drives the inspection envelope over the producer socket.

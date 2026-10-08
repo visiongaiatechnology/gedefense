@@ -775,6 +775,28 @@ func (e *TLSSecurityEngine) SnapshotBehavior(limit int) []TLSBehaviorState {
 	return out
 }
 
+// l7SelfTestEvidenceWindow bounds how long a passing self-test speaks for the path.
+//
+// The measurement is authoritative while it is recent: it drove a real request through
+// the listener and confirmed the engine's own counter moved. It must not speak forever,
+// or a path that broke an hour after the test would still be reported as verified.
+const l7SelfTestEvidenceWindow = 15 * time.Minute
+
+// InlinePathVerifiedBySelfTest reports whether a recent self-test measured this path
+// working. It is the second opinion to InlineHealthy, which is only ever inferred from
+// events and can therefore be stale in either direction.
+func InlinePathVerifiedBySelfTest(status L7Status, now time.Time) bool {
+	if status.SelfTestOutcome != "PASS" || status.SelfTestAt == nil {
+		return false
+	}
+	age := now.Sub(*status.SelfTestAt)
+	if age < 0 {
+		// A clock that moved backwards is not evidence of anything.
+		return false
+	}
+	return age <= l7SelfTestEvidenceWindow
+}
+
 // EvaluateL7Coverage distinguishes service health from verified traffic path.
 func EvaluateL7Coverage(status L7Status, uptimeSeconds int64) string {
 	if !status.Enabled {
@@ -784,7 +806,13 @@ func EvaluateL7Coverage(status L7Status, uptimeSeconds int64) string {
 		return "OFFLINE"
 	}
 	if status.InlineEnabled && !status.InlineHealthy {
-		return "INLINE_DEGRADED"
+		// The flag is cleared but the path was measured working more recently than the
+		// event that cleared it. The measurement wins: it is a direct observation, the
+		// flag is an inference, and reporting a verified path as degraded is what made a
+		// passing self-test contradict the coverage on the same screen.
+		if !InlinePathVerifiedBySelfTest(status, time.Now().UTC()) {
+			return "INLINE_DEGRADED"
+		}
 	}
 	httpTraffic := status.RequestsTotal + status.InlineRequestsTotal
 	traffic := httpTraffic + status.TLSHandshakesTotal

@@ -1,5 +1,203 @@
 # Changelog
 
+## 4.2.1 - Stability, Evidence and Interface Fixes
+
+A fix release. It carries no new subsystem; it makes the ones already present tell the
+truth about themselves and stay out of the operator's way.
+
+### Evidence ledger
+
+- **Capacity is no longer treated as corruption.** Reaching the retention budget set the
+  ledger's integrity error, which quarantined it permanently and reported XDR as degraded
+  with "mandatory evidence ledger unavailable". A full ledger is not a damaged one.
+- **One budget, read the same way from every side.** `Append` consulted the administrable
+  policy, `Verify` consulted the constructor value, and `NewEvidenceLedger` verified
+  against the constructor value before the policy was known. An operator who raised the
+  budget, let the ledger grow and restarted the service had it rejected at boot as
+  "exceeds its size budget" - a service that would not start, locked out by the very
+  setting it had been told to raise. Construction is now permissive, runtime strict.
+- **The condition names itself.** "retention budget reached" and "integrity unavailable"
+  are separate messages with separate remedies, and the dashboard states which one applies
+  with the figures and the route to the fix.
+- **The budget the operator raises is the budget the ledger enforces.** `main.go` constructed
+  the ledger with the administrable budget it had read, and the constructor seeded its policy
+  with the compiled-in default of 64 MiB - which the append path prefers. An operator who
+  raised the budget to 256 MiB was therefore ignored at every start: the ledger stopped at
+  64 MiB, and once the file reached it every append failed while the status still reported the
+  ledger healthy. The platform silently stopped recording evidence and said nothing beyond a
+  single line in the service log. The two budgets now start out equal, floored by the same
+  rule construction already used to decide whether an existing ledger is acceptable, and a
+  budget lowered afterwards still takes effect.
+
+### Release gate
+
+- **A fail-safe keeps its reason.** The cause was overwritten on the next refresh by the
+  live blocker list, and once the blockers cleared it read "release gates satisfied" while
+  the platform was still sitting in Observe. The cause and the moment it was observed are
+  now preserved and shown.
+- **A fail-safe is forensic evidence.** It is the most consequential thing the platform
+  does on its own and it left no incident behind: the Forensics view counted zero after a
+  fall-back because only the XDR process pipeline ever created one.
+
+### L7 Application Defense
+
+- **A passing self-test clears a stale degradation.** The inline health flag is inferred
+  from events and never re-derived, so one transient error reported a working path as
+  degraded indefinitely - while the self-test proved the opposite on the same screen. The
+  verdict is now recorded and accepted as the stronger evidence, bounded to fifteen
+  minutes so a stale pass cannot mask a path that has since broken.
+- **The generated nginx configuration could never be applied.** It emitted a server block
+  with `listen ... ssl` and a comment where the certificate directives belong, which nginx
+  rejects outright - and it named a host that already had a server block, creating a
+  conflicting server name. It is now two insertable pieces, validated against the real
+  nginx parser in the test suite.
+- **The enforcement path is reported.** `INGRESS_HEALTH` carries which hook the kernel
+  attached - native XDP, generic XDP or TC ingress - and the dashboard shows it. All three
+  previously read as "verified kernel ingress producer", though they perform very
+  differently under load.
+- **The operator can see whether HTTP traffic exists while L7 is not in its path.**
+  Web-surface discovery reports whether a web server runs on this host and on which ports.
+  It is read-only, bounded, and never presented as protection, because detection is not
+  protection.
+- **Guided web-server integration generates configuration text and nothing else.** It never
+  writes to a web server's configuration, never reloads a service and never claims that a
+  generated snippet is in effect: the operator applies it, and the self-test then observes
+  whether it worked. Every interpolated value is validated against a closed grammar before
+  it reaches the template, because the output is a configuration file for a privileged
+  daemon and a socket path containing a newline could otherwise append arbitrary
+  directives to a server block.
+- **Inspected requests are both counters, not one of them.** The panel displayed the request
+  counter alone, so a host whose inline listener had inspected 174 requests reported
+  "0 geprüfte Requests" directly beneath its own "TRAFFIC ACTIVE" badge - the panel
+  contradicting itself, and hiding the evidence that the coverage verdict was right. The
+  figure is now the sum the verdict itself is computed from.
+- **A degraded inline listener says what it reported.** "Inline L7 listener is degraded" is a
+  verdict, not an explanation. The service also records the error it saw, that text lives only
+  for the lifetime of the process, and the transition is not logged - so an operator who went
+  looking after the fact found a degradation, no cause and no trace. The sentence now carries
+  the report when there is one and remains the verdict alone when there is not. No verdict and
+  no gate is affected by the addition.
+
+### Kinetic Defense
+
+- **Enforcement and effect are visible.** A panel states the hook in use, the kernel
+  channel's health and what the engine detected and did. In Observe mode it says so:
+  a column of zeros means the response stage was never entered, not that nothing was seen.
+- **The overview carries the numbers**, grouped by the question each answers.
+- **The coverage summary explains the sensor it names.** The sentence beneath it was bound to
+  one sensor name, so a summary reading "Mandatory sensors degraded: l7_application" was
+  explained by the healthy ingress producer's sentence - a degraded headline over a positive
+  explanation, on a page that contradicted the Application Defense page in the same session
+  while both read the same snapshot. The reason now belongs to the sensor that made the
+  platform non-nominal, using the server's precedence (offline and disabled outrank degraded),
+  and the fallback is a translated key instead of a German literal.
+- **The summary is deterministic.** It states that it determines the status deterministically,
+  but it joined the sensor names in map iteration order, so the same state produced a
+  differently ordered sentence on every refresh.
+- **The page that shows the verdict derives it, instead of serving a stored copy.** The
+  Kinetic page reads `/api/v1/kinetic/live`, and that endpoint answered from the stored
+  telemetry while `/api/v1/status` re-derived the coverage from the published fields. The L7
+  verdict is a function of fields that two components write, so the stored copy recorded
+  whichever of them wrote last: one process answered "All mandatory sensors operational" on
+  one endpoint and "Mandatory sensors degraded: l7_application" on the other, in the same
+  second, and the operator saw the second one. The derivation now lives in one place and both
+  endpoints take it from there.
+
+### Hardening
+
+- **A tamper finding on GeDefense's own components no longer arms the response.** A digest
+  mismatch on one of the product's own binaries cannot be told apart from an approved
+  update, and the response engine contained on it: over a hundred recorded incidents show
+  the product freezing its own access gateway. That is a denial of service any attacker can
+  trigger by touching a single file, and it costs the operator the console that would have
+  explained it. The finding survives at full severity - same rule, same score, same
+  category - and only the response is withheld. Third-party binaries keep their full
+  response, and the product's own components are recognised through one shared root that
+  follows `VGT_RELEASE_ROOT`.
+- **The controls work.** Every switch was disabled when its control was already PROTECTED,
+  which made ten switches inert on a hardened host for no security reason - the preflight
+  verifies a selection, it does not apply one. They now use the switch primitive the rest
+  of the product uses.
+- **The posture cannot overstate itself.** A host where two of twenty-two controls were
+  readable and both passed scored 100 and reported HARDENED. The level is now capped when
+  the evidence cannot support it, and the coverage is stated beside the score.
+- **A protected object is reported as the object, once, when it changes.** The protected set
+  reaches the same release binary through `/current/bin/...` and `/releases/<version>/bin/...`,
+  so replacing it once produced two critical incidents; and because the announcement went
+  through the time-based anomaly dedupe, an unremediated change was announced again every
+  dedupe interval - five minutes by default - until the service restarted. One fact buried the
+  ledger it was recorded in. The announcement is now keyed by the resolved object and its
+  observed state: one change is one incident, a further modification is still a new one, and
+  the degraded reason names every object that changed rather than only the last one checked.
+- **The integrity panel names the subsystem that is actually degraded.** It showed the
+  incident ledger's reason code, and the literal `INTEGRITY_FAILURE` when the ledger had none
+  because it was healthy, while XDR was in fact degraded by an object that no longer matched
+  its baseline. The operator was sent to examine a ledger with nothing wrong with it. The
+  report's own reason is what is shown unless the ledger is the unhealthy part.
+
+### Threat Intelligence
+
+- **FireHOL Level 1 is enforced, not correlated.** The compiled-in default was corrected
+  in 4.2.0, but a default only reaches a fresh installation. A schema migration raises the
+  stored value on existing nodes, matched by feed ID, never lowered - and recorded, because
+  an operator's setting is being changed on their behalf.
+
+### Control plane lifecycle
+
+- **An internal restart**, reachable from the interface, for the RESTART-class values that
+  were persisted but never activated. It refuses when no supervisor would bring the process
+  back, because exiting there would stop the product and leave it stopped.
+
+### Interface
+
+- **The gateway login page was recomposed.** It carried a marketing headline, a decorative
+  grid, a glow, three architecture cards and a five-item technology claim, none of which
+  answers a question an operator has at a trust boundary. The facts this host can attest
+  before any credential exists are now the composition, and the product mark is embedded
+  rather than drawn in CSS.
+- **The sign-in form no longer invalidates itself.** Every request for the login page minted
+  a fresh CSRF token and overwrote the cookie, so the cookie was a single shared slot rather
+  than a property of the form on screen. The page carries its own language links, browsers
+  prefetch and prerender them, and that second request was enough to leave the visible form
+  holding a token the cookie no longer matched. Submitting it was refused as stale, and
+  reloading re-armed the same race - which is why an operator who did nothing wrong could
+  not sign in however often they reloaded. A second tab, a back/forward restore and a
+  third-party `<img>` pointing at the endpoint did the same. The token a browser is given is
+  now reused until it expires. The protection is unchanged: 24 random bytes bound to an
+  HttpOnly, Secure, SameSite=Strict, host-only cookie that no other site can read or set.
+- **An expired sign-in form no longer ends in a dead end.** The login CSRF cookie lived for
+  ten minutes, which is shorter than the time an operator may reasonably take between opening
+  the page and submitting it. Past that point the gateway answered with a bare
+  `403 request rejected`: it named neither the cause nor a way out. The rejection itself is
+  unchanged - without a matching token nothing is authenticated and no password is read - but
+  a stale form is now returned to a fresh one carrying a message that says so, in all four
+  languages, and the lifetime is an hour. The gateway log now records the rejection with its
+  reason, the fingerprint of the token it expected and of the one it received, and which
+  cookies arrived, so the next report of this kind is diagnosed from evidence rather than
+  from a guess.
+- **The refusal reason is shown once.** It travelled in the query string, which made it a
+  property of the address instead of the event: reloading, or returning to the page from
+  history, repeated "this sign-in page had expired" over a form that was freshly issued and
+  valid, and the only way to silence it was to edit the URL by hand. It now rides a one-shot
+  cookie that the page consumes.
+- **The dashboard authentication surface** states what the host attests, and verifies a key
+  against the control plane before claiming a session was authorised.
+- **Protection Center**: the headline repeated the status pill verbatim, a button promised
+  navigation and did nothing, and a permanently solid-red emergency stop sat beside the
+  primary action.
+- **Navigation icons** were one dollar sign and a duplicated shield; every entry is now
+  distinct and names its destination.
+
+### Translations
+
+- **58 keys existed only in German.** Every language variant had been written into the
+  German catalogue, so operators reading English, Russian or Chinese saw raw key
+  identifiers across the enforcement panel, the evidence notice and the restart surface.
+- The contract test that should have caught it counted occurrences across the file rather
+  than per catalogue, so a key written four times into one catalogue passed. Coverage is
+  now a per-catalogue property, and `t()` call sites are checked as well as document
+  attributes.
+
 ## 4.2.0 — Security Fabric Control Plane
 
 > **Release state:** all batches B16–B24 implemented. Every gate that can run without

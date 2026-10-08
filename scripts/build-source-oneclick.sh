@@ -6,7 +6,7 @@ ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
 OUT=${1:-"$ROOT/dist/oneclick"}
 VERSION=$(tr -d '\r\n' < "$ROOT/VERSION")
 EPOCH=${SOURCE_DATE_EPOCH:-1785110400}
-[[ $VERSION == 4.2.0 ]] || { echo "unexpected VERSION: $VERSION" >&2; exit 1; }
+[[ $VERSION == 4.2.1 ]] || { echo "unexpected VERSION: $VERSION" >&2; exit 1; }
 mkdir -p "$OUT"
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/gedefense-oneclick-build.XXXXXX")
 cleanup(){ rm -rf -- "$WORK"; }

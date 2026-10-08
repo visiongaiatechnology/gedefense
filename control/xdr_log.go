@@ -387,6 +387,67 @@ func (l *IncidentLogger) Verify() error {
 	return err
 }
 
+// ReadRecent returns the most recent incidents from the log, oldest first.
+//
+// The logger could only write and verify. The engine's own incident list is in memory and
+// starts empty, so after a restart the operator's forensic view reported zero incidents
+// while the log on disk held every one of them - 220 records in the case that surfaced
+// this. The evidence existed and there was no way to look at it.
+//
+// The whole file is walked because the records are variable length and the chain is
+// sequential; the result is held in a ring of the requested size, so the memory cost is
+// the answer rather than the file.
+func (l *IncidentLogger) ReadRecent(limit int) ([]XDRIncident, error) {
+	if l == nil || limit <= 0 {
+		return nil, nil
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.integrityErr != nil {
+		// A quarantined log is not read. Its contents are exactly what is in doubt.
+		return nil, fmt.Errorf("incident log is quarantined: %w", l.integrityErr)
+	}
+	f, err := os.Open(l.path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	if st, statErr := f.Stat(); statErr != nil {
+		return nil, statErr
+	} else if st.Mode().Perm()&0o077 != 0 {
+		return nil, errors.New("incident log must not be group/world accessible")
+	}
+
+	ring := make([]XDRIncident, 0, limit)
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 4096), 4<<20)
+	var lineNo uint64
+	for sc.Scan() {
+		lineNo++
+		record, _, decodeErr := decodeIncidentLine(l.path, sc.Bytes(), lineNo, l.crypto)
+		if decodeErr != nil {
+			// The chain was verified when the logger was constructed, so a line that
+			// cannot be read here is a change since then. Refusing is the only honest
+			// answer: returning the records that happen to parse would present a
+			// truncated history as the whole one.
+			return nil, fmt.Errorf("incident log line %d is malformed: %w", lineNo, decodeErr)
+		}
+		if len(ring) < limit {
+			ring = append(ring, record.Incident)
+			continue
+		}
+		copy(ring, ring[1:])
+		ring[limit-1] = record.Incident
+	}
+	if err := sc.Err(); err != nil {
+		return nil, err
+	}
+	return ring, nil
+}
+
 func (l *IncidentLogger) Append(i XDRIncident) (string, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()

@@ -8,9 +8,9 @@
 ### Linux 主权安全矩阵 (Linux Security Fabric)
 
 [![License](https://img.shields.io/badge/License-AGPL--3.0--only-blue?style=for-the-badge)](https://www.gnu.org/licenses/agpl-3.0)
-[![Version](https://img.shields.io/badge/Version-4.2.0-orange?style=for-the-badge)](#)
-[![Status](https://img.shields.io/badge/Status-Release_v4.2.0-yellow?style=for-the-badge)](#)
-[![Installer](https://img.shields.io/badge/Installer-4.2.0_Universal_Linux-green?style=for-the-badge)](#-快速上手)
+[![Version](https://img.shields.io/badge/Version-4.2.1-orange?style=for-the-badge)](#)
+[![Status](https://img.shields.io/badge/Status-Release_v4.2.1-yellow?style=for-the-badge)](#)
+[![Installer](https://img.shields.io/badge/Installer-4.2.1_Universal_Linux-green?style=for-the-badge)](#-快速上手)
 [![Platform](https://img.shields.io/badge/Platform-Linux_x86__64-lightgrey?style=for-the-badge&logo=linux)](#)
 [![Data Plane](https://img.shields.io/badge/Data_Plane-Rust_eBPF%2FXDP-red?style=for-the-badge&logo=rust)](#-系统架构)
 [![Control Plane](https://img.shields.io/badge/Control_Plane-Go-00ADD8?style=for-the-badge&logo=go)](#-系统架构)
@@ -33,12 +33,12 @@
 
 ---
 
-## 🚨 严重安全警告与公告 — RELEASE v4.2.0
+## 🚨 严重安全警告与公告 — RELEASE v4.2.1
 
 > [!CAUTION]
 > **全体系统运维人员与管理员紧急安全通告（强烈建议立即升级）：**
 > 
-> 在 GeDefense 4.2.0 版本中，作为全面安全审计与验证周期的一部分，**我们排查并彻底修复了此前版本（4.0.x / 4.1.0）中存在的多个严重安全漏洞与完整性缺陷**。强烈建议所有生产环境节点立即升级至 v4.2.0：
+> 在 GeDefense 4.2.0 版本中，作为全面安全审计与验证周期的一部分，**我们排查并彻底修复了此前版本（4.0.x / 4.1.0）中存在的多个严重安全漏洞与完整性缺陷**。强烈建议所有生产环境节点立即升级至 v4.2.1：
 > 
 > 1. **金丝雀陷阱符号链接遍历提权漏洞（Canary Deployment）：**
 >    - *漏洞详情：* 此前的金丝雀诱饵部署在诱饵路径或暂存路径上会跟随符号链接。攻击者若控制上级目录中的符号链接，即可将具有 root 权限的写操作重定向至文件系统的任意位置（如 `cron`、`authorized_keys`、`ld.so.preload`）→ 导致任意文件写入及 root 提权。
@@ -68,9 +68,9 @@
 
 ---
 
-## ⚠️ 稳定性与可靠性承诺 — RELEASE v4.2.0 · 通用 LINUX 平台
+## ⚠️ 稳定性与可靠性承诺 — RELEASE v4.2.1 · 通用 LINUX 平台
 
-VGT GeDefense 4.2.0 是主权 Linux 安全防御体系的旗舰产品 — 将经过深度加固的内核级防御链与全新的 **Security Fabric Control Plane（安全织网控制平面）**、通用 Linux 原生集成、加固级发布流水线以及真实的内核/网卡适格门禁融为一体。专为主权主机与高对抗网络防御而设计。
+VGT GeDefense 4.2.1 是主权 Linux 安全防御体系的旗舰产品 — 将经过深度加固的内核级防御链与全新的 **Security Fabric Control Plane（安全织网控制平面）**、通用 Linux 原生集成、加固级发布流水线以及真实的内核/网卡适格门禁融为一体。专为主权主机与高对抗网络防御而设计。
 
 **生产环境准入明确属于具体经过审计的目标主机的属性 — 而非仅仅取决于源代码本身。**
 
@@ -558,14 +558,14 @@ Rust Core **未提供任何通用的系统 Shell、文件系统或 Sysctl 执行
 
 ```bash
 # 下载安装程序
-wget https://github.com/visiongaiatechnology/gedefense/releases/download/v4.2.0/GeDefense-4.2.0-OneClick.run
+wget https://github.com/visiongaiatechnology/gedefense/releases/download/v4.2.1/GeDefense-4.2.1-OneClick.run
 
 # 校验 SHA-256 完整性指纹
-sha256sum --check GeDefense-4.2.0-OneClick.run.sha256
+sha256sum --check GeDefense-4.2.1-OneClick.run.sha256
 
 # 执行安装（需要 root 权限）
-chmod 700 GeDefense-4.2.0-OneClick.run
-sudo ./GeDefense-4.2.0-OneClick.run
+chmod 700 GeDefense-4.2.1-OneClick.run
+sudo ./GeDefense-4.2.1-OneClick.run
 ```
 
 > 安装包与校验和文件仅在通过全部 GitHub CI 测试及实体 Linux 节点验证后发布。切勿运行未经验签的 RUN 可执行文件。
@@ -600,7 +600,7 @@ sudo ./GeDefense-4.2.0-OneClick.run
 
 ---
 
-## 🚧 当前已知局限（4.2.0）
+## 🚧 当前已知局限（4.2.1）
 
 - 暂未集成 Swarm / 集群网格（Mesh）支持
 - 暂不支持 QUIC 协议网络卸载
@@ -611,12 +611,58 @@ sudo ./GeDefense-4.2.0-OneClick.run
 - 暂未包含完整的 Measured Boot 远程度量证明
 - Gaia Cells 隔离生命周期守护进程独立存在（属于 AstraeaOS 专属组件）
 - 隔离诱捕服务（Deception Service）顺延规划
+- 替换受保护的发布二进制文件会使 XDR 降级，并在控制平面重启之前禁用主动响应；平台目前尚无法区分经授权的部署与篡改
 
 ---
 
 ## 📋 版本更新日志 (Changelog)
 
-### v4.2.0 — Security Fabric Control Plane *(当前版本)*
+### v4.2.1 — 稳定性、证据与界面修复 *(当前版本)*
+
+这是一个修复版本。它不引入任何新的子系统；它让既有的子系统如实说明自身状态，并且不妨碍操作员的工作。
+
+* **证据账本：**
+  * **容量不再被当作数据损坏。** 触及保留配额会设置账本的完整性错误，从而将其永久隔离，并报告 XDR 处于降级状态，提示 "mandatory evidence ledger unavailable"。已满的账本并不是损坏的账本。
+  * **同一份配额，从每一侧读取的结果一致。** 构造阶段宽松，运行阶段严格，因此在已提高配额下合法增长的账本在重启后会被接受，而不再是服务拒绝启动。
+  * **操作员提高的配额就是账本实际执行的配额。** 构造函数用编译内置的 64 MiB 默认值初始化其策略，而追加路径优先采用该值，因此提高到 256 MiB 的配额在每次启动时都被丢弃：账本在 64 MiB 处停止，随后拒绝每一次追加，却仍报告自身健康。平台已悄然停止记录证据。现在两份配额起始值一致，且事后调低的配额仍然生效。
+  * **该状态会自我说明。** "retention budget reached" 与 "integrity unavailable" 是两条独立的消息，各自带有独立的数值与独立的补救措施。
+* **发布门禁：**
+  * **故障安全机制保留其触发原因。** 该原因在下一次刷新时被当前的阻断项列表覆盖，因此一个仍停留在 Observe 模式的平台最终会显示 "release gates satisfied"。
+  * **故障安全机制本身就是取证证据。** 回退是平台自主执行的最具后果的动作，而它此前没有留下任何安全事件。
+* **L7 Application Defense：**
+  * **自检通过会清除过期的降级状态，** 并以十五分钟为上限，使过期的通过结果无法掩盖此后已经失效的路径。
+  * **生成的 nginx 配置此前永远无法应用。** 它会生成一个带有 `listen ... ssl` 的 server 块，并在本应放置证书指令的位置写入一条注释 - nginx 会直接拒绝 - 同时指定了一个已经拥有 server 块的主机名。现在它是两段可插入的片段，并在测试套件中针对真实的 nginx 解析器进行了校验。
+  * **执行路径会被如实报告。** `INGRESS_HEALTH` 会说明内核挂载了哪个钩子 - 原生 XDP、通用 XDP 或 TC ingress - 而不再将三者一律描述为经验证的内核入口生产者，尽管它们在高负载下的行为差异极大。
+  * **当 L7 不在其路径上时，操作员也能看到是否存在 HTTP 流量。** Web 表面发现会报告本主机上是否运行 Web 服务器以及运行在哪些端口上 - 只读、有界，且绝不被呈现为防护，因为检测不等于防护。
+  * **引导式 Web 服务器集成只生成配置文本，别的什么都不做。** 它绝不写入 Web 服务器的配置，绝不重载服务，也绝不声称生成的片段已经生效；由操作员来应用它，随后自检会观测它是否奏效。每一个插值都会先针对封闭文法进行校验，因为其输出是给特权守护进程使用的配置文件。
+  * **被检查的请求是两个计数器之和，而不是其中之一。** 面板此前只显示请求计数器，因此一台其内联监听器已检查 174 个请求的主机，会在自己的 "TRAFFIC ACTIVE" 徽标正下方报告 "0 geprüfte Requests" - 面板自相矛盾，并且掩盖了证明其判定正确的证据。该数值现在是判定所依据的求和结果。
+* **Kinetic Defense：**
+  * **执行动作与实际效果均可见。** 面板会说明所使用的钩子、内核通道的健康状况以及引擎检测到什么并执行了什么。在 Observe 模式下它会明确说明这一点：整列零值意味着响应阶段从未进入，而不是什么也没有看到。
+  * **总览承载各项数值，** 并按每个数值所回答的问题分组。
+  * **覆盖率摘要会解释它所提到的传感器。** 它下方的那句话此前被绑定到某一个传感器名称，因此一条显示 "Mandatory sensors degraded: l7_application" 的摘要，会被健康状况良好的入口生产者那句话来解释 - 一个降级状态的标题配上一段正面的解释，出现在同一个会话中与 Application Defense 页面相矛盾的页面上，而两者读取的是同一份快照。现在原因归属于使平台处于非正常状态的那个传感器，采用服务端的优先级，并且回退文本是已翻译的键，而不是德语字面量。
+  * **该摘要是确定性的。** 它声称以确定性方式判定状态，但它此前按 map 迭代顺序拼接传感器名称，因此同一状态在每次刷新时都会生成顺序不同的句子。
+* **加固与完整性：**
+  * **针对 GeDefense 自身组件的篡改发现不再触发响应。** 产品自身某个二进制文件的摘要不匹配无法与一次经过批准的更新区分开来，而响应引擎却据此采取了遏制动作：一百多条已记录的安全事件表明，该产品会冻结自己的接入网关，这是任何攻击者只要触碰一个文件就能触发的拒绝服务。该发现仍以完整严重级别保留 - 同一规则、同一评分、同一分类 - 只是不施加响应；第三方二进制文件仍保留其响应。产品自身组件通过一个共享根目录识别，该根目录跟随 `VGT_RELEASE_ROOT`。
+  * **十个加固开关在已加固的主机上完全无效，** 因为只要某个开关对应的控制项已处于 PROTECTED 状态，该开关就会被禁用；预检核对的是选择结果，而不是应用该选择。
+  * **安全态势不得自我高估。** 在一台 22 项控制中仅有 2 项可读且两项均通过的主机上，评估得分为 100 并标记为 HARDENED。当证据不足以支撑该等级时，现在会对等级设置上限，并在评分旁标注覆盖率。
+  * **受保护对象发生变更时按对象报告，且只报告一次。** 受保护集合通过 `/current/bin/...` 与 `/releases/<version>/bin/...` 抵达同一个发布二进制文件，因此一次替换会产生两条严重安全事件 - 而且一项未修复的变更会在每个去重周期被反复通告，直到服务重启，于是一个单一事实淹没了记录它的账本。现在报告以解析后的对象及其观测状态为键，并且原因会列出每一个发生变更的对象。
+  * **完整性面板会指明实际处于降级状态的子系统，** 而不是在它所指向的事件账本本身健康且与之毫无关系时显示 `INTEGRITY_FAILURE`。
+* **威胁情报：**
+  * **FireHOL Level 1 被强制执行，而不是仅做关联。** 一次已记录的 Schema 迁移会在既存节点上提高存储值，依据 Feed ID 匹配且永不调低，因为这里是在替操作员更改其自身设置。
+* **控制平面生命周期：**
+  * **一次内部重启，** 可从界面触达，会激活那些已持久化但从未被应用的 RESTART 类取值。当没有任何 supervisor 会把进程重新拉起时，它会拒绝执行，因为在此处退出会停止产品并使其一直处于停止状态。
+* **接入网关与界面：**
+  * **登录表单不再使自己失效。** 每一次页面查看都会生成一个新的 CSRF 令牌并覆盖 Cookie，因此该 Cookie 成了一个单一共享槽位，而不是屏幕上表单自身的属性。该页面带有自己的语言链接，浏览器会预取并预渲染它们，而正是这第二次请求足以让可见表单持有的令牌与 Cookie 不再匹配 - 这就是为什么一位没有做错任何事的操作员无论重新加载多少次都无法登录。第二个标签页、后退/前进恢复以及一个指向该端点的第三方 `<img>` 也会造成同样的结果。现在浏览器获得的令牌会被一直复用直至过期；防护机制未变，仍是 HttpOnly、Secure、SameSite=Strict 的仅主机 Cookie 中的 24 个随机字节，任何其他站点都无法读取或设置。
+  * **过期的登录表单不再以死路收场。** 它此前只是一个裸露的 `403 request rejected`，既不说明原因也不给出出路。拒绝本身未变 - 没有匹配的令牌就不会有任何认证，也不会读取任何密码 - 但现在过期的表单会被带回一个新表单，并附上四种语言的说明，有效期为 1 小时。
+  * **拒绝原因只显示一次。** 它此前在查询字符串中传递，因而成了地址的属性而非事件的属性：重新加载，或从历史记录返回该页面，都会在一个刚刚签发且仍然有效的表单之上重复显示 "this sign-in page had expired"。现在它改由页面消费的一次性 Cookie 承载。
+  * **网关拒绝可被诊断。** 日志会记录原因、期望令牌与到达令牌的指纹以及当时存在哪些 Cookie - 绝不记录令牌值本身。
+  * **登录页面经过重新组织，** 围绕主机在任何凭据存在之前确实能够证明的事实，并将产品标识内嵌，而不是用 CSS 绘制。
+  * **仪表盘的认证界面** 会说明主机能够证明什么，并在声称会话已获授权之前，针对控制平面校验密钥。
+  * **Protection Center 与导航：** 一个逐字重复状态药丸的标题、一个承诺导航却毫无作用的按钮、一个紧挨主操作且永久呈实心红色的紧急停止按钮、一个美元符号导航图标以及一个重复的盾牌图标。
+* **翻译：**
+  * **有 58 个键仅存在于德语中，** 因此阅读英语、俄语或中文的操作员会在执行面板、证据提示与重启界面上看到原始的键标识符。现在覆盖率是每个词条目录自身的属性，并且除文档属性外，`t()` 调用点也会被检查。
+
+### v4.2.0 — Security Fabric Control Plane
 
 * **全面安全审计整改与系统加固：**
   * **严重：** 彻底修复金丝雀陷阱中的符号链接遍历漏洞（任意文件写入 / root 提权）。采用基于 `openat(2)` 并带有 `O_NOFOLLOW|O_DIRECTORY` 的逐级安全路径解析，强制阻断符号链接并返回 `ELOOP`。
@@ -803,6 +849,6 @@ sudo python3 scripts/update-geoip-db.py /var/lib/vgt/gedefense/geoip.csv
 
 [![VGT](https://img.shields.io/badge/VisionGaia-Technology-cyan?style=for-the-badge)](https://visiongaiatechnology.de)
 
-*VGT GeDefense 4.2.0 — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
+*VGT GeDefense 4.2.1 — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
 
 </div>

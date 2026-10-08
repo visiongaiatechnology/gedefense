@@ -465,6 +465,46 @@ func (s *State) SetXDRDegraded(degraded bool, reason string) {
 	s.mu.Unlock()
 }
 
+// RestoreIncidents seeds the incident list from the log on disk at startup.
+//
+// It is separate from AddIncident because the two answer different questions. AddIncident
+// records something that has just happened: it counts it as a new incident, feeds the case
+// engine, and increases the totals. A restored incident happened in an earlier life of this
+// process and must not be counted again, or every restart would inflate the totals and
+// re-open cases that were already handled.
+func (s *State) RestoreIncidents(incidents []XDRIncident) {
+	if len(incidents) == 0 {
+		return
+	}
+	restored := make([]XDRIncident, 0, len(incidents))
+	for _, incident := range incidents {
+		if incident.ID == "" {
+			continue
+		}
+		restored = append(restored, incident)
+	}
+	if len(restored) == 0 {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	existing := make(map[string]struct{}, len(s.incidents))
+	for _, incident := range s.incidents {
+		existing[incident.ID] = struct{}{}
+	}
+	for _, incident := range restored {
+		if _, seen := existing[incident.ID]; seen {
+			continue
+		}
+		s.incidents = append(s.incidents, incident)
+	}
+	if len(s.incidents) > s.incidentCap {
+		s.incidents = append([]XDRIncident(nil), s.incidents[len(s.incidents)-s.incidentCap:]...)
+	}
+	// The totals are left alone deliberately. They report what this process has observed,
+	// and the restored records are already counted in the log they came from.
+}
+
 func (s *State) AddIncident(i XDRIncident) {
 	if i.ID == "" {
 		i.ID = randomID()
@@ -800,6 +840,20 @@ func (s *State) Snapshot() Snapshot {
 		Kinetic:  s.kinetic,
 		Coverage: s.kinetic.Coverage,
 		Stream:   s.streamDiagnostics}
+	// The L7 verdict and the platform coverage are derived here, never served from the
+	// stored copies. Both are functions of fields that more than one component publishes
+	// into, so a stored copy records whichever of them wrote last. The derivation lives in
+	// one place because two callers need it: this snapshot and the telemetry accessor that
+	// answers /api/v1/kinetic/live, the endpoint the Kinetic page reads.
+	snapshot.L7, snapshot.Kinetic.Coverage = s.derivedCoverageLocked()
+
+	// The top-level coverage is the same verdict under a second name, and it was built
+	// into the struct literal above from the stored value before any of this ran. Leaving
+	// it alone meant the derivation reached one field and not the other: the platform
+	// served a corrected Kinetic summary and a stale overall verdict in the same response,
+	// and the interface reads this one for the state it shows the operator. There is one
+	// summary, and both names have to carry it.
+	snapshot.Coverage = snapshot.Kinetic.Coverage
 	snapshot.Stream.ActiveClients = len(s.subscribers)
 	customCount := 0
 	for _, cr := range s.settings.CustomRules {
@@ -884,7 +938,48 @@ func (s *State) StreamDiagnostics() StreamDiagnostics {
 func (s *State) KineticTelemetry() KineticTelemetry {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return s.kinetic
+	t := s.kinetic
+	// The coverage is derived, not the stored copy.
+	//
+	// This accessor answers /api/v1/kinetic/live, which is the endpoint the Kinetic page
+	// reads, and it returned the stored map. The L7 verdict is a function of fields that
+	// two components publish into, so the stored copy recorded whichever of them wrote
+	// last: the same process answered "All mandatory sensors operational" on
+	// /api/v1/status and "Mandatory sensors degraded: l7_application" on this endpoint in
+	// the same second, and the operator saw the second one on the page that matters.
+	_, t.Coverage = s.derivedCoverageLocked()
+	return t
+}
+
+// derivedCoverageLocked returns the L7 status and the platform coverage, both derived from
+// the fields the components publish.
+//
+// Neither may be served from the stored copies. The L7 verdict depends on fields that two
+// components write: the inspection service recomputes it on its own events, and the inline
+// edge sets InlineHealthy when a request or a self-test proves the path - events the service
+// never sees. The coverage is then summarised from the sensor map, whose L7 entry was
+// written by one publisher on the service's events alone, so it kept whatever it recorded
+// the last time.
+//
+// Deriving it where it is read makes the two impossible to disagree. The web surface probe
+// is deliberately not re-run here: it reads /proc and this is a hot path, so only the parts
+// of the verdict that depend on already-published fields are recomputed.
+//
+// The caller holds s.mu.
+func (s *State) derivedCoverageLocked() (L7Status, SystemCoverage) {
+	l7 := s.l7
+	l7.Coverage = EvaluateL7Coverage(l7, int64(time.Since(s.started).Seconds()))
+	l7.TrafficPathVerified = l7.Coverage == "TRAFFIC_ACTIVE"
+	l7.CoverageReason = describeL7Coverage(l7.Coverage)
+	if l7.Miswired && l7.Coverage != "OFFLINE" {
+		l7.CoverageReason = l7.WebSurfaceNote
+	}
+	sensors := make(map[string]SensorCoverage, len(s.sensors)+1)
+	for name, cov := range s.sensors {
+		sensors[name] = cov
+	}
+	sensors["l7_application"] = deriveL7SensorCoverage(l7, l7.Healthy)
+	return l7, EvaluateCoverage(sensors)
 }
 
 func (s *State) SetKineticTelemetry(t KineticTelemetry) {

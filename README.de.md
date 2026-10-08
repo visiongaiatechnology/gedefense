@@ -8,9 +8,9 @@
 ### Linux Security Fabric
 
 [![License](https://img.shields.io/badge/License-AGPL--3.0--only-blue?style=for-the-badge)](https://www.gnu.org/licenses/agpl-3.0)
-[![Version](https://img.shields.io/badge/Version-4.2.0-orange?style=for-the-badge)](#)
-[![Status](https://img.shields.io/badge/Status-Release_v4.2.0-yellow?style=for-the-badge)](#)
-[![Installer](https://img.shields.io/badge/Installer-4.2.0_Universal_Linux-green?style=for-the-badge)](#-schnellstart)
+[![Version](https://img.shields.io/badge/Version-4.2.1-orange?style=for-the-badge)](#)
+[![Status](https://img.shields.io/badge/Status-Release_v4.2.1-yellow?style=for-the-badge)](#)
+[![Installer](https://img.shields.io/badge/Installer-4.2.1_Universal_Linux-green?style=for-the-badge)](#-schnellstart)
 [![Platform](https://img.shields.io/badge/Platform-Linux_x86__64-lightgrey?style=for-the-badge&logo=linux)](#)
 [![Data Plane](https://img.shields.io/badge/Data_Plane-Rust_eBPF%2FXDP-red?style=for-the-badge&logo=rust)](#-architektur)
 [![Control Plane](https://img.shields.io/badge/Control_Plane-Go-00ADD8?style=for-the-badge&logo=go)](#-architektur)
@@ -33,12 +33,12 @@
 
 ---
 
-## 🚨 KRITISCHER SICHERHEITSHINWEIS & WARNUNG — RELEASE v4.2.0
+## 🚨 KRITISCHER SICHERHEITSHINWEIS & WARNUNG — RELEASE v4.2.1
 
 > [!CAUTION]
 > **DRINGENDER SICHERHEITSHINWEIS FÜR ALLE BETREIBER & SYSTEMADMINISTRATOREN (UPGRADE DRINGEND EMPFOHLEN):**
 > 
-> In GeDefense Version 4.2.0 wurden im Rahmen eines umfassenden Sicherheitsaudits und Verifikationszyklus **mehrere kritische Sicherheitslücken und Integritätsmängel früherer Versionen (4.0.x / 4.1.0)** identifiziert und vollständig behoben. Ein sofortiges Upgrade auf v4.2.0 wird für alle Produktionsinstallationen dringend empfohlen:
+> In GeDefense Version 4.2.0 wurden im Rahmen eines umfassenden Sicherheitsaudits und Verifikationszyklus **mehrere kritische Sicherheitslücken und Integritätsmängel früherer Versionen (4.0.x / 4.1.0)** identifiziert und vollständig behoben. Ein sofortiges Upgrade auf v4.2.1 wird für alle Produktionsinstallationen dringend empfohlen:
 > 
 > 1. **Kritische Rechteeskalation via Symlink-Traversal (Canary-Deployment):**
 >    - *Schwachstelle:* Das bisherige Canary-Deployment folgte symbolischen Links im Decoy- oder Staging-Pfad. Ein von einem Angreifer kontrollierter Symlink in übergeordneten Verzeichnissen konnte Schreiboperationen mit Root-Rechten an beliebige Dateisystemorte umleiten (`cron`, `authorized_keys`, `ld.so.preload`) → Willkürliches Dateischreiben mit Root-Privilege-Escalation.
@@ -68,9 +68,9 @@
 
 ---
 
-## ⚠️ STABILITÄT & ZUSICHERUNG — RELEASE v4.2.0 · UNIVERSELLE LINUX-PLATTFORM
+## ⚠️ STABILITÄT & ZUSICHERUNG — RELEASE v4.2.1 · UNIVERSELLE LINUX-PLATTFORM
 
-VGT GeDefense 4.2.0 ist das Flaggschiff des Linux-Sicherheitsgewebes — die gehärtete Verteidigungskette mit Kernel-Geschwindigkeit, kombiniert mit der neuen **Security Fabric Control Plane**, universeller Linux-Integration, gehärteter Release-Pipeline und konkreten Kernel-/NIC-Qualifikations-Gates. Es wurde für souveränen Host- und Netzwerkschutz entwickelt.
+VGT GeDefense 4.2.1 ist das Flaggschiff des Linux-Sicherheitsgewebes — die gehärtete Verteidigungskette mit Kernel-Geschwindigkeit, kombiniert mit der neuen **Security Fabric Control Plane**, universeller Linux-Integration, gehärteter Release-Pipeline und konkreten Kernel-/NIC-Qualifikations-Gates. Es wurde für souveränen Host- und Netzwerkschutz entwickelt.
 
 **Die Produktionsfreigabe ist bewusst eine Eigenschaft des konkret auditierten Ziel-Hosts — nicht allein des Quellcodes.**
 
@@ -559,14 +559,14 @@ Ist die Gaia Cells-Laufzeit **nicht vorhanden**, meldet der Adapter `runtime_not
 
 ```bash
 # Installer herunterladen
-wget https://github.com/visiongaiatechnology/gedefense/releases/download/v4.2.0/GeDefense-4.2.0-OneClick.run
+wget https://github.com/visiongaiatechnology/gedefense/releases/download/v4.2.1/GeDefense-4.2.1-OneClick.run
 
 # SHA-256 verifizieren
-sha256sum --check GeDefense-4.2.0-OneClick.run.sha256
+sha256sum --check GeDefense-4.2.1-OneClick.run.sha256
 
 # Installieren (Root erforderlich)
-chmod 700 GeDefense-4.2.0-OneClick.run
-sudo ./GeDefense-4.2.0-OneClick.run
+chmod 700 GeDefense-4.2.1-OneClick.run
+sudo ./GeDefense-4.2.1-OneClick.run
 ```
 
 > Der Installer und die Prüfsumme werden erst veröffentlicht, nachdem alle GitHub-CI- und konkreten Linux-Host-Qualifikations-Gates bestanden wurden. Führe niemals eine nicht verifizierte RUN-Datei aus.
@@ -601,7 +601,7 @@ Die Firewall-Regel für den HTTPS-Gateway-Port (TCP 9843) kann während der Inst
 
 ---
 
-## 🚧 Bekannte Einschränkungen (4.2.0)
+## 🚧 Bekannte Einschränkungen (4.2.1)
 
 - Keine Swarm- / Mesh-Unterstützung
 - Kein QUIC-Offloading
@@ -612,12 +612,58 @@ Die Firewall-Regel für den HTTPS-Gateway-Port (TCP 9843) kann während der Inst
 - Keine vollständige Measured-Boot-Attestierung
 - Gaia Cells Lifecycle Daemon extern (AstraeaOS-Laufzeit)
 - Isolierter Deception Service zurückgestellt
+- Wird eine geschützte Release-Binary ersetzt, degradiert XDR und die aktive Antwort bleibt deaktiviert, bis die Kontrollplane neu startet; die Plattform kann ein autorisiertes Deployment noch nicht von einer Manipulation unterscheiden
 
 ---
 
 ## 📋 Changelog
 
-### v4.2.0 — Security Fabric Control Plane *(Aktuell)*
+### v4.2.1 — Stabilität, Evidenz und Oberfläche *(Aktuell)*
+
+Eine Fehlerbehebungsversion. Sie bringt kein neues Teilsystem; sie bringt die vorhandenen dazu, die Wahrheit über sich zu sagen und dem Betreiber nicht im Weg zu stehen.
+
+* **Evidence-Ledger:**
+  * **Kapazität ist kein Datenverlust mehr.** Das Erreichen des Aufbewahrungsbudgets setzte den Integritätsfehler des Ledgers, quarantänisierte ihn dauerhaft und meldete XDR als degradiert mit „mandatory evidence ledger unavailable". Ein volles Ledger ist kein beschädigtes.
+  * **Ein Budget, von jeder Seite gleich gelesen.** Die Konstruktion ist nachsichtig, die Laufzeit streng: Ein Ledger, das unter einem erhöhten Budget berechtigt gewachsen ist, wird nach einem Neustart akzeptiert, statt den Dienststart zu verweigern.
+  * **Das Budget, das der Betreiber erhöht, ist das Budget, das der Ledger durchsetzt.** Der Konstruktor setzte seine Policy auf den kompilierten Default von 64 MiB, den der Schreibpfad bevorzugt — ein auf 256 MiB erhöhtes Budget wurde damit bei jedem Start verworfen: Der Ledger stoppte bei 64 MiB und lehnte danach jeden Schreibvorgang ab, während er sich weiter als gesund meldete. Die Plattform hatte stillschweigend aufgehört, Evidenz aufzuzeichnen. Beide Budgets starten nun gleich, und ein später erniedrigtes Budget wirkt weiterhin.
+  * **Der Zustand benennt sich selbst.** „Retention budget reached" und „integrity unavailable" sind getrennte Meldungen mit getrennten Zahlen und getrennten Abhilfen.
+* **Release-Gate:**
+  * **Ein Fail-Safe behält seinen Grund.** Der Grund wurde beim nächsten Refresh von der Liste der aktuellen Blocker überschrieben, sodass eine Plattform, die noch im Observe-Modus stand, schließlich „release gates satisfied" anzeigte.
+  * **Ein Fail-Safe ist forensische Evidenz.** Ein Rückfall ist das folgenreichste, was die Plattform von sich aus tut — und er hinterließ keinen Incident.
+* **L7 Application Defense:**
+  * **Ein bestandener Selbsttest räumt eine veraltete Degradierung ab,** begrenzt auf fünfzehn Minuten, damit ein alter Erfolg keinen Pfad verdeckt, der seither gebrochen ist.
+  * **Die erzeugte nginx-Konfiguration konnte nie angewendet werden.** Sie erzeugte einen Server-Block mit `listen ... ssl` und einem Kommentar dort, wo die Zertifikatsdirektiven hingehören — von nginx rundheraus abgelehnt — und nannte einen Host, der bereits einen Server-Block hatte. Sie besteht jetzt aus zwei einfügbaren Teilen, im Testlauf gegen den echten nginx-Parser geprüft.
+  * **Der Durchsetzungspfad wird berichtet.** `INGRESS_HEALTH` nennt, welchen Hook der Kernel eingehängt hat — natives XDP, generisches XDP oder TC-Ingress —, statt alle drei als „verified kernel ingress producer" zu bezeichnen, obwohl sie sich unter Last sehr unterschiedlich verhalten.
+  * **Der Betreiber sieht, ob HTTP-Verkehr existiert, während L7 nicht in seinem Pfad liegt.** Die Web-Oberflächen-Erkennung meldet, ob auf diesem Host ein Webserver läuft und auf welchen Ports — nur lesend, begrenzt und niemals als Schutz dargestellt, denn Erkennung ist kein Schutz.
+  * **Die geführte Webserver-Integration erzeugt Konfigurationstext und sonst nichts.** Sie schreibt nie in die Konfiguration eines Webservers, lädt keinen Dienst neu und behauptet nie, ein erzeugtes Fragment sei in Kraft; der Betreiber wendet es an, und der Selbsttest beobachtet anschließend, ob es gewirkt hat. Jeder eingesetzte Wert wird vorher gegen eine geschlossene Grammatik geprüft, denn die Ausgabe ist eine Konfigurationsdatei für einen privilegierten Dienst.
+  * **Geprüfte Requests umfassen beide Zähler, nicht einen.** Das Panel zeigte nur den Request-Zähler, sodass ein Host, dessen Inline-Listener 174 Requests inspiziert hatte, „0 geprüfte Requests" direkt unter seinem eigenen „TRAFFIC AKTIV"-Abzeichen meldete — das Panel widersprach sich selbst und verbarg damit den Beleg, dass sein Urteil richtig war. Die Zahl ist jetzt die Summe, aus der das Urteil berechnet wird.
+* **Kinetic Defense:**
+  * **Durchsetzung und Wirkung sind sichtbar.** Das Panel nennt den verwendeten Hook, die Gesundheit des Kernelkanals und was die Engine erkannt und getan hat. Im Observe-Modus sagt es das auch: Eine Spalte voller Nullen heißt, dass die Antwortstufe nie betreten wurde — nicht, dass nichts gesehen wurde.
+  * **Die Übersicht trägt die Zahlen,** gruppiert nach der Frage, die sie beantworten.
+  * **Die Abdeckungs-Zusammenfassung erklärt den Sensor, den sie nennt.** Die Begründungszeile war an einen festen Sensornamen gebunden, sodass eine Zusammenfassung „Mandatory sensors degraded: l7_application" mit dem Satz des gesunden Ingress-Producers erklärt wurde — eine degradierte Überschrift über einer positiven Erklärung, auf einer Seite, die im selben Moment der Application-Defense-Seite widersprach, obwohl beide denselben Snapshot lasen. Die Begründung gehört jetzt dem Sensor, der die Plattform nicht-nominal gemacht hat, mit der Rangfolge des Servers, und der Rückfall ist ein übersetzter Schlüssel statt eines deutschen Literals.
+  * **Die Zusammenfassung ist deterministisch.** Sie behauptet, den Status deterministisch zu bestimmen, verknüpfte die Sensornamen aber in Map-Iterationsreihenfolge — derselbe Zustand ergab bei jedem Refresh einen anders geordneten Satz.
+* **Härtung und Integrität:**
+  * **Ein Manipulationsbefund an GeDefense-eigenen Komponenten bewaffnet nicht mehr die Antwort.** Ein Digest-Konflikt an einer der eigenen Binaries ist von einem genehmigten Update nicht zu unterscheiden, und die Antwort-Engine griff deshalb ein: Über hundert aufgezeichnete Incidents zeigen das Produkt, wie es sein eigenes Zugangsgateway einfriert — eine Dienstblockade, die jeder Angreifer durch das Berühren einer einzigen Datei auslösen kann. Der Befund bleibt in voller Schwere bestehen — dieselbe Regel, dieselbe Bewertung, dieselbe Kategorie — und nur die Antwort wird zurückgehalten; fremde Binaries behalten ihre. Die eigenen Komponenten werden über eine gemeinsame Wurzel erkannt, die `VGT_RELEASE_ROOT` folgt.
+  * **Zehn Härtungsschalter waren wirkungslos** auf einem bereits gehärteten Host, weil ein Schalter deaktiviert wurde, sobald seine Kontrolle bereits PROTECTED war; der Preflight prüft eine Auswahl, er wendet sie nicht an.
+  * **Die Härtungsstufe kann sich nicht überzeichnen.** Ein Host, auf dem zwei von zweiundzwanzig Kontrollen lesbar waren und beide bestanden, erreichte 100 Punkte und meldete HARDENED. Die Stufe ist jetzt gedeckelt, wenn die Evidenz sie nicht trägt, und die Abdeckung steht neben dem Wert.
+  * **Ein geändertes geschütztes Objekt wird als Objekt gemeldet, und zwar einmal.** Die geschützte Menge erreicht dieselbe Release-Binary über `/current/bin/...` und `/releases/<version>/bin/...`, sodass ein Austausch zwei kritische Incidents erzeugte — und eine nicht behobene Änderung wurde in jedem Dedupe-Intervall erneut gemeldet, bis der Dienst neu startete; eine einzige Tatsache begrub das Ledger, in dem sie aufgezeichnet wurde. Die Meldung ist jetzt am aufgelösten Objekt und seinem beobachteten Zustand verankert, und der Grund nennt jedes geänderte Objekt.
+  * **Das Integritätspanel benennt das Teilsystem, das tatsächlich degradiert ist,** statt `INTEGRITY_FAILURE` anzuzeigen, während der Incident-Ledger, auf den es zeigt, gesund ist und damit nichts zu tun hat.
+* **Threat Intelligence:**
+  * **FireHOL Level 1 wird durchgesetzt, nicht korreliert.** Eine protokollierte Schema-Migration hebt den gespeicherten Wert auf bestehenden Knoten an, abgeglichen über die Feed-ID und niemals abgesenkt, weil hier eine Betreibereinstellung in dessen Namen geändert wird.
+* **Lebenszyklus der Kontrollplane:**
+  * **Ein interner Neustart,** aus der Oberfläche erreichbar, aktiviert die RESTART-Klasse von Werten, die persistiert, aber nie angewendet worden waren. Er verweigert sich, wenn kein Supervisor den Prozess zurückbringen würde, weil ein Beenden dort das Produkt stoppen und gestoppt zurücklassen würde.
+* **Zugangsgateway und Oberfläche:**
+  * **Das Anmeldeformular macht sich nicht mehr selbst ungültig.** Jeder Seitenaufruf erzeugte ein frisches CSRF-Token und überschrieb das Cookie, sodass das Cookie ein einzelner gemeinsamer Platz war statt eine Eigenschaft des angezeigten Formulars. Die Seite trägt ihre eigenen Sprachlinks, Browser prefetchen und prerendern sie, und diese zweite Anfrage genügte, damit das sichtbare Formular ein Token hielt, zu dem das Cookie nicht mehr passte — deshalb konnte sich ein Betreiber, der nichts falsch gemacht hatte, nicht anmelden, so oft er auch neu lud. Eine zweite Registerkarte, eine Zurück-Navigation und ein fremdes `<img>` auf den Endpunkt taten dasselbe. Das Token, das ein Browser erhält, wird jetzt bis zu seinem Ablauf wiederverwendet; der Schutz ist unverändert: 24 Zufallsbytes in einem host-only gesetzten Cookie mit HttpOnly, Secure und SameSite=Strict, das keine andere Seite lesen oder setzen kann.
+  * **Ein abgelaufenes Anmeldeformular endet nicht mehr in einer Sackgasse.** Es war eine nackte `403 request rejected`, die weder Ursache noch Ausweg nannte. Die Ablehnung selbst ist unverändert — ohne passendes Token wird nichts authentifiziert und kein Passwort gelesen —, aber ein veraltetes Formular führt jetzt auf ein frisches mit einer Erklärung in allen vier Sprachen, und die Lebensdauer beträgt eine Stunde.
+  * **Der Ablehnungsgrund wird genau einmal gezeigt.** Er reiste in der Query und war damit eine Eigenschaft der Adresse statt des Ereignisses: Ein Neuladen — oder die Rückkehr aus dem Verlauf — wiederholte „Diese Anmeldeseite war abgelaufen" über einem Formular, das gerade frisch ausgestellt und gültig war. Jetzt reist er in einem Einmal-Cookie, das die Seite verbraucht.
+  * **Ablehnungen am Gateway sind diagnostizierbar.** Das Log hält den Grund fest, den Fingerabdruck des erwarteten und des eingegangenen Tokens und welche Cookies ankamen — niemals einen Tokenwert.
+  * **Die Anmeldeseite wurde neu komponiert** um die Tatsachen, die dieser Host vor jeder Anmeldung bezeugen kann, mit eingebetteter statt in CSS gezeichneter Produktmarke.
+  * **Die Authentifizierungsoberfläche des Dashboards** sagt, was der Host bezeugt, und prüft einen Schlüssel gegen die Kontrollplane, bevor sie behauptet, eine Sitzung sei autorisiert.
+  * **Protection Center und Navigation:** eine Überschrift, die die Statuspille wiederholte, ein Knopf, der Navigation versprach und nichts tat, ein dauerhaft rot leuchtender Not-Aus neben der Hauptaktion, ein Dollarzeichen als Navigationssymbol und ein doppeltes Schild.
+* **Übersetzungen:**
+  * **58 Schlüssel existierten nur auf Deutsch,** sodass Betreiber, die Englisch, Russisch oder Chinesisch lesen, rohe Schlüsselbezeichner über das Durchsetzungspanel, den Evidenzhinweis und die Neustart-Oberfläche sahen. Die Abdeckung ist jetzt eine Eigenschaft je Katalog, und `t()`-Aufrufstellen werden ebenso geprüft wie Dokumentattribute.
+
+### v4.2.0 — Security Fabric Control Plane
 
 * **Vollständige Behebung des Sicherheits-Audits & Härtung:**
   * **Kritisch:** Beseitigung der Symlink-Traversal-Schwachstelle im Canary-Deployment (willkürliches Dateischreiben / Root-Privilege-Escalation) via komponentenweiser `openat(2)`-Auflösung mit `O_NOFOLLOW|O_DIRECTORY` und `ELOOP`-Erzwingung.
@@ -803,6 +849,6 @@ sudo python3 scripts/update-geoip-db.py /var/lib/vgt/gedefense/geoip.csv
 
 [![VGT](https://img.shields.io/badge/VisionGaia-Technology-cyan?style=for-the-badge)](https://visiongaiatechnology.de)
 
-*VGT GeDefense 4.2.0 — Universelles Linux Sicherheitsgewebe // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidenz-Ledger // AES-256-GCM verschlüsselter Vault // Reversible Härtung // AstraeaOS-nativer Adapter // Getrennte Vertrauensdomänen // Keine Cloud-Control-Plane // AGPL-3.0-only // Linux x86_64*
+*VGT GeDefense 4.2.1 — Universelles Linux Sicherheitsgewebe // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidenz-Ledger // AES-256-GCM verschlüsselter Vault // Reversible Härtung // AstraeaOS-nativer Adapter // Getrennte Vertrauensdomänen // Keine Cloud-Control-Plane // AGPL-3.0-only // Linux x86_64*
 
 </div>

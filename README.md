@@ -8,9 +8,9 @@
 ### Linux Security Fabric
 
 [![License](https://img.shields.io/badge/License-AGPL--3.0--only-blue?style=for-the-badge)](https://www.gnu.org/licenses/agpl-3.0)
-[![Version](https://img.shields.io/badge/Version-4.2.0-orange?style=for-the-badge)](#)
-[![Status](https://img.shields.io/badge/Status-Release_v4.2.0-yellow?style=for-the-badge)](#)
-[![Installer](https://img.shields.io/badge/Installer-4.2.0_Universal_Linux-green?style=for-the-badge)](#-quick-start)
+[![Version](https://img.shields.io/badge/Version-4.2.1-orange?style=for-the-badge)](#)
+[![Status](https://img.shields.io/badge/Status-Release_v4.2.1-yellow?style=for-the-badge)](#)
+[![Installer](https://img.shields.io/badge/Installer-4.2.1_Universal_Linux-green?style=for-the-badge)](#-quick-start)
 [![Platform](https://img.shields.io/badge/Platform-Linux_x86__64-lightgrey?style=for-the-badge&logo=linux)](#)
 [![Data Plane](https://img.shields.io/badge/Data_Plane-Rust_eBPF%2FXDP-red?style=for-the-badge&logo=rust)](#-architecture)
 [![Control Plane](https://img.shields.io/badge/Control_Plane-Go-00ADD8?style=for-the-badge&logo=go)](#-architecture)
@@ -33,12 +33,12 @@
 
 ---
 
-## 🚨 CRITICAL SECURITY ADVISORY & WARNING — RELEASE v4.2.0
+## 🚨 CRITICAL SECURITY ADVISORY & WARNING — RELEASE v4.2.1
 
 > [!CAUTION]
 > **URGENT SECURITY NOTICE FOR ALL OPERATORS & SYSTEM ADMINISTRATORS (UPGRADE STRONGLY RECOMMENDED):**
 > 
-> In GeDefense version 4.2.0, as part of an exhaustive security audit and verification cycle, **multiple critical vulnerabilities and integrity flaws present in previous versions (4.0.x / 4.1.0)** were identified and completely remediated. An immediate upgrade to v4.2.0 is strongly advised for all production installations:
+> In GeDefense version 4.2.0, as part of an exhaustive security audit and verification cycle, **multiple critical vulnerabilities and integrity flaws present in previous versions (4.0.x / 4.1.0)** were identified and completely remediated. An immediate upgrade to v4.2.1 is strongly advised for all production installations:
 > 
 > 1. **Critical Privilege Escalation via Symlink Traversal (Canary Deployment):**
 >    - *Vulnerability:* The previous canary deployment followed symbolic links at the decoy or staging path. An attacker-controlled symlink in parent directories could redirect file writes with root privileges to arbitrary filesystem locations (`cron`, `authorized_keys`, `ld.so.preload`) → Arbitrary file write leading to root privilege escalation.
@@ -68,9 +68,9 @@
 
 ---
 
-## ⚠️ STABILITY & ASSURANCE — RELEASE v4.2.0 · UNIVERSAL LINUX PLATFORM
+## ⚠️ STABILITY & ASSURANCE — RELEASE v4.2.1 · UNIVERSAL LINUX PLATFORM
 
-VGT GeDefense 4.2.0 is the flagship Linux security fabric — the hardened kernel-speed defense chain combined with the new **Security Fabric Control Plane**, universal Linux integration, hardened release pipeline, and concrete kernel/NIC qualification gates. It is engineered for sovereign host and network protection.
+VGT GeDefense 4.2.1 is the flagship Linux security fabric — the hardened kernel-speed defense chain combined with the new **Security Fabric Control Plane**, universal Linux integration, hardened release pipeline, and concrete kernel/NIC qualification gates. It is engineered for sovereign host and network protection.
 
 **Production clearance is deliberately a property of the concretely audited target host — not merely the source code.**
 
@@ -561,14 +561,14 @@ If the Gaia Cells runtime is **not present**, the adapter reports `runtime_not_i
 
 ```bash
 # Download installer
-wget https://github.com/visiongaiatechnology/gedefense/releases/download/v4.2.0/GeDefense-4.2.0-OneClick.run
+wget https://github.com/visiongaiatechnology/gedefense/releases/download/v4.2.1/GeDefense-4.2.1-OneClick.run
 
 # Verify SHA-256
-sha256sum --check GeDefense-4.2.0-OneClick.run.sha256
+sha256sum --check GeDefense-4.2.1-OneClick.run.sha256
 
 # Install (root required)
-chmod 700 GeDefense-4.2.0-OneClick.run
-sudo ./GeDefense-4.2.0-OneClick.run
+chmod 700 GeDefense-4.2.1-OneClick.run
+sudo ./GeDefense-4.2.1-OneClick.run
 ```
 
 > The installer and checksum are published only after all GitHub CI and concrete
@@ -604,7 +604,7 @@ The firewall rule for the HTTPS gateway port (TCP 9843) can be configured via UF
 
 ---
 
-## 🚧 Known Limitations (4.2.0)
+## 🚧 Known Limitations (4.2.1)
 
 - No Swarm / Mesh support
 - No QUIC offloading
@@ -615,12 +615,58 @@ The firewall rule for the HTTPS gateway port (TCP 9843) can be configured via UF
 - No complete Measured Boot attestation
 - Gaia Cells Lifecycle Daemon external (AstraeaOS runtime)
 - Isolated Deception Service deferred
+- Replacing a protected release binary degrades XDR and disables the active response until the control plane restarts; the platform cannot yet tell an authorised deployment from tampering
 
 ---
 
 ## 📋 Changelog
 
-### v4.2.0 — Security Fabric Control Plane *(Current)*
+### v4.2.1 — Stability, Evidence and Interface Fixes *(Current)*
+
+A fix release. It introduces no new subsystem; it makes the ones already present tell the truth about themselves and stay out of the operator's way.
+
+* **Evidence ledger:**
+  * **Capacity is no longer treated as corruption.** Reaching the retention budget set the ledger's integrity error, which quarantined it permanently and reported XDR as degraded with "mandatory evidence ledger unavailable". A full ledger is not a damaged one.
+  * **One budget, read the same way from every side.** Construction is permissive and runtime strict, so a ledger that legitimately grew under a raised budget is accepted after a restart instead of the service refusing to start.
+  * **The budget the operator raises is the budget the ledger enforces.** The constructor seeded its policy with the compiled-in 64 MiB default, which the append path prefers, so a budget raised to 256 MiB was discarded at every start: the ledger stopped at 64 MiB and then refused every append while still reporting itself healthy. The platform had silently stopped recording evidence. Both budgets now start out equal, and a budget lowered afterwards still takes effect.
+  * **The condition names itself.** "Retention budget reached" and "integrity unavailable" are separate messages with separate figures and separate remedies.
+* **Release gate:**
+  * **A fail-safe keeps its reason.** The cause was overwritten by the live blocker list on the next refresh, so a platform still sitting in Observe eventually read "release gates satisfied".
+  * **A fail-safe is forensic evidence.** A fall-back is the most consequential thing the platform does on its own, and it left no incident behind.
+* **L7 Application Defense:**
+  * **A passing self-test clears a stale degradation,** bounded to fifteen minutes so a stale pass cannot mask a path that has since broken.
+  * **The generated nginx configuration could never be applied.** It emitted a server block with `listen ... ssl` and a comment where the certificate directives belong - rejected outright by nginx - and named a host that already had a server block. It is now two insertable pieces, validated against the real nginx parser in the test suite.
+  * **The enforcement path is reported.** `INGRESS_HEALTH` states which hook the kernel attached - native XDP, generic XDP or TC ingress - instead of describing all three as a verified kernel ingress producer, though they behave very differently under load.
+  * **The operator can see whether HTTP traffic exists while L7 is not in its path.** Web-surface discovery reports whether a web server runs on this host and on which ports - read-only, bounded, and never presented as protection, because detection is not protection.
+  * **Guided web-server integration generates configuration text and nothing else.** It never writes to a web server's configuration, never reloads a service and never claims that a generated snippet is in effect; the operator applies it, and the self-test then observes whether it worked. Every interpolated value is validated against a closed grammar first, because the output is a configuration file for a privileged daemon.
+  * **Inspected requests are both counters, not one of them.** The panel displayed the request counter alone, so a host whose inline listener had inspected 174 requests reported "0 geprüfte Requests" directly beneath its own "TRAFFIC ACTIVE" badge - the panel contradicting itself and hiding the evidence that its verdict was right. The figure is now the sum the verdict is computed from.
+* **Kinetic Defense:**
+  * **Enforcement and effect are visible.** The panel states the hook in use, the kernel channel's health and what the engine detected and did. In Observe mode it says so: a column of zeros means the response stage was never entered, not that nothing was seen.
+  * **The overview carries the figures,** grouped by the question each one answers.
+  * **The coverage summary explains the sensor it names.** The sentence beneath it was bound to one sensor name, so a summary reading "Mandatory sensors degraded: l7_application" was explained by the healthy ingress producer's sentence - a degraded headline over a positive explanation, on a page that contradicted the Application Defense page in the same session while both read the same snapshot. The reason now belongs to the sensor that made the platform non-nominal, using the server's precedence, and the fallback is a translated key instead of a German literal.
+  * **The summary is deterministic.** It states that it determines the status deterministically, but it joined the sensor names in map iteration order, so the same state produced a differently ordered sentence on every refresh.
+* **Hardening and integrity:**
+  * **A tamper finding on GeDefense's own components no longer arms the response.** A digest mismatch on one of the product's own binaries cannot be told apart from an approved update, and the response engine contained on it: over a hundred recorded incidents show the product freezing its own access gateway, a denial of service any attacker can trigger by touching a single file. The finding survives at full severity - same rule, same score, same category - and only the response is withheld; third-party binaries keep theirs. The product's own components are recognised through one shared root that follows `VGT_RELEASE_ROOT`.
+  * **Ten hardening switches were inert** on an already-hardened host, because a switch was disabled whenever its control was already PROTECTED; the preflight verifies a selection, it does not apply one.
+  * **The posture cannot overstate itself.** A host where two of twenty-two controls were readable and both passed scored 100 and read HARDENED. The level is now capped when the evidence cannot support it, and coverage is stated beside the score.
+  * **A changed protected object is reported as the object, once.** The protected set reaches the same release binary through `/current/bin/...` and `/releases/<version>/bin/...`, so one replacement produced two critical incidents - and an unremediated change was announced again every dedupe interval until the service restarted, so one fact buried the ledger it was recorded in. Reporting is now keyed by the resolved object and its observed state, and the reason names every object that changed.
+  * **The integrity panel names the subsystem that is actually degraded,** instead of showing `INTEGRITY_FAILURE` while the incident ledger it points at is healthy and has nothing to do with it.
+* **Threat Intelligence:**
+  * **FireHOL Level 1 is enforced, not correlated.** A recorded schema migration raises the stored value on existing nodes, matched by feed ID and never lowered, because an operator's setting is being changed on their behalf.
+* **Control plane lifecycle:**
+  * **An internal restart,** reachable from the interface, activates the RESTART-class values that were persisted but never applied. It refuses when no supervisor would bring the process back, because exiting there would stop the product and leave it stopped.
+* **Access gateway and interface:**
+  * **The sign-in form no longer invalidates itself.** Every page view minted a fresh CSRF token and overwrote the cookie, so the cookie was a single shared slot rather than a property of the form on screen. The page carries its own language links, browsers prefetch and prerender them, and that second request was enough to leave the visible form holding a token the cookie no longer matched - which is why an operator who did nothing wrong could not sign in however often they reloaded. A second tab, a back/forward restore and a third-party `<img>` pointing at the endpoint did the same. The token a browser is given is now reused until it expires; the protection is unchanged, being 24 random bytes in an HttpOnly, Secure, SameSite=Strict, host-only cookie that no other site can read or set.
+  * **An expired sign-in form no longer ends in a dead end.** It was a bare `403 request rejected` that named neither the cause nor a way out. The rejection itself is unchanged - without a matching token nothing is authenticated and no password is read - but a stale form is now returned to a fresh one carrying an explanation in all four languages, and the lifetime is one hour.
+  * **The refusal reason is shown once.** It travelled in the query string, which made it a property of the address instead of the event: reloading, or returning to the page from history, repeated "this sign-in page had expired" over a form that had just been issued and was valid. It now rides a one-shot cookie that the page consumes.
+  * **Gateway rejections are diagnosable.** The log records the reason, the fingerprint of the token that was expected and of the one that arrived, and which cookies were present - never a token value.
+  * **The sign-in page was recomposed** around the facts the host can actually attest before any credential exists, with the product mark embedded rather than drawn in CSS.
+  * **The dashboard authentication surface** states what the host attests and verifies a key against the control plane before claiming a session was authorised.
+  * **Protection Center and navigation:** a headline that repeated the status pill verbatim, a button that promised navigation and did nothing, a permanently solid-red emergency stop beside the primary action, a dollar-sign navigation icon and a duplicated shield.
+* **Translations:**
+  * **58 keys existed only in German,** so operators reading English, Russian or Chinese saw raw key identifiers across the enforcement panel, the evidence notice and the restart surface. Coverage is now a per-catalogue property, and `t()` call sites are checked as well as document attributes.
+
+### v4.2.0 — Security Fabric Control Plane
 
 * **Comprehensive Security Audit Remediation & Hardening:**
   * **Critical:** Remediated symlink-traversal vulnerability in canary deployment (arbitrary file write / root privilege escalation) via component-by-component `openat(2)` resolution with `O_NOFOLLOW|O_DIRECTORY` and deterministic `ELOOP` enforcement.
@@ -814,6 +860,6 @@ sudo python3 scripts/update-geoip-db.py /var/lib/vgt/gedefense/geoip.csv
 
 [![VGT](https://img.shields.io/badge/VisionGaia-Technology-cyan?style=for-the-badge)](https://visiongaiatechnology.de)
 
-*VGT GeDefense 4.2.0 — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
+*VGT GeDefense 4.2.1 — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
 
 </div>

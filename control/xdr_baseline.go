@@ -38,6 +38,46 @@ func resolveBaselinePath(path string) string {
 	return clean
 }
 
+// productArtifactRoot returns the directory that holds this installation's binaries.
+//
+// It is the same root the start-up preflight verifies, so the two cannot disagree about
+// what this product is made of.
+func productArtifactRoot() string {
+	if root := strings.TrimSpace(os.Getenv("VGT_RELEASE_ROOT")); root != "" {
+		return root
+	}
+	return "/opt/vgt/gedefense/current"
+}
+
+// productArtifactPaths returns every executable this installation ships.
+func productArtifactPaths() []string {
+	root := productArtifactRoot()
+	return []string{
+		filepath.Join(root, "bin", "gedefense-control"),
+		filepath.Join(root, "bin", "gedefense-access"),
+		filepath.Join(root, "libexec", "gedefense-core"),
+		filepath.Join(root, "lib", "gedefense", "gedefense-ebpf"),
+	}
+}
+
+// isProductArtifact reports whether an executable is one of this installation's own.
+//
+// Both sides are resolved, because the baseline records the path the operator approved
+// while a running process reports the path it was started from, and the release layout
+// makes those differ by a symlink.
+func isProductArtifact(exe string) bool {
+	target := resolveBaselinePath(exe)
+	if target == "" {
+		return false
+	}
+	for _, candidate := range productArtifactPaths() {
+		if resolveBaselinePath(candidate) == target {
+			return true
+		}
+	}
+	return false
+}
+
 type compiledBaseline struct {
 	profile BaselineProfile
 	parents map[string]struct{}
@@ -110,7 +150,26 @@ func (b *XDRBaseline) Evaluate(p ProcessSample, conns []NetConnection) []RuleMat
 	if c.profile.SHA256 != "" {
 		h, err := hashFile(exe)
 		if err != nil || !strings.EqualFold(h, c.profile.SHA256) {
-			out = append(out, RuleMatch{ID: "BASELINE.HASH_MISMATCH", Category: "integrity", Score: 120, Summary: "Executable digest differs from the approved baseline", KillEligible: true})
+			// A digest mismatch on one of GeDefense's own components is reported but
+			// never acted on.
+			//
+			// The check cannot tell an operator's approved update from an attacker's
+			// replacement: both change the bytes. The response engine could, and did -
+			// over a hundred incidents record this product freezing its own gateway. That
+			// is worse than an outage, because it is one an attacker can cause: writing
+			// to a single file under /opt/vgt/gedefense/ makes the platform disable
+			// itself, and the operator loses the console that would have told them why.
+			//
+			// AlertOnly keeps the detection at full severity and removes the finding from
+			// the response score, so the incident is recorded and the decision is the
+			// operator's. Anything else in the baseline - a customer's own binaries - is
+			// unaffected and still carries the full response.
+			out = append(out, RuleMatch{
+				ID: "BASELINE.HASH_MISMATCH", Category: "integrity", Score: 120,
+				Summary:      "Executable digest differs from the approved baseline",
+				KillEligible: !isProductArtifact(exe),
+				AlertOnly:    isProductArtifact(exe),
+			})
 		}
 	}
 	if len(c.profile.AllowedUIDs) > 0 {

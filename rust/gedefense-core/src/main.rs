@@ -509,10 +509,23 @@ impl KernelCore {
             .ok_or("cgroup egress program missing")?
             .try_into()?;
         egress_program.load()?;
+        // AllowOverride, not AllowMultiple.
+        //
+        // The two differ in whether an attach replaces or appends, and nothing here ever
+        // detaches - the core has no shutdown path, and a cgroup program outlives the
+        // process that attached it. With AllowMultiple every restart appended another
+        // gedefense_egress to the root cgroup's egress hook and left it there, holding
+        // its maps: eleven stale programs and roughly 110 MB of kernel memory had
+        // accumulated on a host that had been restarted a handful of times.
+        //
+        // AllowOverride replaces the previous attachment instead, so a restart leaves one
+        // program rather than one more. It is preferred over Single because it still
+        // permits a child cgroup to install its own program over this one, which is what
+        // a container runtime expects to be able to do.
         egress_program.attach(
             cgroup,
             CgroupSkbAttachType::Egress,
-            CgroupAttachMode::AllowMultiple,
+            CgroupAttachMode::AllowOverride,
         )?;
         let cell_lsm_attached = match attach_cell_socket_lsm(&mut ebpf) {
             Ok(()) => true,
@@ -1038,9 +1051,36 @@ impl ReplayGuard {
             self.order.pop_front();
             self.set.remove(&old_nonce);
         }
-        if self.set.contains(nonce) || self.order.len() >= REPLAY_CACHE_CAPACITY {
+
+        // A nonce already in the window is a replay. Nothing else is.
+        if self.set.contains(nonce) {
             return false;
         }
+
+        // At capacity, evict the oldest entry instead of refusing the request.
+        //
+        // The guard exists to reject duplicates, and a full cache is not evidence of one.
+        // Treating it as though it were turned a burst of legitimate commands into a
+        // lockout: the control plane applies its blocklist one entry at a time, so a list
+        // larger than the capacity could never be applied at all. Every command past the
+        // 4096th was refused as a replay, including the health checks that decide whether
+        // the core is considered connected - so the platform reported its own kernel
+        // channel offline while the kernel was answering it perfectly well, and the
+        // entries it had already added stayed in the map.
+        //
+        // Eviction is safe because the nonce cache is the second line of defence, not the
+        // first: every request also carries a timestamp that is rejected outright when it
+        // falls outside CLOCK_WINDOW_SECS, so an evicted nonce cannot be replayed later
+        // than the window it would have been held for anyway.
+        while self.order.len() >= REPLAY_CACHE_CAPACITY {
+            match self.order.pop_front() {
+                Some((old_nonce, _)) => {
+                    self.set.remove(&old_nonce);
+                }
+                None => break,
+            }
+        }
+
         self.set.insert(nonce.to_owned());
         self.order.push_back((nonce.to_owned(), now));
         true
@@ -1516,6 +1556,58 @@ mod tests {
             "0123456789abcdef0123456789abcdef",
             100 + CLOCK_WINDOW_SECS + 1
         ));
+    }
+
+    #[test]
+    fn replay_guard_keeps_accepting_new_requests_when_full() {
+        // A burst larger than the cache must not lock the channel out.
+        //
+        // This is the shape the control plane produces whenever it applies a blocklist
+        // larger than REPLAY_CACHE_CAPACITY: one command per entry, all inside one clock
+        // window. The guard used to refuse every command past the 4096th as a replay -
+        // including the health checks that decide whether the core is reachable - so the
+        // platform reported its kernel channel offline while the kernel was answering,
+        // and the list could never be applied in full.
+        let mut guard = ReplayGuard::new();
+
+        for i in 0..REPLAY_CACHE_CAPACITY {
+            let nonce = format!("{i:032}");
+            assert!(
+                guard.accept(&nonce, 100),
+                "request {i} was refused before the cache was full"
+            );
+        }
+
+        // One past the capacity. A nonce never seen before is not a replay.
+        let fresh = "ffffffffffffffffffffffffffffffff";
+        assert!(
+            guard.accept(fresh, 100),
+            "a new request was refused because the cache was full"
+        );
+
+        // The duplicate check still holds at capacity, which is the property the guard
+        // exists for.
+        assert!(!guard.accept(fresh, 101));
+
+        // And the cache stays bounded while doing so.
+        assert!(guard.set.len() <= REPLAY_CACHE_CAPACITY);
+        assert!(guard.order.len() <= REPLAY_CACHE_CAPACITY);
+    }
+
+    #[test]
+    fn replay_guard_evicts_in_arrival_order() {
+        // Eviction takes the oldest entry, so the window still covers the most recent
+        // commands - the ones a replay would have to imitate to be useful.
+        let mut guard = ReplayGuard::new();
+        for i in 0..REPLAY_CACHE_CAPACITY {
+            assert!(guard.accept(&format!("{i:032}"), 100));
+        }
+        assert!(guard.accept("ffffffffffffffffffffffffffffffff", 100));
+
+        // The first nonce is the one that was evicted, so it is accepted again.
+        assert!(guard.accept(&format!("{:032}", 0), 100));
+        // The most recently accepted one is still held, so its replay is refused.
+        assert!(!guard.accept("ffffffffffffffffffffffffffffffff", 100));
     }
 
     #[test]

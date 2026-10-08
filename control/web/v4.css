@@ -2242,3 +2242,39 @@ dialog::backdrop { background: rgba(1, 6, 13, .77); backdrop-filter: blur(12px) 
 @media (max-width: 720px) {
   .kinetic-enforcement-grid { grid-template-columns: 1fr; gap: 18px; }
 }
+/* The response hint states why a column of zeros is a column of zeros. Observe mode is
+   the case that needs it: the counters are genuinely zero because the stage is never
+   entered, not because nothing was detected, and without this the panel reads as if the
+   engine had chosen to do nothing. */
+.kinetic-enforcement-hint:empty { display: none; }
+.kinetic-enforcement-hint {
+  margin: 0 0 12px;
+  padding: 9px 11px;
+  border-radius: 8px;
+  font-size: .68rem;
+  line-height: 1.55;
+}
+.kinetic-enforcement-hint[data-state="observe"] {
+  border: 1px solid rgba(244, 199, 106, .3);
+  background: rgba(244, 199, 106, .07);
+  color: #e8cf9a;
+}
+.kinetic-enforcement-hint[data-state="active"] {
+  border: 1px solid rgba(55, 217, 174, .26);
+  background: rgba(55, 217, 174, .06);
+  color: #9fd9c8;
+}
+/* A full evidence ledger blocks every mutation, so the panel that reports it carries the
+   remedy rather than only the condition. Warning tone, not danger: nothing is damaged,
+   a retention bound was reached and the operator owns the bound. */
+.evidence-full-notice {
+  margin: 14px 0 0;
+  padding: 13px 15px;
+  border: 1px solid rgba(244, 199, 106, .32);
+  border-radius: 10px;
+  background: rgba(244, 199, 106, .07);
+}
+.evidence-full-notice[hidden] { display: none; }
+.evidence-full-notice strong { display: block; color: #f4c76a; font-size: .78rem; letter-spacing: .01em; }
+.evidence-full-notice p { margin: 7px 0 0; color: #cbb894; font-size: .72rem; line-height: 1.6; }
+.evidence-full-notice .evidence-full-action { color: #a8bccb; }

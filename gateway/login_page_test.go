@@ -130,15 +130,23 @@ func TestLoginCopyIsCompleteInEveryLanguage(t *testing.T) {
 // page can be opened in a browser without reimplementing the handler.
 func renderLoginForTest(t *testing.T, lang string, secure, failed bool) string {
 	t.Helper()
+	return renderLoginWithState(t, lang, secure, failed, false)
+}
+
+// renderLoginWithState renders the page with every state the handler can produce, so the
+// two failure messages can be told apart from each other.
+func renderLoginWithState(t *testing.T, lang string, secure, failed, stale bool) string {
+	t.Helper()
 	data := struct {
 		CSRF, Nonce, Host, Lang, ProductVersion string
 		Copy                                    loginCopy
 		Failed                                  bool
+		Stale                                   bool
 		Secure                                  bool
 	}{
 		CSRF: "0123456789abcdef0123456789abcdef", Nonce: "nonce-value-for-test",
-		Host: "203.0.113.10:9843", Lang: lang, ProductVersion: "4.2.0",
-		Copy: copyForLanguage(lang), Failed: failed, Secure: secure,
+		Host: "203.0.113.10:9843", Lang: lang, ProductVersion: "4.2.1",
+		Copy: copyForLanguage(lang), Failed: failed, Stale: stale, Secure: secure,
 	}
 	var buffer bytes.Buffer
 	if err := loginTemplate.Execute(&buffer, data); err != nil {

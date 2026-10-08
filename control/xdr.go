@@ -45,6 +45,7 @@ type XDREngine struct {
 	seeded          bool
 	seen            map[string]struct{}
 	dedupe          map[string]time.Time
+	tamperSeen      map[string]string
 	protected       map[string]protectedObject
 	cellPolicyEpoch string
 	cellPolicies    map[uint64]uint8
@@ -109,13 +110,18 @@ func NewXDREngine(cfg Config, state *State, core *CoreClient, feeds *FeedManager
 	e := &XDREngine{
 		cfg: cfg, state: state, core: core, feeds: feeds, policy: policy, settings: settings, rules: NewXDRRuleEngine(), baseline: baseline,
 		behavior: behavior, logger: logger, selfPID: os.Getpid(), seen: map[string]struct{}{}, dedupe: map[string]time.Time{},
-		protected: map[string]protectedObject{}, cellPolicies: map[uint64]uint8{},
+		tamperSeen: map[string]string{},
+		protected:  map[string]protectedObject{}, cellPolicies: map[uint64]uint8{},
 		degradeCauses: map[string]string{}, recoveryGate: make(chan struct{}, 1),
 		highJobs: make(chan evaluationJob, highCap), normalJobs: make(chan evaluationJob, normalCap),
 	}
 	e.recoveryGate <- struct{}{}
 	if err := logger.Healthy(); err != nil {
 		e.markDegradedCause("incident_log", "incident log integrity failure: "+err.Error())
+	} else if err := e.restoreIncidentHistory(); err != nil {
+		// The history could not be restored. Saying so is better than showing an empty
+		// forensic view that looks like a host nothing has ever happened to.
+		e.markDegradedCause("incident_log", "incident history could not be restored: "+err.Error())
 	}
 	if summary := behavior.Summary(); cfg.XDR.BehaviorEnabled && !summary.IntegrityOK {
 		e.markDegradedCause("behavior", "behavior profile integrity failure: "+summary.Error)
@@ -980,6 +986,35 @@ func (e *XDREngine) evaluate(p ProcessSample, conns []NetConnection, source stri
 	e.state.AddEvent(Event{Severity: severity, Kind: "xdr." + incident.Decision, Source: source, Message: incident.Summary + " [" + strings.Join(incident.RuleIDs, ",") + "]", Target: fmt.Sprintf("pid:%d", p.PID)})
 }
 
+// restoreIncidentHistory seeds the in-memory incident list from the log on disk.
+//
+// The engine's list is what every forensic surface reads, and it is in memory - so it
+// began empty on every start while the log held every incident the host had ever seen. A
+// host whose control plane had been restarted reported zero incidents in the operator's
+// view next to a log file containing 220 of them. The record was never lost; there was
+// simply nothing that read it back.
+//
+// The most recent incidents are restored, bounded by the same cap the live list uses, so
+// the memory cost does not grow with the age of the installation.
+func (e *XDREngine) restoreIncidentHistory() error {
+	if e == nil || e.logger == nil || e.state == nil {
+		return nil
+	}
+	limit := e.state.incidentCap
+	if limit <= 0 {
+		return nil
+	}
+	incidents, err := e.logger.ReadRecent(limit)
+	if err != nil {
+		return err
+	}
+	if len(incidents) == 0 {
+		return nil
+	}
+	e.state.RestoreIncidents(incidents)
+	return nil
+}
+
 func (e *XDREngine) appendIncident(incident XDRIncident) {
 	if e.logger != nil {
 		if hash, err := e.logger.Append(incident); err == nil {
@@ -1275,22 +1310,71 @@ func (e *XDREngine) checkProtected() {
 		old := e.protected[p]
 		st, err := os.Stat(p)
 		if err != nil {
-			e.selfTamper(p, "protected object disappeared")
+			e.selfTamper(p, "missing", "protected object disappeared")
 			continue
 		}
 		digest, err := hashFile(p)
+		observed := digest
+		if err != nil {
+			observed = "unreadable"
+		}
+		// Content, permissions and size are what the baseline recorded, so all three are
+		// part of the state that is compared and announced.
+		observed = fmt.Sprintf("%s:%04o:%d", observed, st.Mode().Perm(), st.Size())
 		if err != nil || digest != old.digest || st.Mode().Perm() != old.mode || st.Size() != old.size {
-			e.selfTamper(p, "protected object changed after XDR initialization")
+			e.selfTamper(p, observed, "protected object changed after XDR initialization")
 		}
 	}
 }
 
-func (e *XDREngine) selfTamper(path, reason string) {
-	finger := "self:" + path + ":" + reason
-	if !e.claimFingerprint(finger) {
+// resolvedIdentity names the object behind a protected path rather than the route to it.
+//
+// The protected set reaches the access gateway twice: once through
+// /opt/vgt/gedefense/current/bin/gedefense-access, the stable name an operator knows, and
+// once through /opt/vgt/gedefense/releases/<version>/bin/gedefense-access, which is what the
+// running process resolves to. Both are the same file, so replacing it once was reported
+// twice - two critical incidents for one change. Reporting the object collapses the pair,
+// and it keeps working when /current is retargeted, because the resolved target is what the
+// baseline actually hashed.
+func resolvedIdentity(path string) string {
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		return resolved
+	}
+	return path
+}
+
+// claimTamper reports whether this observed state of this object still needs announcing.
+//
+// A tamper is a state, not an event that repeats: the object keeps not matching until
+// somebody changes it back or the service restarts against a fresh baseline. This used to
+// be announced through the time-based dedupe window, so an unremediated change produced a
+// fresh critical incident every dedupe interval - five minutes by default - and one fact
+// buried the rest of the ledger. Keying on the object and its observed state reports each
+// distinct change exactly once, and a further modification is still a new fact.
+func (e *XDREngine) claimTamper(identity, observed string) bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.tamperSeen == nil {
+		e.tamperSeen = map[string]string{}
+	}
+	if announced, ok := e.tamperSeen[identity]; ok && announced == observed {
+		return false
+	}
+	e.tamperSeen[identity] = observed
+	return true
+}
+
+// selfTamper records that a protected object no longer matches the state this process
+// started with. The object and the state it was found in decide whether this is news:
+// see claimTamper.
+func (e *XDREngine) selfTamper(path, observed, reason string) {
+	identity := resolvedIdentity(path)
+	if !e.claimTamper(identity, observed) {
 		return
 	}
-	e.markDegraded(reason + ": " + path)
+	// One cause per object, so the reported reason names everything that changed rather
+	// than only the last thing that did.
+	e.markDegradedCause("runtime:"+identity, reason+": "+path)
 	i := XDRIncident{ID: randomID(), Time: time.Now().UTC(), Severity: "critical", Score: 250, Executable: path,
 		RuleIDs: []string{"XDR.SELF_TAMPER"}, Categories: []string{"integrity"}, Summary: reason, Decision: "degrade", Action: "disable-response", Outcome: "active XDR response disabled until restart and verification"}
 	e.appendIncident(i)

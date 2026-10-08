@@ -536,6 +536,30 @@ func (s *L7Service) setError(err error) {
 	s.publishStatus(false)
 }
 
+// describeL7Coverage turns a coverage verdict into the sentence an operator reads. It is
+// a pure function of the verdict alone, so the publisher and the snapshot can both derive
+// the reason without one of them having to own it.
+func describeL7Coverage(coverage string) string {
+	switch coverage {
+	case "OFFLINE":
+		return "L7 service is not healthy"
+	case "INLINE_DEGRADED":
+		return "inline L7 listener is degraded"
+	case "NO_TRAFFIC_WARNING":
+		return "L7 service is alive but no HTTP or TLS inspection traffic has traversed it for more than five minutes"
+	case "TLS_NOT_IN_PATH":
+		return "HTTP inspection traffic is active, but TLS inspection is enabled and no ClientHello telemetry has reached the TLS sensor"
+	case "READY_NOT_ATTACHED":
+		return "L7 engine is healthy; no inline listener or producer is attached, so the engine is available but not in the traffic path"
+	case "HEALTHY_AWAITING_TRAFFIC":
+		return "L7 service is healthy and awaiting its first verified inspection"
+	case "TRAFFIC_ACTIVE":
+		return "verified application-layer inspection traffic is active"
+	default:
+		return "L7 subsystem disabled"
+	}
+}
+
 func (s *L7Service) publishStatus(healthy bool) {
 	if s.state == nil {
 		return
@@ -604,24 +628,7 @@ func (s *L7Service) publishStatus(healthy bool) {
 		if status.ProducerAttached && status.LastInspection != nil {
 			status.LastProducerSeen = status.LastInspection
 		}
-		switch status.Coverage {
-		case "OFFLINE":
-			status.CoverageReason = "L7 service is not healthy"
-		case "INLINE_DEGRADED":
-			status.CoverageReason = "inline L7 listener is degraded"
-		case "NO_TRAFFIC_WARNING":
-			status.CoverageReason = "L7 service is alive but no HTTP or TLS inspection traffic has traversed it for more than five minutes"
-		case "TLS_NOT_IN_PATH":
-			status.CoverageReason = "HTTP inspection traffic is active, but TLS inspection is enabled and no ClientHello telemetry has reached the TLS sensor"
-		case "READY_NOT_ATTACHED":
-			status.CoverageReason = "L7 engine is healthy; no inline listener or producer is attached, so the engine is available but not in the traffic path"
-		case "HEALTHY_AWAITING_TRAFFIC":
-			status.CoverageReason = "L7 service is healthy and awaiting its first verified inspection"
-		case "TRAFFIC_ACTIVE":
-			status.CoverageReason = "verified application-layer inspection traffic is active"
-		default:
-			status.CoverageReason = "L7 subsystem disabled"
-		}
+		status.CoverageReason = describeL7Coverage(status.Coverage)
 		// The web surface is discovered here rather than at startup, so a server that
 		// is installed after the service started is still seen on the next pass.
 		status.WebSurface = discoverWebSurface()
@@ -639,47 +646,90 @@ func (s *L7Service) publishStatus(healthy bool) {
 	// engine is enabled. Treating `enabled` as `required` meant an operator who turned
 	// the engine on before wiring a producer into it got a permanently degraded
 	// platform for a deployment that was simply not finished yet.
-	attached := s.cfg.InlineEnabled
-	{
-		snap := s.state.Snapshot().L7
-		if snap.RequestsTotal > 0 || snap.InlineRequestsTotal > 0 || snap.TLSHandshakesTotal > 0 {
-			attached = true
-		}
-	}
-	coverageRequired := l7CoverageRequired(s.cfg.CoverageRequired, s.cfg.Enabled, attached)
+	s.state.SetSensorCoverage(deriveL7SensorCoverage(s.state.Snapshot().L7, healthy))
+}
 
+// deriveL7SensorCoverage turns the L7 status into the Kinetic sensor entry.
+//
+// It is a pure function of the status, and it is called from two places: here, when the
+// inspection service publishes, and from State.Snapshot, when the coverage is read.
+//
+// The second caller is the point. This entry was written only by the publisher, which runs
+// on the inspection service's own events. The inline edge changes the L7 verdict without
+// ever calling it - the edge has no access to this service - so the sensor entry recorded
+// the verdict from the moment it was last written and kept it. A host was found serving
+// coverage "HEALTHY_AWAITING_TRAFFIC" from the L7 status while the Kinetic summary beside
+// it still read "inline L7 listener is degraded", and Kinetic reported the whole platform
+// degraded on the strength of a sentence that had stopped being true.
+// inlineDegradedReason names the listener's own report beside the verdict that it is
+// degraded. Both are facts, and an operator needs both to decide what to do about it.
+func inlineDegradedReason(status L7Status) string {
+	if detail := strings.TrimSpace(status.InlineLastError); detail != "" {
+		return status.CoverageReason + ": " + detail
+	}
+	return status.CoverageReason
+}
+
+func deriveL7SensorCoverage(status L7Status, healthy bool) SensorCoverage {
 	coverageStatus := CoverageOnline
 	coverageReason := "verified L7 inspection traffic active"
 	selfTest := "pass"
-	if !s.cfg.Enabled {
+	if !status.Enabled {
 		coverageStatus, coverageReason, selfTest = CoverageDisabled, "L7 disabled by configuration", "disabled"
 	} else if !healthy {
 		coverageStatus, coverageReason, selfTest = CoverageOffline, "L7 service is offline", "failed"
 	} else {
-		snap := s.state.Snapshot().L7
 		switch {
-		case snap.Coverage == "INLINE_DEGRADED":
-			coverageStatus, coverageReason, selfTest = CoverageDegraded, snap.CoverageReason, "failed"
-		case snap.Coverage == "READY_NOT_ATTACHED" && !coverageRequired:
+		case status.Coverage == "INLINE_DEGRADED":
+			// The verdict names the condition; the service also records what it reported.
+			//
+			// Keeping only the verdict left an operator with a degradation, no cause and no
+			// trace: the error text is held for the lifetime of the process and the
+			// transition is not logged, so "inline L7 listener is degraded" could describe
+			// a transient accept error, a socket that would not bind, or a listener that
+			// had genuinely stopped. Appending it changes no verdict and no gate - it stops
+			// the panel from withholding the one fact that explains the sentence.
+			coverageStatus, coverageReason, selfTest = CoverageDegraded, inlineDegradedReason(status), "failed"
+		case status.Coverage == "READY_NOT_ATTACHED" && !status.CoverageRequired:
 			// The engine is healthy and nothing is attached. Reporting this as
 			// not_applicable is what allows the sidebar and Kinetic to agree: the
 			// platform is nominal, and the L7 layer is available rather than failing.
 			coverageStatus = CoverageNotApplicable
 			coverageReason = "L7 engine is healthy; no traffic path is attached and coverage is not required"
 			selfTest = "ready-not-attached"
-		case snap.Coverage == "NO_TRAFFIC_WARNING" || snap.Coverage == "HEALTHY_AWAITING_TRAFFIC" || snap.Coverage == "TLS_NOT_IN_PATH" || snap.Coverage == "READY_NOT_ATTACHED":
+		case status.Coverage == "HEALTHY_AWAITING_TRAFFIC" || status.Coverage == "NO_TRAFFIC_WARNING" || status.Coverage == "TLS_NOT_IN_PATH" || status.Coverage == "READY_NOT_ATTACHED":
 			// Coverage is required, so silence from an attached path is a real fault.
-			coverageStatus, coverageReason, selfTest = CoverageDegraded, snap.CoverageReason, "awaiting-traffic"
+			//
+			// "Awaiting traffic" is included deliberately, and it does not mean the engine
+			// is unwell. An operator who declared L7 mandatory has declared that no
+			// verified request through the path is a gap, and the release gate refuses the
+			// promotion from Canary to Enforce on exactly that condition (release_test.go,
+			// which proves the fixture derives a mandatory gap so that a later change to
+			// this branch cannot make it pass for the wrong reason).
+			//
+			// An attempt was made to treat a freshly attached path as nominal, on the
+			// grounds that the traffic counters live in memory and a restart resets them.
+			// It was reverted: it removed the gate. The contradiction an operator reported
+			// was never this verdict. It was the sentence printed beside it, which belonged
+			// to the ingress producer, and an inspected-request count that ignored the
+			// inline listener.
+			coverageStatus, coverageReason, selfTest = CoverageDegraded, status.CoverageReason, "awaiting-traffic"
 		}
 	}
-	now := time.Now().UTC()
-	cov := SensorCoverage{Name: "l7_application", Layer: LayerApplicationL7, Status: coverageStatus, Required: coverageRequired, SelfTest: selfTest, CoverageReason: coverageReason}
+	cov := SensorCoverage{Name: "l7_application", Layer: LayerApplicationL7, Status: coverageStatus, Required: status.CoverageRequired, SelfTest: selfTest, CoverageReason: coverageReason}
+	// The timestamps are taken from the status rather than from the clock, so that a
+	// derivation performed while reading reports the same observation as one performed
+	// while publishing. Reading a snapshot must not look like a fresh measurement.
 	if coverageStatus == CoverageOnline {
-		cov.LastOK = &now
+		observed := status.LastInspection
+		if observed == nil {
+			observed = status.LastRequestAt
+		}
+		cov.LastOK = observed
 	} else if coverageStatus == CoverageOffline || coverageStatus == CoverageDegraded {
 		cov.LastError = coverageReason
 	}
-	s.state.SetSensorCoverage(cov)
+	return cov
 }
 
 // l7CoverageRequired decides whether an idle L7 engine degrades the platform.

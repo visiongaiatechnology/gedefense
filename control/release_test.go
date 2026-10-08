@@ -236,11 +236,49 @@ func TestReleaseEnforceRejectsRequiredL7CoverageGap(t *testing.T) {
 	if _, err := release.Transition(ReleasePhaseCanary, "PROMOTE:CANARY", "start controlled canary phase"); err != nil {
 		t.Fatal(err)
 	}
-	state.SetSensorCoverage(SensorCoverage{
-		Name: "l7_application", Layer: LayerApplicationL7, Status: CoverageDegraded, Required: true,
-		SelfTest: "awaiting-traffic", CoverageReason: "TLS inspection enabled but no verified ClientHello producer is in path",
+
+	// The gap is established through the L7 status, because that is where the sensor
+	// verdict is derived from. Writing the sensor entry directly expressed the condition
+	// through a stored copy that the derivation now discards, so the test asserted an
+	// implementation detail instead of the state it meant to describe.
+	//
+	// This is the real condition the gate exists for: inspection is required, the engine
+	// is healthy, and not one request has been verified through the path.
+	state.UpdateL7Status(func(status *L7Status) {
+		status.Enabled = true
+		status.Healthy = true
+		status.InlineEnabled = true
+		status.InlineHealthy = true
+		status.CoverageRequired = true
 	})
+
+	// Prove the fixture really does derive a mandatory gap, so a later change to the
+	// derivation cannot turn this into a test that passes for the wrong reason.
+	sensor, ok := state.Snapshot().Kinetic.Coverage.Sensors["l7_application"]
+	if !ok {
+		t.Fatal("the L7 sensor entry is missing")
+	}
+	if sensor.Status != CoverageDegraded || !sensor.Required {
+		t.Fatalf("the fixture did not establish a required L7 gap: status=%s required=%v", sensor.Status, sensor.Required)
+	}
+
 	if _, err := release.Transition(ReleasePhaseEnforce, "PROMOTE:ENFORCE", "must reject incomplete application coverage"); err == nil {
 		t.Fatal("enforce promotion unexpectedly succeeded with required L7 coverage degraded")
+	}
+
+	// The counter-case: once a request has been verified through the path, the same
+	// promotion must be allowed. Without this the test would pass just as well if the
+	// gate blocked unconditionally.
+	verifiedAt := time.Now().UTC()
+	state.UpdateL7Status(func(status *L7Status) {
+		status.InlineRequestsTotal = 1
+		status.LastInspection = &verifiedAt
+	})
+	sensor, _ = state.Snapshot().Kinetic.Coverage.Sensors["l7_application"]
+	if sensor.Status != CoverageOnline {
+		t.Fatalf("a verified path still reports %s", sensor.Status)
+	}
+	if _, err := release.Transition(ReleasePhaseEnforce, "PROMOTE:ENFORCE", "coverage is now verified end to end"); err != nil {
+		t.Fatalf("enforce promotion was refused with verified coverage: %v", err)
 	}
 }
