@@ -1,5 +1,146 @@
 # Changelog
 
+## 4.2.2 - Fail-Closed Enforcement, Ledger Rotation and an Honest Panel
+
+A hardening release. It removes the paths on which the platform could lose its own
+protection, and it makes every surface state what the kernel is actually doing.
+
+### Fail-closed enforcement
+
+A production host ran unprotected for twenty hours after a single kernel sample it could not
+interpret. The sample was not hostile: the ingress producer keeps one counter set per source and
+labels the aggregate with the protocol of the packet that flushed it, so a source that sent UDP
+and TCP inside the same window produced a TCP record whose attempt counter exceeded its SYN
+counter. The decoder treated that as impossible, the drain aborted the whole batch instead of
+skipping the record, the control plane read the failed drain as a lost kernel hook and declared
+the mandatory ingress sensor degraded - and the release gate answered an unavailable sensor by
+reconciling the kernel policy to `observe`, which removed every block from the kernel. Nothing
+brought it back: the platform had no path from a degraded phase to an armed one, so only the next
+deployment cleared the state.
+
+The response to a loss of confidence is now a loss of authority, not a loss of protection:
+
+- **An automatic degradation never releases the verified kernel policy.** The gate confirms and
+  retains the enforcement it verified instead of reconciling to `observe`. Confirmation means
+  every block is re-applied, because the core's insert is idempotent and it offers no read-back;
+  the resulting state is reported as `verified-enforce` and an unconfirmed one as
+  `verified-empty`, and the two are never conflated.
+- **A restart keeps the enforcement the signed policy carries.** The startup path no longer
+  initialises to `observe`; it retains the verified enforcement recorded in the policy it just
+  authenticated.
+- **A promotion never lowers verified enforcement.** Only an explicit operator action
+  (`RETURN:OBSERVE`, emergency stop) reduces it, and a retention is reported as its own action
+  (`automatic_response_paused`) rather than as an enforcement change.
+- **A drain or parser failure is separated from the loss of enforcement capability.** Health
+  probes govern the sensor verdict and name "the enforcement path is unavailable"; drain failures
+  degrade only the observation and name themselves. A sensor that cannot deliver samples is not a
+  kernel that cannot block.
+- **The platform re-arms itself.** Once the gates pass and the calm holds for the soak, the phase
+  returns to `enforce` on its own, and the transition is logged together with the cause that had
+  held it.
+- **A verification that succeeds clears the cause it replaced.** Causes were one-way: a failure
+  recorded one and only a rotation or an operator recovery removed it, so a transient fault kept
+  XDR degraded - and the automatic response paused - until somebody restarted the control plane.
+- **A deployment by the operator is not an intrusion.** Replacing one of GeDefense's own
+  components was reported as self-tampering, degraded XDR and paused the automatic response, so
+  shipping a fix quietly switched part of the protection off. It is now a high-severity record
+  with no response attached; third-party objects keep the full reaction.
+- **Recovering the incident ledger no longer requires giving up the protection.** The recovery
+  demanded `observe` enforcement, which under retention is unreachable - the ledger could only be
+  repaired by first disarming the host whose protection it exists to preserve.
+- **The Rust decoder and drain tolerate an inconsistent aggregate.** A record whose TCP label
+  contradicts its counters is kept with a neutralised protocol and its counters untouched; a
+  record that still cannot be decoded is skipped and named instead of aborting the drain; only a
+  batch in which many samples are undecodable - the signature of a wrong wire format - is
+  reported as a fault.
+
+### Ledger retention
+
+- **Both forensic ledgers rotate instead of filling up.** Reaching the budget stopped the
+  recording, degraded XDR and paused the automatic response until an operator archived the
+  segment by hand, which happened twice on the production host in one day. At ninety percent the
+  sealed chain is archived with a manifest carrying sizes, digests, sequence, head hash and
+  scope, and a fresh chain continues. The rotation copies before it replaces: a crash before the
+  swap leaves a working ledger, a crash during it is completed at the next start from a rotation
+  marker, and a marker whose manifest does not match is refused rather than trusted. The archive
+  directory must belong to the service and be `0700`; a directory that is group- or
+  world-accessible is refused instead of written to.
+- **The evidence ledger verifies itself within bounds.** Startup verified the entire ledger -
+  around 260 MB at roughly 6.7 seconds per megabyte - and exceeded the unit's start timeout, so
+  the platform could not come up and neither could the gateway. Startup now checks the
+  authenticated checkpoint and a bounded tail; the history is covered incrementally in the
+  background against an authenticated watermark; the complete verification stays available to the
+  operator. An unauthenticated watermark is refused, because accepting one let a forged file skip
+  the entire history.
+- **An interrupted append is recovered.** A process killed mid-write left one record ahead of its
+  checkpoint and the service refused to start. The unsealed tail is now verified and sealed, or
+  dropped when it is a partial write; several records behind the checkpoint are still refused.
+
+Verification for this change set: `gofmt`, `go vet` and the full `go test ./...` suite green
+(99 s), six mutation proofs - releasing the retention to `observe`, degrading the sensor on a
+single drain failure, letting a promotion lower verified enforcement, trusting an unauthenticated
+watermark, removing the cause-clearing, treating a product artifact as an intrusion - each of
+which fails the corresponding contract test when reverted. Live verification on the production
+host: measured startup of 2-7 s, a rotation of the evidence ledger at 266.7 MB while the
+enforcement stayed armed, the disarmament path refusing to release the policy, and the automatic
+re-arm after the soak.
+
+### Interface truthfulness
+
+A fail-safe has two meanings since the change above - the kernel kept the enforcement it verified,
+or it did not - and the interface only knew one of them. An operator looking at a host that was
+still blocking read, on a single screen, `DEGRADED` in the header, `SYSTEM NORMAL` in the sidebar,
+"all current release gates are satisfied" in the preflight, `Observe` as the reached step and
+`Enforce` as **locked**.
+
+- **The sidebar reads the release phase.** It knew the XDR state, the policy and the sensor
+  coverage, but not the phase, so a platform with its automatic response paused announced SYSTEM
+  NOMINAL in green. A fail-safe with a retained enforcement now reports itself as restricted, and
+  the two modes are labelled with what they are.
+- **The backend's detail sentence follows the phase, not the reason.** It was keyed on the stored
+  fail-safe reason, and a transient cause that a later verification cleared left that field empty -
+  so exactly the state in question reported "release gates satisfied" beneath its own DEGRADED
+  badge. The sentence now names what the kernel is doing.
+- **A degraded platform no longer says that every gate is satisfied.** The preflight list and the
+  release blocker list only collected the promotion blockers of the current phase; the degraded
+  phase has none of its own, so an empty list was rendered as "all gates satisfied" in two places.
+  Both now state the fail-safe, its cause and whether the enforcement is retained.
+- **The ladder shows what is enforcing, not only what may start.** `Enforce` read LOCKED while the
+  kernel was enforcing it and `Observe` read as a passed milestone while the platform was above it
+  with the response paused. The retained step is now marked as retained, the paused step as paused,
+  and the promotion button says what it actually changes - with a retained enforcement, only the
+  XDR response moves, never the kernel policy.
+- **The version the interface claims is the version that runs.** The hero line and the footer said
+  4.1, the document title 4.2, and only the version readout came from the API; all four language
+  catalogues now name 4.2.1, and the values that belong to one source are on their way there.
+
+### Interface verification
+
+The state corrections above were themselves checked by rendering the dashboard headlessly and
+comparing every state-bearing sentence against the payload it came from: eleven payload/view
+combinations, eighty rules, plus a self-test proving the checker can fail. Three statements were
+still wrong, all of them introduced by the corrections:
+
+- **The release readiness field repeated "release gates satisfied" while the phase was degraded.**
+  It mapped that backend sentence to a catalogue key without consulting the phase, so a host still
+  reporting the old sentence - an older backend, or a rollout in progress - showed it beneath an
+  EINGESCHRÄNKT badge, directly beside the gate list that explained the retained enforcement. The
+  phase now decides, not the string.
+- **The fail-safe line claimed a retained enforcement during a healthy enforce phase.** It keyed
+  on the kernel state alone, and `verified-enforce` is also the normal state of a platform that is
+  enforcing as intended, so `fail_safe_verified` was never consulted. Only a fail-safe can report
+  a retention.
+- **The Enforce step read BEREIT during an active emergency stop**, because that branch did not
+  consult the emergency flag the same function already honoured for the button beside it.
+
+The check also exposed a vocabulary defect: the panel said "pausiert" in the release card and
+"ausgesetzt" in the preflight for the same condition. One state, one word.
+
+Verification: eleven fixtures, eighty rules, zero failures, and a regression mode that removes the
+guards again - eighteen of the eighty rules then go red, including SYSTEM NOMINAL in the badge and
+the "all gates satisfied" sentence. The tooling stays out of the repository: its fixtures carry
+real operational data (management allowlist, observed source addresses, process command lines).
+
 ## 4.2.1 - Stability, Evidence and Interface Fixes
 
 A fix release. It carries no new subsystem; it makes the ones already present tell the
@@ -197,142 +338,6 @@ truth about themselves and stay out of the operator's way.
   than per catalogue, so a key written four times into one catalogue passed. Coverage is
   now a per-catalogue property, and `t()` call sites are checked as well as document
   attributes.
-
-### Fail-closed enforcement
-
-A production host ran unprotected for twenty hours after a single kernel sample it could not
-interpret. The sample was not hostile: the ingress producer keeps one counter set per source and
-labels the aggregate with the protocol of the packet that flushed it, so a source that sent UDP
-and TCP inside the same window produced a TCP record whose attempt counter exceeded its SYN
-counter. The decoder treated that as impossible, the drain aborted the whole batch instead of
-skipping the record, the control plane read the failed drain as a lost kernel hook and declared
-the mandatory ingress sensor degraded - and the release gate answered an unavailable sensor by
-reconciling the kernel policy to `observe`, which removed every block from the kernel. Nothing
-brought it back: the platform had no path from a degraded phase to an armed one, so only the next
-deployment cleared the state.
-
-The response to a loss of confidence is now a loss of authority, not a loss of protection:
-
-- **An automatic degradation never releases the verified kernel policy.** The gate confirms and
-  retains the enforcement it verified instead of reconciling to `observe`. Confirmation means
-  every block is re-applied, because the core's insert is idempotent and it offers no read-back;
-  the resulting state is reported as `verified-enforce` and an unconfirmed one as
-  `verified-empty`, and the two are never conflated.
-- **A restart keeps the enforcement the signed policy carries.** The startup path no longer
-  initialises to `observe`; it retains the verified enforcement recorded in the policy it just
-  authenticated.
-- **A promotion never lowers verified enforcement.** Only an explicit operator action
-  (`RETURN:OBSERVE`, emergency stop) reduces it, and a retention is reported as its own action
-  (`automatic_response_paused`) rather than as an enforcement change.
-- **A drain or parser failure is separated from the loss of enforcement capability.** Health
-  probes govern the sensor verdict and name "the enforcement path is unavailable"; drain failures
-  degrade only the observation and name themselves. A sensor that cannot deliver samples is not a
-  kernel that cannot block.
-- **The platform re-arms itself.** Once the gates pass and the calm holds for the soak, the phase
-  returns to `enforce` on its own, and the transition is logged together with the cause that had
-  held it.
-- **A verification that succeeds clears the cause it replaced.** Causes were one-way: a failure
-  recorded one and only a rotation or an operator recovery removed it, so a transient fault kept
-  XDR degraded - and the automatic response paused - until somebody restarted the control plane.
-- **A deployment by the operator is not an intrusion.** Replacing one of GeDefense's own
-  components was reported as self-tampering, degraded XDR and paused the automatic response, so
-  shipping a fix quietly switched part of the protection off. It is now a high-severity record
-  with no response attached; third-party objects keep the full reaction.
-- **Recovering the incident ledger no longer requires giving up the protection.** The recovery
-  demanded `observe` enforcement, which under retention is unreachable - the ledger could only be
-  repaired by first disarming the host whose protection it exists to preserve.
-- **The Rust decoder and drain tolerate an inconsistent aggregate.** A record whose TCP label
-  contradicts its counters is kept with a neutralised protocol and its counters untouched; a
-  record that still cannot be decoded is skipped and named instead of aborting the drain; only a
-  batch in which many samples are undecodable - the signature of a wrong wire format - is
-  reported as a fault.
-
-### Ledger retention
-
-- **Both forensic ledgers rotate instead of filling up.** Reaching the budget stopped the
-  recording, degraded XDR and paused the automatic response until an operator archived the
-  segment by hand, which happened twice on the production host in one day. At ninety percent the
-  sealed chain is archived with a manifest carrying sizes, digests, sequence, head hash and
-  scope, and a fresh chain continues. The rotation copies before it replaces: a crash before the
-  swap leaves a working ledger, a crash during it is completed at the next start from a rotation
-  marker, and a marker whose manifest does not match is refused rather than trusted. The archive
-  directory must belong to the service and be `0700`; a directory that is group- or
-  world-accessible is refused instead of written to.
-- **The evidence ledger verifies itself within bounds.** Startup verified the entire ledger -
-  around 260 MB at roughly 6.7 seconds per megabyte - and exceeded the unit's start timeout, so
-  the platform could not come up and neither could the gateway. Startup now checks the
-  authenticated checkpoint and a bounded tail; the history is covered incrementally in the
-  background against an authenticated watermark; the complete verification stays available to the
-  operator. An unauthenticated watermark is refused, because accepting one let a forged file skip
-  the entire history.
-- **An interrupted append is recovered.** A process killed mid-write left one record ahead of its
-  checkpoint and the service refused to start. The unsealed tail is now verified and sealed, or
-  dropped when it is a partial write; several records behind the checkpoint are still refused.
-
-Verification for this change set: `gofmt`, `go vet` and the full `go test ./...` suite green
-(99 s), six mutation proofs - releasing the retention to `observe`, degrading the sensor on a
-single drain failure, letting a promotion lower verified enforcement, trusting an unauthenticated
-watermark, removing the cause-clearing, treating a product artifact as an intrusion - each of
-which fails the corresponding contract test when reverted. Live verification on the production
-host: measured startup of 2-7 s, a rotation of the evidence ledger at 266.7 MB while the
-enforcement stayed armed, the disarmament path refusing to release the policy, and the automatic
-re-arm after the soak.
-
-### Interface truthfulness
-
-A fail-safe has two meanings since the change above - the kernel kept the enforcement it verified,
-or it did not - and the interface only knew one of them. An operator looking at a host that was
-still blocking read, on a single screen, `DEGRADED` in the header, `SYSTEM NORMAL` in the sidebar,
-"all current release gates are satisfied" in the preflight, `Observe` as the reached step and
-`Enforce` as **locked**.
-
-- **The sidebar reads the release phase.** It knew the XDR state, the policy and the sensor
-  coverage, but not the phase, so a platform with its automatic response paused announced SYSTEM
-  NOMINAL in green. A fail-safe with a retained enforcement now reports itself as restricted, and
-  the two modes are labelled with what they are.
-- **The backend's detail sentence follows the phase, not the reason.** It was keyed on the stored
-  fail-safe reason, and a transient cause that a later verification cleared left that field empty -
-  so exactly the state in question reported "release gates satisfied" beneath its own DEGRADED
-  badge. The sentence now names what the kernel is doing.
-- **A degraded platform no longer says that every gate is satisfied.** The preflight list and the
-  release blocker list only collected the promotion blockers of the current phase; the degraded
-  phase has none of its own, so an empty list was rendered as "all gates satisfied" in two places.
-  Both now state the fail-safe, its cause and whether the enforcement is retained.
-- **The ladder shows what is enforcing, not only what may start.** `Enforce` read LOCKED while the
-  kernel was enforcing it and `Observe` read as a passed milestone while the platform was above it
-  with the response paused. The retained step is now marked as retained, the paused step as paused,
-  and the promotion button says what it actually changes - with a retained enforcement, only the
-  XDR response moves, never the kernel policy.
-- **The version the interface claims is the version that runs.** The hero line and the footer said
-  4.1, the document title 4.2, and only the version readout came from the API; all four language
-  catalogues now name 4.2.1, and the values that belong to one source are on their way there.
-
-### Interface verification
-
-The state corrections above were themselves checked by rendering the dashboard headlessly and
-comparing every state-bearing sentence against the payload it came from: eleven payload/view
-combinations, eighty rules, plus a self-test proving the checker can fail. Three statements were
-still wrong, all of them introduced by the corrections:
-
-- **The release readiness field repeated "release gates satisfied" while the phase was degraded.**
-  It mapped that backend sentence to a catalogue key without consulting the phase, so a host still
-  reporting the old sentence - an older backend, or a rollout in progress - showed it beneath an
-  EINGESCHRÄNKT badge, directly beside the gate list that explained the retained enforcement. The
-  phase now decides, not the string.
-- **The fail-safe line claimed a retained enforcement during a healthy enforce phase.** It keyed
-  on the kernel state alone, and `verified-enforce` is also the normal state of a platform that is
-  enforcing as intended, so `fail_safe_verified` was never consulted. Only a fail-safe can report
-  a retention.
-- **The Enforce step read BEREIT during an active emergency stop**, because that branch did not
-  consult the emergency flag the same function already honoured for the button beside it.
-
-The check also exposed a vocabulary defect: the panel said "pausiert" in the release card and
-"ausgesetzt" in the preflight for the same condition. One state, one word.
-
-Verification: eleven fixtures, eighty rules, zero failures, and a regression mode that removes the
-guards again - eighteen of the eighty rules then go red, including SYSTEM NOMINAL in the badge and
-the "all gates satisfied" sentence. The tooling stays out of the repository: its fixtures carry
-real operational data (management allowlist, observed source addresses, process command lines).
 
 ## 4.2.0 — Security Fabric Control Plane
 
