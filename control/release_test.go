@@ -1,3 +1,4 @@
+// STATUS: DIAMANT VGT SUPREME
 package main
 
 import (
@@ -6,23 +7,64 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
 
+// releaseCoreStub records what it was asked to do, so a test can prove not only what the
+// release controller reported but what it did to the kernel.
 type releaseCoreStub struct {
 	addErr    error
 	deleteErr error
 	clearErr  error
 	verifyErr error
+
+	mu      sync.Mutex
+	added   []string
+	cleared int
 }
 
-func (s *releaseCoreStub) Add(string) error            { return s.addErr }
-func (s *releaseCoreStub) Delete(string) error         { return s.deleteErr }
-func (s *releaseCoreStub) ClearBlocklist() error       { return s.clearErr }
+func (s *releaseCoreStub) Add(target string) error {
+	if s.addErr != nil {
+		return s.addErr
+	}
+	s.mu.Lock()
+	s.added = append(s.added, target)
+	s.mu.Unlock()
+	return nil
+}
+
+func (s *releaseCoreStub) Delete(string) error { return s.deleteErr }
+
+func (s *releaseCoreStub) ClearBlocklist() error {
+	s.mu.Lock()
+	s.cleared++
+	s.mu.Unlock()
+	return s.clearErr
+}
+
 func (s *releaseCoreStub) VerifyBlocklistEmpty() error { return s.verifyErr }
 
+func (s *releaseCoreStub) addedTargets() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.added...)
+}
+
+func (s *releaseCoreStub) clearCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.cleared
+}
+
 func betaReleaseFixture(t *testing.T) (Config, *State, *PolicyStore, *ReleaseController) {
+	t.Helper()
+	cfg, state, policy, release, _ := betaReleaseFixtureWithCore(t)
+	return cfg, state, policy, release
+}
+
+func betaReleaseFixtureWithCore(t *testing.T) (Config, *State, *PolicyStore, *ReleaseController, *releaseCoreStub) {
 	t.Helper()
 	dir := t.TempDir()
 	cfg := defaultConfig()
@@ -49,11 +91,12 @@ func betaReleaseFixture(t *testing.T) (Config, *State, *PolicyStore, *ReleaseCon
 	state.SetCore(true, "native")
 	state.SetAllowlistReady(true)
 	state.UpdateXDRScan(1, 0, state.started, false, "", 1)
-	release := NewReleaseController(cfg, state, &releaseCoreStub{}, policy, nil)
-	if err := release.InitializeObserve(); err != nil {
+	core := &releaseCoreStub{}
+	release := NewReleaseController(cfg, state, core, policy, nil)
+	if err := release.InitializeStartup("observe", true); err != nil {
 		t.Fatal(err)
 	}
-	return cfg, state, policy, release
+	return cfg, state, policy, release, core
 }
 
 func TestReleaseRequiresStagedPromotion(t *testing.T) {
@@ -85,11 +128,14 @@ func TestReleaseRequiresStagedPromotion(t *testing.T) {
 	}
 }
 
-func TestReleaseCoreFailuresAutoDegrade(t *testing.T) {
-	cfg, state, _, release := betaReleaseFixture(t)
+func TestReleaseCoreFailuresAutoDegradeRetainsEnforcement(t *testing.T) {
+	cfg, state, _, release, core := betaReleaseFixtureWithCore(t)
 	if _, err := release.Transition(ReleasePhaseCanary, "PROMOTE:CANARY", "start controlled canary phase"); err != nil {
 		t.Fatal(err)
 	}
+	// The canary transition legitimately reconciles the kernel to observe, so the baseline is
+	// taken after it: what must not happen is a *release* during the degradation.
+	cleared := core.clearCount()
 	for range cfg.Release.CoreFailureThreshold {
 		release.ObserveCore(false)
 	}
@@ -97,9 +143,17 @@ func TestReleaseCoreFailuresAutoDegrade(t *testing.T) {
 	if status.Phase != ReleasePhaseDegraded {
 		t.Fatalf("phase=%s", status.Phase)
 	}
+	// Fail-closed: the kernel keeps what the platform verified, and the automatic decisions
+	// are what stops. Releasing the policy is the operator's explicit RETURN:OBSERVE.
 	enforcement, xdrMode := state.Modes()
-	if enforcement != "observe" || xdrMode != "observe" {
-		t.Fatalf("unexpected degraded modes %s/%s", enforcement, xdrMode)
+	if enforcement != "enforce" || xdrMode != "observe" {
+		t.Fatalf("a core-heartbeat degradation must retain kernel enforcement: %s/%s", enforcement, xdrMode)
+	}
+	if status.KernelPolicyState != "verified-enforce" || !status.FailSafeVerified {
+		t.Fatalf("retained enforcement was not verified: %+v", status)
+	}
+	if core.clearCount() != cleared {
+		t.Fatal("the degradation released the kernel blocklist")
 	}
 }
 
@@ -112,8 +166,10 @@ func TestEmergencyStopPersistsAndBlocksPromotion(t *testing.T) {
 	if !status.EmergencyStop || status.Phase != ReleasePhaseDegraded {
 		t.Fatalf("unexpected emergency status: %+v", status)
 	}
-	if !status.FailSafeVerified || status.KernelPolicyState != "verified-empty" {
-		t.Fatalf("emergency stop was not kernel-verified: %+v", status)
+	// An emergency stop stops the platform's automatic action. It does not release the kernel
+	// policy; that is the operator's explicit RETURN:OBSERVE instruction.
+	if !status.FailSafeVerified || status.KernelPolicyState != "verified-enforce" {
+		t.Fatalf("emergency stop did not retain verified enforcement: %+v", status)
 	}
 	data, err := os.ReadFile(cfg.Release.EmergencyStopFile)
 	if err != nil {
@@ -156,13 +212,13 @@ func TestEnforceRequiresSynchronizedManagementAllowlist(t *testing.T) {
 	}
 }
 
-func TestEmergencyStopReportsUnverifiedKernelState(t *testing.T) {
+func TestEmergencyStopReportsUnverifiedRetainedKernelState(t *testing.T) {
 	cfg, state, policy, _ := betaReleaseFixture(t)
-	if _, err := state.AddBlock("198.51.100.44/32", "forced stale rule", "test", time.Hour, true, cfg.Defense.MaxBlockEntries); err != nil {
+	if _, err := state.AddBlock("198.51.100.44/32", "rule the kernel has not confirmed", "test", time.Hour, false, cfg.Defense.MaxBlockEntries); err != nil {
 		t.Fatal(err)
 	}
-	release := NewReleaseController(cfg, state, &releaseCoreStub{clearErr: errors.New("core unavailable")}, policy, nil)
-	status, err := release.EmergencyStop("operator requires immediate fail-safe shutdown")
+	release := NewReleaseController(cfg, state, &releaseCoreStub{addErr: errors.New("core unavailable")}, policy, nil)
+	status, err := release.EmergencyStop("operator requires immediate fail-closed pause")
 	if err == nil {
 		t.Fatal("emergency stop falsely reported success")
 	}
@@ -170,64 +226,116 @@ func TestEmergencyStopReportsUnverifiedKernelState(t *testing.T) {
 		t.Fatalf("emergency marker or degraded phase missing: %+v", status)
 	}
 	if status.FailSafeVerified || status.KernelPolicyState != "unverified" {
-		t.Fatalf("stale kernel state was falsely verified: %+v", status)
+		t.Fatalf("an unconfirmed kernel state was falsely verified: %+v", status)
 	}
 	enforcement, xdrMode := state.Modes()
 	if enforcement != "unverified" || xdrMode != "observe" {
-		t.Fatalf("unsafe modes after failed reconciliation: %s/%s", enforcement, xdrMode)
+		t.Fatalf("unsafe modes after failed confirmation: %s/%s", enforcement, xdrMode)
 	}
-	if !strings.Contains(status.Detail, "kernel fail-safe verification failed") {
+	if !strings.Contains(status.Detail, "retained kernel policy could not be verified") {
 		t.Fatalf("missing opaque operator-visible failure state: %q", status.Detail)
 	}
 }
 
-func TestEmergencyStopRequiresPositiveEmptyMapVerification(t *testing.T) {
+// TestRetentionConfirmsEveryBlockWithTheKernel covers the difference between an inference and
+// an observation. The core exposes no read-back, so a block that an earlier pass marked
+// enforced is re-confirmed rather than trusted; the platform may only call a kernel state
+// verified when the kernel said so in this pass. Re-applying is also what restores a block the
+// kernel lost without telling anyone.
+func TestRetentionConfirmsEveryBlockWithTheKernel(t *testing.T) {
 	cfg, state, policy, _ := betaReleaseFixture(t)
-	release := NewReleaseController(cfg, state, &releaseCoreStub{verifyErr: errors.New("blocklist not empty")}, policy, nil)
-	status, err := release.EmergencyStop("verify empty block maps before success")
-	if err == nil {
-		t.Fatal("emergency stop succeeded without empty-map verification")
+	targets := []string{"198.51.100.51/32", "198.51.100.52/32"}
+	for _, target := range targets {
+		if _, err := state.AddBlock(target, "enforced before the restart", "test", time.Hour, true, cfg.Defense.MaxBlockEntries); err != nil {
+			t.Fatal(err)
+		}
 	}
-	if status.FailSafeVerified || status.KernelPolicyState != "unverified" {
-		t.Fatalf("failed verification was not represented safely: %+v", status)
+	core := &releaseCoreStub{}
+	release := NewReleaseController(cfg, state, core, policy, nil)
+	if err := release.InitializeStartup("enforce", true); err != nil {
+		t.Fatal(err)
+	}
+	got := core.addedTargets()
+	for _, target := range targets {
+		if !slices.Contains(got, target) {
+			t.Fatalf("the retention did not confirm %s with the kernel: %v", target, got)
+		}
+	}
+	status := release.Status()
+	if status.KernelPolicyState != "verified-enforce" || !status.FailSafeVerified {
+		t.Fatalf("retained enforcement was not verified: %+v", status)
+	}
+	if status.Phase != ReleasePhaseDegraded {
+		t.Fatalf("a retained startup must stay paused for the promotion gates, got %s", status.Phase)
 	}
 }
 
-func TestRecoveredCoreRetriesUnverifiedFailSafe(t *testing.T) {
+func TestRecoveredCoreRetriesUnverifiedRetention(t *testing.T) {
 	cfg, state, policy, _ := betaReleaseFixture(t)
-	core := &releaseCoreStub{verifyErr: errors.New("core offline")}
-	release := NewReleaseController(cfg, state, core, policy, nil)
-	if _, err := release.EmergencyStop("core recovery must verify empty maps"); err == nil {
-		t.Fatal("initial unverified emergency stop unexpectedly succeeded")
+	if _, err := state.AddBlock("198.51.100.61/32", "block the kernel had not confirmed", "test", time.Hour, false, cfg.Defense.MaxBlockEntries); err != nil {
+		t.Fatal(err)
 	}
-	core.verifyErr = nil
+	core := &releaseCoreStub{addErr: errors.New("core offline")}
+	release := NewReleaseController(cfg, state, core, policy, nil)
+	if _, err := release.EmergencyStop("core recovery must confirm the retained policy"); err == nil {
+		t.Fatal("initial unverified retention unexpectedly succeeded")
+	}
+	core.addErr = nil
 	release.ObserveCore(true)
 	status := release.Status()
-	if !status.FailSafeVerified || status.KernelPolicyState != "verified-empty" {
-		t.Fatalf("recovered core did not complete fail-safe verification: %+v", status)
+	if !status.FailSafeVerified || status.KernelPolicyState != "verified-enforce" {
+		t.Fatalf("recovered core did not complete the retention verification: %+v", status)
 	}
 }
 
-func TestKineticSensorDegradationTriggersImmediateReleaseFailSafe(t *testing.T) {
-	cfg, state, _, release := betaReleaseFixture(t)
+// TestAKineticSensorDegradationRetainsTheKernelEnforcement is the reported defect.
+//
+// A single malformed kernel sample marked the ingress sensor degraded, and the release gate
+// answered by removing the entire kernel blocklist: the host was found unprotected, with every
+// blocked source released, twenty hours later. The degradation must pause automatic decisions
+// and leave the enforcement exactly where it was.
+func TestAKineticSensorDegradationRetainsTheKernelEnforcement(t *testing.T) {
+	cfg, state, _, release, core := betaReleaseFixtureWithCore(t)
 	cfg.Kinetic.EnforcementMode = "block"
 	if _, err := release.Transition(ReleasePhaseCanary, "PROMOTE:CANARY", "enter canary before sensor degradation test"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.AddBlock("203.0.113.9/32", "block in place before the fault", "test", time.Hour, false, cfg.Defense.MaxBlockEntries); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := release.Transition(ReleasePhaseEnforce, "PROMOTE:ENFORCE", "arm enforcement before sensor degradation test"); err != nil {
 		t.Fatal(err)
 	}
+	if got := core.addedTargets(); !slices.Contains(got, "203.0.113.9/32") {
+		t.Fatalf("the fixture did not enforce a block before the fault: %v", got)
+	}
 
 	server := &APIServer{cfg: cfg, state: state, release: release}
+	cleared := core.clearCount()
 	server.setKineticSensorState(CoverageDegraded, "degraded", "synthetic ingress ring pressure")
 
 	status := release.Status()
-	if status.Phase != ReleasePhaseDegraded || !status.FailSafeVerified || status.KernelPolicyState != "verified-empty" {
-		t.Fatalf("sensor degradation did not force verified fail-safe: %+v", status)
+	if status.Phase != ReleasePhaseDegraded {
+		t.Fatalf("sensor degradation did not pause the platform: %+v", status)
+	}
+	if status.KernelPolicyState != "verified-enforce" || !status.FailSafeVerified {
+		t.Fatalf("the retained kernel policy was not verified: %+v", status)
+	}
+	if core.clearCount() != cleared {
+		t.Fatal("the degradation released the kernel blocklist")
+	}
+	enforced := false
+	for _, block := range state.BlocksSnapshot() {
+		if block.Target == "203.0.113.9/32" && block.Enforced {
+			enforced = true
+		}
+	}
+	if !enforced {
+		t.Fatal("the enforced block was dropped from the policy")
 	}
 	networkMode, xdrMode := state.Modes()
-	if networkMode != "observe" || xdrMode != "observe" {
-		t.Fatalf("unsafe modes after kinetic degradation: %s/%s", networkMode, xdrMode)
+	if networkMode != "enforce" || xdrMode != "observe" {
+		t.Fatalf("the kernel enforcement must survive a sensor fault: %s/%s", networkMode, xdrMode)
 	}
 }
 

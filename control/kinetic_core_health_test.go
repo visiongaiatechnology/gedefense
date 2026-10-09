@@ -1,3 +1,4 @@
+// STATUS: DIAMANT VGT SUPREME
 package main
 
 import (
@@ -127,13 +128,30 @@ func TestEvaluateKineticSensorHealthDetectsPressureAndFailures(t *testing.T) {
 		t.Fatalf("new ring pressure must degrade sensor: status=%s self_test=%s", status, selfTest)
 	}
 
-	status, selfTest, _ = evaluateKineticSensorHealth(1, 0, current, current)
-	if status != CoverageDegraded || selfTest != "degraded" {
-		t.Fatalf("transient event drain failure must degrade sensor: status=%s self_test=%s", status, selfTest)
+	// A single drain failure is a transport condition, not a lost enforcement path: the health
+	// probe answered, so the sensor stays online and the operator is told what happened.
+	// Treating it as a lost hook is what disarmed the host.
+	status, selfTest, reason := evaluateKineticSensorHealth(1, 0, current, current)
+	if status != CoverageOnline || selfTest != "pass" {
+		t.Fatalf("a transient event drain failure must not change the enforcement verdict: status=%s self_test=%s", status, selfTest)
+	}
+	if !strings.Contains(reason, "recovered sample drain failure") {
+		t.Fatalf("the transient drain failure was not named: %q", reason)
 	}
 
-	status, selfTest, _ = evaluateKineticSensorHealth(kineticOfflineAfterFails, 0, current, current)
+	// A sustained transport failure is a real observation loss, and it is still not an
+	// enforcement verdict.
+	status, selfTest, reason = evaluateKineticSensorHealth(kineticDrainDegradeAfterFails, 0, current, current)
+	if status != CoverageDegraded || selfTest != "degraded" {
+		t.Fatalf("a sustained event drain failure must degrade the observation: status=%s self_test=%s", status, selfTest)
+	}
+	if !strings.Contains(reason, "sample transport") {
+		t.Fatalf("the sustained failure reason does not name the transport: %q", reason)
+	}
+
+	// Only the enforcement path itself can take the sensor offline.
+	status, selfTest, _ = evaluateKineticSensorHealth(0, kineticOfflineAfterFails, current, current)
 	if status != CoverageOffline || selfTest != "failed" {
-		t.Fatalf("repeated event drain failures must take sensor offline: status=%s self_test=%s", status, selfTest)
+		t.Fatalf("a lost enforcement path must take the sensor offline: status=%s self_test=%s", status, selfTest)
 	}
 }

@@ -1,3 +1,4 @@
+// STATUS: DIAMANT VGT SUPREME
 package main
 
 import (
@@ -16,7 +17,7 @@ import (
 	"time"
 )
 
-const version = "4.2.1"
+const version = "4.2.2"
 
 func detectInterface(requested string) (string, error) {
 	if requested != "" && requested != "auto" {
@@ -362,30 +363,36 @@ func main() {
 	}
 
 	if policyErr == nil && len(policyEnvelope.Blocks) > 0 {
+		// The blocks are imported here and applied by the release controller, which is the
+		// single authority on what the kernel holds. Applying them here as well - gated on
+		// the static configuration file instead of the signed policy - meant two places
+		// decided the kernel state, and the second one emptied it again moments later.
 		blocks := make([]BlockEntry, 0, len(policyEnvelope.Blocks))
 		for _, block := range policyEnvelope.Blocks {
 			block.Enforced = false
-			if cfg.Defense.Enforcement == "enforce" && coreOnline {
-				if err := core.Add(block.Target); err == nil {
-					block.Enforced = true
-				} else {
-					state.AddEvent(Event{Severity: "warning", Kind: "policy.restore_failed", Source: "policy", Message: "Kernel rejected restored signed block", Target: block.Target})
-				}
-			}
 			blocks = append(blocks, block)
 		}
 		count := state.ImportBlocks(blocks, time.Now().UTC(), cfg.Defense.MaxBlockEntries)
-		state.AddEvent(Event{Severity: "info", Kind: "policy.restored", Source: "policy", Message: fmt.Sprintf("Restored %d verified policy blocks", count)})
+		state.AddEvent(Event{Severity: "info", Kind: "policy.restored", Source: "policy", Message: fmt.Sprintf("Restored %d verified policy blocks (core online at startup: %t)", count, coreOnline)})
 	}
 
 	release := NewReleaseController(cfg, state, core, policy, settings)
-	if err := release.InitializeObserve(); err != nil {
+	// The verified signed policy decides what the kernel holds at startup. A platform that
+	// verified enforcement before the restart keeps it; only an absent or non-enforcing
+	// intent starts from a verified-empty kernel.
+	startupEnforcement := ""
+	if policyErr == nil {
+		startupEnforcement = policyEnvelope.Enforcement
+	}
+	if err := release.InitializeStartup(startupEnforcement, policyErr == nil && policy.Status().Verified); err != nil {
 		state.AddEvent(Event{
 			Severity: "critical", Kind: "release.startup_unverified", Source: "release-gate",
 			Message: "Startup remained fail-safe degraded: " + err.Error(),
 		})
 	}
-	if policyErr == nil && (policyEnvelope.Enforcement != "" || policyEnvelope.XDRMode != "") {
+	if policyErr == nil && policyEnvelope.Enforcement == "enforce" {
+		state.AddEvent(Event{Severity: "info", Kind: "release.startup_retained", Source: "release-gate", Message: "Signed policy states enforcement; the kernel state was retained and verified instead of being emptied"})
+	} else if policyErr == nil && (policyEnvelope.Enforcement != "" || policyEnvelope.XDRMode != "") {
 		state.AddEvent(Event{Severity: "info", Kind: "release.startup_observe", Source: "release-gate", Message: "Signed policy intent was loaded, but beta startup remains observe until runtime promotion gates pass"})
 	}
 

@@ -60,3 +60,7 @@ GEDEFENSE_4.2.1_XDR_SELFTAMPER_UND_EVIDENCE_BUDGET.md
 OPENAI_REWORK_PROGRESS.md
 GeDefense_4.2_SECURITY_FABRIC_CONTROL_PLANE_PLAN.md
 emergency_stop.sh
+
+# Lokale Verifikationswerkzeuge mit echten Betriebsdaten (Management-Allowlist, beobachtete
+# Angreifer-IPs, Prozess-Kommandozeilen). Sie gehoeren nicht in die Veroeffentlichung.
+/control/webtools/

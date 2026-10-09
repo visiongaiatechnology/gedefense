@@ -1,3 +1,4 @@
+// STATUS: DIAMANT VGT SUPREME
 package main
 
 import (
@@ -128,7 +129,16 @@ func classifyIncidentIntegrityError(err error) IncidentIntegrityStatus {
 	case strings.Contains(msg, "must not be group/world accessible"):
 		status.ReasonCode, status.Recoverable = "INSECURE_PERMISSIONS", true
 	case strings.Contains(msg, "size budget"):
-		status.ReasonCode, status.Recoverable = "SIZE_BUDGET_EXHAUSTED", false
+		// A full log is not a corrupt log. The chain is intact and complete; it simply cannot
+		// grow, which is why every audit record written after this point is lost. Archiving the
+		// sealed segment and starting a fresh chain preserves the evidence and restores the
+		// audit trail, so this state must be recoverable.
+		//
+		// It was marked unrecoverable, and that turned a full forensic log into a terminal
+		// state: the release gate blocks promotion while XDR is degraded, so a platform whose
+		// incident log filled up could never be armed again - protection stayed off with no
+		// path back except manual filesystem surgery.
+		status.ReasonCode, status.Recoverable = "SIZE_BUDGET_EXHAUSTED", true
 	case strings.Contains(msg, "symbolic link"):
 		status.ReasonCode, status.Recoverable = "SYMLINK_REJECTED", false
 	default:
@@ -563,6 +573,26 @@ func (e *XDREngine) VerifyIncidentIntegrity(ctx context.Context) (XDRIntegrityRe
 	return e.IncidentIntegrityReport(), nil
 }
 
+// Rotate archives the sealed chain and starts a fresh one.
+//
+// A full forensic log must not hold the protection hostage. Reaching the budget stops the
+// recording, degrades XDR, and that degradation blocks every promotion and pauses the automatic
+// response until somebody archives the segment by hand - which happened twice on the production
+// host in a single day. Rotation is therefore automatic at the budget, and it reuses the audited
+// recovery path: the sealed segment is archived with a manifest and the operation is written to
+// the evidence ledger.
+func (l *IncidentLogger) Rotate(ctx context.Context, reason string) (IncidentRecoveryResult, error) {
+	digest := sha256.Sum256([]byte(reason))
+	return l.Recover(ctx, hex.EncodeToString(digest[:]))
+}
+
+// StoredBytes reports the sealed size and the budget it is measured against.
+func (l *IncidentLogger) StoredBytes() (int64, int64) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.expectedSize, l.maxBytes
+}
+
 func (e *XDREngine) RecoverIncidentLedger(ctx context.Context, reason string) (IncidentRecoveryResult, error) {
 	if e == nil || e.logger == nil {
 		return IncidentRecoveryResult{}, errors.New("incident logger unavailable")
@@ -574,10 +604,14 @@ func (e *XDREngine) RecoverIncidentLedger(ctx context.Context, reason string) (I
 	}
 	defer func() { e.recoveryGate <- struct{}{} }()
 
-	enforcement, _ := e.state.Modes()
-	if enforcement != "observe" {
-		return IncidentRecoveryResult{}, errors.New("XDR incident-ledger recovery requires observe enforcement")
-	}
+	// Recovery used to require observe enforcement. That guard was written when an automatic
+	// fall-back emptied the kernel policy, so a recovering operator was already unarmed; under
+	// fail-closed retention the platform keeps enforcing while it is degraded, and the guard
+	// turned into a deadlock: the incident ledger could only be recovered by first giving up the
+	// protection that the recovery exists to preserve, and the degradation that pauses automatic
+	// response could never be cleared. What actually matters for auditability is that the
+	// archived segment is sealed with a manifest and that the recovery itself is written to the
+	// evidence ledger - both of which happen below, whatever the enforcement mode is.
 
 	if !e.incidentRecoveryAllowed() {
 		return IncidentRecoveryResult{}, errors.New("XDR has additional degraded causes or no recoverable incident-ledger degradation")

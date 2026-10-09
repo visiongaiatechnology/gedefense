@@ -1,8 +1,10 @@
+// STATUS: DIAMANT VGT SUPREME
 package main
 
 import (
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"strings"
 	"sync"
@@ -35,12 +37,19 @@ type ReleaseStatus struct {
 	// cleared it read "release gates satisfied" while the platform was still sitting in
 	// Observe. The operator was told a fail-safe had fired and never told what fired it.
 	//
-	// The fall-back is a latch by design: a fault drops the platform to Observe and an
-	// operator promotes it again. That is defensible. Reporting a stale reason as the
-	// present state is not, so the cause is kept separate from the live detail and
-	// carries the moment it was observed.
+	// The fall-back is a latch on the *phase*: a fault pauses automatic decisions and the
+	// phase does not lift by itself until the cause has cleared and the calm has held. It is
+	// deliberately not a latch on the kernel policy. The fall-back retains and verifies the
+	// enforcement that was already in place, and the recovery path re-evaluates every
+	// substantive gate before automatic decisions resume. Reporting a stale reason as the
+	// present state was the original defect, so the cause is kept separate from the live
+	// detail and carries the moment it was observed.
 	FailSafeReason string     `json:"fail_safe_reason,omitempty"`
 	FailSafeAt     *time.Time `json:"fail_safe_at,omitempty"`
+	// NominalSince records when the platform last became free of substantive blockers. The
+	// recovery soak is measured from this moment rather than from the fall-back, so a cause
+	// that persisted for hours does not count as already soaked once it clears.
+	NominalSince *time.Time `json:"nominal_since,omitempty"`
 }
 
 type ReleaseCore interface {
@@ -85,6 +94,33 @@ func releaseModes(phase string) (string, string, error) {
 	default:
 		return "", "", fmt.Errorf("unsupported release phase %q", phase)
 	}
+}
+
+// kernelPolicyVerified reports whether the kernel carries a policy state the platform has
+// confirmed, whichever state that is.
+//
+// Under fail-closed retention a degraded platform keeps its blocklist, so "verified-empty"
+// stopped being the only verified state. The operator sees either the empty kernel they asked
+// for or the enforcement they already had - and both are confirmed, never assumed.
+func kernelPolicyVerified(kernelState string) bool {
+	return kernelState == "verified-empty" || kernelState == "verified-enforce"
+}
+
+// retainedEnforcementLocked returns the kernel enforcement a transition may actually apply.
+//
+// A verified kernel enforcement is never lowered by a phase change. Canary applies observe at
+// the kernel, so a promotion out of a retained degraded state released every blocked source -
+// the same fail-open as the automatic fall-back, one step later. Only the explicit
+// RETURN:OBSERVE transition releases the policy, because that is the operator's own
+// instruction and it is confirmed by a dedicated phrase.
+func (r *ReleaseController) retainedEnforcementLocked(target, requested string) string {
+	if target == ReleasePhaseObserve {
+		return requested
+	}
+	if r.status.KernelPolicyState == "verified-enforce" && requested == "observe" {
+		return "enforce"
+	}
+	return requested
 }
 
 func (r *ReleaseController) Status() ReleaseStatus {
@@ -151,12 +187,18 @@ func (r *ReleaseController) currentBlockersLocked(target string, includeDuration
 		!snap.L7.InlineHealthy && !InlinePathVerifiedBySelfTest(snap.L7, time.Now().UTC()) {
 		blockers = append(blockers, "L7 inline service is unavailable")
 	}
-	for _, block := range snap.Blocks {
-		// Enforce promotion performs an atomic best-effort reconciliation below.
-		// Only stale kernel rules while leaving Enforce are a pre-transition blocker.
-		if target != ReleasePhaseEnforce && block.Enforced {
-			blockers = append(blockers, "kernel policy reconciliation is pending")
-			break
+	// Only kernel rules that the target phase would release are a pre-transition blocker.
+	// Under fail-closed retention a promotion keeps the enforcement, so a rule that is
+	// already enforced is the protection being retained, not a reconciliation that is
+	// pending - treating it as pending refused the very transition that keeps it.
+	if targetEnforcement, _, modeErr := releaseModes(target); modeErr == nil {
+		targetEnforcement = r.retainedEnforcementLocked(target, targetEnforcement)
+		for _, block := range snap.Blocks {
+			// Enforce promotion performs an atomic best-effort reconciliation below.
+			if targetEnforcement != "enforce" && block.Enforced {
+				blockers = append(blockers, "kernel policy reconciliation is pending")
+				break
+			}
 		}
 	}
 	if !snap.CoreConnected {
@@ -184,8 +226,8 @@ func (r *ReleaseController) currentBlockersLocked(target string, includeDuration
 		blockers = append(blockers, "fail-safe transition is not verified")
 	}
 	if (r.status.Phase == ReleasePhaseObserve || r.status.Phase == ReleasePhaseDegraded) &&
-		(!r.status.FailSafeVerified || r.status.KernelPolicyState != "verified-empty") {
-		blockers = append(blockers, "kernel observe state is not verified")
+		(!r.status.FailSafeVerified || !kernelPolicyVerified(r.status.KernelPolicyState)) {
+		blockers = append(blockers, "kernel policy state is not verified")
 	}
 	if snap.XDR.EvaluationsTotal > 0 {
 		dropPermille := snap.XDR.EvaluationDrops * 1000 / snap.XDR.EvaluationsTotal
@@ -225,11 +267,18 @@ func (r *ReleaseController) refreshLocked() {
 		r.status.Detail = "emergency stop active"
 	} else if len(blockers) > 0 {
 		r.status.Detail = blockers[0]
-	} else if r.status.Phase == ReleasePhaseDegraded && r.status.FailSafeReason != "" {
-		// Nothing is currently blocking, yet the platform is still in Observe because of
-		// an earlier fall-back. Saying "release gates satisfied" here told the operator
-		// the opposite of what they were looking at.
-		r.status.Detail = "no current blocker; promotion requires operator action after the fail-safe of " + r.status.FailSafeAt.Format(time.RFC3339)
+	} else if r.status.Phase == ReleasePhaseDegraded {
+		// The phase is the fact; the reason is only the explanation, and it can legitimately be
+		// empty - a transient cause that a later verification cleared leaves the platform in the
+		// fail-safe with nothing currently blocking. Keying this branch on the reason meant that
+		// exactly that state told the operator "release gates satisfied", directly beneath a
+		// DEGRADED badge and a fail-safe notice. The sentence now follows the phase and names what
+		// the kernel is doing, which is the part the operator needs in order to judge the risk.
+		if kernelPolicyVerified(r.status.KernelPolicyState) {
+			r.status.Detail = "automatic response paused; kernel enforcement retained and verified"
+		} else {
+			r.status.Detail = "automatic response paused; kernel enforcement not confirmed"
+		}
 	} else {
 		r.status.Detail = "release gates satisfied"
 	}
@@ -270,6 +319,9 @@ func (r *ReleaseController) Transition(target, confirmation, reason string) (Rel
 	if err != nil {
 		return cloneReleaseStatus(r.status), err
 	}
+	// Never lower a verified kernel enforcement by accident: see
+	// retainedEnforcementLocked. The operator's own RETURN:OBSERVE is the exception.
+	newEnforcement = r.retainedEnforcementLocked(target, newEnforcement)
 	if err := r.reconcileLocked(newEnforcement); err != nil {
 		return cloneReleaseStatus(r.status), err
 	}
@@ -295,25 +347,84 @@ func (r *ReleaseController) Transition(target, confirmation, reason string) (Rel
 	r.status.Detail = strings.TrimSpace(reason)
 	r.status.Blockers = nil
 	r.status.Ready = true
-	r.status.FailSafeVerified = newEnforcement == "observe"
 	if newEnforcement == "observe" {
 		r.status.KernelPolicyState = "verified-empty"
 	} else {
 		r.status.KernelPolicyState = "verified-enforce"
 	}
+	// The transition confirmed the kernel in this pass, so whichever state it produced is a
+	// verified one. Tying this flag to "observe" alone made a promoted platform that kept its
+	// enforcement report an unverified kernel state.
+	r.status.FailSafeVerified = kernelPolicyVerified(r.status.KernelPolicyState)
 	r.state.SetReleaseStatus(r.status)
 	r.state.AddEvent(Event{Severity: "high", Kind: "release.transition", Source: "release-gate", Message: fmt.Sprintf("Beta phase changed from %s to %s: %s", old.Phase, target, strings.TrimSpace(reason))})
 	_ = oldXDR
 	return cloneReleaseStatus(r.status), nil
 }
 
-func (r *ReleaseController) InitializeObserve() error {
+// InitializeStartup establishes the kernel state the platform starts from.
+//
+// Starting in observe and reconciling the kernel to it removed every block the previous
+// process had verified, so each control-plane restart disarmed the host until an operator
+// promoted it again - the same fail-open as the automatic fall-back, on a routine operation
+// that happens on every deploy.
+//
+// The persisted signed policy is the authority on what the kernel should hold. When it states
+// enforcement, that enforcement is applied, verified and retained, and the platform starts in
+// the degraded phase: the blocklist is live, new automatic decisions wait for the promotion
+// gates, and the state says both of those things. Without a verified enforcement intent the
+// kernel is verified empty and the platform starts in observe, exactly as before.
+func (r *ReleaseController) InitializeStartup(policyEnforcement string, policyVerified bool) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.status.EmergencyStop {
+	if _, err := os.Stat(r.cfg.Release.EmergencyStopFile); err == nil {
+		r.status.EmergencyStop = true
 		return r.degradeLocked("emergency stop active at startup")
 	}
+	if !policyVerified || policyEnforcement != "enforce" {
+		return r.initializeObserveLocked()
+	}
+
 	r.state.SetModes("unverified", "observe")
+	if err := r.reconcileVerifiedLocked(); err != nil {
+		// The signed policy asked for enforcement and it could not be confirmed. Nothing is
+		// removed; the state is reported as unverified and the operator is required.
+		r.markDegradedLocked("startup retained enforcement could not be verified", "unverified", false)
+		r.state.AddEvent(Event{
+			Severity: "critical", Kind: "release.startup_retention_unverified", Source: "release-gate",
+			Message: "Signed policy states enforcement but the kernel state could not be verified; out-of-band verification required",
+		})
+		log.Printf("release: startup enforcement retention failed: %v", err)
+		return fmt.Errorf("startup enforcement retention failed: %w", err)
+	}
+	if err := r.policy.Persist(r.cfg.Node.Name, "enforce", "observe", r.state.BlocksSnapshot()); err != nil {
+		r.state.SetPolicyStatus(r.policy.Status())
+		r.markDegradedLocked("startup retained policy persistence failed", "unverified", false)
+		log.Printf("release: startup retained policy persistence failed: %v", err)
+		return fmt.Errorf("startup retained policy persistence failed: %w", err)
+	}
+	r.state.SetPolicyStatus(r.policy.Status())
+	r.state.SetModes("enforce", "observe")
+
+	now := time.Now().UTC()
+	r.status.Phase = ReleasePhaseDegraded
+	r.status.Since = now
+	r.status.LastTransition = &now
+	r.status.Ready = false
+	r.status.FailSafeVerified = true
+	r.status.KernelPolicyState = "verified-enforce"
+	r.status.Detail = "startup retained the verified kernel enforcement from the signed policy; automatic response stays paused until the promotion gates pass"
+	r.refreshLocked()
+	r.state.SetReleaseStatus(r.status)
+	r.state.AddEvent(Event{
+		Severity: "high", Kind: "release.startup_enforcement_retained", Source: "release-gate",
+		Message: "Startup retained verified kernel enforcement from the signed policy; automatic response paused until promotion",
+	})
+	log.Printf("release: startup retained the verified kernel enforcement (fail-closed)")
+	return nil
+}
+
+func (r *ReleaseController) initializeObserveLocked() error {
 	if err := r.reconcileLocked("observe"); err != nil {
 		r.markDegradedLocked("startup kernel observe verification failed", "unverified", false)
 		return fmt.Errorf("startup kernel observe reconciliation failed: %w", err)
@@ -335,6 +446,29 @@ func (r *ReleaseController) InitializeObserve() error {
 		Severity: "info", Kind: "release.startup_verified", Source: "release-gate",
 		Message: "Startup Observe policy persisted and kernel blocklist verified empty",
 	})
+	return nil
+}
+
+// reconcileVerifiedLocked confirms every block the platform owns with the kernel.
+//
+// reconcileLocked skips blocks already marked Enforced, which is an inference from an earlier
+// pass. That inference is sound while this process owns the kernel state, and unsound the
+// moment it does not: after a restart, or while recovering from a fall-back, the platform has
+// no evidence about what the previous process left behind. The core exposes no read-back, so
+// the confirmation has to be an application: ADD is an unconditional map insert and therefore
+// idempotent, and re-applying is also what restores a block the kernel lost without telling
+// anyone. A state is only called verified when the kernel said so in this pass.
+func (r *ReleaseController) reconcileVerifiedLocked() error {
+	if r.core == nil {
+		return errors.New("kernel policy confirmation unavailable: core client is nil")
+	}
+	blocks := r.state.BlocksSnapshot()
+	for _, block := range blocks {
+		if err := r.core.Add(block.Target); err != nil {
+			return fmt.Errorf("kernel policy confirmation failed for %s: %w", block.Target, err)
+		}
+		r.state.SetBlockEnforced(block.Target, true)
+	}
 	return nil
 }
 
@@ -390,7 +524,7 @@ func (r *ReleaseController) ObserveCore(success bool) {
 	if success {
 		r.status.CoreMisses = 0
 		if r.status.Phase == ReleasePhaseDegraded && !r.status.FailSafeVerified {
-			reason := strings.TrimSuffix(r.status.Detail, "; kernel fail-safe verification failed")
+			reason := strings.TrimSuffix(r.status.Detail, "; retained kernel policy could not be verified")
 			_ = r.degradeLocked(reason)
 		}
 	} else if r.status.CoreMisses < releaseCfg.CoreFailureThreshold+1 {
@@ -407,6 +541,8 @@ func (r *ReleaseController) Evaluate() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if !r.runtimeSettingsLocked().AutoDegrade || r.status.Phase == ReleasePhaseObserve || r.status.Phase == ReleasePhaseDegraded {
+		r.trackNominalLocked()
+		r.recoverIfGatesPassLocked()
 		r.refreshLocked()
 		r.state.SetReleaseStatus(r.status)
 		return
@@ -414,10 +550,97 @@ func (r *ReleaseController) Evaluate() {
 	if blockers := r.currentBlockersLocked(r.status.Phase, false); len(blockers) > 0 {
 		_ = r.degradeLocked(strings.Join(blockers, "; "))
 	}
+	r.trackNominalLocked()
 	r.refreshLocked()
 	r.state.SetReleaseStatus(r.status)
 }
 
+// trackNominalLocked records how long the platform has been free of substantive blockers.
+//
+// The soak has to measure the *current* calm, not the age of the fall-back: a cause that
+// persisted for hours and then cleared would otherwise be treated as already soaked, and the
+// phase would flip back on the first healthy sample. Recording when the calm began is what
+// makes the recovery resistant to the flapping that caused it.
+func (r *ReleaseController) trackNominalLocked() {
+	if r.status.Phase != ReleasePhaseDegraded {
+		r.status.NominalSince = nil
+		return
+	}
+	if len(r.currentBlockersLocked(ReleasePhaseEnforce, false)) > 0 {
+		r.status.NominalSince = nil
+		return
+	}
+	if r.status.NominalSince == nil {
+		now := time.Now().UTC()
+		r.status.NominalSince = &now
+	}
+}
+
+// recoverIfGatesPassLocked returns a degraded platform with retained enforcement to the
+// enforcing phase once every substantive gate passes again and the calm has held.
+//
+// Only the promotion ladder is skipped - the degraded phase is neither observe nor canary, so
+// ladder conditions cannot apply to it. Every substantive gate is re-evaluated: signed policy,
+// evidence ledger, XDR health, L7 health, core connectivity, management allowlist and sensor
+// coverage. Nothing is recovered while the retained enforcement is unverified, because
+// recovery must never talk the platform into believing a state it could not confirm.
+//
+// Without this the host stayed paused for twenty hours - protected, but with automatic
+// response off - until an operator happened to look.
+func (r *ReleaseController) recoverIfGatesPassLocked() {
+	if r.status.Phase != ReleasePhaseDegraded || r.status.EmergencyStop {
+		return
+	}
+	if r.status.KernelPolicyState != "verified-enforce" || !r.status.FailSafeVerified {
+		return
+	}
+	releaseCfg := r.effectiveReleaseConfigLocked()
+	if r.status.NominalSince == nil {
+		return
+	}
+	if elapsed := time.Since(*r.status.NominalSince); elapsed < time.Duration(releaseCfg.MinimumObserveSeconds)*time.Second {
+		return
+	}
+	if len(r.currentBlockersLocked(ReleasePhaseEnforce, false)) > 0 {
+		return
+	}
+	if err := r.reconcileVerifiedLocked(); err != nil {
+		// The kernel could not be confirmed while recovering. Stay degraded and paused
+		// rather than declaring an enforcing state that was not verified.
+		log.Printf("release: recovery reconciliation failed, staying degraded: %v", err)
+		return
+	}
+	previousReason := r.status.FailSafeReason
+	now := time.Now().UTC()
+	r.status.Phase = ReleasePhaseEnforce
+	r.status.Since = now
+	r.status.LastTransition = &now
+	r.status.Ready = true
+	r.status.Blockers = nil
+	r.status.KernelPolicyState = "verified-enforce"
+	r.status.FailSafeVerified = true
+	r.status.FailSafeReason = ""
+	r.status.FailSafeAt = nil
+	r.status.NominalSince = nil
+	r.status.Detail = "recovered to enforce after the cause cleared and the calm held"
+	r.state.SetModes("enforce", "enforce")
+	if err := r.policy.Persist(r.cfg.Node.Name, "enforce", "enforce", r.state.BlocksSnapshot()); err != nil {
+		r.state.SetPolicyStatus(r.policy.Status())
+		log.Printf("release: recovery policy persistence failed: %v", err)
+	}
+	r.state.SetPolicyStatus(r.policy.Status())
+	r.state.AddEvent(Event{
+		Severity: "high", Kind: "release.recovered", Source: "release-gate",
+		Message: "Automatic response resumed; kernel enforcement stayed in place throughout. Cause was: " + previousReason,
+	})
+	log.Printf("release: recovered to enforce after a held calm; the cause was: %s", previousReason)
+}
+
+// FailSafe lowers the release phase and retains the kernel enforcement.
+//
+// The name is kept because callers across the platform express "fall back because something
+// could not be verified" with it. What it does is now fail-closed: the verified kernel policy
+// stays in place and only new automatic decisions stop. See degradeLocked.
 func (r *ReleaseController) FailSafe(reason string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -455,44 +678,68 @@ func (r *ReleaseController) markDegradedLocked(reason, kernelState string, verif
 	r.state.AddIncident(XDRIncident{
 		ID: randomID(), Time: now, Severity: "critical",
 		RuleIDs:  []string{"RELEASE.FAIL_SAFE"},
-		Summary:  "Protection fell back to Observe: " + reason,
-		Decision: "fail_safe", Action: "response_disabled",
-		Outcome: "kernel blocklist verified empty; platform remains in Observe until an operator promotes it",
+		Summary:  "Automatic response paused; kernel enforcement retained: " + reason,
+		Decision: "fail_safe", Action: "automatic_response_paused",
+		Outcome: "kernel blocklist retained and verified; automatic decisions stay paused until the cause clears and the calm holds, or an operator promotes",
 	})
 }
 
+// degradeLocked lowers the release phase without ever disarming the host.
+//
+// This function used to reconcile the kernel to observe, which removes every enforced block,
+// because the platform could not prove the kernel state. That is fail-open, and it is the
+// primitive an attacker wants: one rejected kernel sample, one forensic-log overflow or one
+// missed heartbeat ended with an unprotected host and every blocked source released. A host
+// was found disarmed for twenty hours after a single malformed ingress event, and every
+// control-plane restart disarmed it again.
+//
+// The kernel policy is retained and verified instead. Blocks the platform owns but that are
+// not yet enforced are applied - a strengthening action - nothing is removed, and the
+// retained state is confirmed before the phase drops. New automatic decisions stop by
+// themselves, because every consumer requires the enforce phase (kinetic_response.go), which
+// is the containment this fall-back exists for.
+//
+// Releasing the kernel policy stays possible, but only through an explicit operator action:
+// the RETURN:OBSERVE transition, an emergency stop, or clearing one.
 func (r *ReleaseController) degradeLocked(reason string) error {
-	// Disable all new active XDR decisions before attempting remote kernel
-	// reconciliation. "unverified" is intentional: it cannot be mistaken for
-	// Observe while stale XDP rules may still exist.
+	// Automatic decisions stop before anything else. "unverified" cannot be mistaken for a
+	// state in which new containment is safe.
 	r.state.SetModes("unverified", "observe")
-	if err := r.reconcileLocked("observe"); err != nil {
-		detail := reason + "; kernel fail-safe verification failed"
+
+	if err := r.reconcileVerifiedLocked(); err != nil {
+		// Nothing was removed - the kernel still holds whatever it held - but that state is
+		// not confirmed, so it is reported as unverified and the operator is required. The
+		// platform does not release blocks it cannot see.
+		detail := reason + "; retained kernel policy could not be verified"
 		r.markDegradedLocked(detail, "unverified", false)
 		r.state.AddEvent(Event{
-			Severity: "critical", Kind: "release.fail_safe_unverified", Source: "release-gate",
-			Message: "Active response state is unverified; out-of-band recovery required: " + reason,
+			Severity: "critical", Kind: "release.degrade_unverified", Source: "release-gate",
+			Message: "Enforcement retained but unverified; out-of-band verification required: " + reason,
 		})
-		return fmt.Errorf("fail-safe kernel reconciliation failed: %w", err)
+		log.Printf("release: phase degraded, retained enforcement unverified: %s", reason)
+		return fmt.Errorf("fail-closed retention could not verify the kernel policy: %w", err)
 	}
-	r.status.KernelPolicyState = "verified-empty"
-	r.state.SetModes("observe", "observe")
-	if err := r.policy.Persist(r.cfg.Node.Name, "observe", "observe", r.state.BlocksSnapshot()); err != nil {
+	if err := r.policy.Persist(r.cfg.Node.Name, "enforce", "observe", r.state.BlocksSnapshot()); err != nil {
 		r.state.SetPolicyStatus(r.policy.Status())
-		detail := reason + "; observe policy persistence failed"
-		r.markDegradedLocked(detail, "verified-empty", false)
+		detail := reason + "; retained policy persistence failed"
+		r.markDegradedLocked(detail, "unverified", false)
 		r.state.AddEvent(Event{
-			Severity: "critical", Kind: "release.fail_safe_policy_failed", Source: "release-gate",
-			Message: "Kernel blocklist is empty but fail-safe policy persistence failed: " + reason,
+			Severity: "critical", Kind: "release.degrade_policy_failed", Source: "release-gate",
+			Message: "Kernel enforcement is retained but the signed policy could not be persisted: " + reason,
 		})
-		return fmt.Errorf("fail-safe observe policy persistence failed: %w", err)
+		log.Printf("release: phase degraded, retained policy persistence failed: %s", reason)
+		return fmt.Errorf("fail-closed retention could not persist the signed policy: %w", err)
 	}
 	r.state.SetPolicyStatus(r.policy.Status())
-	r.markDegradedLocked(reason, "verified-empty", true)
+	// The kernel enforces what the signed policy states; the XDR mode drops to observe so no
+	// new active response is issued while the cause is unresolved.
+	r.state.SetModes("enforce", "observe")
+	r.markDegradedLocked(reason, "verified-enforce", true)
 	r.state.AddEvent(Event{
-		Severity: "critical", Kind: "release.auto_degraded", Source: "release-gate",
-		Message: "Active beta response disabled and kernel blocklist verified empty: " + reason,
+		Severity: "critical", Kind: "release.degraded_enforcement_retained", Source: "release-gate",
+		Message: "Automatic response paused; kernel enforcement retained (fail-closed): " + reason,
 	})
+	log.Printf("release: phase degraded, kernel enforcement retained (fail-closed): %s", reason)
 	return nil
 }
 

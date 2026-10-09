@@ -424,8 +424,12 @@ func TestBrandedLoginHasVersionLanguagesSupportAndNonceCSP(t *testing.T) {
 			t.Fatalf("lang=%s status=%d", tc.lang, rr.Code)
 		}
 		body := rr.Body.String()
+		// The expected version is read from the same constant the page renders. Written as a
+		// literal it made this test fail for the one reason that is not a defect: the release
+		// version changed.
+		productVersion := strings.TrimSuffix(version, "-access")
 		for _, expected := range []string{
-			"GeDefense", "VisionGaiaTechnology", "4.2.1", tc.text,
+			"GeDefense", "VisionGaiaTechnology", productVersion, tc.text,
 			"paypal.me/dergoldenelotus", "bc1q3ue5gq822tddmkdrek79adlkm36fatat3lz0dm",
 			"0xD37DEfb09e07bD775EaaE9ccDaFE3a5b2348Fe85",
 		} {

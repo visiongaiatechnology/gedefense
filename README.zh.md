@@ -8,9 +8,9 @@
 ### Linux 主权安全矩阵 (Linux Security Fabric)
 
 [![License](https://img.shields.io/badge/License-AGPL--3.0--only-blue?style=for-the-badge)](https://www.gnu.org/licenses/agpl-3.0)
-[![Version](https://img.shields.io/badge/Version-4.2.1-orange?style=for-the-badge)](#)
-[![Status](https://img.shields.io/badge/Status-Release_v4.2.1-yellow?style=for-the-badge)](#)
-[![Installer](https://img.shields.io/badge/Installer-4.2.1_Universal_Linux-green?style=for-the-badge)](#-快速上手)
+[![Version](https://img.shields.io/badge/Version-4.2.2-orange?style=for-the-badge)](#)
+[![Status](https://img.shields.io/badge/Status-Release_v4.2.2-yellow?style=for-the-badge)](#)
+[![Installer](https://img.shields.io/badge/Installer-4.2.2_Universal_Linux-green?style=for-the-badge)](#-快速上手)
 [![Platform](https://img.shields.io/badge/Platform-Linux_x86__64-lightgrey?style=for-the-badge&logo=linux)](#)
 [![Data Plane](https://img.shields.io/badge/Data_Plane-Rust_eBPF%2FXDP-red?style=for-the-badge&logo=rust)](#-系统架构)
 [![Control Plane](https://img.shields.io/badge/Control_Plane-Go-00ADD8?style=for-the-badge&logo=go)](#-系统架构)
@@ -33,12 +33,12 @@
 
 ---
 
-## 🚨 严重安全警告与公告 — RELEASE v4.2.1
+## 🚨 严重安全警告与公告 — RELEASE v4.2.2
 
 > [!CAUTION]
 > **全体系统运维人员与管理员紧急安全通告（强烈建议立即升级）：**
 > 
-> 在 GeDefense 4.2.0 版本中，作为全面安全审计与验证周期的一部分，**我们排查并彻底修复了此前版本（4.0.x / 4.1.0）中存在的多个严重安全漏洞与完整性缺陷**。强烈建议所有生产环境节点立即升级至 v4.2.1：
+> 在 GeDefense 4.2.0 版本中，作为全面安全审计与验证周期的一部分，**我们排查并彻底修复了此前版本（4.0.x / 4.1.0）中存在的多个严重安全漏洞与完整性缺陷**。强烈建议所有生产环境节点立即升级至 v4.2.2：
 > 
 > 1. **金丝雀陷阱符号链接遍历提权漏洞（Canary Deployment）：**
 >    - *漏洞详情：* 此前的金丝雀诱饵部署在诱饵路径或暂存路径上会跟随符号链接。攻击者若控制上级目录中的符号链接，即可将具有 root 权限的写操作重定向至文件系统的任意位置（如 `cron`、`authorized_keys`、`ld.so.preload`）→ 导致任意文件写入及 root 提权。
@@ -68,9 +68,9 @@
 
 ---
 
-## ⚠️ 稳定性与可靠性承诺 — RELEASE v4.2.1 · 通用 LINUX 平台
+## ⚠️ 稳定性与可靠性承诺 — RELEASE v4.2.2 · 通用 LINUX 平台
 
-VGT GeDefense 4.2.1 是主权 Linux 安全防御体系的旗舰产品 — 将经过深度加固的内核级防御链与全新的 **Security Fabric Control Plane（安全织网控制平面）**、通用 Linux 原生集成、加固级发布流水线以及真实的内核/网卡适格门禁融为一体。专为主权主机与高对抗网络防御而设计。
+VGT GeDefense 4.2.2 是主权 Linux 安全防御体系的旗舰产品 — 将经过深度加固的内核级防御链与全新的 **Security Fabric Control Plane（安全织网控制平面）**、通用 Linux 原生集成、加固级发布流水线以及真实的内核/网卡适格门禁融为一体。专为主权主机与高对抗网络防御而设计。
 
 **生产环境准入明确属于具体经过审计的目标主机的属性 — 而非仅仅取决于源代码本身。**
 
@@ -558,14 +558,14 @@ Rust Core **未提供任何通用的系统 Shell、文件系统或 Sysctl 执行
 
 ```bash
 # 下载安装程序
-wget https://github.com/visiongaiatechnology/gedefense/releases/download/v4.2.1/GeDefense-4.2.1-OneClick.run
+wget https://github.com/visiongaiatechnology/gedefense/releases/download/v4.2.2/GeDefense-4.2.2-OneClick.run
 
 # 校验 SHA-256 完整性指纹
-sha256sum --check GeDefense-4.2.1-OneClick.run.sha256
+sha256sum --check GeDefense-4.2.2-OneClick.run.sha256
 
 # 执行安装（需要 root 权限）
-chmod 700 GeDefense-4.2.1-OneClick.run
-sudo ./GeDefense-4.2.1-OneClick.run
+chmod 700 GeDefense-4.2.2-OneClick.run
+sudo ./GeDefense-4.2.2-OneClick.run
 ```
 
 > 安装包与校验和文件仅在通过全部 GitHub CI 测试及实体 Linux 节点验证后发布。切勿运行未经验签的 RUN 可执行文件。
@@ -600,7 +600,7 @@ sudo ./GeDefense-4.2.1-OneClick.run
 
 ---
 
-## 🚧 当前已知局限（4.2.1）
+## 🚧 当前已知局限（4.2.2）
 
 - 暂未集成 Swarm / 集群网格（Mesh）支持
 - 暂不支持 QUIC 协议网络卸载
@@ -611,13 +611,37 @@ sudo ./GeDefense-4.2.1-OneClick.run
 - 暂未包含完整的 Measured Boot 远程度量证明
 - Gaia Cells 隔离生命周期守护进程独立存在（属于 AstraeaOS 专属组件）
 - 隔离诱捕服务（Deception Service）顺延规划
-- 替换受保护的发布二进制文件会使 XDR 降级，并在控制平面重启之前禁用主动响应；平台目前尚无法区分经授权的部署与篡改
+- 替换受保护的发布组件会以高严重级别被报告，并且不会解除平台的防护；账本轮转要求其归档目录归属于该服务且权限为 `0700`，否则将拒绝运行，而不是写入一个共享目录
+- Rust 核心进程会统计并记录被跳过的入口数据记录，但尚未在其健康应答中报告该数量，因此该数值显示在服务日志中，而不是面板中
 
 ---
 
 ## 📋 版本更新日志 (Changelog)
 
-### v4.2.1 — 稳定性、证据与界面修复 *(当前版本)*
+### v4.2.2 — 故障闭锁式强制执行、账本轮转与诚实的界面 *(当前版本)*
+
+加固版本。它消除了平台可能自行失去防护的路径，并让每个界面如实说明内核的实际状态。
+
+* **故障闭锁式强制执行（解除武装事件）：**
+  * **自动降级不再释放已验证的内核策略。** 一条核心无法解释的内核数据记录 - 一个混合的 UDP/TCP 聚合记录，生产者用触发该次输出的数据包的协议为其打标签，因此一条 TCP 记录可以携带比 SYN 更多的尝试 - 此前会中断整个排空；控制平面把失败的排空读取为内核钩子丢失，于是发布门禁以一个不可用的传感器为由，将内核策略对账为 `observe`。每一条阻断条目都被从内核中移除，一台生产主机因此在二十小时内毫无防护地运行，因为没有任何机制把它带回来。现在门禁会确认并保留它已验证的内容（`verified-enforce`），而一个无法确认的状态会报告为 `verified-empty`，不再被当作同一回事。
+  * **重启会保留签名策略所携带的强制执行，** 而不是初始化到 `observe`。
+  * **阶段晋升永不降低已验证的强制执行。** 只有操作员的明确动作才会降低它，而「保留」会作为一项独立的动作被报告（`automatic_response_paused`），而不是被报告为强制执行发生变更。
+  * **排空或解析器故障与「丧失强制执行能力」被区分开来，** 因此一个无法投递数据记录的传感器，不再被读取为一个无法阻断的内核。
+  * **平台会自行重新武装，** 一旦各项门禁通过且平静期成立，并连同此前使其停滞的原因一起记录该过渡。
+  * **成功的验证会清除它所取代的原因。** 原因此前是单向的：只有轮转或操作员恢复才能清除一个原因，因此一次瞬时故障会让 XDR 一直处于降级状态 - 并让主动响应一直处于暂停状态 - 直到有人重启控制平面。
+  * **操作员的部署不再被当作入侵。** 替换 GeDefense 自身的一个组件此前会降级 XDR 并暂停主动响应，因此每发布一个修复都会悄然关掉一部分防护。现在它是一条高严重级别的记录，不附带任何响应；第三方对象仍保留完整反应。
+  * **恢复事件账本不再要求放弃防护，** 而在保留状态下那原本无法达成 - 要修复该账本，先前只能解除那台主机的武装，而该账本存在的意义正是保全它的防护。
+  * **Rust 核心进程容忍不一致的聚合记录。** 一条其 TCP 标签与自身计数器相矛盾的记录会被保留，其协议被置为中性，计数器保持不变；一条仍然无法解码的记录会被跳过并点名，而不是中断排空；只有当一批中有大量数据记录无法解码时 - 那是线格式错误的确凿特征 - 才会被报告为故障。
+* **账本保留：**
+  * **两份取证账本都会轮转，而不是被填满。** 触及配额此前会停止记录、降级 XDR 并暂停主动响应，直到操作员手动归档该分段 - 在一台生产主机上一天之内发生了两次。现在达到百分之九十时，已密封的链条会连同清单一起归档，清单载明大小、摘要、序列、头部哈希与校验范围，随后开始一条全新的链条。
+  * **轮转能经受崩溃。** 它先复制再替换，因此被中断的一轮会在下一次启动时依据轮转标记被补完；而一个其清单不匹配的标记会被拒绝，而不是被采信。
+  * **证据账本在有限范围内验证自身。** 启动时此前会验证整份账本 - 约 260 MB，每兆字节约 6.7 秒 - 并超出了该 systemd 单元的启动超时，导致平台和网关都无法启动。现在启动只检查认证过的检查点与一个有限的尾部窗口；历史记录在后台针对一个认证过的水印增量覆盖；完整验证仍然可供操作员使用。未认证的水印会被拒绝，因为接受它曾让一个伪造的文件跳过整段历史。
+  * **被中断的追加会被恢复** - 验证后密封，或作为部分写入被丢弃 - 而不再阻止服务启动。
+* **界面验证：**
+  * **每一句关于状态的陈述都会与其来源数据进行比对。** 对面板进行无头渲染 —— 十一种数据与视图组合、八十条规则 —— 将操作员读到的内容与 API 实际返回的内容进行比较。它发现了三处与其所描述状态相矛盾的陈述，且全部由本版本的修正引入。
+  * **该检查器证明自己能够失败。** 使用故意错误的负载进行自检，并提供回归模式再次移除防护：于是八十条规则中有十八条变红，包括徽章中的 SYSTEM NOMINAL。
+
+### v4.2.1 — 稳定性、证据与界面修复
 
 这是一个修复版本。它不引入任何新的子系统；它让既有的子系统如实说明自身状态，并且不妨碍操作员的工作。
 
@@ -849,6 +873,6 @@ sudo python3 scripts/update-geoip-db.py /var/lib/vgt/gedefense/geoip.csv
 
 [![VGT](https://img.shields.io/badge/VisionGaia-Technology-cyan?style=for-the-badge)](https://visiongaiatechnology.de)
 
-*VGT GeDefense 4.2.1 — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
+*VGT GeDefense 4.2.2 — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
 
 </div>

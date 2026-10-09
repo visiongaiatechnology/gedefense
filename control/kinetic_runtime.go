@@ -1,3 +1,4 @@
+// STATUS: DIAMANT VGT SUPREME
 package main
 
 import (
@@ -13,6 +14,11 @@ const (
 	kineticSweepInterval     = 5 * time.Second
 	kineticOfflineAfterFails = 5
 	kineticMaxDrainBatches   = 8
+	// kineticDrainDegradeAfterFails is deliberately separate from kineticOfflineAfterFails.
+	// The health probe measures the enforcement path; the drain measures sample transport.
+	// One failed drain says nothing about whether the XDP hook is still there, so it takes a
+	// sustained transport failure before the observation itself is called degraded.
+	kineticDrainDegradeAfterFails = 5
 )
 
 // startKineticRuntime closes the production path that previously existed only
@@ -128,12 +134,24 @@ func (s *APIServer) runKineticRuntime(ctx context.Context) {
 	}
 }
 
+// evaluateKineticSensorHealth keeps the two facts a sensor reports apart.
+//
+// The health probe is asked of the core and reads the XDP program's own counters: it answers
+// "is the enforcement path present". A failed event drain answers "did this batch of samples
+// arrive intact". Treating the second as the first is what disarmed the host: one rejected
+// kernel sample made the platform declare a mandatory sensor degraded, and the release gate
+// then removed the entire kernel blocklist on the strength of it - repeatedly, because the
+// rejected samples recur, and for twenty hours because the fall-back was a latch.
+//
+// The verdict is therefore driven by the enforcement path alone. Sample-transport failures are
+// named and counted, and only a sustained run of them degrades the observation - and even then
+// they never touch enforcement, which the release gate governs by the enforcement path.
 func evaluateKineticSensorHealth(eventFailures, healthFailures int, previous, current *CoreIngressHealth) (SensorCoverageStatus, string, string) {
-	if eventFailures >= kineticOfflineAfterFails || healthFailures >= kineticOfflineAfterFails {
-		return CoverageOffline, "failed", fmt.Sprintf("kernel ingress channel unavailable (event_failures=%d health_failures=%d)", eventFailures, healthFailures)
+	if healthFailures >= kineticOfflineAfterFails {
+		return CoverageOffline, "failed", fmt.Sprintf("kernel ingress enforcement path is unavailable (health_failures=%d)", healthFailures)
 	}
-	if eventFailures > 0 || healthFailures > 0 {
-		return CoverageDegraded, "degraded", fmt.Sprintf("kernel ingress channel unstable (event_failures=%d health_failures=%d)", eventFailures, healthFailures)
+	if healthFailures > 0 {
+		return CoverageDegraded, "degraded", fmt.Sprintf("kernel ingress enforcement path is unstable (health_failures=%d)", healthFailures)
 	}
 	if current == nil {
 		return CoverageOffline, "unverified", "kernel ingress health has not been verified"
@@ -144,13 +162,23 @@ func evaluateKineticSensorHealth(eventFailures, healthFailures int, previous, cu
 			current.RingDrops, current.TrackInsertFailures,
 		)
 	}
+	if eventFailures >= kineticDrainDegradeAfterFails {
+		return CoverageDegraded, "degraded", fmt.Sprintf(
+			"kernel ingress sample transport failed %d times consecutively while the enforcement path stayed verified (events emitted=%d)",
+			eventFailures, current.EventsEmitted,
+		)
+	}
+	sampleNote := ""
+	if eventFailures > 0 {
+		sampleNote = fmt.Sprintf("; %d recovered sample drain failure(s), enforcement path unaffected", eventFailures)
+	}
 	if current.EventsEmitted == 0 {
-		return CoverageOnline, "pass", "kernel ingress program and bounded health maps verified; no ingress events emitted yet"
+		return CoverageOnline, "pass", "kernel ingress program and bounded health maps verified; no ingress events emitted yet" + sampleNote
 	}
 	// The hook is named in the reason. A pass on native XDP and a pass on TC ingress are
 	// not the same statement about a host, and reporting both as "verified kernel ingress
 	// producer" hid which one the operator actually has.
-	return CoverageOnline, "pass", fmt.Sprintf("verified kernel ingress producer via %s (%d events emitted)", describeIngressMode(current.Mode), current.EventsEmitted)
+	return CoverageOnline, "pass", fmt.Sprintf("verified kernel ingress producer via %s (%d events emitted)%s", describeIngressMode(current.Mode), current.EventsEmitted, sampleNote)
 }
 
 // describeIngressMode turns the mode token into something an operator can read, and

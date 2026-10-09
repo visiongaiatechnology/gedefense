@@ -1,10 +1,10 @@
-# GeDefense 4.2.1 One-Click Installer
+# GeDefense 4.2.2 One-Click Installer
 
 ## Install / Upgrade
 
 ```bash
-chmod +x GeDefense-4.2.1-OneClick.run
-sudo ./GeDefense-4.2.1-OneClick.run
+chmod +x GeDefense-4.2.2-OneClick.run
+sudo ./GeDefense-4.2.2-OneClick.run
 ```
 
 The installer is source-self-contained. It verifies the embedded payload and its
@@ -25,7 +25,7 @@ preserved transactionally.
 ## Non-destructive verification
 
 ```bash
-./GeDefense-4.2.1-OneClick.run --self-test
+./GeDefense-4.2.2-OneClick.run --self-test
 ```
 
 This verifies the embedded archive, per-file payload manifest, installer shell

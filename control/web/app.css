@@ -629,6 +629,15 @@ input::placeholder, textarea::placeholder {
 .step-card.is-locked {
   opacity: 0.65;
 }
+/* A fail-safe keeps the enforcement the kernel confirmed; an amber edge says "restricted, not
+   lost" without the alarm of the danger colour. The paused step is muted and dashed so it does
+   not read as a milestone that was reached. */
+.step-card.is-retained {
+  border-color: rgba(246, 200, 95, 0.45);
+}
+.step-card.is-paused {
+  opacity: 0.8; border-style: dashed;
+}
 .step-card-header {
   display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;
 }
@@ -1281,6 +1290,14 @@ dialog form { padding: 28px; }
 }
 .step-card.is-locked {
   opacity: 0.7;
+}
+/* See the note on the first step-card block: retained enforcement is restricted, not lost. */
+.step-card.is-retained {
+  border-color: rgba(246, 200, 95, 0.45);
+  box-shadow: 0 0 20px rgba(246, 200, 95, 0.10);
+}
+.step-card.is-paused {
+  opacity: 0.8; border-style: dashed;
 }
 
 .clickable-row {
