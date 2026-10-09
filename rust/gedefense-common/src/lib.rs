@@ -98,16 +98,35 @@ pub fn decode_ingress_event(bytes: &[u8]) -> Option<IngressEvent> {
     let source: [u8; NETWORK_ADDRESS_BYTES] = bytes[32..48].try_into().ok()?;
     let destination: [u8; NETWORK_ADDRESS_BYTES] = bytes[48..64].try_into().ok()?;
 
+    // Structurally impossible records are corruption and are still refused: a family the
+    // producer cannot emit, no packets at all, counters larger than the packets they describe,
+    // or a missing kernel second.
     if !matches!(family, NETWORK_FAMILY_V4 | NETWORK_FAMILY_V6)
         || packets == 0
         || syn_count > packets
         || ack_count > packets
         || u32::from(attempt_count) > packets
-        || (protocol == 6 && u32::from(attempt_count) != syn_count)
         || window_epoch_sec == 0
     {
         return None;
     }
+
+    // A TCP label whose counters cannot belong to TCP means the label is wrong, not the channel.
+    //
+    // The producer keeps one counter set per source and labels the aggregate with the protocol
+    // of the packet that flushed it, so a source that sent UDP and TCP inside the same window
+    // yields attempt_count > syn_count under a TCP label. Refusing that record made the core
+    // treat the whole drain as failed, and the control plane reads a failed drain as a lost
+    // kernel hook: the mandatory ingress sensor was declared degraded and the release gate
+    // emptied the kernel blocklist, which left a production host unprotected for twenty hours.
+    // The same sample can be produced on purpose. The label is what cannot be trusted, so the
+    // record is kept with the protocol neutralised - exactly how the producer already treats its
+    // carry-over flushes - and the counters stay untouched.
+    let (protocol, tcp_flags) = if protocol == 6 && u32::from(attempt_count) != syn_count {
+        (0, 0)
+    } else {
+        (protocol, tcp_flags)
+    };
 
     Some(IngressEvent {
         family,
@@ -210,7 +229,10 @@ mod tests {
 
     #[test]
     fn ingress_event_wire_decoder_accepts_valid_ipv4_sample() {
-        assert_eq!(core::mem::size_of::<IngressEvent>(), INGRESS_EVENT_WIRE_BYTES);
+        assert_eq!(
+            core::mem::size_of::<IngressEvent>(),
+            INGRESS_EVENT_WIRE_BYTES
+        );
         let mut raw = [0u8; INGRESS_EVENT_WIRE_BYTES];
         raw[0] = NETWORK_FAMILY_V4;
         raw[1] = 6;
@@ -249,6 +271,49 @@ mod tests {
 
         raw[16..20].copy_from_slice(&0u32.to_ne_bytes());
         raw[8..12].copy_from_slice(&0u32.to_ne_bytes());
+        assert!(decode_ingress_event(&raw).is_none());
+    }
+
+    #[test]
+    fn ingress_event_wire_decoder_neutralises_an_inconsistent_tcp_label() {
+        // A mixed-protocol aggregate labelled TCP: attempt_count exceeds syn_count, which no
+        // pure TCP window can produce. The sample is kept with a neutral protocol instead of
+        // being refused, because refusing one sample aborted the whole drain in the core.
+        let mut raw = [0u8; INGRESS_EVENT_WIRE_BYTES];
+        raw[0] = NETWORK_FAMILY_V4;
+        raw[1] = 6;
+        raw[2] = 0x02;
+        raw[3] = 5;
+        raw[8..12].copy_from_slice(&5u32.to_ne_bytes());
+        raw[12..16].copy_from_slice(&300u32.to_ne_bytes());
+        raw[16..20].copy_from_slice(&1u32.to_ne_bytes());
+        raw[20..24].copy_from_slice(&1u32.to_ne_bytes());
+        raw[24..32].copy_from_slice(&99u64.to_ne_bytes());
+        raw[32..36].copy_from_slice(&[203, 0, 113, 10]);
+
+        let event =
+            decode_ingress_event(&raw).expect("an inconsistent label must not discard the sample");
+        assert_eq!(event.protocol, 0);
+        assert_eq!(event.tcp_flags, 0);
+        assert_eq!(event.attempt_count, 5);
+        assert_eq!(event.syn_count, 1);
+        assert_eq!(event.packets, 5);
+        assert_eq!(event.bytes, 300);
+    }
+
+    #[test]
+    fn ingress_event_wire_decoder_rejects_counters_larger_than_the_packets() {
+        // This cannot be a labelling disagreement: the counters contradict the packet count.
+        let mut raw = [0u8; INGRESS_EVENT_WIRE_BYTES];
+        raw[0] = NETWORK_FAMILY_V4;
+        raw[1] = 6;
+        raw[8..12].copy_from_slice(&2u32.to_ne_bytes());
+        raw[16..20].copy_from_slice(&3u32.to_ne_bytes());
+        raw[24..32].copy_from_slice(&1u64.to_ne_bytes());
+        assert!(decode_ingress_event(&raw).is_none());
+
+        raw[8..12].copy_from_slice(&0u32.to_ne_bytes());
+        raw[16..20].copy_from_slice(&0u32.to_ne_bytes());
         assert!(decode_ingress_event(&raw).is_none());
     }
 }

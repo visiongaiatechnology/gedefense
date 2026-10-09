@@ -53,6 +53,13 @@ const REPLAY_CACHE_CAPACITY: usize = 4096;
 const MAX_EXEC_EVENTS_PER_RESPONSE: usize = 24;
 const MAX_EGRESS_EVENTS_PER_RESPONSE: usize = 24;
 const MAX_INGRESS_EVENTS_PER_RESPONSE: usize = 12;
+// How many undecodable ingress samples in a single drain mean the wire format itself is wrong.
+//
+// One such sample is a loss of fidelity and is skipped; a batch full of them is a real fault, and
+// the control plane has to be told so the operator sees a sensor that receives nothing instead of
+// a sensor that looks healthy. The threshold is far above the sporadic rate a busy host produces,
+// so it cannot be tripped by ordinary mixed-protocol aggregates.
+const INGRESS_REJECTED_ALARM_THRESHOLD: u64 = 16;
 const MAX_CELL_LSM_EVENTS_PER_RESPONSE: usize = 24;
 const HARDENING_FILE: &str = "/etc/sysctl.d/90-vgt-gedefense.conf";
 const RENAME_NOREPLACE: u32 = 1;
@@ -715,8 +722,7 @@ impl KernelCore {
     fn ingress_health(&self) -> Result<String, BoxError> {
         let emitted = Self::per_cpu_counter_sum(&self.ingress_events_emitted)?;
         let ring_drops = Self::per_cpu_counter_sum(&self.ingress_ring_drops)?;
-        let track_insert_failures =
-            Self::per_cpu_counter_sum(&self.ingress_track_insert_failures)?;
+        let track_insert_failures = Self::per_cpu_counter_sum(&self.ingress_track_insert_failures)?;
         // A fourth field, appended rather than inserted so a control plane from before
         // this change still parses the response. The mode is what an operator needs in
         // order to know whether the kernel enforces in the driver path, in the generic
@@ -729,12 +735,29 @@ impl KernelCore {
 
     fn take_ingress_events(&mut self) -> Result<String, BoxError> {
         let mut encoded = Vec::with_capacity(MAX_INGRESS_EVENTS_PER_RESPONSE);
+        let mut rejected = 0u64;
         while encoded.len() < MAX_INGRESS_EVENTS_PER_RESPONSE {
             let Some(item) = self.ingress_events.next() else {
                 break;
             };
-            let event = decode_ingress_event(&item)
-                .ok_or("kernel ingress event has invalid size or metadata")?;
+            // One undecodable sample is skipped and named, not fatal.
+            //
+            // Returning an error here failed the entire drain, and the control plane reads a
+            // failed drain as a lost kernel hook: the mandatory ingress sensor was declared
+            // degraded, every automatic decision paused, and before the fail-closed change the
+            // release gate emptied the kernel blocklist outright - a production host was found
+            // unprotected twenty hours later. A record this process cannot interpret is a loss
+            // of fidelity; it must not cost the protection.
+            let Some(event) = decode_ingress_event(&item) else {
+                if rejected < 4 {
+                    eprintln!(
+                        "kernel ingress sample rejected: {} bytes; size, family or counters are not consistent",
+                        item.len()
+                    );
+                }
+                rejected = rejected.saturating_add(1);
+                continue;
+            };
             let address_len = if event.family == NETWORK_FAMILY_V4 {
                 4
             } else {
@@ -756,6 +779,15 @@ impl KernelCore {
                 hex::encode(&event.source[..address_len]),
                 hex::encode(&event.destination[..address_len])
             ));
+        }
+        // A batch in which many samples cannot be decoded states something else: the wire format
+        // itself does not match what this core expects. That is a real fault and the operator has
+        // to hear about it, rather than being left with a sensor that silently receives nothing.
+        if rejected >= INGRESS_REJECTED_ALARM_THRESHOLD {
+            return Err(format!(
+                "kernel ingress event format is inconsistent: {rejected} samples rejected in one drain"
+            )
+            .into());
         }
         if encoded.is_empty() {
             Ok("empty".to_owned())

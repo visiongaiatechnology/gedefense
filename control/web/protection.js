@@ -151,11 +151,19 @@ function renderProtectionHero(snapshot) {
       heroBtn.onclick = () => openActivationDialog('enforce');
     }
   } else if (phase === 'degraded') {
+    // A fail-safe no longer falls back to Observe: it pauses the automatic response and keeps
+    // the kernel enforcement it verified. The panel said "protection has fallen back" for both
+    // states, so an operator looking at a host that was still enforcing - every block in place,
+    // confirmed against the kernel - read that its protection was gone, and the sentence named
+    // Observe as the place it had gone to. The kernel state the backend reports decides which
+    // of the two it actually is, so the wording follows it: a retained enforcement is a
+    // restricted posture, not a lost one, and the badge reflects that.
+    const retained = String(rel.kernel_policy_state || '') === 'verified-enforce';
     if (heroBadge) {
-      heroBadge.textContent = t('overview.hero.degradedBadge');
-      heroBadge.className = 'status-pill danger';
+      heroBadge.textContent = t(retained ? 'overview.hero.retainedBadge' : 'overview.hero.degradedBadge');
+      heroBadge.className = retained ? 'status-pill warn' : 'status-pill danger';
     }
-    if (heroTitle) heroTitle.textContent = t('overview.hero.degradedTitle');
+    if (heroTitle) heroTitle.textContent = t(retained ? 'overview.hero.retainedTitle' : 'overview.hero.degradedTitle');
     // The generic sentence says a fail-safe happened; it does not say what caused it or
     // when. Both are recorded, so both are shown. Without them the operator is told the
     // host fell back and left to guess why.
@@ -164,7 +172,7 @@ function renderProtectionHero(snapshot) {
       const at = rel.fail_safe_at ? formatTime(rel.fail_safe_at) : '';
       const cause = reason ? ' ' + t('overview.hero.degradedCause', { reason }) : '';
       const when = at ? ' ' + t('overview.hero.degradedWhen', { at }) : '';
-      heroDesc.textContent = t('overview.hero.degradedDesc') + cause + when;
+      heroDesc.textContent = t(retained ? 'overview.hero.retainedDesc' : 'overview.hero.degradedDesc') + cause + when;
     }
     if (heroBtn) {
       heroBtn.textContent = t('overview.hero.btnActivate');
@@ -204,6 +212,10 @@ async function renderProtectionStepper(snapshot) {
   const rel = snapshot.release || {};
   const isEmergency = Boolean(rel.emergency_stop);
   const phase = String(rel.phase || 'observe').toLowerCase();
+  // A fail-safe keeps the kernel enforcement it verified and pauses only the automatic response.
+  // Every element on this page has to be able to tell those apart: the phase says which step the
+  // platform may start, the kernel state says what it is actually doing right now.
+  const retained = String(rel.kernel_policy_state || '') === 'verified-enforce';
 
   // Emergency banner
   const emergencyBanner = byID('emergencyBanner');
@@ -224,8 +236,15 @@ async function renderProtectionStepper(snapshot) {
       currentBadge.textContent = t('protection.phase.canary');
       currentBadge.className = 'status-pill warn';
     } else if (phase === 'degraded') {
-      currentBadge.textContent = t('protection.phase.degraded');
-      currentBadge.className = 'status-pill danger';
+      // The badge names the posture, not just the phase name: a degraded platform whose kernel
+      // still enforces is restricted, and calling it "degraded" alone reads as unprotected.
+      if (retained) {
+        currentBadge.textContent = t('dynamic.restricted');
+        currentBadge.className = 'status-pill warn';
+      } else {
+        currentBadge.textContent = t('protection.phase.degraded');
+        currentBadge.className = 'status-pill danger';
+      }
     } else {
       currentBadge.textContent = t('protection.phase.observe');
       currentBadge.className = 'status-pill muted';
@@ -251,6 +270,13 @@ async function renderProtectionStepper(snapshot) {
       cardObserve.classList.add('is-current');
       pillObserve.textContent = t('stepper.status.active');
       pillObserve.className = 'status-pill active';
+    } else if (retained && phase === 'degraded') {
+      // The kernel still enforces, so this is not a milestone the platform has left behind: it
+      // is above it with its automatic response paused. Marking it as passed and the top step as
+      // locked told the operator the exact opposite of what the kernel was doing.
+      cardObserve.classList.add('is-paused');
+      pillObserve.textContent = t('stepper.status.paused');
+      pillObserve.className = 'status-pill muted';
     } else {
       cardObserve.classList.add('is-passed');
       pillObserve.textContent = '✓';
@@ -267,7 +293,7 @@ async function renderProtectionStepper(snapshot) {
       cardCanary.classList.add('is-passed');
       pillCanary.textContent = '✓';
       pillCanary.className = 'status-pill passed';
-    } else if (readinessCanary && readinessCanary.ready) {
+    } else if (!isEmergency && readinessCanary && readinessCanary.ready) {
       cardCanary.classList.add('is-ready');
       pillCanary.textContent = t('stepper.status.ready');
       pillCanary.className = 'status-pill good';
@@ -283,7 +309,13 @@ async function renderProtectionStepper(snapshot) {
       cardEnforce.classList.add('is-current');
       pillEnforce.textContent = t('stepper.status.active');
       pillEnforce.className = 'status-pill active';
-    } else if (readinessEnforce && readinessEnforce.ready) {
+    } else if (retained && phase === 'degraded') {
+      // The kernel is enforcing this step right now. It read GESPERRT while the host was
+      // blocking with a policy the kernel had confirmed - the contradiction on this page.
+      cardEnforce.classList.add('is-retained');
+      pillEnforce.textContent = t('stepper.status.retained');
+      pillEnforce.className = 'status-pill warn';
+    } else if (!isEmergency && readinessEnforce && readinessEnforce.ready) {
       cardEnforce.classList.add('is-ready');
       pillEnforce.textContent = t('stepper.status.ready');
       pillEnforce.className = 'status-pill good';
@@ -305,6 +337,12 @@ async function renderProtectionStepper(snapshot) {
   if (btnActivateCanary) {
     btnActivateCanary.hidden = phase !== 'observe' && phase !== 'degraded';
     btnActivateCanary.disabled = Boolean(isEmergency || (readinessCanary && !readinessCanary.ready));
+    // With the enforcement retained this step cannot lower the kernel policy; only the XDR
+    // response changes. "Activate protection" promised something the platform refuses to do
+    // there, so the label says what the action actually changes.
+    btnActivateCanary.textContent = retained && phase === 'degraded'
+      ? t('stepper.btn.activateCanaryRetained')
+      : t('stepper.btn.activateCanary');
   }
   if (btnActivateEnforce) {
     btnActivateEnforce.hidden = phase !== 'canary';
@@ -344,6 +382,19 @@ function renderSoakTimers(canary, enforce, phase) {
 function renderActiveBlockers(snapshot, canary, enforce) {
   const root = byID('protectionBlockersList');
   if (!root) return;
+
+  // A fail-safe is not "all gates satisfied". This list only collected the promotion blockers of
+  // the current phase, and the degraded phase has none of its own - so a platform sitting in a
+  // fail-safe announced that every gate was holding, directly beneath its own DEGRADED badge.
+  const rel = (snapshot && snapshot.release) || {};
+  const phase = String(rel.phase || '').toLowerCase();
+  if (phase === 'degraded') {
+    const retained = String(rel.kernel_policy_state || '') === 'verified-enforce';
+    const reason = String(rel.fail_safe_reason || '').trim() || t('protection.preflight.unknownCause');
+    root.replaceChildren(el('li', retained ? 'state-warn' : 'state-bad',
+      t(retained ? 'protection.preflight.retained' : 'protection.preflight.unconfirmed', { reason })));
+    return;
+  }
 
   const currentBlockers = [];
   if (canary && !canary.ready && currentPhase === 'observe') {

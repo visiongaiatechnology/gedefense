@@ -8,9 +8,9 @@
 ### Linux Security Fabric
 
 [![License](https://img.shields.io/badge/License-AGPL--3.0--only-blue?style=for-the-badge)](https://www.gnu.org/licenses/agpl-3.0)
-[![Version](https://img.shields.io/badge/Version-4.2.1-orange?style=for-the-badge)](#)
-[![Status](https://img.shields.io/badge/Status-Release_v4.2.1-yellow?style=for-the-badge)](#)
-[![Installer](https://img.shields.io/badge/Installer-4.2.1_Universal_Linux-green?style=for-the-badge)](#-quick-start)
+[![Version](https://img.shields.io/badge/Version-4.2.2-orange?style=for-the-badge)](#)
+[![Status](https://img.shields.io/badge/Status-Release_v4.2.2-yellow?style=for-the-badge)](#)
+[![Installer](https://img.shields.io/badge/Installer-4.2.2_Universal_Linux-green?style=for-the-badge)](#-quick-start)
 [![Platform](https://img.shields.io/badge/Platform-Linux_x86__64-lightgrey?style=for-the-badge&logo=linux)](#)
 [![Data Plane](https://img.shields.io/badge/Data_Plane-Rust_eBPF%2FXDP-red?style=for-the-badge&logo=rust)](#-architecture)
 [![Control Plane](https://img.shields.io/badge/Control_Plane-Go-00ADD8?style=for-the-badge&logo=go)](#-architecture)
@@ -33,12 +33,12 @@
 
 ---
 
-## 🚨 CRITICAL SECURITY ADVISORY & WARNING — RELEASE v4.2.1
+## 🚨 CRITICAL SECURITY ADVISORY & WARNING — RELEASE v4.2.2
 
 > [!CAUTION]
 > **URGENT SECURITY NOTICE FOR ALL OPERATORS & SYSTEM ADMINISTRATORS (UPGRADE STRONGLY RECOMMENDED):**
 > 
-> In GeDefense version 4.2.0, as part of an exhaustive security audit and verification cycle, **multiple critical vulnerabilities and integrity flaws present in previous versions (4.0.x / 4.1.0)** were identified and completely remediated. An immediate upgrade to v4.2.1 is strongly advised for all production installations:
+> In GeDefense version 4.2.0, as part of an exhaustive security audit and verification cycle, **multiple critical vulnerabilities and integrity flaws present in previous versions (4.0.x / 4.1.0)** were identified and completely remediated. An immediate upgrade to v4.2.2 is strongly advised for all production installations:
 > 
 > 1. **Critical Privilege Escalation via Symlink Traversal (Canary Deployment):**
 >    - *Vulnerability:* The previous canary deployment followed symbolic links at the decoy or staging path. An attacker-controlled symlink in parent directories could redirect file writes with root privileges to arbitrary filesystem locations (`cron`, `authorized_keys`, `ld.so.preload`) → Arbitrary file write leading to root privilege escalation.
@@ -68,9 +68,9 @@
 
 ---
 
-## ⚠️ STABILITY & ASSURANCE — RELEASE v4.2.1 · UNIVERSAL LINUX PLATFORM
+## ⚠️ STABILITY & ASSURANCE — RELEASE v4.2.2 · UNIVERSAL LINUX PLATFORM
 
-VGT GeDefense 4.2.1 is the flagship Linux security fabric — the hardened kernel-speed defense chain combined with the new **Security Fabric Control Plane**, universal Linux integration, hardened release pipeline, and concrete kernel/NIC qualification gates. It is engineered for sovereign host and network protection.
+VGT GeDefense 4.2.2 is the flagship Linux security fabric — the hardened kernel-speed defense chain combined with the new **Security Fabric Control Plane**, universal Linux integration, hardened release pipeline, and concrete kernel/NIC qualification gates. It is engineered for sovereign host and network protection.
 
 **Production clearance is deliberately a property of the concretely audited target host — not merely the source code.**
 
@@ -561,14 +561,14 @@ If the Gaia Cells runtime is **not present**, the adapter reports `runtime_not_i
 
 ```bash
 # Download installer
-wget https://github.com/visiongaiatechnology/gedefense/releases/download/v4.2.1/GeDefense-4.2.1-OneClick.run
+wget https://github.com/visiongaiatechnology/gedefense/releases/download/v4.2.2/GeDefense-4.2.2-OneClick.run
 
 # Verify SHA-256
-sha256sum --check GeDefense-4.2.1-OneClick.run.sha256
+sha256sum --check GeDefense-4.2.2-OneClick.run.sha256
 
 # Install (root required)
-chmod 700 GeDefense-4.2.1-OneClick.run
-sudo ./GeDefense-4.2.1-OneClick.run
+chmod 700 GeDefense-4.2.2-OneClick.run
+sudo ./GeDefense-4.2.2-OneClick.run
 ```
 
 > The installer and checksum are published only after all GitHub CI and concrete
@@ -604,7 +604,7 @@ The firewall rule for the HTTPS gateway port (TCP 9843) can be configured via UF
 
 ---
 
-## 🚧 Known Limitations (4.2.1)
+## 🚧 Known Limitations (4.2.2)
 
 - No Swarm / Mesh support
 - No QUIC offloading
@@ -615,13 +615,37 @@ The firewall rule for the HTTPS gateway port (TCP 9843) can be configured via UF
 - No complete Measured Boot attestation
 - Gaia Cells Lifecycle Daemon external (AstraeaOS runtime)
 - Isolated Deception Service deferred
-- Replacing a protected release binary degrades XDR and disables the active response until the control plane restarts; the platform cannot yet tell an authorised deployment from tampering
+- Replacing a protected release component is reported at high severity and does not disarm the platform; ledger rotation requires its archive directory to belong to the service with mode `0700` and refuses to run rather than writing into a shared directory
+- The Rust core counts and logs skipped ingress samples but does not yet report the count in its health response, so the figure is visible in the service log rather than in the panel
 
 ---
 
 ## 📋 Changelog
 
-### v4.2.1 — Stability, Evidence and Interface Fixes *(Current)*
+### v4.2.2 — Fail-Closed Enforcement, Ledger Rotation and an Honest Panel *(Current)*
+
+A hardening release. It removes the paths on which the platform could lose its own protection, and it makes every surface state what the kernel is actually doing.
+
+* **Fail-closed enforcement (the disarmament):**
+  * **An automatic degradation never releases the verified kernel policy.** A single kernel sample the core could not interpret - a mixed UDP/TCP aggregate, which the producer labels with the protocol of the packet that flushed it, so a TCP record can carry more attempts than SYNs - aborted the whole drain; the control plane read the failed drain as a lost kernel hook, and the release gate answered an unavailable sensor by reconciling the kernel policy to `observe`. Every block was removed from the kernel, and a production host ran unprotected for twenty hours because nothing brought it back. The gate now confirms and retains what it verified (`verified-enforce`), and a state it could not confirm is reported as `verified-empty` instead of being treated as the same thing.
+  * **A restart keeps the enforcement the signed policy carries** instead of initialising to `observe`.
+  * **A promotion never lowers verified enforcement.** Only an explicit operator action does, and a retention is reported as its own action (`automatic_response_paused`) rather than as an enforcement change.
+  * **A drain or parser failure is separated from the loss of enforcement capability,** so a sensor that cannot deliver samples is no longer read as a kernel that cannot block.
+  * **The platform re-arms itself** once the gates pass and the calm holds, and logs the transition together with the cause that had held it.
+  * **A verification that succeeds clears the cause it replaced.** Causes were one-way: only a rotation or an operator recovery removed one, so a transient fault kept XDR degraded - and the automatic response paused - until somebody restarted the control plane.
+  * **A deployment by the operator is no longer treated as an intrusion.** Replacing one of GeDefense's own components degraded XDR and paused the automatic response, so shipping a fix quietly switched part of the protection off. It is now a high-severity record with no response attached; third-party objects keep the full reaction.
+  * **Recovering the incident ledger no longer requires giving up the protection,** which under retention was unreachable - the ledger could only be repaired by first disarming the host whose protection it exists to preserve.
+  * **The Rust core tolerates an inconsistent aggregate.** A record whose TCP label contradicts its counters is kept with a neutralised protocol and its counters untouched; a record that still cannot be decoded is skipped and named instead of aborting the drain; only a batch in which many samples are undecodable - the signature of a wrong wire format - is reported as a fault.
+* **Ledger retention:**
+  * **Both forensic ledgers rotate instead of filling up.** Reaching the budget stopped the recording, degraded XDR and paused the automatic response until an operator archived the segment by hand - twice on one production host in one day. At ninety percent the sealed chain is archived with a manifest carrying sizes, digests, sequence, head hash and scope, and a fresh chain continues.
+  * **The rotation survives a crash.** It copies before it replaces, so an interrupted run is completed at the next start from a rotation marker; a marker whose manifest does not match is refused rather than trusted.
+  * **The evidence ledger verifies itself within bounds.** Startup verified the whole ledger - around 260 MB at roughly 6.7 seconds per megabyte - and exceeded the unit's start timeout, so the platform could not come up and neither could the gateway. Startup now checks the authenticated checkpoint and a bounded tail; the history is covered incrementally in the background against an authenticated watermark; the complete verification stays available to the operator. An unauthenticated watermark is refused, because accepting one let a forged file skip the entire history.
+  * **An interrupted append is recovered** - verified and sealed, or dropped when it is a partial write - instead of preventing the service from starting.
+* **Interface verification:**
+  * **Every state-bearing sentence is checked against the payload that produced it.** A headless render of the dashboard - eleven payload and view combinations, eighty rules - compares what the operator reads with what the API reported. It found three statements that contradicted the state they described, all three introduced by this release's own corrections.
+  * **The checker proves it can fail.** A self-test with deliberately wrong payloads, and a regression mode that removes the guards again: eighteen of the eighty rules then go red, including SYSTEM NOMINAL in the badge.
+
+### v4.2.1 — Stability, Evidence and Interface Fixes
 
 A fix release. It introduces no new subsystem; it makes the ones already present tell the truth about themselves and stay out of the operator's way.
 
@@ -860,6 +884,6 @@ sudo python3 scripts/update-geoip-db.py /var/lib/vgt/gedefense/geoip.csv
 
 [![VGT](https://img.shields.io/badge/VisionGaia-Technology-cyan?style=for-the-badge)](https://visiongaiatechnology.de)
 
-*VGT GeDefense 4.2.1 — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
+*VGT GeDefense 4.2.2 — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
 
 </div>

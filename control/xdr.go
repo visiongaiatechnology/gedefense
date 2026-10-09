@@ -1,3 +1,4 @@
+// STATUS: DIAMANT VGT SUPREME
 package main
 
 import (
@@ -688,11 +689,7 @@ func (e *XDREngine) Run(ctx context.Context) {
 				}
 			}
 		case <-logVerifyTick.C:
-			if e.logger != nil {
-				if err := e.logger.Verify(); err != nil {
-					e.markDegradedCause("incident_log", "incident log verification failed: "+err.Error())
-				}
-			}
+			e.verifyForensicArtefacts(ctx)
 		case <-behaviorSaveTick.C:
 			if e.behavior != nil {
 				if err := e.behavior.Persist(); err != nil {
@@ -1372,6 +1369,27 @@ func (e *XDREngine) selfTamper(path, observed, reason string) {
 	if !e.claimTamper(identity, observed) {
 		return
 	}
+	// A change to one of GeDefense's own components is a deployment, not an intrusion.
+	//
+	// The protected set contains this installation's own executables, and every legitimate
+	// deployment replaces them while the service runs. Counting that as self-tampering degraded
+	// XDR, and a degraded XDR blocks every promotion and pauses the automatic response until
+	// somebody restarts the control plane - so shipping a fix quietly switched part of the
+	// protection off, and the operator read "it considers itself critical" instead of reading a
+	// deployment. The change is still reported and still recorded; it is simply no longer
+	// treated as an attack. Third-party objects keep the full response, because nothing
+	// legitimate rewrites those.
+	if isProductArtifact(path) {
+		e.appendIncident(XDRIncident{
+			ID: randomID(), Time: time.Now().UTC(), Severity: "high", Score: 120, Executable: path,
+			RuleIDs: []string{"XDR.SELF_ARTIFACT"}, Categories: []string{"integrity"},
+			Summary: reason, Decision: "alert", Action: "none",
+			Outcome: "recorded only; a GeDefense component was replaced, which is a deployment",
+		})
+		e.state.AddEvent(Event{Severity: "high", Kind: "xdr.self_artifact_changed", Source: "integrity",
+			Message: reason + " (GeDefense component: treated as a deployment)", Target: path})
+		return
+	}
 	// One cause per object, so the reported reason names everything that changed rather
 	// than only the last thing that did.
 	e.markDegradedCause("runtime:"+identity, reason+": "+path)
@@ -1383,6 +1401,63 @@ func (e *XDREngine) selfTamper(path, observed, reason string) {
 
 func (e *XDREngine) markDegraded(reason string) {
 	e.markDegradedCause("runtime", reason)
+}
+
+// verifyForensicArtefacts keeps the forensic artefacts and the degradation causes they set in
+// step with each other.
+//
+// Verification used to run in one direction only: a failure recorded a cause, a success cleared
+// nothing. Only a rotation or an operator recovery could clear one, so a single transient failure
+// left XDR degraded - and a degraded XDR blocks every promotion and pauses the automatic response
+// - until somebody restarted the control plane. That is what happened twice on the production
+// host: the state was cleared by a restart rather than by the platform noticing that the problem
+// had gone. A verification that succeeds is exactly that observation, so it clears the cause it
+// would otherwise have set.
+func (e *XDREngine) verifyForensicArtefacts(ctx context.Context) {
+	if e.logger != nil {
+		// Seal the chain before the budget is reached. A full incident ledger stops recording,
+		// degrades XDR, and that degradation blocks every promotion and pauses the automatic
+		// response until an operator archives the segment by hand - which is exactly what
+		// happened twice on the production host, and what the retention design has to prevent
+		// instead of reporting.
+		if size, budget := e.logger.StoredBytes(); budget > 0 && size > 0 && size*100 >= budget*evidenceRotationThresholdPercent {
+			result, rotateErr := e.logger.Rotate(ctx, "incident-log retention budget reached; sealing the segment before recording stops")
+			switch {
+			case rotateErr != nil:
+				e.markDegradedCause("incident_log", "incident log rotation failed: "+rotateErr.Error())
+			case e.state == nil:
+				e.clearDegradedCause("incident_log")
+			default:
+				e.state.AddEvent(Event{Severity: "high", Kind: "xdr.incident_log_rotated", Source: "xdr",
+					Message: fmt.Sprintf("Incident ledger sealed into %s and started a fresh chain", result.ArchiveID)})
+				if err := e.state.RecordEvidence(EvidenceRecord{
+					Severity: "high", Kind: "xdr.incident_log_rotated", Source: "xdr",
+					Message: "Incident ledger sealed at its retention budget; a fresh chain continues",
+					Target:  "archive:" + result.ArchiveID + " manifest_sha256:" + result.ManifestSHA256,
+				}); err != nil {
+					e.markDegradedCause("evidence", "mandatory evidence ledger unavailable during rotation")
+				} else {
+					e.clearDegradedCause("incident_log")
+				}
+			}
+		} else if err := e.logger.Verify(); err != nil {
+			e.markDegradedCause("incident_log", "incident log verification failed: "+err.Error())
+		} else {
+			e.clearDegradedCause("incident_log")
+		}
+	}
+	if e.state == nil {
+		return
+	}
+	// The evidence ledger has the same property: a healthy ledger means the cause recorded while
+	// it was unavailable no longer holds.
+	if ledger := e.state.EvidenceLedger(); ledger != nil {
+		if err := ledger.Healthy(); err != nil {
+			e.markDegradedCause("evidence", "mandatory evidence ledger unavailable: "+err.Error())
+		} else {
+			e.clearDegradedCause("evidence")
+		}
+	}
 }
 
 func (e *XDREngine) markDegradedCause(cause, reason string) {

@@ -600,10 +600,22 @@ func runPackageIntegrity(ctx context.Context, state *State, scanner *PackageInte
 	}
 }
 
-// runEvidenceVerification re-verifies the signed ledger chain periodically so a
-// tampering attempt is detected while the service is running, not only at the
-// next operator mutation.
+// runEvidenceVerification extends the verified range of the signed ledger periodically so that
+// a tampering attempt is detected while the service is running, not only at the next operator
+// mutation.
+//
+// The pass is incremental on purpose. It used to walk the entire chain on this timer, and the
+// cost of that is proportional to the whole history: at 260 MB a single pass takes minutes, so
+// the timer could never keep up, the pass ran effectively without pause, and the host paid for
+// a full forensic re-verification forever. Each pass now covers the records written since the
+// authenticated watermark, which is milliseconds once it has caught up, and every record is
+// still verified exactly once.
 func runEvidenceVerification(ctx context.Context, state *State, settings *SettingsStore) {
+	// The first pass runs soon after startup rather than a full interval later. A watermark that
+	// is behind - because the ledger was written by a previous process, or because the service
+	// was upgraded into this scheme - has a backlog to drain, and one chunk per configured
+	// interval would leave the history uncovered for hours.
+	first := true
 	for {
 		interval := time.Duration(defaultIntegrityFabricSettings(Config{}).Evidence.VerifyIntervalSeconds) * time.Second
 		if settings != nil {
@@ -611,6 +623,10 @@ func runEvidenceVerification(ctx context.Context, state *State, settings *Settin
 			if configured >= 30 {
 				interval = time.Duration(configured) * time.Second
 			}
+		}
+		if first {
+			interval = 60 * time.Second
+			first = false
 		}
 		timer := time.NewTimer(interval)
 		select {
@@ -626,11 +642,27 @@ func runEvidenceVerification(ctx context.Context, state *State, settings *Settin
 		if ledger == nil {
 			continue
 		}
+		// Seal the chain before the budget is reached, not after. A full ledger stops recording
+		// and reports a capacity condition that degrades XDR, and that degradation pauses the
+		// automatic response - the retention limit of a log quietly disabling part of the
+		// protection, with only an operator able to clear it.
+		if status := ledger.Status(); status.MaxBytes > 0 && status.StoredBytes > 0 &&
+			status.StoredBytes*100 >= status.MaxBytes*evidenceRotationThresholdPercent {
+			result, rotateErr := ledger.Rotate(ctx, "retention budget reached; sealing the segment before recording stops")
+			if rotateErr != nil {
+				state.AddEvent(Event{Severity: "warning", Kind: "evidence.rotation_failed", Source: "integrity",
+					Message: "Evidence ledger rotation failed: " + rotateErr.Error()})
+			} else {
+				state.AddEvent(Event{Severity: "high", Kind: "evidence.rotated", Source: "integrity",
+					Message: fmt.Sprintf("Evidence ledger sealed %d records into %s and started a fresh chain", result.SealedRecords, result.ArchiveID)})
+			}
+			state.SetEvidenceStatus(ledger.Status())
+		}
 		previous := ledger.Healthy()
-		if err := ledger.Verify(); err != nil {
+		if err := ledger.VerifyIncremental(); err != nil {
 			if previous == nil {
 				state.AddEvent(Event{Severity: "critical", Kind: "evidence.verification_failed", Source: "integrity",
-					Message: "Signed evidence ledger failed periodic verification; operator mutations are refused until it is restored"})
+					Message: "Signed evidence ledger failed incremental verification; operator mutations are refused until it is restored"})
 			}
 			continue
 		}

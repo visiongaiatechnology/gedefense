@@ -1035,7 +1035,7 @@ function updateSnapshot(data) {
   const policy = data.policy || {};
   const behavior = xdr.behavior || {};
   const release = data.release || {};
-  text('versionText', data.version || '4.2.1');
+  text('versionText', data.version || '4.2.2');
   if (data.settings) applySettings(data.settings);
   text('nodeName', data.node_name || 'VGT Node');
   text('uptime', formatUptime(data.uptime_seconds));
@@ -1143,12 +1143,22 @@ function updateSnapshot(data) {
   // platform announces SYSTEM NOMINAL while a sensor rail says DEGRADED.
   const coverage = data.coverage || {};
   const coverageNominal = coverage.nominal !== false && String(coverage.overall_status || '') !== 'degraded' && String(coverage.overall_status || '') !== 'offline';
-  const degraded = Boolean(xdr.degraded) || (data.policy && !policy.verified) || !coverageNominal;
-  const nominal = data.core_connected && !degraded;
-  badge('systemBadge', nominal ? t('dynamic.nominal') : degraded ? t('dynamic.degraded') : t('dynamic.controlOnly'), nominal ? 'good' : degraded ? 'danger' : 'warning');
-  text('sidebarState', nominal ? t('dynamic.nominal') : degraded ? t('dynamic.degraded') : t('dynamic.controlOnly'));
-  text('sidebarMode', `${String(data.enforcement || 'observe').toUpperCase()} · ${String(xdr.mode || 'observe').toUpperCase()}`);
-  byID('sidebarPulse').className = `status-dot${nominal ? '' : degraded ? ' danger' : ' warning'}`;
+  // The sidebar has to read every source that can contradict it. It knew the XDR state, the
+  // policy and the sensor coverage, but not the release phase - so a platform sitting in a
+  // fail-safe with its automatic response paused announced SYSTEM NOMINAL in green while the
+  // Protection Center one click away showed DEGRADED. A retained kernel enforcement is not a
+  // nominal platform either: the posture is restricted, and the badge has to say which.
+  const releaseDegraded = String(release.phase || '') === 'degraded';
+  const enforcementRetained = String(release.kernel_policy_state || '') === 'verified-enforce';
+  const degraded = Boolean(xdr.degraded) || (data.policy && !policy.verified) || !coverageNominal || Boolean(release.emergency_stop);
+  const restricted = !degraded && releaseDegraded;
+  const nominal = data.core_connected && !degraded && !restricted;
+  const stateKey = nominal ? 'dynamic.nominal' : restricted ? 'dynamic.restricted' : degraded ? 'dynamic.degraded' : 'dynamic.controlOnly';
+  badge('systemBadge', t(stateKey), nominal ? 'good' : restricted ? 'warning' : degraded ? 'danger' : 'warning');
+  text('sidebarState', t(stateKey));
+  const modes = `${String(data.enforcement || 'observe').toUpperCase()} · ${String(xdr.mode || 'observe').toUpperCase()}`;
+  text('sidebarMode', restricted && enforcementRetained ? `${modes} · ${t('dynamic.enforcementRetained')}` : modes);
+  byID('sidebarPulse').className = `status-dot${nominal ? '' : restricted ? ' warning' : degraded ? ' danger' : ' warning'}`;
   byID('heroPulse').className = byID('sidebarPulse').className;
 
   text('xdrMetric', xdr.enabled ? (xdr.degraded ? t('dynamic.degraded') : String(xdr.mode || 'observe').toUpperCase()) : t('dynamic.disabled'));
@@ -1199,15 +1209,38 @@ function updateSnapshot(data) {
   text('systemFeedTime', data.last_feed_sync ? formatTime(data.last_feed_sync) : t('system.notSynced'));
 
   const releaseReady = Boolean(release.ready);
-  badge('releasePhaseBadge', String(release.phase || 'observe').toUpperCase(), release.phase === 'enforce' ? 'good' : release.phase === 'degraded' ? 'danger' : 'warning');
+  const releaseRetained = String(release.kernel_policy_state || '') === 'verified-enforce';
+  // The same rule as the Protection Center badge: a degraded platform whose kernel still enforces
+  // is restricted, not broken. Two pages must not describe the same state differently.
+  badge('releasePhaseBadge',
+    release.phase === 'degraded' && releaseRetained ? t('dynamic.restricted') : String(release.phase || 'observe').toUpperCase(),
+    release.phase === 'enforce' ? 'good' : release.phase === 'degraded' ? (releaseRetained ? 'warning' : 'danger') : 'warning');
   text('releasePhase', String(release.phase || 'observe').toUpperCase());
   text('releaseSince', release.since ? t('dynamic.since', { time: formatTime(release.since) }) : t('release.startPhase'));
   text('releaseReady', releaseReady ? t('dynamic.ready') : t('dynamic.blocked'));
-  text('releaseDetail', release.detail || t('release.gateCheck'));
+  // The backend names three release states; each has its own sentence here. A host that still
+  // reports "release gates satisfied" while its phase is degraded - an older backend, or a
+  // rollout in progress - must not be able to make the panel contradict its own badge either, so
+  // the phase decides and not the string. Without that, the readiness field announced that every
+  // gate held, directly beside the gate list explaining the retained enforcement.
+  const detail = String(release.detail || '');
+  const detailKey = detail === 'automatic response paused; kernel enforcement retained and verified' ? 'dynamic.detailRetained'
+    : detail === 'automatic response paused; kernel enforcement not confirmed' ? 'dynamic.detailNotConfirmed'
+      : (detail === 'release gates satisfied' && !releaseDegraded) ? 'dynamic.allGates'
+        : '';
+  text('releaseDetail', detailKey ? t(detailKey)
+    : releaseDegraded ? t(releaseRetained ? 'dynamic.detailRetained' : 'dynamic.detailNotConfirmed')
+      : (detail || t('release.gateCheck')));
   text('releaseCoreMisses', number(release.core_misses));
   text('releaseKernelState', String(release.kernel_policy_state || 'unverified').toUpperCase());
-  text('releaseFailSafe', release.fail_safe_verified ? t('dynamic.failSafeVerified') : t('dynamic.failSafeUnverified'));
-  renderReleaseBlockers(release.blockers || []);
+  // The kernel state, not the boolean alone, decides what the fail-safe line says - and only a
+  // fail-safe can say anything about a retained enforcement. The kernel also reports
+  // verified-enforce while the platform is healthy and enforcing normally, where nothing was
+  // retained and nothing is paused, so the phase decides whether there was a fail-safe at all.
+  text('releaseFailSafe', releaseDegraded && releaseRetained
+    ? t('dynamic.failSafeEnforceRetained')
+    : (release.fail_safe_verified ? t('dynamic.failSafeVerified') : t('dynamic.failSafeUnverified')));
+  renderReleaseBlockers(release.blockers || [], release);
 
   renderEvents(data.events || []);
   renderRules(data.blocks || [], removeRule);

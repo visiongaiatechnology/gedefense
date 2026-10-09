@@ -8,9 +8,9 @@
 ### Linux Security Fabric
 
 [![License](https://img.shields.io/badge/License-AGPL--3.0--only-blue?style=for-the-badge)](https://www.gnu.org/licenses/agpl-3.0)
-[![Version](https://img.shields.io/badge/Version-4.2.1-orange?style=for-the-badge)](#)
-[![Status](https://img.shields.io/badge/Status-Release_v4.2.1-yellow?style=for-the-badge)](#)
-[![Installer](https://img.shields.io/badge/Installer-4.2.1_Universal_Linux-green?style=for-the-badge)](#-schnellstart)
+[![Version](https://img.shields.io/badge/Version-4.2.2-orange?style=for-the-badge)](#)
+[![Status](https://img.shields.io/badge/Status-Release_v4.2.2-yellow?style=for-the-badge)](#)
+[![Installer](https://img.shields.io/badge/Installer-4.2.2_Universal_Linux-green?style=for-the-badge)](#-schnellstart)
 [![Platform](https://img.shields.io/badge/Platform-Linux_x86__64-lightgrey?style=for-the-badge&logo=linux)](#)
 [![Data Plane](https://img.shields.io/badge/Data_Plane-Rust_eBPF%2FXDP-red?style=for-the-badge&logo=rust)](#-architektur)
 [![Control Plane](https://img.shields.io/badge/Control_Plane-Go-00ADD8?style=for-the-badge&logo=go)](#-architektur)
@@ -33,12 +33,12 @@
 
 ---
 
-## 🚨 KRITISCHER SICHERHEITSHINWEIS & WARNUNG — RELEASE v4.2.1
+## 🚨 KRITISCHER SICHERHEITSHINWEIS & WARNUNG — RELEASE v4.2.2
 
 > [!CAUTION]
 > **DRINGENDER SICHERHEITSHINWEIS FÜR ALLE BETREIBER & SYSTEMADMINISTRATOREN (UPGRADE DRINGEND EMPFOHLEN):**
 > 
-> In GeDefense Version 4.2.0 wurden im Rahmen eines umfassenden Sicherheitsaudits und Verifikationszyklus **mehrere kritische Sicherheitslücken und Integritätsmängel früherer Versionen (4.0.x / 4.1.0)** identifiziert und vollständig behoben. Ein sofortiges Upgrade auf v4.2.1 wird für alle Produktionsinstallationen dringend empfohlen:
+> In GeDefense Version 4.2.0 wurden im Rahmen eines umfassenden Sicherheitsaudits und Verifikationszyklus **mehrere kritische Sicherheitslücken und Integritätsmängel früherer Versionen (4.0.x / 4.1.0)** identifiziert und vollständig behoben. Ein sofortiges Upgrade auf v4.2.2 wird für alle Produktionsinstallationen dringend empfohlen:
 > 
 > 1. **Kritische Rechteeskalation via Symlink-Traversal (Canary-Deployment):**
 >    - *Schwachstelle:* Das bisherige Canary-Deployment folgte symbolischen Links im Decoy- oder Staging-Pfad. Ein von einem Angreifer kontrollierter Symlink in übergeordneten Verzeichnissen konnte Schreiboperationen mit Root-Rechten an beliebige Dateisystemorte umleiten (`cron`, `authorized_keys`, `ld.so.preload`) → Willkürliches Dateischreiben mit Root-Privilege-Escalation.
@@ -68,9 +68,9 @@
 
 ---
 
-## ⚠️ STABILITÄT & ZUSICHERUNG — RELEASE v4.2.1 · UNIVERSELLE LINUX-PLATTFORM
+## ⚠️ STABILITÄT & ZUSICHERUNG — RELEASE v4.2.2 · UNIVERSELLE LINUX-PLATTFORM
 
-VGT GeDefense 4.2.1 ist das Flaggschiff des Linux-Sicherheitsgewebes — die gehärtete Verteidigungskette mit Kernel-Geschwindigkeit, kombiniert mit der neuen **Security Fabric Control Plane**, universeller Linux-Integration, gehärteter Release-Pipeline und konkreten Kernel-/NIC-Qualifikations-Gates. Es wurde für souveränen Host- und Netzwerkschutz entwickelt.
+VGT GeDefense 4.2.2 ist das Flaggschiff des Linux-Sicherheitsgewebes — die gehärtete Verteidigungskette mit Kernel-Geschwindigkeit, kombiniert mit der neuen **Security Fabric Control Plane**, universeller Linux-Integration, gehärteter Release-Pipeline und konkreten Kernel-/NIC-Qualifikations-Gates. Es wurde für souveränen Host- und Netzwerkschutz entwickelt.
 
 **Die Produktionsfreigabe ist bewusst eine Eigenschaft des konkret auditierten Ziel-Hosts — nicht allein des Quellcodes.**
 
@@ -559,14 +559,14 @@ Ist die Gaia Cells-Laufzeit **nicht vorhanden**, meldet der Adapter `runtime_not
 
 ```bash
 # Installer herunterladen
-wget https://github.com/visiongaiatechnology/gedefense/releases/download/v4.2.1/GeDefense-4.2.1-OneClick.run
+wget https://github.com/visiongaiatechnology/gedefense/releases/download/v4.2.2/GeDefense-4.2.2-OneClick.run
 
 # SHA-256 verifizieren
-sha256sum --check GeDefense-4.2.1-OneClick.run.sha256
+sha256sum --check GeDefense-4.2.2-OneClick.run.sha256
 
 # Installieren (Root erforderlich)
-chmod 700 GeDefense-4.2.1-OneClick.run
-sudo ./GeDefense-4.2.1-OneClick.run
+chmod 700 GeDefense-4.2.2-OneClick.run
+sudo ./GeDefense-4.2.2-OneClick.run
 ```
 
 > Der Installer und die Prüfsumme werden erst veröffentlicht, nachdem alle GitHub-CI- und konkreten Linux-Host-Qualifikations-Gates bestanden wurden. Führe niemals eine nicht verifizierte RUN-Datei aus.
@@ -601,7 +601,7 @@ Die Firewall-Regel für den HTTPS-Gateway-Port (TCP 9843) kann während der Inst
 
 ---
 
-## 🚧 Bekannte Einschränkungen (4.2.1)
+## 🚧 Bekannte Einschränkungen (4.2.2)
 
 - Keine Swarm- / Mesh-Unterstützung
 - Kein QUIC-Offloading
@@ -612,13 +612,37 @@ Die Firewall-Regel für den HTTPS-Gateway-Port (TCP 9843) kann während der Inst
 - Keine vollständige Measured-Boot-Attestierung
 - Gaia Cells Lifecycle Daemon extern (AstraeaOS-Laufzeit)
 - Isolierter Deception Service zurückgestellt
-- Wird eine geschützte Release-Binary ersetzt, degradiert XDR und die aktive Antwort bleibt deaktiviert, bis die Kontrollplane neu startet; die Plattform kann ein autorisiertes Deployment noch nicht von einer Manipulation unterscheiden
+- Wird eine geschützte Release-Komponente ersetzt, wird das mit hoher Schwere gemeldet und entwaffnet die Plattform nicht; die Ledger-Rotation setzt voraus, dass ihr Archivverzeichnis dem Dienst gehört und `0700` trägt, und verweigert den Lauf, statt in ein gemeinsames Verzeichnis zu schreiben
+- Der Rust-Kern zählt und protokolliert übersprungene Ingress-Datensätze, meldet die Zahl aber noch nicht in seiner Health-Antwort; die Zahl steht daher im Dienstprotokoll und nicht im Panel
 
 ---
 
 ## 📋 Changelog
 
-### v4.2.1 — Stabilität, Evidenz und Oberfläche *(Aktuell)*
+### v4.2.2 — Fail-Closed-Durchsetzung, Ledger-Rotation und ein ehrliches Panel *(Aktuell)*
+
+Eine Härtungsversion. Sie entfernt die Wege, auf denen die Plattform ihren eigenen Schutz verlieren konnte, und bringt jede Oberfläche dazu, zu sagen, was der Kernel tatsächlich tut.
+
+* **Fail-Closed-Durchsetzung (die Entwaffnung):**
+  * **Eine automatische Degradierung gibt die verifizierte Kernel-Policy nicht mehr frei.** Ein einzelner Kernel-Datensatz, den der Kern nicht interpretieren konnte — ein gemischtes UDP/TCP-Aggregat, das der Producer mit dem Protokoll des auslösenden Pakets etikettiert, sodass ein TCP-Satz mehr Versuche als SYNs tragen kann — brach den ganzen Drain ab; die Kontrollplane las den fehlgeschlagenen Drain als verlorenen Kernel-Hook, und das Release-Gate beantwortete einen nicht verfügbaren Sensor mit einem Abgleich der Kernel-Policy auf `observe`. Jeder Block wurde aus dem Kernel entfernt, und ein Produktionshost lief zwanzig Stunden ungeschützt, weil nichts ihn zurückholte. Das Gate bestätigt und behält jetzt, was es verifiziert hat (`verified-enforce`), und ein nicht bestätigbarer Zustand wird als `verified-empty` gemeldet, statt als dasselbe zu gelten.
+  * **Ein Neustart behält die Enforcement der signierten Policy** statt auf `observe` zu initialisieren.
+  * **Eine Promotion senkt eine verifizierte Enforcement nicht.** Das tut nur ein ausdrücklicher Betreiber-Eingriff, und eine Beibehaltung wird als eigene Aktion gemeldet (`automatic_response_paused`), nicht als Änderung der Enforcement.
+  * **Ein Drain- oder Parserfehler ist vom Verlust der Durchsetzungsfähigkeit getrennt,** sodass ein Sensor, der keine Daten liefern kann, nicht länger als ein Kernel gelesen wird, der nicht blockieren kann.
+  * **Die Plattform bewaffnet sich selbst neu,** sobald die Gates bestehen und die Ruhe hält, und protokolliert den Übergang mit dem Grund, der ihn aufgehalten hatte.
+  * **Ein erfolgreicher Verifikationslauf löscht den Grund, den er ersetzt hat.** Gründe waren einseitig: nur eine Rotation oder eine Betreiber-Wiederherstellung entfernte sie, sodass ein transienter Fehler XDR degradiert ließ — und die automatische Antwort pausiert — bis jemand die Kontrollplane neu startete.
+  * **Ein Deployment des Betreibers gilt nicht mehr als Eindringen.** Der Austausch einer eigenen Komponente degradierte XDR und pausierte die automatische Antwort; jeder ausgelieferte Fix schaltete damit stillschweigend einen Teil des Schutzes ab. Jetzt ist es ein Ereignis hoher Schwere ohne Reaktion; Fremdobjekte behalten die volle Antwort.
+  * **Die Wiederherstellung des Incident-Ledgers verlangt nicht mehr, den Schutz aufzugeben** — unter Beibehaltung war das unerreichbar; das Ledger ließ sich nur reparieren, indem man zuvor den Host entwaffnete, dessen Schutz es erhalten soll.
+  * **Der Rust-Kern toleriert ein widersprüchliches Aggregat.** Ein Datensatz, dessen TCP-Label seinen Zählern widerspricht, wird mit neutralisiertem Protokoll und unveränderten Zählern behalten; ein weiterhin undekodierbarer Datensatz wird übersprungen und benannt, statt den Drain abzubrechen; nur ein Batch, in dem viele Sätze undekodierbar sind — die Signatur eines falschen Wire-Formats — wird als Fehler gemeldet.
+* **Ledger-Aufbewahrung:**
+  * **Beide Forensik-Ledger rotieren, statt sich zu füllen.** Das Erreichen des Budgets stoppte die Aufzeichnung, degradierte XDR und pausierte die automatische Antwort, bis ein Betreiber das Segment von Hand archivierte — zweimal an einem Tag auf einem Produktionshost. Bei neunzig Prozent wird die versiegelte Kette mit einem Manifest archiviert, das Größen, Digests, Sequenz, Head-Hash und Prüfumfang trägt, und eine frische Kette beginnt.
+  * **Die Rotation übersteht einen Absturz.** Sie kopiert, bevor sie ersetzt; ein unterbrochener Lauf wird beim nächsten Start aus einer Rotationsmarkierung vervollständigt, und eine Markierung, deren Manifest nicht passt, wird abgelehnt statt geglaubt.
+  * **Das Evidenz-Ledger verifiziert sich in Grenzen.** Der Start prüfte das ganze Ledger — rund 260 MB bei etwa 6,7 Sekunden pro Megabyte — und überschritt das Start-Timeout der Unit, sodass weder die Plattform noch das Gateway hochkamen. Der Start prüft jetzt den authentifizierten Checkpoint und ein begrenztes Tail-Fenster; die Historie wird im Hintergrund inkrementell gegen einen authentifizierten Wasserstand abgedeckt; die vollständige Verifikation bleibt dem Betreiber verfügbar. Ein nicht authentifizierter Wasserstand wird abgelehnt, weil eine gefälschte Datei damit die ganze Historie übersprang.
+  * **Ein unterbrochener Append wird wiederhergestellt** — verifiziert und versiegelt oder als partieller Schreibvorgang verworfen — statt den Dienststart zu verhindern.
+* **Oberflächen-Verifikation:**
+  * **Jeder zustandstragende Satz wird gegen die Nutzlast geprüft, aus der er stammt.** Ein Headless-Rendering des Dashboards — elf Nutzlast- und Ansichtskombinationen, achtzig Regeln — vergleicht, was der Betreiber liest, mit dem, was die API gemeldet hat. Es fand drei Aussagen, die dem Zustand widersprachen, den sie beschrieben; alle drei stammten aus den Korrekturen dieser Version.
+  * **Der Prüfer belegt, dass er fehlschlagen kann.** Ein Selbsttest mit absichtlich falschen Nutzlasten und ein Regressionsmodus, der die Wächter wieder entfernt: achtzehn der achtzig Regeln werden dann rot, darunter SYSTEM NOMINAL im Badge.
+
+### v4.2.1 — Stabilität, Evidenz und Oberfläche
 
 Eine Fehlerbehebungsversion. Sie bringt kein neues Teilsystem; sie bringt die vorhandenen dazu, die Wahrheit über sich zu sagen und dem Betreiber nicht im Weg zu stehen.
 
@@ -849,6 +873,6 @@ sudo python3 scripts/update-geoip-db.py /var/lib/vgt/gedefense/geoip.csv
 
 [![VGT](https://img.shields.io/badge/VisionGaia-Technology-cyan?style=for-the-badge)](https://visiongaiatechnology.de)
 
-*VGT GeDefense 4.2.1 — Universelles Linux Sicherheitsgewebe // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidenz-Ledger // AES-256-GCM verschlüsselter Vault // Reversible Härtung // AstraeaOS-nativer Adapter // Getrennte Vertrauensdomänen // Keine Cloud-Control-Plane // AGPL-3.0-only // Linux x86_64*
+*VGT GeDefense 4.2.2 — Universelles Linux Sicherheitsgewebe // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidenz-Ledger // AES-256-GCM verschlüsselter Vault // Reversible Härtung // AstraeaOS-nativer Adapter // Getrennte Vertrauensdomänen // Keine Cloud-Control-Plane // AGPL-3.0-only // Linux x86_64*
 
 </div>

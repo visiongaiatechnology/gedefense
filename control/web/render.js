@@ -232,9 +232,26 @@ export function toast(message, kind = 'info', errorID = '') {
   }, 5000);
 }
 
-export function renderReleaseBlockers(blockers = []) {
+export function renderReleaseBlockers(blockers = [], release = {}) {
   const root = byID('releaseBlockers');
   if (!root) return;
+  // An empty blocker list means "nothing is stopping a promotion right now", not "the platform is
+  // nominal". In a fail-safe whose cause has already been cleared the list is empty while the
+  // phase is still degraded - and this line then announced that every gate was satisfied, on a
+  // page whose own badge said DEGRADED.
+  const phase = String(release.phase || '').toLowerCase();
+  if (phase === 'degraded') {
+    const retained = String(release.kernel_policy_state || '') === 'verified-enforce';
+    const item = document.createElement('li');
+    item.className = retained ? 'state-warn' : 'state-bad';
+    // The key is written out rather than composed: the catalogue contract test verifies every
+    // translation call against the German catalogue, and a composed key cannot be verified at all.
+    item.textContent = t(retained ? 'protection.preflight.retained' : 'protection.preflight.unconfirmed', {
+      reason: String(release.fail_safe_reason || '').trim() || t('protection.preflight.unknownCause'),
+    });
+    root.replaceChildren(item);
+    return;
+  }
   if (!blockers.length) {
     const item = document.createElement('li');
     item.className = 'state-good';

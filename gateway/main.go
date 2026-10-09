@@ -28,7 +28,7 @@ import (
 	"time"
 )
 
-const version = "4.2.1-access"
+const version = "4.2.2-access"
 const cookieName = "__Host-vgt_gedefense_session"
 const csrfCookieName = "vgt_gedefense_login_csrf"
 

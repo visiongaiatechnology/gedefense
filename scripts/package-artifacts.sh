@@ -13,7 +13,7 @@ for cmd in go node python3 tar gzip sha256sum sed awk ldd grep; do
   command -v "$cmd" >/dev/null 2>&1 || { echo "missing build tool: $cmd" >&2; exit 1; }
 done
 "$ROOT/scripts/verify-release-toolchains.sh"
-[[ $VERSION == "4.2.1" ]] || { echo "unexpected VERSION: $VERSION" >&2; exit 1; }
+[[ $VERSION == "4.2.2" ]] || { echo "unexpected VERSION: $VERSION" >&2; exit 1; }
 mkdir -p "$OUT" "$ROOT/dist"
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/vgt-gedefense-package.XXXXXX")
 cleanup(){ rm -rf -- "$WORK"; }

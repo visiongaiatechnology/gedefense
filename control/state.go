@@ -1,3 +1,4 @@
+// STATUS: DIAMANT VGT SUPREME
 package main
 
 import (
@@ -620,7 +621,11 @@ func (s *State) AttachEvidenceLedger(ledger *EvidenceLedger) error {
 	if ledger == nil {
 		return errors.New("evidence ledger is required")
 	}
-	if err := ledger.Verify(); err != nil {
+	// The construction already verified the authenticated checkpoint and a bounded tail, and it
+	// recorded any failure in the ledger. Re-walking the chain here doubled the startup cost for
+	// no additional assurance: at 260 MB that second walk alone took minutes, and it was the
+	// difference between a platform that starts and one that never becomes ready.
+	if err := ledger.Healthy(); err != nil {
 		return err
 	}
 	s.mu.Lock()

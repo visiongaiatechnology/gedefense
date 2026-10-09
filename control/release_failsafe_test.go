@@ -70,11 +70,12 @@ func TestFailSafeKeepsItsReasonAndLeavesForensicEvidence(t *testing.T) {
 		t.Fatal("a refresh discarded the moment of the fall-back")
 	}
 
-	// And it is forensic evidence, not only a phase change.
+	// And it is forensic evidence, not only a phase change. The wording states what actually
+	// happened: the automatic response paused and the enforcement stayed in place.
 	incidents := state.Snapshot().Incidents
 	found := false
 	for _, incident := range incidents {
-		if strings.Contains(incident.Summary, "fell back to Observe") {
+		if strings.Contains(incident.Summary, "kernel enforcement retained") {
 			found = true
 			if incident.Severity != "critical" {
 				t.Errorf("the fail-safe incident is not critical: %s", incident.Severity)
@@ -84,6 +85,9 @@ func TestFailSafeKeepsItsReasonAndLeavesForensicEvidence(t *testing.T) {
 			}
 			if incident.Action == "" || incident.Outcome == "" {
 				t.Errorf("the incident does not state what was done: action=%q outcome=%q", incident.Action, incident.Outcome)
+			}
+			if strings.Contains(strings.ToLower(incident.Outcome), "empty") {
+				t.Errorf("the incident claims an empty kernel that was retained: %q", incident.Outcome)
 			}
 		}
 	}
