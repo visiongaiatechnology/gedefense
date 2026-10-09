@@ -27,12 +27,12 @@ def sha256_file(path: Path) -> str:
 
 def main():
     root = Path(__file__).resolve().parent.parent
-    downloads = Path("C:/Users/Masterboard/Downloads")
-    if not downloads.exists():
-        downloads.mkdir(parents=True, exist_ok=True)
+    assets_dir = root.parent.parent / "release-v4.2.2-assets"
+    if not assets_dir.exists():
+        assets_dir.mkdir(parents=True, exist_ok=True)
 
     version = (root / "VERSION").read_text(encoding="utf-8").strip()
-    if version != "4.2.0":
+    if version != "4.2.2":
         raise ValueError(f"Unexpected VERSION: {version}")
 
     print(f"Packaging GeDefense {version} from {root}...")
@@ -79,14 +79,14 @@ def main():
     # 1. Collect clean files
     files_to_pack: list[tuple[Path, Path]] = [] # (absolute_path, relative_path)
     for p in sorted(root.rglob("*")):
-        if any(part in excluded_dirs for part in p.parts):
+        rel = p.relative_to(root)
+        if any(part in excluded_dirs for part in rel.parts):
             continue
         if p.name in excluded_names or p.name.startswith("wsl-"):
             continue
         if p.suffix.lower() in excluded_exts:
             continue
         if p.is_file() and not p.is_symlink():
-            rel = p.relative_to(root)
             files_to_pack.append((p, rel))
 
     print(f"Collected {len(files_to_pack)} clean source files.")
@@ -104,9 +104,8 @@ def main():
     zip_dt = (dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second)
 
     targets = [
-        (f"gedefense-{version}", downloads / f"gedefense-{version}.zip"),
-        (f"gedefense-{version}", downloads / f"gedefense4.2.zip"),
-        (f"VGT_GeDefense_Beta_v4_{version}", downloads / f"VGT_GeDefense_Beta_v4_{version}_Source.zip"),
+        (f"gedefense-{version}", assets_dir / f"gedefense-{version}.zip"),
+        (f"VGT_GeDefense_Beta_v4_{version}", assets_dir / f"VGT_GeDefense_Beta_v4_{version}_Source.zip"),
     ]
 
     for prefix, out_zip in targets:

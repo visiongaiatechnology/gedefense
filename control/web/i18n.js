@@ -1126,7 +1126,7 @@ export const catalogs = Object.freeze({
     "l7.integration.upstreamDetail": "Ziel-Detail",
     "l7.integration.reachable": "ja",
     "l7.integration.unreachable": "NEIN",
-    "l7.integration.selfTestUpstreamHint": "Die Inspektion arbeitet, aber der Pfad kann keine Anfrage weiterleiten: auf dem konfigurierten Ziel lauscht nichts. Der Selbsttest kann das nicht erkennen, weil er den reservierten Pfad selbst beantwortet und nie weiterleitet - richten Sie den Upstream ein (l7.inline_upstream) oder korrigieren Sie ihn.",
+    "l7.integration.selfTestUpstreamHint": "Die Inspektion arbeitet, aber der Pfad kann keine Anfrage weiterleiten: auf dem konfigurierten Ziel lauscht nichts. Der Selbsttest kann das nicht erkennen, weil er den reservierten Pfad selbst beantwortet und nie weiterleitet - richten Sie den Upstream ein (l7.inline_upstream) oder korrigieren Sie ihn."
   },
   "en": {
     "api.authorizationRequired": "Authorization required",
@@ -2248,7 +2248,7 @@ export const catalogs = Object.freeze({
     "l7.integration.upstreamDetail": "Upstream detail",
     "l7.integration.reachable": "yes",
     "l7.integration.unreachable": "NO",
-    "l7.integration.selfTestUpstreamHint": "Inspection works, but the path cannot forward a request: nothing is listening on the configured upstream. The self-test cannot see this, because it answers the reserved path itself and never forwards - point l7.inline_upstream at a listening origin, or correct it.",
+    "l7.integration.selfTestUpstreamHint": "Inspection works, but the path cannot forward a request: nothing is listening on the configured upstream. The self-test cannot see this, because it answers the reserved path itself and never forwards - point l7.inline_upstream at a listening origin, or correct it."
   },
   "ru": {
     "api.authorizationRequired": "Требуется авторизация",
@@ -3370,7 +3370,7 @@ export const catalogs = Object.freeze({
     "l7.integration.upstreamDetail": "Детали цели",
     "l7.integration.reachable": "да",
     "l7.integration.unreachable": "НЕТ",
-    "l7.integration.selfTestUpstreamHint": "Проверка работает, но путь не может передать запрос: на настроенной цели никто не слушает. Самотест этого не видит, потому что сам отвечает на зарезервированный путь и никогда не перенаправляет - укажите в l7.inline_upstream работающий источник.",
+    "l7.integration.selfTestUpstreamHint": "Проверка работает, но путь не может передать запрос: на настроенной цели никто не слушает. Самотест этого не видит, потому что сам отвечает на зарезервированный путь и никогда не перенаправляет - укажите в l7.inline_upstream работающий источник."
   },
   "zh-CN": {
     "api.authorizationRequired": "需要授权",
@@ -4492,7 +4492,7 @@ export const catalogs = Object.freeze({
     "l7.integration.upstreamDetail": "上游详情",
     "l7.integration.reachable": "是",
     "l7.integration.unreachable": "否",
-    "l7.integration.selfTestUpstreamHint": "检查正常工作，但该路径无法转发请求：配置的上游没有监听。自检无法发现这一点，因为它自行响应保留路径且从不转发——请将 l7.inline_upstream 指向正在监听的源，或予以更正。",
+    "l7.integration.selfTestUpstreamHint": "检查正常工作，但该路径无法转发请求：配置的上游没有监听。自检无法发现这一点，因为它自行响应保留路径且从不转发——请将 l7.inline_upstream 指向正在监听的源，或予以更正。"
   }
 });
 

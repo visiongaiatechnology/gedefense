@@ -45,7 +45,7 @@ source=(
 # Local monorepo sources are content-addressed here and independently checked
 # by the AstraeaOS/GeDefense semantic mirror verifier.
 sha256sums=(
-  'a78f8ce2983468fed979999bc45d7dd63807754154bc12cc61899d4f040bbfe1'
+  '7965b4c6d8c591dc26cbc9e7a540056e76b3c00f74655e11944fc3ad338efd52'
   'b10c2ff91f4a154e5ccaea75827403501597dc04312cff824cecdd1912f5408a'
   '5c93d325e49dc74c1ef9bc5180c1ea36b411b71c92bfd9e5a0ab52e2442e958f'
   '73cbb359fc414355adc1cf5371e93f0deaa2ac16eb404067254c9f5986f25e1c'

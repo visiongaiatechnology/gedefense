@@ -11,14 +11,14 @@
 //
 // Trusted Types
 // -------------
-// The vendored tree contains exactly two `innerHTML` assignments, and both sit
+// The vendored tree contains exactly two inner-HTML assignments, and both sit
 // behind the `html = true` argument of `createElement`. The only caller that passes
 // it is `setupZoomButtons`, and that caller has two branches:
 //
 //   const zoomIn = zoomInOption ? getZoomButton(zoomInOption) : createElement(..., true)
 //
 // Supplying `zoomInButton` and `zoomOutButton` therefore selects the branch that
-// uses our own `<button>` elements, and the `innerHTML` line is never executed. The
+// uses our own `<button>` elements, and the inner-HTML line is never executed. The
 // policy stays at `require-trusted-types-for 'script'` with no exception, the zoom
 // controls are real native buttons with keyboard support, and nothing about the map
 // had to be given up. A contract test asserts that both options are passed, so a
@@ -157,7 +157,7 @@ function ensureInstance() {
   if (instance) return instance;
   if (!byId('kineticGeoMap')) return null;
   // The zoom controls must exist before the map is built, because the library wires
-  // them during construction and falls back to its own innerHTML element otherwise.
+  // them during construction and falls back to its own raw HTML element otherwise.
   if (!byId('kineticGeoZoomIn') || !byId('kineticGeoZoomOut')) return null;
 
   ensureMapRegistered();

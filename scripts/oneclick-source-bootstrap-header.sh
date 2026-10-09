@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# VGT GeDefense 4.2.1 source-self-contained one-click bootstrap installer
+# VGT GeDefense 4.2.2 source-self-contained one-click bootstrap installer
 set -Eeuo pipefail
 umask 0077
 
-readonly PRODUCT_VERSION="4.2.1"
+readonly PRODUCT_VERSION="4.2.2"
 readonly PAYLOAD_SHA256="__SOURCE_PAYLOAD_SHA256__"
 readonly GO_VERSION="1.26.8"
 readonly GO_LINUX_AMD64_SHA256="d0f743b33e8d8945e6b1f432edd15785c70507121d6e2a723b21285eddf8b57b"
@@ -23,13 +23,13 @@ trap cleanup EXIT
 
 usage(){
   cat <<'USAGE'
-VGT GeDefense 4.2.1 One-Click Installer
+VGT GeDefense 4.2.2 One-Click Installer
 
 Usage:
-  ./GeDefense-4.2.1-OneClick.run              Install or upgrade GeDefense
-  ./GeDefense-4.2.1-OneClick.run --self-test  Verify this installer and inspect host readiness without modifying the host
-  ./GeDefense-4.2.1-OneClick.run --verify     Alias for --self-test
-  ./GeDefense-4.2.1-OneClick.run --help       Show this help
+  ./GeDefense-4.2.2-OneClick.run              Install or upgrade GeDefense
+  ./GeDefense-4.2.2-OneClick.run --self-test  Verify this installer and inspect host readiness without modifying the host
+  ./GeDefense-4.2.2-OneClick.run --verify     Alias for --self-test
+  ./GeDefense-4.2.2-OneClick.run --help       Show this help
 
 The real installation is transactional. The embedded full-stack installer backs
 up the current release, configuration, secrets and unit state and rolls back if

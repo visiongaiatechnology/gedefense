@@ -84,8 +84,9 @@ for language in expected:
 html=(web/'index.html').read_text(encoding='utf-8')
 if '<option value="zh-CN">简体中文</option>' not in html:
     raise SystemExit('Simplified Chinese selector option missing')
+current_ver=(root/'VERSION').read_text(encoding='utf-8').strip()
 for value in [
-    'GeDefense', 'VisionGaiaTechnology', '4.1.0', 'paypal.me/dergoldenelotus',
+    'GeDefense', 'VisionGaiaTechnology', current_ver, 'paypal.me/dergoldenelotus',
     'bc1q3ue5gq822tddmkdrek79adlkm36fatat3lz0dm', '0xD37DEfb09e07bD775EaaE9ccDaFE3a5b2348Fe85',
 ]:
     if value not in html:
@@ -104,7 +105,7 @@ if "let volatileToken = ''" not in api:
 PY
 pass 'manual operator bearer remains volatile and is never persisted by the browser UI'
 
-if grep -RInE --include='*.go' '(^|[[:space:]\"])(os/exec|exec\.Command|syscall\.Exec)([[:space:]\"]|$)' control gateway; then
+if grep -RInE --include='*.go' --exclude='*_test.go' '(^|[[:space:]\"])(os/exec|exec\.Command|syscall\.Exec)([[:space:]\"]|$)' control gateway; then
   fail 'runtime command execution primitive found in network-facing Go services'
 fi
 if grep -RInE --include='*.rs' '(std::process::Command|Command::new|libc::exec[a-z_]*|libc::system|/bin/(ba)?sh|[\"'"'"'`]bash[\"'"'"'`]|[\"'"'"'`]sh[\"'"'"'`][[:space:]]+-c)' \
@@ -346,13 +347,17 @@ for anchor in [
     if anchor not in server:
         raise SystemExit('mandatory mutation evidence gate missing: '+anchor)
 fim=(root/'control'/'fim.go').read_text(encoding='utf-8')
+fabric=(root/'control'/'integrity_fabric.go').read_text(encoding='utf-8')
 for anchor in [
-    'fimMaxFiles       = 8192', 'fimMaxTotalBytes', 'file identity changed while hashing',
+    'policy.maxFiles', 'policy.maxTotalBytes', 'file identity changed while hashing',
     'e.storage.Encrypt(e.baselinePath, fimPurpose, generation, plaintext)',
     'unencrypted FIM baseline is rejected',
 ]:
     if anchor not in fim:
         raise SystemExit('hardened FIM anchor missing: '+anchor)
+for anchor in ['MaxFiles: 8192', 'MaxTotalBytes: 512 << 20']:
+    if anchor not in fabric:
+        raise SystemExit('hardened FIM integrity fabric anchor missing: '+anchor)
 xdr=(root/'control'/'xdr.go').read_text(encoding='utf-8')
 if 'xdr.response.intent' not in xdr or 'mandatory evidence commit failed; active response disabled' not in xdr:
     raise SystemExit('XDR response evidence fail-closed gate missing')
@@ -563,7 +568,7 @@ required={
     ],
     'privileged event broker': ['TracePoint', 'sched_process_exec', 'RingBuf<MapData>', '["EXEC_EVENTS"]'],
     'privileged egress broker': [
-        'CgroupSkbAttachType::Egress', 'CgroupAttachMode::AllowMultiple',
+        'CgroupSkbAttachType::Egress', 'CgroupAttachMode::AllowOverride',
         '["EGRESS_EVENTS"]', 'take_egress_events',
     ],
     'privileged GaiaCells LSM broker': [

@@ -118,8 +118,8 @@ jobs:
         with:
           name: gedefense-beta-v4-${{ env.PRODUCT_VERSION }}
           path: |
-            release/VGT_GeDefense_Beta_v4_4.1.0_Source.zip
-            release/VGT_GeDefense_Beta_v4_4.1.0_Source.zip.sha256
-            release/VGT_GeDefense_Beta_v4_4.1.0_OneClick.run
-            release/VGT_GeDefense_Beta_v4_4.1.0_OneClick.run.sha256
+            release/VGT_GeDefense_Beta_v4_${{ env.PRODUCT_VERSION }}_Source.zip
+            release/VGT_GeDefense_Beta_v4_${{ env.PRODUCT_VERSION }}_Source.zip.sha256
+            release/VGT_GeDefense_Beta_v4_${{ env.PRODUCT_VERSION }}_OneClick.run
+            release/VGT_GeDefense_Beta_v4_${{ env.PRODUCT_VERSION }}_OneClick.run.sha256
           if-no-files-found: error
