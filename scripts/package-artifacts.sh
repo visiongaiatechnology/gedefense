@@ -12,7 +12,7 @@ EPOCH=${SOURCE_DATE_EPOCH:-1785110400}
 for cmd in go node python3 tar gzip sha256sum sed awk ldd grep; do
   command -v "$cmd" >/dev/null 2>&1 || { echo "missing build tool: $cmd" >&2; exit 1; }
 done
-"$ROOT/scripts/verify-release-toolchains.sh"
+bash "$ROOT/scripts/verify-release-toolchains.sh"
 [[ $VERSION == "4.2.2" ]] || { echo "unexpected VERSION: $VERSION" >&2; exit 1; }
 mkdir -p "$OUT" "$ROOT/dist"
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/vgt-gedefense-package.XXXXXX")
@@ -27,7 +27,7 @@ if grep -nE 'ptr_at\([^\n]*(total_len|payload_len|ihl)' rust/gedefense-ebpf/src/
   exit 1
 fi
 make test test-race fuzz-smoke go gateway
-./scripts/security-audit.sh
+bash "$ROOT/scripts/security-audit.sh"
 if [[ ${EUID} -eq 0 ]]; then
   bash "$ROOT/scripts/validate-quarantine-dac.sh"
 elif command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
