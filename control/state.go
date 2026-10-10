@@ -8,6 +8,7 @@ import (
 	"log"
 	"net"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -124,6 +125,8 @@ type State struct {
 	eventCap                                 int
 	subscribers                              map[chan Event]struct{}
 	xdr                                      XDRStatus
+	xdrCauses                                map[string]string
+	caseHistoryFailures                      int
 	l7                                       L7Status
 	incidents                                []XDRIncident
 	incidentCap                              int
@@ -448,22 +451,141 @@ func (s *State) UpdateXDRRuntime(queueDepth, queueCapacity int, drops, evaluatio
 	s.mu.Unlock()
 }
 
+// The degradation state has exactly one owner: this map.
+//
+// It used to have four writers, each assigning s.xdr.Degraded and s.xdr.DegradedReason directly -
+// the engine's cause map, a case-history ingest failure, an evidence-ledger failure and a startup
+// remark. Whichever wrote last won, and because recovery was a single unconditional
+// SetXDRDegraded(false, ...) from the engine, the next engine tick wiped a cause that belonged to
+// somebody else. That is how a platform could report itself healthy while the release gate had
+// already latched a fail-safe, and how a degradation of the case history became a visible pause of
+// the automatic response that nobody could name.
+const (
+	xdrCauseEngine      = "engine"
+	xdrCauseCaseHistory = "case_history"
+	xdrCauseEvidence    = "evidence_ledger"
+)
+
+// caseHistoryFailureThreshold is how many consecutive failed case-history ingests are treated as a
+// condition rather than a hiccup. One failed ingest is not an integrity finding: the store keeps
+// its own status.Error for the operator, and the ingest is retried with the next incident, which
+// arrives within seconds on a host under load.
+const caseHistoryFailureThreshold = 2
+
+// MarkXDRDegraded records a degradation that belongs to the engine. It is the startup path, where
+// no cause map exists yet.
 func (s *State) MarkXDRDegraded(reason string) {
-	s.mu.Lock()
-	s.xdr.Degraded = true
-	s.xdr.DegradedReason = reason
-	s.mu.Unlock()
+	s.markXDRCause(xdrCauseEngine, reason)
 }
 
+// SetXDRDegraded sets or clears the engine's contribution. It no longer touches causes that other
+// components own: clearing the engine's reason must not silence the case history or the ledger.
 func (s *State) SetXDRDegraded(degraded bool, reason string) {
-	s.mu.Lock()
-	s.xdr.Degraded = degraded
 	if degraded {
-		s.xdr.DegradedReason = reason
-	} else {
-		s.xdr.DegradedReason = ""
+		s.markXDRCause(xdrCauseEngine, reason)
+		return
+	}
+	s.clearXDRCause(xdrCauseEngine)
+}
+
+// markXDRCause adds or replaces one cause and reports the transition in the journal. The log line
+// is written outside the lock: I/O under a global state mutex is what the engine does not do, and
+// this mutex is held on every status refresh.
+func (s *State) markXDRCause(cause, reason string) {
+	s.mu.Lock()
+	line := s.markXDRCauseLocked(cause, reason)
+	s.mu.Unlock()
+	if line != "" {
+		log.Print(line)
+	}
+}
+
+func (s *State) clearXDRCause(cause string) {
+	s.mu.Lock()
+	line := s.clearXDRCauseLocked(cause)
+	s.mu.Unlock()
+	if line != "" {
+		log.Print(line)
+	}
+}
+
+func (s *State) markXDRCauseLocked(cause, reason string) string {
+	if s.xdrCauses == nil {
+		s.xdrCauses = make(map[string]string, 4)
+	}
+	if previous, ok := s.xdrCauses[cause]; ok && previous == reason {
+		return ""
+	}
+	s.xdrCauses[cause] = reason
+	return s.recomputeXDRDegradedLocked()
+}
+
+func (s *State) clearXDRCauseLocked(cause string) string {
+	if _, ok := s.xdrCauses[cause]; !ok {
+		return ""
+	}
+	delete(s.xdrCauses, cause)
+	return s.recomputeXDRDegradedLocked()
+}
+
+// recomputeXDRDegradedLocked derives the published flag from the causes and returns the journal
+// line for a transition, or an empty string when nothing changed. Every cause is named in the
+// reason, so no cause can be hidden behind another one's text. The published reason stays prose -
+// the interface shows it verbatim - while the journal line carries the owning keys.
+func (s *State) recomputeXDRDegradedLocked() string {
+	degraded := len(s.xdrCauses) > 0
+	keys := make([]string, 0, len(s.xdrCauses))
+	for key := range s.xdrCauses {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	reasons := make([]string, 0, len(keys))
+	detail := make([]string, 0, len(keys))
+	for _, key := range keys {
+		reasons = append(reasons, s.xdrCauses[key])
+		detail = append(detail, key+"="+s.xdrCauses[key])
+	}
+	reason := strings.Join(reasons, "; ")
+	if s.xdr.Degraded == degraded && s.xdr.DegradedReason == reason {
+		return ""
+	}
+	s.xdr.Degraded = degraded
+	s.xdr.DegradedReason = reason
+	if degraded {
+		return "xdr degraded: " + strings.Join(detail, "; ")
+	}
+	return "xdr recovered: no degradation causes remain"
+}
+
+// noteCaseHistoryFailure treats a failed case-history ingest as a condition only once it repeats.
+// The first failure is named in the journal and changes nothing else.
+func (s *State) noteCaseHistoryFailure(err error) {
+	s.mu.Lock()
+	s.caseHistoryFailures++
+	attempts := s.caseHistoryFailures
+	var line string
+	if attempts >= caseHistoryFailureThreshold {
+		line = s.markXDRCauseLocked(xdrCauseCaseHistory, "case history integrity unavailable: "+err.Error())
 	}
 	s.mu.Unlock()
+	switch {
+	case line != "":
+		log.Print(line)
+	case attempts == 1:
+		log.Printf("case history ingest failed (%d/%d, not degrading yet): %v", attempts, caseHistoryFailureThreshold, err)
+	}
+}
+
+// noteCaseHistorySuccess clears the cause as soon as an ingest succeeds, so an occasional failure
+// can never accumulate into a degradation.
+func (s *State) noteCaseHistorySuccess() {
+	s.mu.Lock()
+	s.caseHistoryFailures = 0
+	line := s.clearXDRCauseLocked(xdrCauseCaseHistory)
+	s.mu.Unlock()
+	if line != "" {
+		log.Print(line)
+	}
 }
 
 // RestoreIncidents seeds the incident list from the log on disk at startup.
@@ -526,10 +648,12 @@ func (s *State) AddIncident(i XDRIncident) {
 	s.mu.Unlock()
 	if cases != nil {
 		if err := cases.IngestIncident(i); err != nil {
-			s.mu.Lock()
-			s.xdr.Degraded = true
-			s.xdr.DegradedReason = "case history integrity unavailable"
-			s.mu.Unlock()
+			// A failed ingest is not an integrity finding: it is retried with the next incident,
+			// which arrives within seconds. Degrading the platform on a single failure turned a
+			// transient store hiccup into a five-minute pause of the automatic response.
+			s.noteCaseHistoryFailure(err)
+		} else {
+			s.noteCaseHistorySuccess()
 		}
 	}
 }
@@ -645,10 +769,12 @@ func (s *State) RecordEvidence(record EvidenceRecord) error {
 	}
 	_, err := ledger.Append(record)
 	s.mu.Lock()
+	var line string
 	switch {
 	case err == nil:
 		s.evidenceErr = nil
 		s.evidenceStatus = ledger.Status()
+		line = s.clearXDRCauseLocked(xdrCauseEvidence)
 	case errors.Is(err, errEvidenceBudgetExhausted):
 		// A full ledger is a capacity condition. The chain is intact, the signatures are
 		// valid and nothing is lost - the retention budget has simply been reached. It
@@ -656,15 +782,18 @@ func (s *State) RecordEvidence(record EvidenceRecord) error {
 		s.evidenceErr = err
 		s.evidenceStatus = ledger.Status()
 		s.evidenceStatus.Full = true
+		line = s.clearXDRCauseLocked(xdrCauseEvidence)
 	default:
 		s.evidenceErr = err
 		s.evidenceStatus = ledger.Status()
 		s.evidenceStatus.Healthy = false
 		s.evidenceStatus.Error = "evidence integrity unavailable"
-		s.xdr.Degraded = true
-		s.xdr.DegradedReason = "mandatory evidence ledger unavailable"
+		line = s.markXDRCauseLocked(xdrCauseEvidence, "mandatory evidence ledger unavailable")
 	}
 	s.mu.Unlock()
+	if line != "" {
+		log.Print(line)
+	}
 	return err
 }
 
