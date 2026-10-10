@@ -21,6 +21,31 @@ VGT GeDefense 4.2.2 — Fail-Closed-Härtung nach dem Vorfall vom 08.10.2026 (Sc
 - **Fail-Open: alle drei Pfade live geschlossen** (automatische Degradierung, Neustart, Promotion) mit Journalbelegen vom 09.10.
 - **Evidenz-Verifikation:** begrenzter Start (Checkpoint + Tail), inkrementelle Abdeckung mit authentifiziertem Wasserstand, Crash-Recovery für einen unversiegelten Append.
 - **Wiederherstellung des Vorfalls-Ledgers** läuft bei behaltener Durchsetzung (kein Observe nötig).
+- **Wiederkehrende Fail-safes (09.–10.10.) — Ursache gefunden und behoben.** Das Gate fiel im
+  Rhythmus von ~39–40 Minuten auf `degraded` (06:00:21, 06:40:16, 07:19:23) und brauchte danach die
+  300-s-Ruhe; die Anzeige meldete „XDR is degraded", ohne je einen Grund zu nennen. Ursache war eine
+  Kette aus vier Fehlern:
+  1. **Der Fall-Speicher auf der Platte enthielt einen doppelten Fingerabdruck.** `decodeCaseStore`
+     verwarf daraufhin den **ganzen** Bestand, `NewCaseEngine` setzte `integrity`, und `IngestIncident`
+     gab diesen Fehler danach **für jeden** eingehenden Incident zurück — der Fall-Speicher war
+     dauerhaft tot (0 Fälle, Revision 0).
+  2. **Jeder fehlgeschlagene Incident-Eintrag degradierte die Plattform**, direkt in `State.AddIncident`
+     (`s.xdr.Degraded = true`), **am Ursachen-System vorbei**: unsichtbar im Journal, nicht über die
+     Ursachen-Hygiene löschbar.
+  3. **`SetXDRDegraded(false, …)` löschte fremde Ursachen mit.** Vier Schreiber teilten sich ein Feld;
+     der nächste Hygiene-Lauf wischte die Degradierung weg, das Gate hatte aber bereits ein Fail-safe
+     verriegelt — deshalb „erholt" sich die Anzeige von selbst und kippt Minuten später erneut.
+  4. **Ein einzelner Fehlschlag genügte** — beim Prozess-Sensor (`/proc`-Scan) ebenso wie bei der
+     forensischen Verifikation. Kein Wiederholungs-Kriterium.
+  Behoben und deployt: `e4dc3edd…` (Verifikation degradiert erst beim **zweiten** Fehlschlag, erster
+  wird benannt), `e5beab8b…` (**eine** Wahrheitsquelle: `State.xdrCauses` mit Ursachen-Schlüsseln,
+  jede Ursache namentlich im Grund, jeder Übergang im Journal; Fall-Speicher degradiert erst nach zwei
+  Fehlschlägen und erholt sich beim ersten Erfolg), `686428dd…` (**Reparatur statt Ablehnung**:
+  doppelte Fingerabdrücke werden deterministisch zusammengeführt — neuester Datensatz überlebt,
+  Zähler summiert, offene Fälle bleiben offen; doppelte **IDs** bleiben ein harter Fehler).
+  Live belegt: `case store repaired: 1 duplicate fingerprint records merged`, danach
+  `cases healthy=true revision=21 count=8 repaired=1 error=None`, seither **0** Ingest-Fehler,
+  `xdr degraded=false`. Der Reparaturzähler ist über `CaseStatus.repaired` sichtbar.
 
 ## Next
 
@@ -37,6 +62,23 @@ VGT GeDefense 4.2.2 — Fail-Closed-Härtung nach dem Vorfall vom 08.10.2026 (Sc
    fail-closed.
 4. **Dokumentation:** CHANGELOG, konsolidierter Bericht und die READMEs (EN/DE) sind um die
    Fail-Closed-Sitzung, die Rotation und den Rust-Fix ergänzt; RU/ZH laufen.
+5. **Sturm der unterdrückten Reaktionen eindämmen.** Solange die automatische Reaktion pausiert ist,
+   schreibt **jede** abgewiesene Entscheidung einen Evidenz-Datensatz *und* einen Incident
+   (`kinetic.response_suppressed`, Dutzende pro Sekunde; das Evidenz-Ledger stand dadurch bei
+   152 MB / 148 606 Datensätzen). Die XDR-Engine hat eine Dedupe (`XDRFabric.DedupeSeconds`,
+   5 min), der Kinetic-Runtime nicht. Nächster Schritt: dieselbe Dedupe pro Ziel+Regel anwenden,
+   Zähler bleibt vollständig, erster Treffer und periodische Zusammenfassung bleiben im Ledger.
+6. **Vorfalls-Log wird alle 30 s vollständig verifiziert und hält dabei seinen Mutex** (~60 s bei
+   8,9 MB, wachsend). Der Evidenz-Ledger hat dafür längst die begrenzte Prüfung (Checkpoint + Tail,
+   inkrementeller Wasserstand); der Incident-Log sollte dasselbe Verfahren bekommen, sonst wächst
+   die Last mit jedem Incident.
+7. **Bewusst fail-closed und deshalb klebrig:** `malware.event_queue_overflow` degradiert dauerhaft
+   (ein Verlustereignis ist keine Aussetzerscheinung) und wird nur durch Neustart oder Operateur
+   gelöst. Das ist eine Entscheidung, kein Versehen — wer sie ändern will, braucht einen
+   ausdrücklichen Quittierungspfad.
+8. **Beobachtung:** Das natürliche Fenster (~39–40 min nach 07:19:23, also ~07:58) war zum
+   Redaktionszeitpunkt noch nicht durchlaufen; der Auslöser ist nachweislich beseitigt
+   (Bestand repariert, 0 Ingest-Fehler, XDR gesund, Phase zurück auf `enforce`).
 
 ## Deploy-Verfahren (verbindlich)
 

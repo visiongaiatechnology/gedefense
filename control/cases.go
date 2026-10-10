@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"sort"
@@ -58,6 +59,7 @@ type CaseStatus struct {
 	Count    int            `json:"count"`
 	Open     int            `json:"open"`
 	Cases    []SecurityCase `json:"cases"`
+	Repaired int            `json:"repaired,omitempty"`
 	Error    string         `json:"error,omitempty"`
 }
 
@@ -75,6 +77,7 @@ type CaseEngine struct {
 	revision  uint64
 	cases     map[string]SecurityCase
 	byFinger  map[string]string
+	repaired  int
 	integrity error
 	now       func() time.Time
 	policy    casePolicy
@@ -120,6 +123,18 @@ func (e *CaseEngine) load() error {
 		return errors.New("unencrypted case history is rejected")
 	}
 	store, err := decodeCaseStore(plaintext)
+	if errors.Is(err, errCaseStoreDuplicateFingerprint) {
+		// Legacy layout, not corruption: a store written before "one case per fingerprint" became
+		// the invariant carries several records for the same fingerprint. Rejecting the whole store
+		// is what made the case history permanently unavailable - every incident ingest failed
+		// against it, and because each failure marked XDR degraded, the automatic response paused
+		// over and over for a store nobody could use. Repair it deterministically instead.
+		repaired, removed, repairErr := repairCaseStoreDuplicates(plaintext)
+		if repairErr != nil {
+			return fmt.Errorf("case store repair: %w", repairErr)
+		}
+		store, err, e.repaired = repaired, nil, removed
+	}
 	if err != nil {
 		return err
 	}
@@ -131,6 +146,15 @@ func (e *CaseEngine) load() error {
 		e.byFinger[record.Fingerprint] = record.ID
 	}
 	e.revision = store.Revision
+	if e.repaired > 0 {
+		// Write the repaired store back so the next start reads a consistent one. A failure here is
+		// reported and tolerated: the history is repaired in memory and the next ingest persists it.
+		if persistErr := e.persistLocked(); persistErr != nil {
+			log.Printf("case store repair could not be persisted (%d records merged): %v", e.repaired, persistErr)
+		} else {
+			log.Printf("case store repaired: %d duplicate fingerprint records merged into existing cases", e.repaired)
+		}
+	}
 	return nil
 }
 
@@ -158,12 +182,122 @@ func decodeCaseStore(raw []byte) (caseStore, error) {
 			return caseStore{}, errors.New("case store contains duplicate IDs")
 		}
 		if _, exists := fingerprints[record.Fingerprint]; exists {
-			return caseStore{}, errors.New("case store contains duplicate fingerprints")
+			return caseStore{}, errCaseStoreDuplicateFingerprint
 		}
 		ids[record.ID] = struct{}{}
 		fingerprints[record.Fingerprint] = struct{}{}
 	}
 	return store, nil
+}
+
+// errCaseStoreDuplicateFingerprint marks a legacy layout rather than corruption, so the loader can
+// tell the two apart and repair one without ever repairing the other.
+var errCaseStoreDuplicateFingerprint = errors.New("case store contains duplicate fingerprints")
+
+// repairCaseStoreDuplicates merges records that share a fingerprint instead of rejecting the store.
+//
+// The merge is deterministic and lossless in everything that counts: the record with the newest
+// update keeps its identity, occurrence counters are summed, observations are merged newest-first
+// within the structural bound, and the identifier collections are merged uniquely. Two records with
+// the same case ID remain a hard error - that is corruption, not a layout.
+func repairCaseStoreDuplicates(raw []byte) (caseStore, int, error) {
+	var store caseStore
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&store); err != nil {
+		return caseStore{}, 0, err
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		return caseStore{}, 0, errors.New("case store contains trailing data")
+	}
+	if store.Schema != caseSchema || store.Revision == 0 || len(store.Cases) > caseMaxRecords {
+		return caseStore{}, 0, errors.New("case store metadata is invalid")
+	}
+	ids := make(map[string]struct{}, len(store.Cases))
+	merged := make(map[string]SecurityCase, len(store.Cases))
+	order := make([]string, 0, len(store.Cases))
+	removed := 0
+	for _, record := range store.Cases {
+		if err := validateSecurityCase(record); err != nil {
+			return caseStore{}, 0, err
+		}
+		if _, exists := ids[record.ID]; exists {
+			return caseStore{}, 0, errors.New("case store contains duplicate IDs")
+		}
+		ids[record.ID] = struct{}{}
+		previous, exists := merged[record.Fingerprint]
+		if !exists {
+			merged[record.Fingerprint] = cloneSecurityCase(record)
+			order = append(order, record.Fingerprint)
+			continue
+		}
+		merged[record.Fingerprint] = mergeSecurityCases(previous, record)
+		removed++
+	}
+	records := make([]SecurityCase, 0, len(order))
+	for _, fingerprint := range order {
+		records = append(records, merged[fingerprint])
+	}
+	return caseStore{Schema: caseSchema, Revision: store.Revision, Cases: records}, removed, nil
+}
+
+// mergeSecurityCases folds two records that describe one fingerprint into one. The newer record
+// keeps its identity, and a case that is still open never disappears into a closed one.
+func mergeSecurityCases(left, right SecurityCase) SecurityCase {
+	keeper, folded := left, right
+	if folded.UpdatedAt.After(keeper.UpdatedAt) ||
+		(folded.UpdatedAt.Equal(keeper.UpdatedAt) && folded.ID < keeper.ID) {
+		keeper, folded = folded, keeper
+	}
+	keeper.CreatedAt = earliestCaseTime(keeper.CreatedAt, folded.CreatedAt)
+	keeper.UpdatedAt = latestCaseTime(keeper.UpdatedAt, folded.UpdatedAt)
+	keeper.OccurrenceCount += folded.OccurrenceCount
+	keeper.Severity = maximumCaseSeverity(keeper.Severity, folded.Severity)
+	if caseIsOpen(folded.Status) && !caseIsOpen(keeper.Status) {
+		keeper.Status = folded.Status
+		keeper.Resolution = ""
+	}
+	if !caseIsOpen(keeper.Status) && keeper.Resolution == "" {
+		keeper.Resolution = folded.Resolution
+	}
+	keeper.Observations = mergeCaseObservations(keeper.Observations, folded.Observations)
+	keeper.EvidenceIDs = appendUniqueBounded(keeper.EvidenceIDs, caseMaxEvidence, folded.EvidenceIDs...)
+	keeper.RuleIDs = appendUniqueBounded(keeper.RuleIDs, 128, folded.RuleIDs...)
+	keeper.Categories = appendUniqueBounded(keeper.Categories, 64, folded.Categories...)
+	keeper.Recommended = appendUniqueBounded(keeper.Recommended, 32, folded.Recommended...)
+	return keeper
+}
+
+func caseIsOpen(status string) bool {
+	return status == "open" || status == "investigating"
+}
+
+func earliestCaseTime(left, right time.Time) time.Time {
+	if right.Before(left) {
+		return right
+	}
+	return left
+}
+
+func latestCaseTime(left, right time.Time) time.Time {
+	if right.After(left) {
+		return right
+	}
+	return left
+}
+
+// mergeCaseObservations keeps the most recent observations within the structural bound the store
+// validates against.
+func mergeCaseObservations(left, right []CaseObservation) []CaseObservation {
+	combined := make([]CaseObservation, 0, len(left)+len(right))
+	combined = append(combined, left...)
+	combined = append(combined, right...)
+	sort.SliceStable(combined, func(i, j int) bool { return combined[i].At.After(combined[j].At) })
+	if len(combined) > caseMaxObserved {
+		combined = combined[:caseMaxObserved]
+	}
+	return combined
 }
 
 func validateSecurityCase(record SecurityCase) error {
@@ -398,7 +532,7 @@ func (e *CaseEngine) Status(limit int) CaseStatus {
 	}
 	status := CaseStatus{
 		Healthy: e.integrity == nil, Revision: e.revision,
-		Count: len(e.cases), Open: open, Cases: records,
+		Count: len(e.cases), Open: open, Cases: records, Repaired: e.repaired,
 	}
 	if e.integrity != nil {
 		status.Error = "case history integrity unavailable"

@@ -31,45 +31,46 @@ type evaluationJob struct {
 }
 
 type XDREngine struct {
-	cfg             Config
-	state           *State
-	core            *CoreClient
-	feeds           *FeedManager
-	policy          *PolicyStore
-	settings        *SettingsStore
-	release         *ReleaseController
-	rules           *XDRRuleEngine
-	baseline        *XDRBaseline
-	behavior        *BehaviorModel
-	logger          *IncidentLogger
-	selfPID         int
-	seeded          bool
-	seen            map[string]struct{}
-	dedupe          map[string]time.Time
-	tamperSeen      map[string]string
-	protected       map[string]protectedObject
-	cellPolicyEpoch string
-	cellPolicies    map[uint64]uint8
-	platformCaps    PlatformCapabilities
-	correlator      *IncidentCorrelator
-	responses       *ResponseEngine
-	deception       *DeceptionEngine
-	styx            *StyxEngine
-	morpheus        *MorpheusRASP
-	airlock         *AirlockInspector
-	l7Recent        *L7CorrelationStore
-	chronos         *ChronosScanner
-	degraded        bool
-	degradeWhy      string
-	degradeCauses   map[string]string
-	recoveryGate    chan struct{}
-	mu              sync.RWMutex
-	highJobs        chan evaluationJob
-	normalJobs      chan evaluationJob
-	workers         sync.WaitGroup
-	drops           atomic.Uint64
-	evaluated       atomic.Uint64
-	anomalies       atomic.Uint64
+	cfg              Config
+	state            *State
+	core             *CoreClient
+	feeds            *FeedManager
+	policy           *PolicyStore
+	settings         *SettingsStore
+	release          *ReleaseController
+	rules            *XDRRuleEngine
+	baseline         *XDRBaseline
+	behavior         *BehaviorModel
+	logger           *IncidentLogger
+	selfPID          int
+	seeded           bool
+	seen             map[string]struct{}
+	dedupe           map[string]time.Time
+	tamperSeen       map[string]string
+	forensicFailures map[string]int
+	protected        map[string]protectedObject
+	cellPolicyEpoch  string
+	cellPolicies     map[uint64]uint8
+	platformCaps     PlatformCapabilities
+	correlator       *IncidentCorrelator
+	responses        *ResponseEngine
+	deception        *DeceptionEngine
+	styx             *StyxEngine
+	morpheus         *MorpheusRASP
+	airlock          *AirlockInspector
+	l7Recent         *L7CorrelationStore
+	chronos          *ChronosScanner
+	degraded         bool
+	degradeWhy       string
+	degradeCauses    map[string]string
+	recoveryGate     chan struct{}
+	mu               sync.RWMutex
+	highJobs         chan evaluationJob
+	normalJobs       chan evaluationJob
+	workers          sync.WaitGroup
+	drops            atomic.Uint64
+	evaluated        atomic.Uint64
+	anomalies        atomic.Uint64
 }
 
 func (e *XDREngine) SetReleaseController(release *ReleaseController) {
@@ -382,7 +383,10 @@ func (e *XDREngine) recordCellLSMDeny(event CoreCellLSMDenyEvent) {
 		Severity: "high", Kind: "cell.lsm_socket_denied", Source: "bpf-lsm",
 		Message: summary, Target: target,
 	}); err != nil {
-		e.markDegraded("Cell LSM evidence commit failed")
+		// The ledger owns this condition: State.RecordEvidence names it precisely and clears it
+		// again when the ledger recovers. Marking it here as well produced a second, vaguer cause
+		// that nothing could clear.
+		log.Printf("cell lsm evidence commit failed: %v", err)
 	}
 	e.state.AddEvent(Event{
 		Severity: "high", Kind: "cell.lsm_socket_denied", Source: "bpf-lsm",
@@ -493,9 +497,18 @@ func (e *XDREngine) Run(ctx context.Context) {
 			}
 			p, err := scanLinuxProcesses(runtime.XDRFabric.MaxCommandBytes)
 			if err != nil {
-				e.markDegraded("process sensor unavailable: " + err.Error())
+				// A failed /proc listing is a hiccup, not a sensor outage: it happens when the
+				// descriptor table is momentarily full, and the scan a second later succeeds. It
+				// degrades only once it repeats, and the next successful scan clears it again -
+				// otherwise a single transient failure would pause the platform for good.
+				if count, repeated := e.claimRepeatedFailure("process_sensor"); repeated {
+					e.markDegradedCause("process_sensor", "process sensor unavailable: "+err.Error())
+				} else {
+					log.Printf("process sensor scan failed (%d/%d, not degrading yet): %v", count, forensicFailureThreshold, err)
+				}
 				continue
 			}
+			e.noteVerificationSuccess("process_sensor")
 			processes = p
 			e.evaluateNewProcesses(p)
 			now := time.Now().UTC()
@@ -840,9 +853,12 @@ func (e *XDREngine) evaluate(p ProcessSample, conns []NetConnection, source stri
 	}
 	runtime := e.runtimeSettings()
 	if err := e.rules.Configure(runtime); err != nil {
-		e.markDegraded("runtime rule configuration invalid")
+		// Invalid rules mean no detection, so this degrades at once - but the next successful
+		// configuration must clear it again, or a corrected setting would need a restart.
+		e.markDegradedCause("rule_config", "runtime rule configuration invalid: "+err.Error())
 		return
 	}
+	e.clearDegradedCause("rule_config")
 	if !runtime.XDREnabled {
 		return
 	}
@@ -1403,6 +1419,54 @@ func (e *XDREngine) markDegraded(reason string) {
 	e.markDegradedCause("runtime", reason)
 }
 
+// forensicFailureThreshold is how many consecutive failed checks a forensic artefact may produce
+// before it degrades the platform.
+//
+// One failed check used to degrade XDR immediately, and XDR degraded means the automatic response
+// pauses and stays paused until the calm holds again - so a single hiccup, a momentarily busy
+// writer or a verification that read while a record was being appended became a visible
+// fail-safe in the interface. A condition is what persists; a hiccup is what does not.
+const forensicFailureThreshold = 2
+
+// noteVerificationFailure applies that policy: the first failure is named in the journal, a
+// repeated one degrades XDR. The journal line matters as much as the threshold - a degradation
+// that cannot be seen in the journal cannot be diagnosed, which is what made this one take an
+// afternoon of guessing.
+func (e *XDREngine) noteVerificationFailure(cause, reason string) {
+	count, repeated := e.claimRepeatedFailure(cause)
+	if repeated {
+		if count == forensicFailureThreshold {
+			log.Printf("xdr degraded after %d consecutive failures: %s", count, reason)
+		}
+		e.markDegradedCause(cause, reason)
+		return
+	}
+	log.Printf("xdr verification failed (%d/%d, not degrading yet): %s", count, forensicFailureThreshold, reason)
+}
+
+// noteVerificationSuccess clears the failure counter and the cause it may have set.
+func (e *XDREngine) noteVerificationSuccess(cause string) {
+	e.clearRepeatedFailure(cause)
+	e.clearDegradedCause(cause)
+}
+
+func (e *XDREngine) claimRepeatedFailure(cause string) (int, bool) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.forensicFailures == nil {
+		e.forensicFailures = make(map[string]int)
+	}
+	e.forensicFailures[cause]++
+	count := e.forensicFailures[cause]
+	return count, count >= forensicFailureThreshold
+}
+
+func (e *XDREngine) clearRepeatedFailure(cause string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	delete(e.forensicFailures, cause)
+}
+
 // verifyForensicArtefacts keeps the forensic artefacts and the degradation causes they set in
 // step with each other.
 //
@@ -1441,9 +1505,9 @@ func (e *XDREngine) verifyForensicArtefacts(ctx context.Context) {
 				}
 			}
 		} else if err := e.logger.Verify(); err != nil {
-			e.markDegradedCause("incident_log", "incident log verification failed: "+err.Error())
+			e.noteVerificationFailure("incident_log", "incident log verification failed: "+err.Error())
 		} else {
-			e.clearDegradedCause("incident_log")
+			e.noteVerificationSuccess("incident_log")
 		}
 	}
 	if e.state == nil {
@@ -1453,9 +1517,9 @@ func (e *XDREngine) verifyForensicArtefacts(ctx context.Context) {
 	// it was unavailable no longer holds.
 	if ledger := e.state.EvidenceLedger(); ledger != nil {
 		if err := ledger.Healthy(); err != nil {
-			e.markDegradedCause("evidence", "mandatory evidence ledger unavailable: "+err.Error())
+			e.noteVerificationFailure("evidence", "mandatory evidence ledger unavailable: "+err.Error())
 		} else {
-			e.clearDegradedCause("evidence")
+			e.noteVerificationSuccess("evidence")
 		}
 	}
 }
@@ -1465,20 +1529,30 @@ func (e *XDREngine) markDegradedCause(cause, reason string) {
 	if e.degradeCauses == nil {
 		e.degradeCauses = make(map[string]string)
 	}
+	previous, existed := e.degradeCauses[cause]
 	e.degradeCauses[cause] = reason
 	e.recomputeDegradedLocked()
 	degraded, degradedReason := e.degraded, e.degradeWhy
 	e.mu.Unlock()
 	e.state.SetXDRDegraded(degraded, degradedReason)
+	// Logged once per distinct reason, not once per check: a persistent cause must be visible in
+	// the journal without flooding it every thirty seconds.
+	if !existed || previous != reason {
+		log.Printf("xdr degraded: cause=%s reason=%s", cause, reason)
+	}
 }
 
 func (e *XDREngine) clearDegradedCause(cause string) {
 	e.mu.Lock()
+	previous, existed := e.degradeCauses[cause]
 	delete(e.degradeCauses, cause)
 	e.recomputeDegradedLocked()
 	degraded, reason := e.degraded, e.degradeWhy
 	e.mu.Unlock()
 	e.state.SetXDRDegraded(degraded, reason)
+	if existed {
+		log.Printf("xdr recovered: cause=%s was=%s", cause, previous)
+	}
 }
 
 func (e *XDREngine) recomputeDegradedLocked() {
