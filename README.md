@@ -33,6 +33,10 @@
 
 ---
 
+<img width="2492" height="1277" alt="image_2026-10-11_09-45-50" src="https://github.com/user-attachments/assets/9cfc5baf-ea41-454e-bc35-ef959a58d3d2" />
+
+
+
 ## 🚨 CRITICAL SECURITY ADVISORY & WARNING — RELEASE v4.2.2
 
 > [!CAUTION]
@@ -233,7 +237,8 @@ VGT GeDefense 3.0.0-beta.1 transformed the architecture from a static host/netwo
 
 ---
 
-<img width="2560" height="1229" alt="image" src="https://github.com/user-attachments/assets/29413de7-469a-4207-98bf-496ab69ef20a" />
+
+<img width="2492" height="1277" alt="image_2026-10-11_10-42-38" src="https://github.com/user-attachments/assets/59124425-b3de-49c8-8eda-1bae2486deef" />
 
 
 
@@ -267,7 +272,8 @@ A single regex, feed, behavioral or masquerading hit **cannot authorize process 
 
 ---
 
-<img width="2560" height="1229" alt="image" src="https://github.com/user-attachments/assets/1f5cf6ae-ee59-498d-9c5b-e06e8efc9ef2" />
+<img width="2492" height="1277" alt="image_2026-10-11_10-43-44" src="https://github.com/user-attachments/assets/6ecbd910-1367-4418-824f-10c80159aff8" />
+
 
 
 
