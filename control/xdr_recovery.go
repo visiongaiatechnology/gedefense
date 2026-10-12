@@ -50,14 +50,25 @@ type incidentRecoveryManifest struct {
 	SoftwareVersion string                  `json:"software_version"`
 	NodeName        string                  `json:"node_name"`
 	ReasonSHA256    string                  `json:"reason_sha256"`
+	Trigger         string                  `json:"trigger,omitempty"`
 	Failure         IncidentIntegrityStatus `json:"failure"`
 	IncidentLog     incidentRecoveryFile    `json:"incident_log"`
 	HeadCheckpoint  incidentRecoveryFile    `json:"head_checkpoint"`
 }
 
+// incidentArchiveTrigger records why a segment was sealed. The sealing mechanics are identical for
+// both paths - the precondition is the entire difference between them.
+const (
+	incidentArchiveTriggerRecovery  = "recovery"
+	incidentArchiveTriggerRetention = "retention"
+)
+
 var (
 	errIncidentRecoveryNotRequired = errors.New("incident ledger recovery is not required")
 	errIncidentRecoveryNotAllowed  = errors.New("incident ledger recovery is not allowed for the current integrity state")
+	// errIncidentArchiveEmpty refuses to seal a ledger that holds nothing: an empty archive would
+	// look like forensic evidence.
+	errIncidentArchiveEmpty = errors.New("incident ledger holds no records to seal")
 )
 
 func (l *IncidentLogger) IntegrityStatus() IncidentIntegrityStatus {
@@ -174,7 +185,20 @@ func verifiedPrefix(failureRecord uint64) uint64 {
 	return failureRecord - 1
 }
 
+// Recover seals a ledger that can no longer be trusted and continues with a fresh chain. It is the
+// recovery path and keeps its precondition: an intact ledger does not need to be recovered.
 func (l *IncidentLogger) Recover(ctx context.Context, reasonSHA256 string) (IncidentRecoveryResult, error) {
+	return l.archiveIncidentSegments(ctx, reasonSHA256, incidentArchiveTriggerRecovery)
+}
+
+// archiveIncidentSegments is the shared sealing path: archive the segment with a manifest, prove the
+// source did not change underneath, replace it with a fresh chain and verify that the fresh chain
+// reads as empty.
+//
+// The logger's mutex is held for the whole operation. That is not incidental: the stability check
+// compares the archived bytes with the file on disk, so an append between archive and swap would
+// reject the rotation of any busy ledger - which is every ledger on a host under attack.
+func (l *IncidentLogger) archiveIncidentSegments(ctx context.Context, reasonSHA256, trigger string) (IncidentRecoveryResult, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
@@ -182,11 +206,26 @@ func (l *IncidentLogger) Recover(ctx context.Context, reasonSHA256 string) (Inci
 		return IncidentRecoveryResult{}, err
 	}
 	failure := l.integrityStatusLocked()
-	if failure.Healthy && !failure.Quarantined {
-		return IncidentRecoveryResult{}, errIncidentRecoveryNotRequired
-	}
-	if !failure.Recoverable {
-		return IncidentRecoveryResult{}, errIncidentRecoveryNotAllowed
+	healthy := failure.Healthy && !failure.Quarantined
+	switch trigger {
+	case incidentArchiveTriggerRecovery:
+		if healthy {
+			return IncidentRecoveryResult{}, errIncidentRecoveryNotRequired
+		}
+		if !failure.Recoverable {
+			return IncidentRecoveryResult{}, errIncidentRecoveryNotAllowed
+		}
+	case incidentArchiveTriggerRetention:
+		if l.expectedSize == 0 {
+			return IncidentRecoveryResult{}, errIncidentArchiveEmpty
+		}
+		// A damaged segment is sealed here as well instead of waiting for the hard limit: the budget
+		// is reached either way, and the alternative is a ledger that stops recording.
+		if !healthy && !failure.Recoverable {
+			return IncidentRecoveryResult{}, errIncidentRecoveryNotAllowed
+		}
+	default:
+		return IncidentRecoveryResult{}, fmt.Errorf("unknown incident archive trigger %q", trigger)
 	}
 
 	parent := filepath.Clean(filepath.Dir(l.path))
@@ -222,7 +261,7 @@ func (l *IncidentLogger) Recover(ctx context.Context, reasonSHA256 string) (Inci
 	manifest := incidentRecoveryManifest{
 		Version: incidentRecoveryManifestVersion, ArchiveID: archiveID, CreatedAt: now,
 		SoftwareVersion: version, NodeName: l.nodeName, ReasonSHA256: reasonSHA256,
-		Failure: failure, IncidentLog: logMeta, HeadCheckpoint: headMeta,
+		Trigger: trigger, Failure: failure, IncidentLog: logMeta, HeadCheckpoint: headMeta,
 	}
 	manifestBytes, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {
@@ -573,17 +612,21 @@ func (e *XDREngine) VerifyIncidentIntegrity(ctx context.Context) (XDRIntegrityRe
 	return e.IncidentIntegrityReport(), nil
 }
 
-// Rotate archives the sealed chain and starts a fresh one.
+// Rotate seals the segment because the retention budget is reached and continues with a fresh chain.
 //
-// A full forensic log must not hold the protection hostage. Reaching the budget stops the
-// recording, degrades XDR, and that degradation blocks every promotion and pauses the automatic
-// response until somebody archives the segment by hand - which happened twice on the production
-// host in a single day. Rotation is therefore automatic at the budget, and it reuses the audited
-// recovery path: the sealed segment is archived with a manifest and the operation is written to
-// the evidence ledger.
+// A full forensic log must not hold the protection hostage: reaching the budget stops the recording,
+// degrades XDR, and that degradation pauses the automatic response and blocks every promotion until
+// somebody archives the segment by hand - which happened twice on the production host in a single
+// day. Rotation is therefore automatic at the budget, and it reuses the audited sealing path.
+//
+// It must not reuse the recovery precondition. The rotation fires at ninety percent of the budget,
+// while the ledger is still healthy, and the recovery path refuses an intact ledger by design
+// ("incident ledger recovery is not required"). That refusal was reported as a rotation failure,
+// degraded XDR, and left the log recording until it hit its hard limit - where the very same call
+// suddenly succeeded and reported a recovery. The mechanics are shared; the precondition is not.
 func (l *IncidentLogger) Rotate(ctx context.Context, reason string) (IncidentRecoveryResult, error) {
 	digest := sha256.Sum256([]byte(reason))
-	return l.Recover(ctx, hex.EncodeToString(digest[:]))
+	return l.archiveIncidentSegments(ctx, hex.EncodeToString(digest[:]), incidentArchiveTriggerRetention)
 }
 
 // StoredBytes reports the sealed size and the budget it is measured against.
