@@ -261,6 +261,96 @@ func TestIncidentLogRotationKeepsTheChainAlive(t *testing.T) {
 	}
 }
 
+// TestIncidentLogRotationWorksOnAHealthyLedgerAtTheBudget is the state the automatic rotation
+// actually runs in, and the state the other rotation test never produced.
+//
+// The retention rule fires at ninety percent of the budget - while the ledger is still healthy and
+// still recording. The implementation delegated to the recovery path, whose first guard refuses an
+// intact ledger ("incident ledger recovery is not required"), so the rotation failed exactly when it
+// was supposed to protect the recording: the log filled to its hard limit, stopped accepting
+// records, degraded XDR and paused the automatic response. Filling the log until it fails (as the
+// test above does) produces the recoverable state instead, where the same call succeeds - which is
+// why this defect survived the suite and reached production.
+func TestIncidentLogRotationWorksOnAHealthyLedgerAtTheBudget(t *testing.T) {
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "incidents.jsonl")
+	keyPath := filepath.Join(dir, "xdr.key")
+	const budget = int64(64 << 10)
+	logger, err := NewIncidentLogger(logPath, keyPath, budget)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fillIncidentLogToPercent(t, logger, budget, evidenceRotationThresholdPercent)
+
+	if err := logger.Healthy(); err != nil {
+		t.Fatalf("the fixture left the ledger damaged instead of healthy: %v", err)
+	}
+	size, _ := logger.StoredBytes()
+	if size*100 < budget*evidenceRotationThresholdPercent {
+		t.Fatalf("the fixture did not reach the retention threshold: %d of %d", size, budget)
+	}
+	if size >= budget {
+		t.Fatalf("the fixture crossed the hard budget instead of stopping at the threshold: %d", size)
+	}
+
+	result, err := logger.Rotate(context.Background(), "incident-log retention budget reached; sealing the segment before recording stops")
+	if err != nil {
+		t.Fatalf("rotation of a healthy ledger at the retention threshold failed: %v", err)
+	}
+	if result.ArchiveID == "" || !result.Integrity.Healthy {
+		t.Fatalf("rotation result: %+v", result)
+	}
+	if err := logger.Healthy(); err != nil {
+		t.Fatalf("the fresh chain is not healthy: %v", err)
+	}
+	if size, _ := logger.StoredBytes(); size != 0 {
+		t.Fatalf("the fresh chain did not start empty: %d", size)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "xdr-recovery", result.ArchiveID, "incident-log.bin")); err != nil {
+		t.Fatalf("the sealed segment was not archived: %v", err)
+	}
+	if _, err := logger.Append(XDRIncident{
+		ID: randomID(), Time: time.Now().UTC(), Severity: "warning", Score: 10,
+		RuleIDs: []string{"TEST"}, Categories: []string{"test"}, Summary: "after the rotation",
+		Decision: "alert", Action: "none", Outcome: "observed",
+	}); err != nil {
+		t.Fatalf("the fresh chain refused a record: %v", err)
+	}
+}
+
+// TestIncidentLogRotationRefusesAnEmptyLedger keeps the sealing honest: a rotation with nothing to
+// seal must not create an empty archive that looks like forensic evidence.
+func TestIncidentLogRotationRefusesAnEmptyLedger(t *testing.T) {
+	dir := t.TempDir()
+	logger, err := NewIncidentLogger(filepath.Join(dir, "incidents.jsonl"), filepath.Join(dir, "xdr.key"), 4096)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := logger.Rotate(context.Background(), "nothing to seal"); err == nil {
+		t.Fatal("an empty ledger was rotated into an empty archive")
+	}
+}
+
+// fillIncidentLogToPercent appends records until the ledger reaches the given share of its budget,
+// stopping before it crosses the hard limit - the window the automatic rotation runs in.
+func fillIncidentLogToPercent(t *testing.T, logger *IncidentLogger, budget, percent int64) {
+	t.Helper()
+	for i := 0; i < 100000; i++ {
+		size, _ := logger.StoredBytes()
+		if size*100 >= budget*percent {
+			return
+		}
+		if _, err := logger.Append(XDRIncident{
+			ID: randomID(), Time: time.Now().UTC(), Severity: "warning", Score: 50,
+			RuleIDs: []string{"TEST"}, Categories: []string{"test"},
+			Summary: strings.Repeat("forensic record ", 8), Decision: "alert", Action: "none", Outcome: "observed",
+		}); err != nil {
+			t.Fatalf("append %d failed before the retention threshold: %v", i, err)
+		}
+	}
+	t.Fatal("the ledger never reached the retention threshold")
+}
+
 // TestIncidentLedgerRecoveryWorksWhileEnforcementIsRetained is the deadlock the fail-closed
 // change would otherwise have created.
 //

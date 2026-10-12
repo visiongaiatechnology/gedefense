@@ -21,6 +21,33 @@ VGT GeDefense 4.2.2 — Fail-Closed-Härtung nach dem Vorfall vom 08.10.2026 (Sc
 - **Fail-Open: alle drei Pfade live geschlossen** (automatische Degradierung, Neustart, Promotion) mit Journalbelegen vom 09.10.
 - **Evidenz-Verifikation:** begrenzter Start (Checkpoint + Tail), inkrementelle Abdeckung mit authentifiziertem Wasserstand, Crash-Recovery für einen unversiegelten Append.
 - **Wiederherstellung des Vorfalls-Ledgers** läuft bei behaltener Durchsetzung (kein Observe nötig).
+- **P1: Die Rotation des Vorfalls-Ledgers verweigerte den gesunden Ledger (11./12.10.) — behoben.**
+  Die automatische Rotation greift bei **90 %** des Budgets (`xdr.go`: `StoredBytes` gegen
+  `evidenceRotationThresholdPercent`). `IncidentLogger.Rotate` delegierte aber unmittelbar an
+  `Recover`, und dessen erster Wächter lehnt einen intakten Ledger grundsätzlich ab:
+  `incident ledger recovery is not required`. Damit existierte ein **totes Fenster zwischen 90 % und
+  100 %**: die Rotation scheiterte genau dann, wenn sie das Protokoll retten sollte, XDR degradierte
+  (`cause=incident_log reason=incident log rotation failed: …`), die automatische Reaktion pausierte —
+  und erst **oberhalb** des harten Limits, wenn der Ledger als „recoverable" gilt, gelang derselbe
+  Aufruf und meldete eine Recovery. Journalbelege: 11.10. 15:32:01 und 16:19:05 Rotationsfehler,
+  11.10. 15:32:03 Phase degraded, 12.10. 01:14:27 `incident log size budget exhausted`, 01:14:34
+  „recovered" (da erst jetzt recoverable).
+  Behoben (`4723e2ff…`): Die Mechanik (versiegeln → Manifest → Quellstabilität → frische Kette →
+  Nachweis) liegt jetzt in `archiveIncidentSegments`, die **Vorbedingung** ist getrennt — die Recovery
+  verlangt weiterhin einen beschädigten Ledger, die Retention-Rotation versiegelt einen **gesunden**
+  bei 90 % und einen beschädigten, sobald er recoverable ist, statt auf das harte Limit zu warten.
+  Das Archiv-Manifest trägt `trigger` (`recovery` | `retention`); ein leerer Ledger wird mit
+  `errIncidentArchiveEmpty` abgelehnt (kein leerer Archiv als Scheinbeweis). Die Sperre des Loggers
+  bleibt über die gesamte Operation gehalten — die Stabilitätsprüfung würde sonst jede Rotation eines
+  beschäftigten Ledgers verwerfen.
+  **Mutationstest:** `TestIncidentLogRotationWorksOnAHealthyLedgerAtTheBudget` scheiterte auf dem
+  alten Code **wörtlich mit der Produktionsmeldung** und ist nach dem Fix grün; der bisherige
+  Rotationstest füllte den Ledger bis zum Fehlschlag und deckte das Fenster 90–100 % deshalb nie ab
+  (neu: `fillIncidentLogToPercent`).
+  **Nebenbefund:** Der Host stand auf `observe`, weil auf einen **Not-Aus** (`EMERGENCY_STOP`) dessen
+  Aufhebung folgte — die Plattform startet danach absichtlich in Observe und verlangt eine
+  ausdrückliche Freigabe. Wiederbewaffnet über `observe → canary (900 s Soak) → enforce`; eine direkte
+  Promotion nach `enforce` wird korrekt abgelehnt (409 mit Begründung im Journal).
 - **Wiederkehrende Fail-safes (09.–10.10.) — Ursache gefunden und behoben.** Das Gate fiel im
   Rhythmus von ~39–40 Minuten auf `degraded` (06:00:21, 06:40:16, 07:19:23) und brauchte danach die
   300-s-Ruhe; die Anzeige meldete „XDR is degraded", ohne je einen Grund zu nennen. Ursache war eine
