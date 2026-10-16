@@ -1,6 +1,6 @@
 # Current Task
 
-VGT GeDefense 4.2.2 — Fail-Closed-Härtung nach dem Vorfall vom 08.10.2026 (Schutz fiel auf Observe zurück).
+VGT GeDefense 4.2.3 — Startup Self-Check, Desktop Status Socket & Qt6 Tray Integration.
 
 ## Completed
 
@@ -79,9 +79,9 @@ VGT GeDefense 4.2.2 — Fail-Closed-Härtung nach dem Vorfall vom 08.10.2026 (Sc
   Modus-Parsing. **Live belegt (16.10.):** `desktop status socket ready … mode=0660`, 637-Byte-
   Telegramm, `status=alert` mit „Systemintegrität verletzt" (mein eigener Deploy), 3. Verbindung →
   `busy`, 14 schnelle Anfragen → 13 begrenzt, `nobody` → verweigert.
-  **Offen:** Qt6-Tray-Client (`desktop/tray/`, eigener Agent: Build, QTest, Offscreen-Screenshots),
+  **Abgeschlossen:** Qt6-Tray-Client (`desktop/tray/`: Build, QTest, Offscreen-Screenshots),
   Installer-Schritt „Gruppe anlegen + Desktop-Benutzer aufnehmen" (sysusers/tmpfiles sind bereits
-  ergänzt), READMEs in vier Sprachen, Entscheidung über die Versionsnummer (Feature vs. 4.2.2).
+  ergänzt), READMEs in vier Sprachen, Versionierung konsistent auf 4.2.3 angehoben.
   Der „Schnellscan"-Knopf der Skizze ist bewusst **kein** Socket-Vorgang: der Socket ist nur
   lesend, ein Scan gehört in die authentifizierte Konsole.
 

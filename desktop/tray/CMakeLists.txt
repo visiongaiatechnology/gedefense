@@ -9,7 +9,7 @@
 cmake_minimum_required(VERSION 3.16)
 
 project(gedefense-tray
-    VERSION 4.2.2
+    VERSION 4.2.3
     DESCRIPTION "GeDefense desktop tray client"
     LANGUAGES CXX)
 

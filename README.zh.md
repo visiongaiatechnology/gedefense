@@ -8,9 +8,9 @@
 ### Linux 主权安全矩阵 (Linux Security Fabric)
 
 [![License](https://img.shields.io/badge/License-AGPL--3.0--only-blue?style=for-the-badge)](https://www.gnu.org/licenses/agpl-3.0)
-[![Version](https://img.shields.io/badge/Version-4.2.2-orange?style=for-the-badge)](#)
-[![Status](https://img.shields.io/badge/Status-Release_v4.2.2-yellow?style=for-the-badge)](#)
-[![Installer](https://img.shields.io/badge/Installer-4.2.2_Universal_Linux-green?style=for-the-badge)](#-快速上手)
+[![Version](https://img.shields.io/badge/Version-4.2.3-orange?style=for-the-badge)](#)
+[![Status](https://img.shields.io/badge/Status-Release_v4.2.3-yellow?style=for-the-badge)](#)
+[![Installer](https://img.shields.io/badge/Installer-4.2.3_Universal_Linux-green?style=for-the-badge)](#-快速上手)
 [![Platform](https://img.shields.io/badge/Platform-Linux_x86__64-lightgrey?style=for-the-badge&logo=linux)](#)
 [![Data Plane](https://img.shields.io/badge/Data_Plane-Rust_eBPF%2FXDP-red?style=for-the-badge&logo=rust)](#-系统架构)
 [![Control Plane](https://img.shields.io/badge/Control_Plane-Go-00ADD8?style=for-the-badge&logo=go)](#-系统架构)
@@ -33,12 +33,12 @@
 
 ---
 
-## 🚨 严重安全警告与公告 — RELEASE v4.2.2
+## 🚨 严重安全警告与公告 — RELEASE v4.2.3
 
 > [!CAUTION]
 > **全体系统运维人员与管理员紧急安全通告（强烈建议立即升级）：**
 > 
-> 在 GeDefense 4.2.0 版本中，作为全面安全审计与验证周期的一部分，**我们排查并彻底修复了此前版本（4.0.x / 4.1.0）中存在的多个严重安全漏洞与完整性缺陷**。强烈建议所有生产环境节点立即升级至 v4.2.2：
+> 在 GeDefense 4.2.0 版本中，作为全面安全审计与验证周期的一部分，**我们排查并彻底修复了此前版本（4.0.x / 4.1.0）中存在的多个严重安全漏洞与完整性缺陷**。强烈建议所有生产环境节点立即升级至 v4.2.3：
 > 
 > 1. **金丝雀陷阱符号链接遍历提权漏洞（Canary Deployment）：**
 >    - *漏洞详情：* 此前的金丝雀诱饵部署在诱饵路径或暂存路径上会跟随符号链接。攻击者若控制上级目录中的符号链接，即可将具有 root 权限的写操作重定向至文件系统的任意位置（如 `cron`、`authorized_keys`、`ld.so.preload`）→ 导致任意文件写入及 root 提权。
@@ -68,9 +68,9 @@
 
 ---
 
-## ⚠️ 稳定性与可靠性承诺 — RELEASE v4.2.2 · 通用 LINUX 平台
+## ⚠️ 稳定性与可靠性承诺 — RELEASE v4.2.3 · 通用 LINUX 平台
 
-VGT GeDefense 4.2.2 是主权 Linux 安全防御体系的旗舰产品 — 将经过深度加固的内核级防御链与全新的 **Security Fabric Control Plane（安全织网控制平面）**、通用 Linux 原生集成、加固级发布流水线以及真实的内核/网卡适格门禁融为一体。专为主权主机与高对抗网络防御而设计。
+VGT GeDefense 4.2.3 是主权 Linux 安全防御体系的旗舰产品 — 将经过深度加固的内核级防御链与全新的 **Security Fabric Control Plane（安全织网控制平面）**、通用 Linux 原生集成、加固级发布流水线以及真实的内核/网卡适格门禁融为一体。专为主权主机与高对抗网络防御而设计。
 
 **生产环境准入明确属于具体经过审计的目标主机的属性 — 而非仅仅取决于源代码本身。**
 
@@ -608,14 +608,14 @@ Rust Core **未提供任何通用的系统 Shell、文件系统或 Sysctl 执行
 
 ```bash
 # 下载安装程序
-wget https://github.com/visiongaiatechnology/gedefense/releases/download/v4.2.2/GeDefense-4.2.2-OneClick.run
+wget https://github.com/visiongaiatechnology/gedefense/releases/download/v4.2.3/GeDefense-4.2.3-OneClick.run
 
 # 校验 SHA-256 完整性指纹
-sha256sum --check GeDefense-4.2.2-OneClick.run.sha256
+sha256sum --check GeDefense-4.2.3-OneClick.run.sha256
 
 # 执行安装（需要 root 权限）
-chmod 700 GeDefense-4.2.2-OneClick.run
-sudo ./GeDefense-4.2.2-OneClick.run
+chmod 700 GeDefense-4.2.3-OneClick.run
+sudo ./GeDefense-4.2.3-OneClick.run
 ```
 
 > 安装包与校验和文件仅在通过全部 GitHub CI 测试及实体 Linux 节点验证后发布。切勿运行未经验签的 RUN 可执行文件。
@@ -650,7 +650,7 @@ sudo ./GeDefense-4.2.2-OneClick.run
 
 ---
 
-## 🚧 当前已知局限（4.2.2）
+## 🚧 当前已知局限（4.2.3）
 
 - 暂未集成 Swarm / 集群网格（Mesh）支持
 - 暂不支持 QUIC 协议网络卸载
@@ -668,7 +668,7 @@ sudo ./GeDefense-4.2.2-OneClick.run
 
 ## 📋 版本更新日志 (Changelog)
 
-### v4.2.2 — 故障闭锁式强制执行、账本轮转与诚实的界面 *(当前版本)*
+### v4.2.3 — 故障闭锁式强制执行、账本轮转与诚实的界面 *(当前版本)*
 
 加固版本。它消除了平台可能自行失去防护的路径，并让每个界面如实说明内核的实际状态。
 
@@ -923,6 +923,6 @@ sudo python3 scripts/update-geoip-db.py /var/lib/vgt/gedefense/geoip.csv
 
 [![VGT](https://img.shields.io/badge/VisionGaia-Technology-cyan?style=for-the-badge)](https://visiongaiatechnology.de)
 
-*VGT GeDefense 4.2.2 — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
+*VGT GeDefense 4.2.3 — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
 
 </div>

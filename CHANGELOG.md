@@ -1,8 +1,9 @@
 # Changelog
 
-## Unreleased - Desktop Status Indicator (Tray)
+## 4.2.3 - Startup Self-Check with Self-Healing, Desktop Status Socket and Qt6 Tray
 
-A per-user indicator for Linux desktops. It is not a control channel: it reports, and nothing else.
+A resilience and desktop integration release. It introduces an automated startup self-check with
+canonical self-healing, a read-only desktop status socket, and a native Qt6 system tray client.
 
 ### A third local surface, deliberately minimal
 

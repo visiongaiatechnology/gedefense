@@ -221,14 +221,16 @@ func (s *StartupSupervisor) checkOnceFiltered(ctx context.Context, healsUsed map
 			filtered = append(filtered, module)
 		}
 	}
-	clone := *s
-	clone.modules = filtered
-	return clone.checkOnce(ctx, healsUsed)
+	return s.checkModules(ctx, filtered, healsUsed)
 }
 
 func (s *StartupSupervisor) checkOnce(ctx context.Context, healsUsed map[string]int) StartupReport {
+	return s.checkModules(ctx, s.modules, healsUsed)
+}
+
+func (s *StartupSupervisor) checkModules(ctx context.Context, modules []startupModule, healsUsed map[string]int) StartupReport {
 	report := StartupReport{CheckedAt: s.now().UTC()}
-	for _, module := range s.modules {
+	for _, module := range modules {
 		if err := ctx.Err(); err != nil {
 			break
 		}

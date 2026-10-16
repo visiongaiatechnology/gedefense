@@ -1035,7 +1035,7 @@ function updateSnapshot(data) {
   const policy = data.policy || {};
   const behavior = xdr.behavior || {};
   const release = data.release || {};
-  text('versionText', data.version || '4.2.2');
+  text('versionText', data.version || '4.2.3');
   if (data.settings) applySettings(data.settings);
   text('nodeName', data.node_name || 'VGT Node');
   text('uptime', formatUptime(data.uptime_seconds));
