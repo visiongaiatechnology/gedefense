@@ -8,9 +8,9 @@
 ### Linux Security Fabric
 
 [![License](https://img.shields.io/badge/License-AGPL--3.0--only-blue?style=for-the-badge)](https://www.gnu.org/licenses/agpl-3.0)
-[![Version](https://img.shields.io/badge/Version-4.2.2-orange?style=for-the-badge)](#)
-[![Status](https://img.shields.io/badge/Status-Release_v4.2.2-yellow?style=for-the-badge)](#)
-[![Installer](https://img.shields.io/badge/Installer-4.2.2_Universal_Linux-green?style=for-the-badge)](#-quick-start)
+[![Version](https://img.shields.io/badge/Version-4.2.3-orange?style=for-the-badge)](#)
+[![Status](https://img.shields.io/badge/Status-Release_v4.2.3-yellow?style=for-the-badge)](#)
+[![Installer](https://img.shields.io/badge/Installer-4.2.3_Universal_Linux-green?style=for-the-badge)](#-quick-start)
 [![Platform](https://img.shields.io/badge/Platform-Linux_x86__64-lightgrey?style=for-the-badge&logo=linux)](#)
 [![Data Plane](https://img.shields.io/badge/Data_Plane-Rust_eBPF%2FXDP-red?style=for-the-badge&logo=rust)](#-architecture)
 [![Control Plane](https://img.shields.io/badge/Control_Plane-Go-00ADD8?style=for-the-badge&logo=go)](#-architecture)
@@ -37,12 +37,12 @@
 
 
 
-## 🚨 CRITICAL SECURITY ADVISORY & WARNING — RELEASE v4.2.2
+## 🚨 CRITICAL SECURITY ADVISORY & WARNING — RELEASE v4.2.3
 
 > [!CAUTION]
 > **URGENT SECURITY NOTICE FOR ALL OPERATORS & SYSTEM ADMINISTRATORS (UPGRADE STRONGLY RECOMMENDED):**
 > 
-> In GeDefense version 4.2.0, as part of an exhaustive security audit and verification cycle, **multiple critical vulnerabilities and integrity flaws present in previous versions (4.0.x / 4.1.0)** were identified and completely remediated. An immediate upgrade to v4.2.2 is strongly advised for all production installations:
+> In GeDefense version 4.2.0, as part of an exhaustive security audit and verification cycle, **multiple critical vulnerabilities and integrity flaws present in previous versions (4.0.x / 4.1.0)** were identified and completely remediated. An immediate upgrade to v4.2.3 is strongly advised for all production installations:
 > 
 > 1. **Critical Privilege Escalation via Symlink Traversal (Canary Deployment):**
 >    - *Vulnerability:* The previous canary deployment followed symbolic links at the decoy or staging path. An attacker-controlled symlink in parent directories could redirect file writes with root privileges to arbitrary filesystem locations (`cron`, `authorized_keys`, `ld.so.preload`) → Arbitrary file write leading to root privilege escalation.
@@ -72,9 +72,9 @@
 
 ---
 
-## ⚠️ STABILITY & ASSURANCE — RELEASE v4.2.2 · UNIVERSAL LINUX PLATFORM
+## ⚠️ STABILITY & ASSURANCE — RELEASE v4.2.3 · UNIVERSAL LINUX PLATFORM
 
-VGT GeDefense 4.2.2 is the flagship Linux security fabric — the hardened kernel-speed defense chain combined with the new **Security Fabric Control Plane**, universal Linux integration, hardened release pipeline, and concrete kernel/NIC qualification gates. It is engineered for sovereign host and network protection.
+VGT GeDefense 4.2.3 is the flagship Linux security fabric — the hardened kernel-speed defense chain combined with the new **Security Fabric Control Plane**, universal Linux integration, hardened release pipeline, and concrete kernel/NIC qualification gates. It is engineered for sovereign host and network protection.
 
 **Production clearance is deliberately a property of the concretely audited target host — not merely the source code.**
 
@@ -617,14 +617,14 @@ If the Gaia Cells runtime is **not present**, the adapter reports `runtime_not_i
 
 ```bash
 # Download installer
-wget https://github.com/visiongaiatechnology/gedefense/releases/download/v4.2.2/GeDefense-4.2.2-OneClick.run
+wget https://github.com/visiongaiatechnology/gedefense/releases/download/v4.2.3/GeDefense-4.2.3-OneClick.run
 
 # Verify SHA-256
-sha256sum --check GeDefense-4.2.2-OneClick.run.sha256
+sha256sum --check GeDefense-4.2.3-OneClick.run.sha256
 
 # Install (root required)
-chmod 700 GeDefense-4.2.2-OneClick.run
-sudo ./GeDefense-4.2.2-OneClick.run
+chmod 700 GeDefense-4.2.3-OneClick.run
+sudo ./GeDefense-4.2.3-OneClick.run
 ```
 
 > The installer and checksum are published only after all GitHub CI and concrete
@@ -660,7 +660,7 @@ The firewall rule for the HTTPS gateway port (TCP 9843) can be configured via UF
 
 ---
 
-## 🚧 Known Limitations (4.2.2)
+## 🚧 Known Limitations (4.2.3)
 
 - No Swarm / Mesh support
 - No QUIC offloading
@@ -678,7 +678,7 @@ The firewall rule for the HTTPS gateway port (TCP 9843) can be configured via UF
 
 ## 📋 Changelog
 
-### v4.2.2 — Fail-Closed Enforcement, Ledger Rotation and an Honest Panel *(Current)*
+### v4.2.3 — Fail-Closed Enforcement, Ledger Rotation and an Honest Panel *(Current)*
 
 A hardening release. It removes the paths on which the platform could lose its own protection, and it makes every surface state what the kernel is actually doing.
 
@@ -940,6 +940,6 @@ sudo python3 scripts/update-geoip-db.py /var/lib/vgt/gedefense/geoip.csv
 
 [![VGT](https://img.shields.io/badge/VisionGaia-Technology-cyan?style=for-the-badge)](https://visiongaiatechnology.de)
 
-*VGT GeDefense 4.2.2 — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
+*VGT GeDefense 4.2.3 — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
 
 </div>

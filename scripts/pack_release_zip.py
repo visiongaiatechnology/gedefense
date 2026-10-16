@@ -27,12 +27,12 @@ def sha256_file(path: Path) -> str:
 
 def main():
     root = Path(__file__).resolve().parent.parent
-    assets_dir = root.parent.parent / "release-v4.2.2-assets"
+    assets_dir = root.parent.parent / "release-v4.2.3-assets"
     if not assets_dir.exists():
         assets_dir.mkdir(parents=True, exist_ok=True)
 
     version = (root / "VERSION").read_text(encoding="utf-8").strip()
-    if version != "4.2.2":
+    if version != "4.2.3":
         raise ValueError(f"Unexpected VERSION: {version}")
 
     print(f"Packaging GeDefense {version} from {root}...")

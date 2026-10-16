@@ -20,7 +20,7 @@ import (
 // platform may now answer itself, and which it may not.
 func TestStartupReArmDecision(t *testing.T) {
 	now := time.Unix(1_800_000_000, 0).UTC()
-	const fingerprint = "kernel=7.0.0; release=4.2.2; node=n; interface=ens6"
+	const fingerprint = "kernel=7.0.0; release=4.2.3; node=n; interface=ens6"
 	verified := ReleaseStatus{Phase: ReleasePhaseDegraded, KernelPolicyState: "verified-enforce", FailSafeVerified: true}
 
 	cases := []struct {
@@ -54,7 +54,7 @@ func TestStartupReArmDecision(t *testing.T) {
 			return s
 		}(), fingerprint, fingerprint, true, time.Time{}, startupReArmBlocked, "gates"},
 		{"an unknown host goes through the ladder", verified, fingerprint, "", false, time.Time{}, startupReArmLadder, "fingerprint"},
-		{"a changed kernel goes through the ladder", verified, fingerprint, "kernel=6.9.0; release=4.2.2; node=n; interface=ens6", true, time.Time{}, startupReArmLadder, "changed"},
+		{"a changed kernel goes through the ladder", verified, fingerprint, "kernel=6.9.0; release=4.2.3; node=n; interface=ens6", true, time.Time{}, startupReArmLadder, "changed"},
 		{"a missing fingerprint goes through the ladder", verified, "", fingerprint, true, time.Time{}, startupReArmLadder, "fingerprint"},
 		{"the rate limit prevents flapping", verified, fingerprint, fingerprint, true, now.Add(-30 * time.Second), startupReArmBlocked, "ago"},
 		{"the qualified host is re-armed at once", verified, fingerprint, fingerprint, true, now.Add(-time.Hour), startupReArmArmed, "unchanged"},
@@ -221,7 +221,7 @@ func TestStartupQualificationRoundTrip(t *testing.T) {
 // TestStartupRunRearmsAfterTwoCleanPasses is the behaviour the operator asked for: a restart that
 // passes its own check no longer waits for a human.
 func TestStartupRunRearmsAfterTwoCleanPasses(t *testing.T) {
-	const fingerprint = "kernel=7.0.0; release=4.2.2; node=n; interface=ens6"
+	const fingerprint = "kernel=7.0.0; release=4.2.3; node=n; interface=ens6"
 	dir := t.TempDir()
 	var (
 		mu        sync.Mutex
