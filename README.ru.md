@@ -88,7 +88,57 @@ VGT GeDefense 4.2.2 — это флагманская фабрика безоп�
 > 
 > ### ➔ [📘 ARCHITECTURE.md — Полная техническая архитектура и спецификация](ARCHITECTURE.md)
 > 
-> *Более 2200 строк с подробным описанием 7-уровневого дерева архитектуры, плоскости данных eBPF/XDP в ядре, плоскости управления Go, типизированного ядра реагирования на Rust, встроенного L7 WAF, криптографического реестра доказательств и обратимого движка харденинга.*
+> *Более 4400 строк с подробным описанием 7-уровневого дерева архитектуры, плоскости данных eBPF/XDP в ядре, плоскости управления Go, типизированного ядра реагирования на Rust, встроенного L7 WAF, криптографического реестра доказательств и обратимого движка харденинга.*
+
+---
+
+## 🧪 Verify Yourself — Полный набор тестов и руководство по независимому аудиту
+
+> [!TIP]
+> **«Не доверяй, проверяй» (Don't Trust, Verify) — Полная прозрачность и воспроизводимость**
+> GeDefense спроектирован для сред с нулевым доверием (Zero Trust). Каждое архитектурное обещание, граница доверия, парсер, криптографический инвариант и фильтр уровня ядра eBPF/XDP подкреплены автоматизированным набором тестов. Вы можете локально запустить все **634+ нативных тестовых функции** и **19 шлюзов безопасности** с помощью одной команды.
+
+### 📊 Обзор наборов тестов и покрытие
+
+| Набор тестов / Компонент | Расположение | Тесты / Сценарии | Проверяемые возможности и гарантии | Команда прямого запуска |
+| :--- | :--- | :---: | :--- | :--- |
+| **Модульные и интеграционные тесты Control Plane** | [`control/*_test.go`](control/) | **574 теста**<br>*(108 файлов + 25 субтестов)* | Корреляция XDR DAG, многопроходное декодирование L7 WAF, базовые линии SHA-256 FIM, шлюзы релиза fail-closed, ротация журналов при пороге 90%, обновления self-artifact | `cd control && go test -v ./...` |
+| **Набор фаззинг-тестирования безопасности** | [`control/*fuzz_test.go`](control/) | **8 фаззинг-целей** | Безопасность памяти и устойчивость к паникам: нормализатор L7, TLS ClientHello, зашифрованные конверты, ответы Core IPC, `/proc/stat` | `make fuzz-smoke` |
+| **Периметр и аутентификация Gateway** | [`gateway/*_test.go`](gateway/) | **28 тестов**<br>*(6 файлов)* | Постквантовые кривые TLS 1.3 ML-KEM, проверка паролей Argon2id, изоляция cookie `__Host-`, токены синхронизации CSRF, очистка заголовков | `cd gateway && go test -v ./...` |
+| **Сетевой протокол и плоскость данных ядра Rust** | [`rust/gedefense-common`](rust/gedefense-common/) | **6 тестов** | Парсинг сетевых заголовков zero-copy, границы IPv4/IPv6 VLAN/QinQ, декодеры сетевых событий | `cargo test --locked --manifest-path rust/Cargo.toml -p gedefense-common` |
+| **Привилегированное ядро реагирования на Rust** | [`rust/gedefense-core`](rust/gedefense-core/) | **18 тестов** | LRU/вытеснение Replay-Guard, контракт sysctl compare-and-set, потоковый сканер малвари (Polyglot/EICAR), хранилище карантина AES-256-GCM | `cargo test --locked --manifest-path rust/Cargo.toml -p gedefense-core` |
+| **Автоматизированный аудит безопасности** | [`scripts/security-audit.sh`](scripts/security-audit.sh) | **19 шлюзов аудита** | Отсутствие небезопасных приемников DOM (`innerHTML`, `eval`), строгий CSP, синхронизация ключей I18N на 4 языках, права доступа сокетов (`0700`/`0600`) | `bash scripts/security-audit.sh` |
+| **Нагрузочные тесты Kinetic Wire-Speed** | [`scripts/validate-kinetic-release-candidate.sh`](scripts/validate-kinetic-release-candidate.sh) | **Пакет** | Тестирование всплесков входящего трафика, скользящие окна телеметрии, бенчмарк сброса LPM Trie | `bash scripts/validate-kinetic-release-candidate.sh` |
+| **Интеграция с дистрибутивами Linux** | [`scripts/validate-distro-integration.sh`](scripts/validate-distro-integration.sh) | **Пакет** | Проверка совместимости с дистрибутивами (контракты systemd для Arch, Debian, Fedora, SUSE) | `bash scripts/validate-distro-integration.sh` |
+| **DAC и права доступа карантина** | [`scripts/validate-quarantine-dac.sh`](scripts/validate-quarantine-dac.sh) | **Пакет** | Проверка исключительных прав root, флагов запрета исполнения, защит от обхода путей | `bash scripts/validate-quarantine-dac.sh` |
+| **Проверка песочницы Systemd** | [`scripts/validate-systemd.sh`](scripts/validate-systemd.sh) | **Пакет** | Проверка `DynamicUser`, `ProtectSystem=strict` и сброса привилегий во всех сервисах | `bash scripts/validate-systemd.sh` |
+| **Паритет четырехъязычной локализации I18N** | [`scripts/validate-i18n.mjs`](scripts/validate-i18n.mjs) | **Пакет** | 100% синхронизация ключей переводов для DE, EN, RU и ZH-CN | `node scripts/validate-i18n.mjs` |
+
+### ⚡ Быстрый старт: запуск тестов на локальной машине
+
+```bash
+# 1. Запустить все тесты Go, статический анализ, проверку синтаксиса JS и аудит безопасности
+make test
+
+# 2. Запустить тесты Go с детектором состояния гонки (Race Detector)
+make test-race
+
+# 3. Запустить все нативные тесты Rust (Kernel Common и Response Core)
+cargo test --locked --manifest-path rust/Cargo.toml -p gedefense-common -p gedefense-core
+
+# 4. Запустить 8 фаззинг-тестов безопасности Go
+make fuzz-smoke
+
+# 5. Запустить полный скрипт статического аудита безопасности
+bash scripts/security-audit.sh
+
+# 6. Запустить полную сквозную валидацию репозитория
+bash scripts/validate.sh
+```
+
+> 📖 **Формальный план бета-тестирования:** Полную матрицу эксплуатационных тестов (Observe, Canary, Enforce, AstraeaOS) см. в [**BETA-TEST-PLAN.md**](BETA-TEST-PLAN.md).
+
+---
 
 ### Обзор 7-уровневой суверенной фабрики обороны
 
