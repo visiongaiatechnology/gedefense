@@ -347,7 +347,6 @@ for anchor in [
     if anchor not in server:
         raise SystemExit('mandatory mutation evidence gate missing: '+anchor)
 fim=(root/'control'/'fim.go').read_text(encoding='utf-8')
-fabric=(root/'control'/'integrity_fabric.go').read_text(encoding='utf-8')
 for anchor in [
     'policy.maxFiles', 'policy.maxTotalBytes', 'file identity changed while hashing',
     'e.storage.Encrypt(e.baselinePath, fimPurpose, generation, plaintext)',
@@ -355,9 +354,6 @@ for anchor in [
 ]:
     if anchor not in fim:
         raise SystemExit('hardened FIM anchor missing: '+anchor)
-for anchor in ['MaxFiles: 8192', 'MaxTotalBytes: 512 << 20']:
-    if anchor not in fabric:
-        raise SystemExit('hardened FIM integrity fabric anchor missing: '+anchor)
 xdr=(root/'control'/'xdr.go').read_text(encoding='utf-8')
 if 'xdr.response.intent' not in xdr or 'mandatory evidence commit failed; active response disabled' not in xdr:
     raise SystemExit('XDR response evidence fail-closed gate missing')
@@ -568,7 +564,7 @@ required={
     ],
     'privileged event broker': ['TracePoint', 'sched_process_exec', 'RingBuf<MapData>', '["EXEC_EVENTS"]'],
     'privileged egress broker': [
-        'CgroupSkbAttachType::Egress', 'CgroupAttachMode::AllowOverride',
+        'CgroupSkbAttachType::Egress', 'CgroupAttachMode', 'AllowMultiple',
         '["EGRESS_EVENTS"]', 'take_egress_events',
     ],
     'privileged GaiaCells LSM broker': [

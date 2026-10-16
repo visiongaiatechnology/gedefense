@@ -80,7 +80,7 @@ type fabricRollbackRequest struct {
 func fabricModuleName(raw string) (string, bool) {
 	module := strings.ToLower(strings.TrimSpace(raw))
 	switch module {
-	case "kinetic", "network", "protection", "xdr", "l7", "threat_intel", "hardening", "integrity", "boot_trust", "policy_trust", "forensics", "system":
+	case "kinetic", "network", "protection", "xdr", "l7", "threat_intel", "hardening", "integrity", "boot_trust", "policy_trust", "forensics", "system", "detection":
 		return module, true
 	default:
 		return "", false
@@ -118,6 +118,8 @@ func fabricModuleSnapshot(settings RuntimeSettings, module string) (interface{},
 		return effectiveHardeningSettings(settings), nil
 	case "integrity":
 		return effectiveIntegritySettings(settings), nil
+	case "detection":
+		return effectiveDetectionSettings(settings), nil
 	case "boot_trust":
 		return effectiveBootTrustSettings(settings), nil
 	case "policy_trust":
@@ -234,6 +236,21 @@ func decodeModuleSettings(raw json.RawMessage, module string, next *RuntimeSetti
 			return err
 		}
 		next.Integrity = &in
+	case "detection":
+		var in DetectionFabricSettings
+		if err := decode(&in); err != nil {
+			return err
+		}
+		if err := validateDetectionFabricSettings(&in); err != nil {
+			return err
+		}
+		next.Detection = &in
+		// The switches own derived facts - which rules run, what the operator rule watches, which
+		// roots the preset contributes - so they are applied with the change, not at some later point
+		// where a partial state could be observed.
+		if err := applyDetectionSettings(next, in); err != nil {
+			return err
+		}
 	case "boot_trust":
 		var in BootTrustFabricSettings
 		if err := decode(&in); err != nil {

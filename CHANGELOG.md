@@ -1,9 +1,139 @@
 # Changelog
 
+## 4.2.4 - Gateway Identity Split and Full Audit Hardening
+
+A security release. It closes the findings of the complete VGT-100 audit
+(`VGT-AUDIT-20261016-GEDEFENSE.md`): fourteen findings fixed, three refuted by re-checking, and the
+two remaining ones documented with their first step.
+
+- **The internet-facing gateway no longer reaches the trust root.** It used to share the control
+  plane's account and could therefore read the core IPC key (signing commands to the root core) and
+  the storage master key (decrypting the entire evidence store), plus the evidence and policy signing
+  keys. It now runs as `gedefense-access`; all seven trust-root secrets are verified unreadable to it,
+  and the dashboard keeps working. The token is handed over by a root pre-step in the unit, because
+  the gateway refuses any token that is not 0600 and its own property while the control plane's
+  sandbox forbids giving a file away.
+- **The split is enforced, not just installed.** The systemd template, the sysusers account list, the
+  shipped `gedefense.toml` and the one-click installer all produce it, and the installer now *checks*
+  it: it reads as `gedefense-access` against every trust-root secret and aborts if any read succeeds.
+- **The security gate runs again.** `scripts/security-audit.sh` aborted on a hard-coded version
+  literal, so no regression test ran in CI at all. It reads the version from `VERSION` and checks
+  command execution in production code only: `SECURITY AUDIT PASS`, 19 checks, 0 failures.
+- **Storage encryption cannot be switched off silently.** An empty `storage_key_file` used to disable
+  the cipher; `validateConfig` now refuses to start without an absolute key path.
+- **A token rotation now works without a restart.** The token file is authoritative, so replacing it
+  ends every existing session; an unreadable file leaves the start-up credential in force and an empty
+  credential never authenticates.
+- **The emergency stop is sticky.** Only a missing marker clears it; any other stat error holds it and
+  says why.
+- **Sealed history has a ceiling.** Both ledgers share one retention rule (24 archives); an archive
+  without a manifest and the archive a recovery marker references are never removed.
+- Also fixed: a file-disclosure defect in the Airlock response, a data race in the start-up self-check
+  test that broke `make test-race`, a timing-flaky soak test, and a stale detection corpus that meant
+  one malicious scenario was never exercised.
+- **Navigation fix:** the "Angriffserkennung" page fell back to "Übersicht" because the view was
+  missing from the dashboard's `viewMeta` registry. Confirmed in the running binary.
+
+**Known limits, stated plainly.** Unsigned threat feeds remain (109,144 entries from unsigned sources
+in the kernel blocklist). The release branch that treats a changed own binary as a deployment still
+decides without a signed manifest; the environment override it keys on is set nowhere on the audited
+installation, so it needs root to abuse. Monotonic time across restarts is identified but not yet
+implemented; within a running process the soak gate already uses the monotonic clock, so the exposure
+is limited to a clock jump *between* restarts. The built binary carries no commit stamp, so its
+provenance is verified by content comparison rather than by the artifact itself.
+
 ## 4.2.3 - Startup Self-Check with Self-Healing, Desktop Status Socket and Qt6 Tray
 
 A resilience and desktop integration release. It introduces an automated startup self-check with
 canonical self-healing, a read-only desktop status socket, and a native Qt6 system tray client.
+
+### Security hardening from the full VGT-100 audit
+
+A complete audit (`VGT-AUDIT-20261016-GEDEFENSE.md`) ran against the whole product. Thirteen findings
+were fixed, each with its own evidence, three were refuted by re-checking, and the rest are documented
+with their first concrete step. The deployment was verified live after every change.
+
+- **The security gate ran again.** `scripts/security-audit.sh` aborted on a hard-coded version
+  literal, so `make test` never reached the suite and **no regression test ran in CI at all**. The gate
+  now reads the version from `VERSION`, checks command execution in production code only (not in test
+  files), follows the policy-based file-integrity bounds and the integration contract:
+  `SECURITY AUDIT PASS`, 19 checks, 0 failures.
+- **Storage encryption cannot be switched off silently.** An empty `storage_key_file` used to disable
+  the cipher, leaving the policy signing key, the evidence signing key and the evidence and incident
+  records in plaintext. `validateConfig` now refuses to start without an absolute key path, and a
+  regression test with a mutation proof holds that line.
+- **A token rotation now works without a restart.** The dashboard token was loaded once at start-up and
+  compared against that copy for the lifetime of the process, so a stolen token survived every
+  rotation. The file is now authoritative: replacing it after start-up ends every existing session.
+  Two safety properties come with it - a file that cannot be read leaves the start-up credential in
+  force (no lockout, and deleting the file grants no privilege), and an empty credential never
+  authenticates.
+- **The emergency stop is sticky.** Any `os.Stat` error used to mean "no emergency stop", so an
+  unreadable marker cleared an operator's stop. Only a missing file clears it now; anything else holds
+  the stop and tells the operator why.
+- **Sealed history has a ceiling.** Rotation is automatic, so without a limit a long-running node fills
+  its disk with archives. Both ledgers - evidence and incident - now share one retention rule (24
+  archives). An archive without a manifest and the archive a recovery marker references are never
+  removed; a failed prune never fails the seal.
+- **A file-disclosure defect.** The Airlock inspection returned `err.Error()` - an absolute path plus
+  errno text - inside a success response. The detail goes to the journal, the caller gets a reason
+  code.
+- **A data race** in the startup self-check test (breaking `make test-race`) and a **timing-flaky soak
+  test** were fixed at the root: synchronised state and waiting on the gate instead of assuming the
+  clock moved.
+- **The detection test corpus was silently stale.** Two corpora existed (10 and 9 scenarios) and the
+  loader preferred the older one, so a malicious scenario was never exercised. One canonical corpus
+  remains.
+
+- **The internet-facing gateway no longer reaches the trust root.** It used to run as the same account
+  as the control plane, which meant it could read the core IPC key (signing commands to the root core)
+  *and* the storage master key (decrypting the entire evidence store), plus the evidence and policy
+  signing keys. It now runs as its own account, and all seven trust-root secrets are verified
+  unreadable to it. The token is handed over by a root pre-step in the unit, because the gateway
+  refuses any token that is not 0600 and its own property, while the control plane's sandbox forbids
+  handing a file away. The dashboard keeps working unchanged.
+
+**Known limits, stated plainly.** Unsigned threat feeds remain: 109,144 entries from unsigned sources
+sit in the kernel blocklist, and signing them needs a pinned key and a MAC over the feed state. The
+release branch that treats a changed own binary as a deployment still decides without a signed
+manifest; the environment override it keys on is set nowhere on this installation, so it needs root to
+abuse. Monotonic time for replay windows and soak deadlines is identified but not yet implemented. And
+the identity split is asserted on the installed host plus in the systemd and sysusers templates - the
+installer still has to create the two directories, copy the access material and point the control
+plane's `token_file` at the new location, otherwise a fresh installation reverts to the shared account.
+
+### Attack detection: the chain after a foreign exploit, and its own page
+
+An intrusion usually begins in a *different* product. What a host security platform can see is not
+the vulnerability but what the attacker does next - and that part is the same whoever opened the
+door. This release makes that part visible, configurable and honest about its limits.
+
+- **Four new rules for the post-exploitation chain**, all reporting only, never terminating a
+  process, because every one of them has a legitimate twin on a real host:
+  `KD.LINUX.LOG_TAMPER` (logs deleted, truncated or emptied, shell history wiped),
+  `KD.LINUX.CREDENTIAL_PATH_PROBE` (credential stores read, copied or encoded in bulk),
+  `KD.LINUX.TUNNEL_BINARY` (tunnelling and proxy tools executed) and
+  `KD.LINUX.PERSISTENCE_DROPIN` (persistence entries written outside package management).
+  A path named by an administrator is quoted literally, so a directory called `foo.*` matches itself
+  and not `foobar`.
+- **The file-integrity monitor now covers the attack surface, not just our own files.** A preset adds
+  the web roots, log directories and persistence locations that exist on the host - on the reference
+  installation that is 15 protected roots instead of 6, and every added path is named in the journal.
+  A path that does not exist is never invented, configured roots are never dropped, and the one-time
+  acceptance of the resulting baseline stays an operator decision.
+- **The web-shell lineage rule now covers the service families** (lighttpd, openresty, all php-fpm
+  versions, tomcat, uwsgi, gunicorn, haproxy, varnishd). General-purpose runtimes are deliberately
+  excluded: they spawn shells legitimately, and this rule may terminate a process.
+- **Its own page, in all four languages.** "Angriffserkennung" carries six settings that apply without
+  a restart: each of the four rules on its own, the credential stores of *this* host, and the
+  protection-roots preset. The page is a first-class namespace in the settings fabric, so it inherits
+  validation, revisioning, export and rollback instead of reimplementing them.
+
+**Known limits, stated plainly.** The rules detect behaviour after an intrusion; no host sensor can
+see the vulnerability in the foreign product itself - that remains patching, segmentation and log
+forwarding. And on an installation whose XDR runs in `observe` mode, hits are evaluated but no
+incidents are raised; confirming that behaviour requires switching the mode, which is an operator
+decision.
 
 ### A third local surface, deliberately minimal
 

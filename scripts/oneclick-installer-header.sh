@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# VGT GeDefense 4.2.3 Universal Linux One-Click Installer
+# VGT GeDefense 4.2.4 Universal Linux One-Click Installer
 set -Eeuo pipefail
 umask 0077
 
-readonly SETUP_VERSION="4.2.3"
-readonly PRODUCT_VERSION="4.2.3"
+readonly SETUP_VERSION="4.2.4"
+readonly PRODUCT_VERSION="4.2.4"
 readonly PAYLOAD_SHA256="__PAYLOAD_SHA256__"
 readonly CONTROL_SHA256="__CONTROL_SHA256__"
 readonly ACCESS_SHA256="__ACCESS_SHA256__"
@@ -23,17 +23,22 @@ readonly CONFIG_DIR="/etc/vgt/gedefense"
 readonly CONFIG_FILE="${CONFIG_DIR}/gedefense.toml"
 readonly BASELINE_FILE="${CONFIG_DIR}/xdr-baseline.json"
 readonly MALWARE_HASH_FILE="${CONFIG_DIR}/malware-hashes.sha256"
-readonly PASSWORD_FILE="${CONFIG_DIR}/access-password"
+# The internet-facing gateway owns its own material and its own copy of the token, so that it can never
+# read the trust root. These directories exist for that separation only.
+readonly ACCESS_DIR="/etc/vgt/gedefense-access"
+readonly ACCESS_STATE_PARENT="/var/lib/vgt/gedefense-access"
+readonly ACCESS_STATE_DIR="${ACCESS_STATE_PARENT}/state"
+readonly PASSWORD_FILE="${ACCESS_DIR}/access-password"
 readonly TLS_DIR="${CONFIG_DIR}/tls"
 readonly SECRETS_DIR="${CONFIG_DIR}/secrets"
-readonly CERT_FILE="${TLS_DIR}/access.crt"
+readonly CERT_FILE="${ACCESS_DIR}/access.crt"
 readonly TLS_KEY_FILE="${TLS_DIR}/access.key"
-readonly TOKEN_FILE="${STATE}/dashboard.token"
+readonly TOKEN_FILE="${ACCESS_STATE_PARENT}/dashboard.token"
 readonly CORE_KEY_FILE="${SECRETS_DIR}/core-ipc.key"
 readonly STORAGE_KEY_FILE="${SECRETS_DIR}/storage-master.key"
 readonly XDR_KEY_FILE="${STATE}/xdr-log.key"
 readonly RUNTIME_KEY_FILE="${STATE}/runtime-settings.key"
-readonly SESSION_KEY_FILE="${STATE}/access-session.key"
+readonly SESSION_KEY_FILE="${ACCESS_STATE_DIR}/access-session.key"
 readonly POLICY_STATE_FILE="${STATE}/policy.json"
 readonly POLICY_PRIVATE_KEY_FILE="${STATE}/policy.ed25519"
 readonly POLICY_PUBLIC_KEY_FILE="${STATE}/policy.ed25519.pub"
@@ -594,6 +599,32 @@ install_units(){
   install -o root -g root -m 0644 "$PAYLOAD/tmpfiles/vgt-gedefense-l7.conf" "$L7_TMPFILES_CONFIG"
   systemd-tmpfiles --create "$L7_TMPFILES_CONFIG"
   [[ $(stat -c '%U:%G:%a' "$L7_RUNTIME_DIR") == 'gedefense:gedefense-l7:750' ]] || fail "L7-Runtime-Provisionierung ist inkonsistent."
+  # The gateway is internet-facing and runs under its own account, so that it can reach neither the
+  # core IPC key nor the storage master key. It refuses any backend token that is not 0600 and its own
+  # property, while the control plane's sandbox forbids handing the file over - the unit's root
+  # pre-step therefore copies the token into the gateway's own state directory. Both directories must
+  # exist with exactly this ownership before the unit starts, and the assertion below is what makes a
+  # half-provisioned installation fail here instead of at the next reboot.
+  # The parent belongs to the control plane, which writes the token there; the gateway only needs group
+  # access to read it. Its own directories belong to the gateway, so it can hold the copied token and
+  # its session key without ever touching the trust root.
+  install -d -o gedefense -g gedefense-access -m 0750 "$ACCESS_STATE_PARENT"
+  install -d -o gedefense-access -g gedefense-access -m 0750 "$ACCESS_DIR"
+  install -d -o gedefense-access -g gedefense-access -m 0700 "$ACCESS_STATE_DIR"
+  [[ $(stat -c '%U:%G:%a' "$ACCESS_STATE_PARENT") == 'gedefense:gedefense-access:750' ]] || fail "Gateway-Ablage $ACCESS_STATE_PARENT ist inkonsistent."
+  [[ $(stat -c '%U:%G:%a' "$ACCESS_DIR") == 'gedefense-access:gedefense-access:750' ]] || fail "Gateway-Ablage $ACCESS_DIR ist inkonsistent."
+  [[ $(stat -c '%U:%G:%a' "$ACCESS_STATE_DIR") == 'gedefense-access:gedefense-access:700' ]] || fail "Gateway-Zustand $ACCESS_STATE_DIR ist inkonsistent."
+  # The whole point of the separation: the internet-facing account must not reach the trust root. If any
+  # of these reads succeeds, the separation is broken and the gateway can sign core commands or decrypt
+  # the evidence store. su is used instead of sudo because it is present on a minimal target.
+  if id -u gedefense-access >/dev/null 2>&1; then
+    for secret in "$CORE_KEY_FILE" "$STORAGE_KEY_FILE" "$POLICY_PRIVATE_KEY_FILE" "$XDR_KEY_FILE" "$RUNTIME_KEY_FILE"; do
+      if [[ -n $secret ]] && su -s /bin/sh gedefense-access -c "test -r '$secret'" 2>/dev/null; then
+        fail "Trennungsprüfung: gedefense-access kann $secret lesen - die Diensttrennung ist unwirksam."
+      fi
+    done
+    log "Trennungsprüfung: gedefense-access erreicht die Vertrauenswurzel nicht."
+  fi
   sed -e "s#@RELEASE@#/opt/vgt/gedefense/current#g" -e "s#@PUBLIC_PORT@#${PUBLIC_PORT}#g" -e "s#@PUBLIC_HOST@#${PUBLIC_HOST}:${PUBLIC_PORT}#g" "$PAYLOAD/systemd/gedefense-access.service.in" > /etc/systemd/system/gedefense-access.service
   chmod 0644 /etc/systemd/system/gedefense-core.service /etc/systemd/system/gedefense-access.service
 }

@@ -117,6 +117,7 @@ const viewMeta = {
   kinetic: ['view.kinetic.eyebrow', 'view.kinetic.title'],
   'threat-intel': ['view.threatIntel.eyebrow', 'view.threatIntel.title'],
   hardening: ['view.hardening.eyebrow', 'view.hardening.title'],
+  detection: ['view.detection.eyebrow', 'view.detection.title'],
   integrity: ['view.integrity.eyebrow', 'view.integrity.title'],
   boot: ['view.boot.eyebrow', 'view.boot.title'],
   xdr: ['view.xdr.eyebrow', 'view.xdr.title'],

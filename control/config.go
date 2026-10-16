@@ -37,6 +37,16 @@ type NodeConfig struct {
 }
 
 type DashboardConfig struct {
+	// TokenOwner names the account the dashboard token belongs to. Empty by default, so nothing changes
+	// until an operator deliberately separates the gateway's account from the control plane's. When set,
+	// the token becomes the property of that account with mode 0600 - the gateway refuses anything less
+	// restrictive - while the control plane keeps reading and rotating it through cap_dac_override and
+	// cap_chown. The core IPC key and the storage master key stay unreachable for the internet-facing
+	// service either way.
+	//
+	// Configured, never detected: deriving it from the presence of an account would make both the
+	// runtime behaviour and the test suite depend on the user table of the machine.
+	TokenOwner         string
 	Listen             string
 	AllowRemote        bool
 	AllowedHosts       []string
@@ -140,17 +150,21 @@ type XDRConfig struct {
 	BaselineFile             string
 	ProtectedPaths           []string
 	AllowProcesses           []string
-	WorkerCount              int
-	QueueCapacity            int
-	MaxEvaluationsPerScan    int
-	BehaviorEnabled          bool
-	BehaviorWarmupSamples    int
-	BehaviorZScoreMilli      int
-	BehaviorMinConnections   int
-	BehaviorMaxProfiles      int
-	BehaviorMaxPorts         int
-	BehaviorProfileFile      string
-	StorageKeyFile           string
+	// ProtectedSecurityRoots adds the security-relevant directories that exist on this host (web
+	// roots, persistence locations, log directories) to the protected roots. See security_roots.go
+	// for why the scope of the file-integrity monitor had to grow beyond the platform's own files.
+	ProtectedSecurityRoots bool
+	WorkerCount            int
+	QueueCapacity          int
+	MaxEvaluationsPerScan  int
+	BehaviorEnabled        bool
+	BehaviorWarmupSamples  int
+	BehaviorZScoreMilli    int
+	BehaviorMinConnections int
+	BehaviorMaxProfiles    int
+	BehaviorMaxPorts       int
+	BehaviorProfileFile    string
+	StorageKeyFile         string
 }
 
 type ReleaseConfig struct {
@@ -255,12 +269,13 @@ func defaultConfig() Config {
 			Enabled: true, Mode: "observe", ScanIntervalMillis: 750, NetworkIntervalSeconds: 3,
 			IntegrityIntervalSeconds: 3, AlertScore: 40, ContainScore: 80, KillScore: 120,
 			MaxCommandBytes: 8192, CommandPreviewBytes: 320, DedupeSeconds: 300,
-			MaxIncidentLogBytes: 64 << 20,
-			IncidentLog:         "/var/lib/vgt/gedefense/incidents.jsonl",
-			LogKeyFile:          "/var/lib/vgt/gedefense/xdr-log.key",
-			BaselineFile:        "/etc/vgt/gedefense/xdr-baseline.json",
-			ProtectedPaths:      []string{"/opt/vgt/gedefense/current/bin/gedefense-control", "/opt/vgt/gedefense/current/libexec/gedefense-core", "/opt/vgt/gedefense/current/lib/gedefense/gedefense-ebpf"},
-			WorkerCount:         4, QueueCapacity: 2048, MaxEvaluationsPerScan: 4096,
+			MaxIncidentLogBytes:    64 << 20,
+			IncidentLog:            "/var/lib/vgt/gedefense/incidents.jsonl",
+			LogKeyFile:             "/var/lib/vgt/gedefense/xdr-log.key",
+			BaselineFile:           "/etc/vgt/gedefense/xdr-baseline.json",
+			ProtectedPaths:         []string{"/opt/vgt/gedefense/current/bin/gedefense-control", "/opt/vgt/gedefense/current/libexec/gedefense-core", "/opt/vgt/gedefense/current/lib/gedefense/gedefense-ebpf"},
+			ProtectedSecurityRoots: true,
+			WorkerCount:            4, QueueCapacity: 2048, MaxEvaluationsPerScan: 4096,
 			BehaviorEnabled: true, BehaviorWarmupSamples: 24, BehaviorZScoreMilli: 3500,
 			BehaviorMinConnections: 8, BehaviorMaxProfiles: 4096, BehaviorMaxPorts: 256, BehaviorProfileFile: "/var/lib/vgt/gedefense/behavior-profiles.json",
 			StorageKeyFile: "/etc/vgt/gedefense/secrets/storage-master.key",
@@ -449,6 +464,10 @@ func assignConfig(cfg *Config, section, key, raw string) error {
 	case "startup.qualification_file":
 		v, e := str()
 		cfg.Startup.QualificationFile = v
+		return e
+	case "dashboard.token_owner":
+		v, e := str()
+		cfg.Dashboard.TokenOwner = v
 		return e
 	case "desktop.enabled":
 		v, e := parseBool(raw)
@@ -817,6 +836,10 @@ func assignConfig(cfg *Config, section, key, raw string) error {
 	case "xdr.command_preview_bytes":
 		v, e := parseInt(raw, 64, 2048)
 		cfg.XDR.CommandPreviewBytes = v
+		return e
+	case "xdr.protected_security_roots":
+		v, e := parseBool(raw)
+		cfg.XDR.ProtectedSecurityRoots = v
 		return e
 	case "xdr.dedupe_seconds":
 		v, e := parseInt(raw, 10, 86400)
@@ -1216,6 +1239,16 @@ func parseL7InlineUpstream(raw string) (*url.URL, string, string, error) {
 }
 
 func validateConfig(cfg *Config) error {
+	// Storage encryption is not an optional mode. An empty key path used to disable the cipher
+	// silently, which left the policy signing key, the evidence signing key and the evidence and
+	// incident records in plaintext on disk. A missing key is therefore a configuration error that
+	// stops the start - not a quieter way to run.
+	if err := validateAbsolutePath("policy.storage_key_file", cfg.Policy.StorageKeyFile, false); err != nil {
+		return err
+	}
+	if err := validateAbsolutePath("xdr.storage_key_file", cfg.XDR.StorageKeyFile, false); err != nil {
+		return err
+	}
 	if len(cfg.Node.Name) < 1 || len(cfg.Node.Name) > 64 {
 		return errors.New("node.name must contain 1-64 characters")
 	}

@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"time"
@@ -103,6 +104,70 @@ func (l *EvidenceLedger) Rotate(ctx context.Context, reason string) (EvidenceRot
 	}, nil
 }
 
+// evidenceArchiveRetention is the hard ceiling on rotation archives. Rotation happens automatically at
+// the size budget, so without a ceiling a long-running node fills its disk with sealed history - and
+// that disk is what the live ledger, the kernel state and the recovery path need.
+const evidenceArchiveRetention = 24
+
+// pruneArchivesLocked applies the evidence ceiling. The rule itself lives in pruneCompleteArchives so
+// both ledgers - evidence and incident - follow one behaviour instead of two that drift apart.
+func (l *EvidenceLedger) pruneArchivesLocked(keep int) (int, error) {
+	archiveRoot := filepath.Join(filepath.Dir(l.path), "archive")
+	protected := ""
+	if raw, err := os.ReadFile(l.rotationMarkerPath()); err == nil {
+		var marker evidenceRotationMarker
+		if json.Unmarshal(raw, &marker) == nil {
+			protected = marker.ArchiveID
+		}
+	}
+	return pruneCompleteArchives(archiveRoot, "evidence-", keep, protected)
+}
+
+// pruneCompleteArchives keeps the newest archives in a root and removes the oldest complete ones.
+// Two things are never removed: an archive that is still being written (it has no manifest yet), and
+// the archive named by the caller as protected - a start-up that finds a recovery marker without its
+// archive refuses to run, so retention must not be able to create exactly that state. Archive
+// identifiers are timestamp-prefixed and os.ReadDir returns entries sorted by name, so oldest-first
+// needs no extra ordering.
+func pruneCompleteArchives(archiveRoot, prefix string, keep int, protected string) (int, error) {
+	if keep < 1 {
+		keep = 1
+	}
+	entries, err := os.ReadDir(archiveRoot)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return 0, nil
+		}
+		return 0, err
+	}
+	complete := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		name := entry.Name()
+		if !entry.IsDir() || len(name) <= len(prefix) || name[:len(prefix)] != prefix {
+			continue
+		}
+		dir := filepath.Join(archiveRoot, name)
+		if _, err := os.Stat(filepath.Join(dir, "manifest.json")); err != nil {
+			continue
+		}
+		complete = append(complete, dir)
+	}
+	removed := 0
+	for _, dir := range complete {
+		if len(complete)-removed <= keep {
+			break
+		}
+		if protected != "" && filepath.Base(dir) == prefix+protected {
+			continue
+		}
+		if err := os.RemoveAll(dir); err != nil {
+			return removed, err
+		}
+		removed++
+	}
+	return removed, nil
+}
+
 // sealLocked copies the chain and its checkpoint into an archive and writes the manifest. The
 // live files are not touched here, which is what makes a crash at any point before the marker
 // harmless. The caller holds the lock.
@@ -163,6 +228,14 @@ func (l *EvidenceLedger) sealLocked(ctx context.Context, reason string) (string,
 		return "", "", err
 	}
 	digest := sha256.Sum256(manifestBytes)
+	// Retention runs after the new archive is complete, so the ceiling counts it. A failed prune never
+	// fails the rotation: the archive is sealed and the seal is what matters; the disk report is a
+	// warning the operator can act on.
+	if removed, pruneErr := l.pruneArchivesLocked(evidenceArchiveRetention); pruneErr != nil {
+		log.Printf("evidence archive retention: %v", pruneErr)
+	} else if removed > 0 {
+		log.Printf("evidence archive retention: removed %d of %d sealed archives", removed, evidenceArchiveRetention)
+	}
 	return archiveID, hex.EncodeToString(digest[:]), nil
 }
 

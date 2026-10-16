@@ -9,14 +9,14 @@ permissions:
   contents: read
 
 env:
-  PRODUCT_VERSION: 4.2.3
+  PRODUCT_VERSION: 4.2.4
 
 jobs:
   go-frontend-security:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.4
       - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
         with:
           go-version: '1.26.8'
@@ -46,7 +46,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.4
       - name: Install native and pinned Rust dependencies
         run: sudo apt-get update && sudo apt-get install -y clang llvm libelf-dev zlib1g-dev
       - name: Install pinned Rust toolchains
@@ -84,7 +84,7 @@ jobs:
             image: opensuse/tumbleweed@sha256:d833ad1f857a057030cdc83b5ca77fdfdce9ae109e8891bf5b47e5f591725c66
             bootstrap: zypper --non-interactive refresh && zypper --non-interactive install bash python3 ca-certificates curl openssl polkit pkexec desktop-file-utils
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.4
       - name: Validate ${{ matrix.name }} integration contract
         env:
           IMAGE: ${{ matrix.image }}
@@ -100,7 +100,7 @@ jobs:
     needs: [go-frontend-security, rust-ebpf-release, distribution-contracts]
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.4
       - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
         with:
           go-version: '1.26.8'

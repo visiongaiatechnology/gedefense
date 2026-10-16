@@ -8,7 +8,13 @@ mode = "standalone"
 listen = "127.0.0.1:9843"
 allow_remote = false
 allowed_hosts = "127.0.0.1,localhost,::1"
-token_file = "/var/lib/vgt/gedefense/dashboard.token"
+# The HTTPS gateway is internet-facing and runs under its own account (gedefense-access), so it can
+# reach neither the core IPC key nor the storage master key. It refuses any backend token that is not
+# 0600 and its own property, and the control plane's sandbox forbids handing the file over - therefore
+# the token lives in the gateway's own directory and the unit's root pre-step copies it aside.
+# The installer must create /var/lib/vgt/gedefense-access (owner gedefense-access, mode 0750) and
+# /var/lib/vgt/gedefense-access/state (owner gedefense-access, mode 0700) for this to work.
+token_file = "/var/lib/vgt/gedefense-access/dashboard.token"
 tls_cert_file = ""
 tls_key_file = ""
 rate_limit_per_minute = 240

@@ -7,10 +7,16 @@ StartLimitBurst=4
 
 [Service]
 Type=exec
-User=gedefense
-Group=gedefense
+# The gateway runs under its own account so that it can reach neither the core IPC key nor the storage
+# master key. That separation only holds if it never joins the control plane's group.
+User=gedefense-access
+Group=gedefense-access
 LoadCredential=tls-key:/etc/vgt/gedefense/tls/access.key
-ExecStart=@RELEASE@/bin/gedefense-access --listen=0.0.0.0:@PUBLIC_PORT@ --backend=http://127.0.0.1:9844 --public-host=@PUBLIC_HOST@ --password-file=/etc/vgt/gedefense/access-password --session-key-file=/var/lib/vgt/gedefense/access-session.key --backend-token-file=/var/lib/vgt/gedefense/dashboard.token --tls-cert=/etc/vgt/gedefense/tls/access.crt --tls-key=%d/tls-key
+# The gateway refuses any backend token that is not 0600 and its own property. The control plane cannot
+# hand the file over (its sandbox forbids chown), so a root pre-step copies it into the gateway's own
+# directory with the required ownership. order note: systemd ignores directive order within a section.
+ExecStartPre=+/usr/bin/install -o gedefense-access -g gedefense-access -m 0600 /var/lib/vgt/gedefense-access/dashboard.token /var/lib/vgt/gedefense-access/state/backend-token
+ExecStart=@RELEASE@/bin/gedefense-access --listen=0.0.0.0:@PUBLIC_PORT@ --backend=http://127.0.0.1:9844 --public-host=@PUBLIC_HOST@ --password-file=/etc/vgt/gedefense-access/access-password --session-key-file=/var/lib/vgt/gedefense-access/state/access-session.key --backend-token-file=/var/lib/vgt/gedefense-access/state/backend-token --tls-cert=/etc/vgt/gedefense-access/access.crt --tls-key=%d/tls-key
 Restart=on-failure
 RestartSec=3s
 TimeoutStartSec=30s
@@ -35,8 +41,8 @@ MemoryDenyWriteExecute=true
 SystemCallArchitectures=native
 SystemCallFilter=@system-service
 SystemCallErrorNumber=EPERM
-ReadOnlyPaths=@RELEASE@ /etc/vgt/gedefense
-ReadWritePaths=/var/lib/vgt/gedefense
+ReadOnlyPaths=@RELEASE@ /etc/vgt/gedefense-access
+ReadWritePaths=/var/lib/vgt/gedefense-access
 UMask=0077
 
 [Install]

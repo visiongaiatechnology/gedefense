@@ -31,6 +31,8 @@ var supportedXDRRuleOverrides = map[string]struct{}{
 	"KD.LINUX.PIPE_SHELL": {}, "KD.LINUX.ENCODED_EXEC": {}, "KD.LINUX.REVERSE_SHELL": {},
 	"KD.LINUX.LD_PRELOAD": {}, "KD.LINUX.CREDENTIAL_ACCESS": {}, "KD.LINUX.DESTRUCTIVE": {},
 	"KD.LINUX.PERSISTENCE": {}, "KD.LINUX.BPF_LOAD": {},
+	"KD.LINUX.LOG_TAMPER": {}, "KD.LINUX.CREDENTIAL_PATH_PROBE": {},
+	"KD.LINUX.TUNNEL_BINARY": {}, "KD.LINUX.PERSISTENCE_DROPIN": {},
 	"XDR.EXE_DELETED": {}, "XDR.MEMFD_EXEC": {}, "XDR.TEMP_EXEC": {}, "XDR.WEB_SHELL_LINEAGE": {},
 	"XDR.NAME_PATH_MISMATCH": {}, "XDR.THREAT_INTEL_C2": {},
 	"XDR.ANOMALY.EXEC_BURST": {}, "XDR.ANOMALY.CONNECTION_FANOUT": {},
@@ -59,6 +61,13 @@ func NewXDRRuleEngine() *XDRRuleEngine {
 		{"KD.LINUX.DESTRUCTIVE", "impact", "Destructive system command detected", `(?i)(?:\brm\s+-rf\s+/(?:\s|$)|\bmkfs\.[a-z0-9]+\s+/dev/|\bdd\s+[^\n]{0,300}\bof=/dev/(?:sd|nvme|vd)|:\(\)\s*\{\s*:\|:&\s*;\s*\}\s*;)`, 140, true},
 		{"KD.LINUX.PERSISTENCE", "persistence", "Persistence-oriented command sequence", `(?i)(?:\bcrontab\b[^\n]{0,400}(?:-e|-)|/etc/(?:cron\.|systemd/system)|\bsystemctl\s+enable\b|\bchattr\s+\+i\b)`, 35, false},
 		{"KD.LINUX.BPF_LOAD", "kernel", "Unexpected BPF program loading command", `(?i)\bbpftool\s+prog\s+(?:load|loadall)|\b(?:bpf|libbpf)\b[^\n]{0,300}\bprog_load\b`, 45, false},
+		// The chain after a foreign exploit. All four report only: emptying a log, copying a
+		// credential store, starting a tunnelling tool and writing a persistence entry all have
+		// legitimate twins, and an alert must never end a process on a guess.
+		{"KD.LINUX.LOG_TAMPER", "defense-evasion", "Forensic log deleted, truncated or history wiped", `(?i)(?:\brm\s+(?:-[a-z]+\s+)*/var/log/|>\s*/var/log/(?:wtmp|btmp|lastlog|auth\.log|syslog|messages|secure)\b|\btruncate\s+(?:-[a-z]+\s+)*0\b[^\n]{0,200}/var/log/|\bshred\b[^\n]{0,200}/var/log/|\bjournalctl\b[^\n]{0,120}--vacuum|\bHISTFILE=/dev/null|\bunset\s+HISTFILE|\brm\s+(?:-[a-z]+\s+)*/root/\.bash_history)`, 120, false},
+		{"KD.LINUX.CREDENTIAL_PATH_PROBE", "credential", "Credential store read, copied or encoded in bulk", `(?i)\b(?:cp|tar|rsync|scp|dd|base64|openssl|zip|gzip|cat|less|more|strings|awk|sed|python3?|perl)\b[^\n]{0,500}(?:/etc/shadow|/etc/gshadow|/etc/security/opasswd|/root/\.ssh/|/etc/vgt/gedefense/secrets/|\.kdbx|credentials\.json|/opt/beyondtrust/)`, 100, false},
+		{"KD.LINUX.TUNNEL_BINARY", "network", "Tunnelling or proxy tool executed", `(?i)(?:^|[/\s])(?:chisel|frpc|frps|ngrok|ligolo|gost|rathole|cloudflared|iodine|dnscat2?|socat)\b`, 110, false},
+		{"KD.LINUX.PERSISTENCE_DROPIN", "persistence", "Persistence entry written outside package management", `(?i)(?:\bcrontab\b[^\n]{0,200}(?:-e\b|-r\b|/tmp/|/var/tmp/|/dev/shm/|\s-\s*$)|\btee\b[^\n]{0,200}/etc/(?:cron\.|systemd/system)|\bcp\b[^\n]{0,200}/etc/(?:cron\.|systemd/system)|>\s*/etc/(?:cron\.|systemd/system)|\bauthorized_keys\b|\bsystemd-run\b[^\n]{0,200}--unit\b)`, 90, false},
 	}
 	out := &XDRRuleEngine{}
 	for _, d := range defs {
@@ -227,7 +236,15 @@ func pathUnderTemp(path string) bool {
 func suspiciousLineage(parent, exe string) bool {
 	p := strings.ToLower(filepath.Base(strings.TrimSuffix(parent, " (deleted)")))
 	c := strings.ToLower(filepath.Base(strings.TrimSuffix(exe, " (deleted)")))
-	parents := map[string]bool{"nginx": true, "apache2": true, "httpd": true, "php-fpm": true, "php-fpm8.2": true, "php-fpm8.3": true, "caddy": true, "traefik": true}
+	// Network-facing *services* that never spawn a shell in normal operation. Deliberately absent:
+	// java, node and python - those spawn interpreters legitimately (builds, scripts), and this rule
+	// is kill-eligible, so a wider net here would end honest work.
+	parents := map[string]bool{
+		"nginx": true, "apache2": true, "httpd": true, "caddy": true, "lighttpd": true,
+		"openresty": true, "haproxy": true, "traefik": true, "varnishd": true,
+		"php-fpm": true, "php-fpm8.1": true, "php-fpm8.2": true, "php-fpm8.3": true, "php-fpm8.4": true,
+		"tomcat": true, "uwsgi": true, "gunicorn": true,
+	}
 	children := map[string]bool{"sh": true, "bash": true, "dash": true, "zsh": true, "python": true, "python3": true, "perl": true, "ruby": true, "node": true, "nc": true, "ncat": true, "socat": true}
 	return parents[p] && children[c]
 }
