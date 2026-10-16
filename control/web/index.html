@@ -73,6 +73,10 @@
             <svg viewBox="0 0 24 24" class="nav-icon-svg"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
             <b data-i18n="view.hardening.title">Härtung</b>
           </button>
+          <button class="nav-item" type="button" data-view="detection">
+            <svg viewBox="0 0 24 24" class="nav-icon-svg"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+            <b data-i18n="view.detection.title">Angriffserkennung</b>
+          </button>
           <button class="nav-item" type="button" data-view="integrity">
             <svg viewBox="0 0 24 24" class="nav-icon-svg"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
             <b data-i18n="view.integrity.title">Integrität</b>
@@ -116,7 +120,7 @@
             <small id="sidebarMode">OBSERVE</small>
           </div>
         </div>
-        <span class="powered-line">GeDefense <span id="versionText">4.2.3</span></span>
+        <span class="powered-line">GeDefense <span id="versionText">4.2.4</span></span>
         <small class="vgt-credit" data-i18n="brand.powered">powered by VisionGaiaTechnology</small>
       </div>
     </aside>
@@ -165,7 +169,7 @@
         <section class="view active" data-page="overview" aria-labelledby="overviewHeading">
           <div class="hero-cockpit">
             <div class="hero-copy">
-              <p class="eyebrow" data-i18n="overview.kicker">GEDEFENSE 4.2.3 // SOVEREIGN KINETIC DEFENSE</p>
+              <p class="eyebrow" data-i18n="overview.kicker">GEDEFENSE 4.2.4 // SOVEREIGN KINETIC DEFENSE</p>
               <h2 id="overviewHeading" data-i18n="overview.heading">Abwehr, die den Host als Gesamtsystem versteht.</h2>
               <p data-i18n="overview.description">Rust-XDP, signierte Policy-Snapshots, native L7 Application Defense und Linux-XDR korrelieren Netzwerk, Prozesse, Integrität und Verhalten – lokal, nachvollziehbar und ohne Cloud-Abhängigkeit.</p>
               <div class="hero-state">
@@ -709,7 +713,22 @@
         </section>
 
         <!-- 5. INTEGRITY VIEW -->
-        <section class="view" data-page="integrity" aria-labelledby="integrityHeading" hidden>
+        <section class="view" data-page="detection" aria-labelledby="detectionHeading" hidden>
+      <div class="view-context-bar">
+        <div>
+          <p class="eyebrow m-0" data-i18n="view.detection.eyebrow">ERKENNUNG NACH DEM EINBRUCH</p>
+          <h2 id="detectionHeading" class="m-0 fs-xl" data-i18n="view.detection.title">Angriffserkennung</h2>
+          <p class="view-context-desc" data-i18n="view.detection.description">Was nach einem Einbruch passiert, unabhängig davon, welches Produkt die Eintrittstür war: Protokolle löschen, Zugangsdaten abgreifen, Tunnelwerkzeuge starten, Persistenz anlegen. Jede Regel ist einzeln schaltbar und an den eigenen Host anpassbar.</p>
+        </div>
+        <div class="view-context-actions">
+          <span id="detectionSurfaceBadge" class="status-pill muted">---</span>
+        </div>
+      </div>
+
+      <p class="fs-xs text-muted">Jede Regel ist einzeln schaltbar. Die überwachten Wurzelpfade selbst werden auf der Seite „Integrität" gepflegt; die Bewertung jeder Regel bleibt im Regelkatalog, damit eine Regel nicht an zwei Stellen definiert ist.</p>
+    </section>
+
+    <section class="view" data-page="integrity" aria-labelledby="integrityHeading" hidden>
           <div class="view-context-bar">
             <div>
               <p class="eyebrow m-0" data-i18n="view.integrity.eyebrow">INTEGRITY &amp; EVIDENCE</p>

@@ -17,7 +17,7 @@ import (
 	"time"
 )
 
-const version = "4.2.3"
+const version = "4.2.4"
 
 func detectInterface(requested string) (string, error) {
 	if requested != "" && requested != "auto" {
@@ -211,6 +211,9 @@ func main() {
 	if err != nil {
 		log.Fatalf("dashboard token: %v", err)
 	}
+	if err := adoptDashboardToken(cfg.Dashboard.TokenFile, cfg.Dashboard.TokenOwner); err != nil {
+		log.Fatalf("dashboard token owner: %v", err)
+	}
 	core, err := NewCoreClient(cfg.Core.Socket, cfg.Core.AuthKeyFile, time.Duration(cfg.Core.RequestTimeoutMillis)*time.Millisecond)
 	if err != nil {
 		log.Fatalf("core client: %v", err)
@@ -280,8 +283,12 @@ func main() {
 	if err != nil {
 		log.Fatalf("FIM storage: %v", err)
 	}
+	protectedPaths, addedSecurityRoots := securityProtectionRoots(cfg.XDR.ProtectedPaths, cfg.XDR.ProtectedSecurityRoots, securityProtectionRootLimit)
+	if len(addedSecurityRoots) > 0 {
+		log.Printf("FIM protects %d roots; %d added for attack visibility: %v", len(protectedPaths), len(addedSecurityRoots), addedSecurityRoots)
+	}
 	fim, err := NewFIMEngine(
-		cfg.XDR.ProtectedPaths,
+		protectedPaths,
 		filepath.Join(evidenceDir, "fim-baseline.enc"),
 		fimStorage,
 	)

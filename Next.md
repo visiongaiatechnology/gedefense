@@ -1,8 +1,381 @@
 # Current Task
 
-VGT GeDefense 4.2.3 — Startup Self-Check, Desktop Status Socket & Qt6 Tray Integration.
+## ✅ F-01 GESCHLOSSEN (16.10.) — Dienstidentität des Gateways getrennt
+
+**Live verifiziert:** Das internetnahe Gateway läuft als eigenes Konto `gedefense-access`, ohne
+Neustartschleife (`NRestarts=0`). Für dieses Konto **unlesbar**: `evidence.ed25519`, `policy.ed25519`,
+`xdr-log.key`, `core-ipc.key` (beide Ablagen), `cases.enc`, `storage-master.key`. Dashboard `HTTP 200`,
+`phase=enforce`, `kernel=verified-enforce`, `fail_safe=True`, `detail='release gates satisfied'`.
+Zuvor konnte das Gateway den Storage-Master-Key lesen (gesamte verschlüsselte Evidenz) und den
+Kern-IPC-Schlüssel (signierte Kommandos an den Root-Kern).
+
+**Der Mechanismus, der funktioniert** (nach fünf widerlegten Ansätzen): Eine **root-Vorstufe in der
+Unit** legt dem Gateway eine eigene Kopie an —
+`ExecStartPre=+/usr/bin/install -o gedefense-access -g gedefense-access -m 0600 /var/lib/vgt/gedefense-access/dashboard.token /var/lib/vgt/gedefense-access/state/backend-token`
+— und `--backend-token-file` zeigt darauf. Damit ist die Anforderung erfüllt, die das Gateway selbst
+formuliert (`0600`, eigenes Eigentum), ohne dass die Kontrollplane etwas weggeben muss und ohne dass
+die Vertrauenswurzel geöffnet wird. Ebenso umgestellt: `User`/`Group=gedefense-access`,
+`SupplementaryGroups` entfernt, `ReadWritePaths=/var/lib/vgt/gedefense-access`, Flags für
+Passwortdatei, Zertifikat und Session-Schlüssel auf `/etc/vgt/gedefense-access/…` bzw.
+`…/gedefense-access/state/…`.
+
+**Fünf widerlegte Ansätze — nicht wiederholen:** Schlüssel in eine gemeinsame Gruppe (Preflight
+verbietet gruppenlesbare Vertrauenswurzel) · Verzeichnis `/var/lib/vgt/gedefense` umstellen (dort
+liegen alle Geheimnisse) · Token per `chgrp` + `0640` (Gateway verlangt `0600`) · Token per
+systemd-Credential (gruppenlesbar, Gateway lehnt ab) · Token der Kontrollplane wegnehmen (`chown` in
+ihrer Sandbox: `operation not permitted`).
+
+**✅ ERLEDIGT: Packaging nachgezogen (16.10.).** F-01 ist sechsfach verankert: laufendes System
+(7/7 Vertrauenswurzel-Dateien für `gedefense-access` unlesbar, gemessen), Unit-Vorlage mit
+`User`/`Group=gedefense-access` und root-Vorstufe, sysusers mit Konto und Gruppe, ausgelieferte
+`gedefense.toml` mit dem neuen `token_file`, Installer mit umgestellten Pfadvariablen und drei
+Verzeichnissen samt `stat`-Zusicherungen, und eine **Selbstprüfung im Installer**, die die Trennung
+verifiziert und bei einer Lücke abbricht (in beide Richtungen bewiesen). Zwei eigene Fehler dabei
+gefunden und behoben: nicht existierende Variablen in der ersten Fassung, fehlendes Elternverzeichnis
+in der zweiten. Siehe `## ✅ F-01 GESCHLOSSEN` oben.
+`packaging/systemd/gedefense-access.service.in` (Zeilen 10–11 `User=gedefense`/`Group=gedefense`),
+`packaging/sysusers` (Konto `gedefense-access`) und der Installer müssen denselben Aufbau erzeugen —
+sonst bringt **jede Neuinstallation F-01 zurück**. Das hat Vorrang vor der Feed-Signatur.
+
+**Zu klären (beobachtet, nicht bewertet):** Über den Proxy antwortet `/api/v1/status` ohne
+Credentials mit `HTTP 200`, während der Backend-Port korrekt `401` liefert. Vermutlich der
+SPA-Fallback von nginx (Index.html für unbekannte Pfade) — harmlos, aber unbestätigt. Vor der nächsten
+Freigabe einmal nachmessen.
+
+
+## F-01: der korrekte, vollständig gemessene Umschaltplan (Konten-Trennung, keine Codeänderung)
+
+**Alle Pfade des Gateways sind Kommandozeilen-Flags** (Startzeile geprüft) — es braucht deshalb
+**keine Codeänderung**, nur Konfiguration:
+
+```
+--password-file      = /etc/vgt/gedefense/access-password     (0600 gedefense:gedefense)
+--session-key-file   = /var/lib/vgt/gedefense/access-session.key   (0600, nur das Gateway nutzt ihn)
+--backend-token-file = /var/lib/vgt/gedefense/dashboard.token      (Ziel des Umbaus)
+--tls-cert           = /etc/vgt/gedefense/tls/access.crt      (0644, aber Verzeichnis 0750 root:gedefense)
+--tls-key            = /run/credentials/…/tls-key              (systemd-Credential, für den Dienst lesbar)
+--password-file      = /etc/vgt/gedefense/access-password
+```
+
+Gemessen: Für einen Prozess als `gedefense-access` sind `access-password` **und** `access.crt` heute
+**nicht lesbar**, weil schon die Verzeichnisse `/etc/vgt/gedefense` und `…/tls` mit `drwxr-x--- root:gedefense`
+die Durchquerung verweigern.
+
+## F-01: die letzten zwei Schritte (Requirements vom Produkt selbst geliefert, 16.10.)
+
+**Das Gateway lehnt ein `0640`-Token ab.** Beim Umschaltversuch meldete es wörtlich:
+`backend token: file permissions must be 0600 or stricter`. Damit ist die Richtung entschieden und
+mein früherer Ansatz (`chgrp` + `0640` in `adoptDashboardToken`) **falsch**:
+
+**Schritt 1 — Code (klein):** `adoptDashboardToken(path, owner)` muss **`chown` auf den
+Gateway-Benutzer** und **`0600`** setzen, nicht `chgrp` + `0640`. Die Kontrollplane verliert dadurch
+nichts: Sie besitzt `cap_dac_override`, `cap_chown` und `cap_fowner` (gemessen, 3 von 3), kann einen
+fremden `0600`-Token also weiterhin lesen, ersetzen und rotieren. Der Konfigurationswert heißt dann
+sinnvollerweise `dashboard.token_owner` statt `token_group`. Der Test
+`dashboard_token_group_test.go` prüft entsprechend `0600` + Eigentümer statt `0640` + Gruppe.
+`readDashboardToken` braucht **keine** Änderung: Es akzeptiert `0600` unabhängig vom Eigentümer.
+
+**Schritt 2 — Umschnitt (Unit + Dateien, Vorabprüfung kennt jetzt alle Anforderungen):**
+Token auf `gedefense-access:gedefense-access 0600` setzen; Gateway-Unit auf
+`--password-file=/etc/vgt/gedefense-access/access-password`,
+`--tls-cert=/etc/vgt/gedefense-access/access.crt`,
+`--session-key-file=/var/lib/vgt/gedefense-access/state/access-session.key`,
+`--backend-token-file=/var/lib/vgt/gedefense-access/dashboard.token`,
+`User=gedefense-access`, `Group=gedefense-access`, `SupplementaryGroups=` leer,
+`ReadWritePaths=/var/lib/vgt/gedefense-access`. Alles davon ist vorbereitet und gemessen; der
+Session-Schlüssel liegt bereits kopiert in `…/state/` (0700, Eigentümer Gateway).
+
+**Nachweis:** Dashboard `HTTP 200` **und** als `gedefense-access` sind `evidence.ed25519`,
+`policy.ed25519`, `xdr-log.key`, `core-ipc.key`, `cases.enc` sowie `/etc/vgt/gedefense/secrets/*`
+unlesbar. **Rückweg:** Unit-Sicherung zurückschreiben, `systemctl reset-failed` (die systemd-Neustartsperre
+hat schon einmal einen Rückweg scheitern lassen), Dienst starten — erprobt und funktionsfähig.
+
+**Ablauf (jeder Schritt vorher messbar, Rückweg zustandsbasiert):**
+
+1. Zustand aufnehmen: `stat -c '%n %a %u:%g'` über alle betroffenen Dateien **und** die Unit-Dateien in
+   eine Sicherung schreiben. (Lehre aus zwei gescheiterten Rückwegen.)
+2. Zwei eigene Verzeichnisse anlegen, Eigentümer `gedefense-access`, Modus `0750`:
+   `/etc/vgt/gedefense-access` und `/var/lib/vgt/gedefense-access`.
+3. `access-password` und `tls/access.crt` dorthin kopieren, Eigentümer `gedefense-access`, `0640` bzw.
+   `0644`. Danach mit `sudo -u gedefense-access test -r …` prüfen, **bevor** etwas neu startet.
+4. Kontrollplane: `[dashboard] token_file = "/var/lib/vgt/gedefense-access/dashboard.token"` setzen.
+   Sie besitzt `cap_dac_override` (gemessen) und kann deshalb in ein fremdes Verzeichnis schreiben.
+   Der Token-Dateipfad ist bereits heute ein Konfigurationswert — kein Code.
+5. Gateway-Unit: `--password-file`, `--tls-cert`, `--session-key-file`, `--backend-token-file` auf die
+   neuen Pfade, `User=gedefense-access`, `Group=gedefense-access`, **keine** Ergänzungsgruppe
+   `gedefense`.
+6. Kontrollplane neu starten (legt den Token am neuen Ort an, `dashboard.token_group` bleibt auf dem
+   Standard, damit die Rechteprüfung Eigentümer-exklusiv bleibt), dann Gateway neu starten.
+7. Nachweis, zweiteilig: Dashboard über den Proxy `HTTP 200` **und** als `gedefense-access` sind
+   `evidence.ed25519`, `policy.ed25519`, `xdr-log.key`, `core-ipc.key`, `cases.enc` und
+   `/etc/vgt/gedefense/secrets/*` **nicht** lesbar.
+8. `gedefense-observe` (derzeit deaktiviert, teilt die Pfade) mit derselben Behandlung einplanen.
+
+**Was in diesem Plan nicht mehr vorkommt und warum:** Schlüssel in eine gemeinsame Gruppe legen
+(Preflight verbietet gruppenlesbare Vertrauenswurzel), Verzeichnis `/var/lib/vgt/gedefense` umstellen
+(dort liegen alle Geheimnisse), Token-Rechte lockern (der Preflight verlangt Eigentümer-exklusiv).
+
+## F-01: verbindliche Vorgehensregeln (aus zwei gescheiterten Versuchen am 16.10.)
+
+**1. Erst den Preflight fragen, dann planen — und ihn als Dienstbenutzer ausführen.**
+`gedefense-control --config=… --preflight` als `root` liefert ein irreführendes Ergebnis (eine Prüfung
+vergleicht gegen die Identität des Dienstkontos). Im Dienstkontext läuft er fehlerfrei durch. Jede
+Rechteänderung vorher gegen `sudo -u gedefense … --preflight` prüfen.
+
+**2. Ein Rückweg muss zustandsbasiert sein, nicht absichtsbasiert.**
+Zwei Rückweg-Defekte in einer Sitzung: Der erste stellte die Kontrollplane wieder her und vergaß das
+Gateway (2 Minuten Ausfall). Der zweite stellte die Gruppe zurück und vergaß den **Dateimodus** — die
+Schlüssel im Zustandszustand waren `0600`, ich hatte `0640` gesetzt, der Rückweg ließ es so, und der
+Preflight verweigerte danach jeden Start (`runtime-settings-key: passed false`), weil ein
+gruppenlesbarer Signaturschlüssel genau das ist, was die Plattform verhindern soll. **Vorher `stat`
+sichern, hinterher daraus zurückschreiben.**
+
+**3. F-01 ist durch gelockerte Schlüsselrechte nicht lösbar — der Ansatz ist widerlegt.**
+Die Gruppen-Strategie (Schlüssel in eine Gruppe `gedefense-core`, Kontrollplane als zusätzliches
+Mitglied) scheitert am eigenen Preflight der Plattform. Der richtige Weg ist die **Konten-Trennung**:
+Das Gateway verlässt das Konto `gedefense` vollständig, die Vertrauenswurzel bleibt `0600` in
+Eigenverantwortung von Kontrollplane und Kern, und nur der Dashboard-Token-Pfad bekommt eine eigene
+Lösung — die Verzeichnis-Durchquerung ist dabei die Falle: `drwx--x--- gedefense:gedefense` verweigert
+jedem anderen Konto den Zugriff, auch bei `0640` auf der Datei (gemessen).
+
+**Umfang von F-01 auf dieser Installation (gemessen):** Das Gateway läuft als `gedefense` und kann
+deshalb in `/var/lib/vgt/gedefense` **alles** lesen: `evidence.ed25519` und `policy.ed25519` (die
+Signaturschlüssel von Evidenz und Policy), `xdr-log.key`, `runtime-settings.key`, `core-ipc.key`,
+`cases.enc`, `incidents.jsonl` und die 170 MB Evidenzkette — sowie in
+`/etc/vgt/gedefense/secrets` den Kern-IPC-Schlüssel und den Storage-Master-Key. Das ist mehr als im
+Audit beschrieben: Es ist Zugriff auf die Vertrauenswurzel der Plattform von der internetnahen Seite.
+`gedefense-observe` (derzeit deaktiviert) teilt dieselben Pfade und muss mitgeplant werden.
+
+## Handoff 16.10.2026 (Konvention aus `vgt-intelligence-master` §5)
+
+**SOURCE:** GeDefense `VERSION=4.2.3`, deploytes Binary `f3d300cfec710e24` aus
+`/opt/vgt/gedefense/releases/4.2.1/`, Server `visiongaia.de`. Kein `SOURCE_IDENTITY_CONFLICT` im
+Anwendungscode; ein offener Widerspruch bleibt dokumentiert: Das Binary trägt **keinen Commit-Stempel**
+(`go version -m` → `(devel)`). Inhaltliche Provenienz stattdessen byte-genau geprüft: 7/7
+Schlüsseldateien identisch zwischen Build-Quelle und Arbeitsbaum, 223 Go-Dateien auf beiden Seiten.
+
+**STATUS:** PLATIN — 13 Befunde behoben, einzeln belegt, deployt und live verifiziert; 3 durch
+Nachprüfung widerlegt; 3 offen mit entschiedenem Entwurf. Kein DIAMANT, weil F-01 heute live
+ausnutzbar und nicht geschlossen ist.
+
+**CHANGES:** `security.go` (Live-Neulesen, Rotation, Leer-Ausweis-Guard) · `server.go`
+(`currentToken` mit mtime/Wert-Cache) · `evidence_rotation.go` + `xdr_recovery.go` (gemeinsame
+Aufbewahrungsregel) · `release.go` (Not-Aus sticky) · `config.go` (Schlüsselpfad erzwungen) ·
+`web/app.js` (`detection` in `viewMeta`) · `scripts/security-audit.sh` (Gate liest `VERSION`) ·
+Testgates: `auth_empty_credential_test.go`, `token_rotation_test.go`, `evidence_retention_test.go`,
+`test_isolation_test.go`, `storage_key_enforcement_test.go`, `release_emergency_sticky_test.go`.
+
+**SECURITY:** Geschlossen: Klartext-Privatschlüssel · fail-open im Not-Aus · Fehlerleck Airlock ·
+leerer Ausweis authentifiziert · Rotation ohne Neustart wirkungslos · unbegrenztes Archivwachstum
+(beide Ledger) · CI-Gate ohne Testlauf. **Offen (live):** Das internetnahe Gateway liest
+`core-ipc.key` **und** `storage-master.key` — daraus folgen signierte Kern-Kommandos und Zugriff auf
+die gesamte verschlüsselte Evidenz.
+
+**PERFORMANCE:** Vollsuite 100,3–101,1 s (`-count=1`), Race auf dem Auth-Pfad 29,8 s ohne Meldung;
+`currentToken()` liest nur bei mtime-Änderung. Plattformweite Messung: NOT_TESTED.
+
+**UX:** Navigationsfehler behoben (fehlendes `detection` in `viewMeta`, 17 Treffer im Binary),
+Dashboard `HTTP 200`. Screenshots/Breakpoints/Tastatur: NOT_TESTED.
+
+**TESTS:** `go vet` leer · `go test -count=1 .` ok (100,3 s / 101,1 s) · `go test -race` Auth ok
+(29,8 s) · `security-audit.sh` → `SECURITY AUDIT PASS` 19/0, exit 0 · vier Mutationsproben rot mit
+erwarteter Meldung · `84-zustand-deploy.sh` `suite exit=0` bei jedem Deploy · live: drei Dienste
+aktiv, `enforce`, `kernel=verified-enforce`, `fail_safe=True`, 561 Sperren, 0 Ingest-Fehler.
+
+**NEXT:** F-01 umsetzen (fünf Edits, Anker und Importe unten benannt, atomare Reihenfolge und
+Fallliste unten) · danach Feed-Signatur (live) · danach F-VGT-B (latent). Repository synchron,
+Manifest 569, 34 push-bereite Einträge; Commit beim Betreiber.
+
+## Übergabe 16.10.2026 — Audit-Nacharbeit: 13 Befunde behoben, 3 offen
+
+**Deployter Stand:** `f3d300cfec710e24` · `phase=enforce` · `kernel=verified-enforce` ·
+`fail_safe_verified=True` · 561 aktive Sperren · 0 Ingest-Fehler · drei Dienste aktiv.
+**Repository:** synchron, Manifest 569 Einträge, 33 push-bereite Einträge (Commit liegt beim Betreiber).
+
+**Behoben und je einzeln belegt** (Details im Abschnitt `## Completed`): Navigationsfehler
+„Angriffserkennung" · CI-Sicherheitsgate (`SECURITY AUDIT PASS`, 19/0) · Data Race · Fehlerleck in der
+Airlock-Antwort · flackernder Soak-Test · Klartext-Privatschlüssel bei leerem `storage_key_file` ·
+Testkorpus-Divergenz · vollständige Suite grün · Fail-Open im Not-Aus · Leer-Ausweis-Guard ·
+Token-Rotation ohne Neustart · Aufbewahrungsgrenze für Evidenz- **und** Vorfallsarchive.
+**Widerlegt durch Nachprüfung:** F-05 (`DisallowUnknownFields`), F-09, F-10.
+
+**Priorität auf dieser Installation, mit Live-Beleg (16.10.):**
+1. **F-01 ist live ausnutzbar** — `core-ipc.key` ist `root:gedefense 0640`, das Gateway läuft als
+   `User=gedefense Group=gedefense` und kann den Schlüssel deshalb **jetzt** lesen und die uid-only
+   Prüfung am Kern-Socket passieren. Kein hypothetischer Pfad.
+2. **Feed-Signatur ist live** — `feeds_enabled=True`, **109 144** Einträge aus unsignierten Quellen
+   liegen in der Kernel-Sperrliste.
+3. **F-VGT-B ist latent** — `systemctl show -p Environment` ist leer, `VGT_RELEASE_ROOT` steht in
+   keiner Konfigurationsdatei. Zum Ausnutzen braucht ein Angreifer bereits root; es bleibt ein
+   Härtungspunkt, keine offene Tür.
+
+**F-01 atomar umsetzen — die Falle:** Eine halbe Umstellung schneidet das Gateway vom Dashboard-Token
+ab und legt die Oberfläche lahm. In dieser Reihenfolge arbeiten:
+(a) Benutzer und Gruppe `gedefense-access` in `packaging/sysusers` anlegen (installer muss ihn
+    ebenfalls anlegen, analog zum Desktop-Benutzer);
+(b) **Code:** `loadOrCreateToken` und `RotateDashboardToken` müssen das Token mit `0640` und der
+    Gruppe des Gateways schreiben — heute schreiben beide `0600 gedefense:gedefense`. Wird das
+    übersehen, funktioniert alles bis zum ersten neu erzeugten oder rotierten Token, und dann liest
+    das Gateway nichts mehr. Dafür braucht es einen Konfigurationswert (Gruppenname), keinen
+    fest verdrahteten Namen;
+(c) Datei in einem Schritt umstellen: `chgrp gedefense-access` + `chmod 0640` (der Eigentümer
+    `gedefense` behält Schreibrecht, die Kontrollplane läuft weiter);
+(d) Unit: `User=gedefense-access`, `Group=gedefense-access`, **keine** Ergänzungsgruppe `gedefense`;
+(e) Neustart von `gedefense-access`, dann zweiteiliger Nachweis: Dashboard antwortet mit gültigem
+    Token (200) **und** ein Prozess als `gedefense-access` kann `core-ipc.key` **nicht** lesen
+    (`sudo -u gedefense-access cat …` → Permission denied);
+(f) Rückweg bereithalten: Unit und Dateirechte zurückstellen, Dienst neu starten.
+
+**Versuch vom 16.10. — was dabei gelernt wurde (nicht wiederholen):**
+Ein `chgrp` auf `core-ipc.key` und `storage-master.key` wurde von der **eigenen XDR-Selbstüberwachung**
+korrekt als Manipulation erkannt (`protected object changed after XDR initialization`) und die
+Plattform ging in den Fail-safe mit erhaltener Kernel-Durchsetzung. Der anschließende Neustart schlug
+fehl, weil die Kontrollplane ihre Schlüssel nicht mehr lesen konnte — sie verweigerte den Start, statt
+ohne Schlüssel zu laufen (fail-closed, wie entworfen). Der Rückweg stellte den Dienst wieder her,
+**übersah aber das Gateway**: `gedefense-access` blieb rund zwei Minuten unten, bis es manuell
+gestartet wurde. Daraus folgt für den nächsten Anlauf:
+
+- Metadaten geschützter Objekte **nie im laufenden Betrieb** ändern. Erst stoppen, dann ändern, dann
+  die neue Baseline **durch die Plattform bestätigen lassen** (dieselbe Integritäts-Baseline-Aktion,
+  die der Betreiber für Systemdateien nutzt), dann starten.
+- Der Rückweg muss **alle** betroffenen Dienste umfassen, nicht nur den gerade geänderten. Ein
+  Rückweg, der den geprüften Dienst rettet und den danebenliegenden vergisst, ist kein Rückweg.
+- Nach dem Umbau zweiteilig prüfen: Dashboard antwortet (200 über den Proxy) **und** ein Prozess als
+  `gedefense-access` kann `core-ipc.key` **und** `storage-master.key` nicht lesen. Beide Schlüssel sind
+  heute für das Gateway lesbar — der Storage-Master-Key öffnet die gesamte verschlüsselte Evidenz,
+  damit ist die Reichweite von F-01 größer als im Audit beschrieben.
+- Der Zustand nach dem Versuch wurde vollständig zurückgestellt und geprüft: Rechte wie zuvor,
+  drei Dienste aktiv, Dashboard 200, `phase=enforce`, verifizierter Kernel, die angelegte Gruppe und
+  die Unit-Sicherungen entfernt.
+
+### Die drei offenen Befunde und ihr erster Schritt
+
+1. **F-01 — Dienstidentität des Gateways** (HIGH). Heute: `gedefense-access` läuft als `gedefense`
+   (`packaging/systemd/gedefense-access.service.in:10-11`) und kann deshalb `core-ipc.key`
+   (root:gedefense 0640) lesen und als uid `gedefense` am Kern-Socket die VGT3-Auth passieren
+   (`rust/gedefense-core/src/main.rs:1218`, prüft nur uid). Erster Schritt: im Installer und in
+   `packaging/sysusers` einen eigenen Benutzer `gedefense-access` anlegen, ihm **nur** Lesezugriff auf
+   `dashboard.token` geben (0640 root:gedefense-access), `User=`/`Group=` umstellen und die Unit
+   danach live neu starten. Nachweis: Dashboard antwortet weiter (200 mit gültigem Token), und ein
+   Prozess als `gedefense-access` kann `core-ipc.key` **nicht** lesen. Der Rust-Teil (pid/exe-Allowlist
+   im Kern) bleibt Grenze: cargo ≥ 1.78 fehlt in dieser Umgebung.
+2. **Feed-Signatur und Zeitmonotonie** (VGT-058/076/069, HIGH/MEDIUM). Heute: keine Signaturprüfung im
+   Feed-Pfad (`feeds.go`), Host-Allowlist default leer, `threat-intel-state.json` unauthentifiziert;
+   Replay-Fenster und Soak-Fristen hängen an der Wanduhr (`rate_limit.go:84-103`, `release.go:601`).
+   Erster Schritt: Ed25519 über den Feed mit gepinntem Schlüssel plus MAC über den Zustand; danach die
+   monotone Quelle für Intervalle. Nachweis: unsignierter Feed wird nicht aktiviert, ein
+   Uhrzeit-Vorwärtssprung gibt keine Replay-ID frei.
+3. **F-VGT-B — reaktionsloser Zweig** (`xdr.go:1398`, HIGH). Der Zweig ist die Antwort auf einen
+   echten Vorfall; nötig ist ein **manifest-gedeckter** Deployment-Begriff (`VerifyReleaseManifest`
+   existiert, ist nicht angeschlossen). Erster Schritt: prüfen, wie das Manifest zur Laufzeit gefunden
+   wird (`main.go:88` `-verify-release-manifest`) und wie die Pro-Datei-Digests im
+   `ReleaseManifestEnvelope` liegen; dann im Zweig nur bei gedecktem Artefakt ruhig bleiben.
+
+VGT GeDefense 4.2.2 — Fail-Closed-Härtung nach dem Vorfall vom 08.10.2026 (Schutz fiel auf Observe zurück).
+
+## Nächste Schritte je offenem Befund (Stand 16.10.2026, nach 22 Runden)
+
+Jeder Eintrag nennt die Stelle, den Grund und den Nachweis, der ihn schließt — damit kein Durchgang
+die Herleitung wiederholen muss.
+
+1. **F-VGT-B — reaktionsloser Zweig für eigene Binärdateien** (`xdr.go:1398`). Nicht löschen: der
+   Zweig entstand, weil ein Update die Plattform dauerhaft degradierte. Nötig ist ein
+   **manifest-gedeckter** Deployment-Begriff. Zu klären: (a) wie das Release-Manifest zur Laufzeit
+   gefunden wird (Pfad + Public Key, siehe `main.go:88` `-verify-release-manifest`), (b) wie die
+   Pro-Datei-Digests im `ReleaseManifestEnvelope` liegen (`buildReleaseEnvelope`, `fileSHA256`).
+   Nachweis: Test auf beiden Seiten — manifestgedeckter Austausch bleibt ruhig, nicht gedeckter
+   löst Degrade und Promotionssperre aus.
+2. **Dienst-Identitätssplit des Gateways.** Eigener Systembenutzer ohne Gruppe `gedefense`,
+   Schlüsselzugriff entziehen (`core-ipc.key` braucht nur die Kontrollplane), Bindung auf 127.0.0.1
+   (`gateway/main.go:84`, `access.service.in:13`, `PKGBUILD:116-121`), dazu `sysusers`/`tmpfiles`.
+   Der Rust-Teil (pid/exe-Allowlist statt reiner uid-Prüfung in `main.rs:1218`) ist ohne cargo ≥ 1.78
+   **nicht baubar** — als Grenze dokumentieren, nicht behaupten.
+3. **Token-Rotation und Widerruf** (`security.go:15-51`, Gateway-Sitzung `gateway/main.go:759-801`).
+   Nötig: Rotationspfad mit Bestätigung, serverseitige Sperrliste oder Boot-Nonce-Bindung,
+   Ablauf im Dashboard sichtbar. Nachweis: Test, der ein altes Token nach Rotation ablehnt.
+4. **Archiv-Aufbewahrung** (`evidence_rotation.go:109-167`, `xdr_recovery.go:201-310`). Rotation legt
+   je Lauf ein Archiv an, ohne Obergrenze. Nötig: Anzahl-/Größenlimit mit sicherer Löschreihenfolge
+   und einem Restore-Pfad für die verbleibenden Segmente. Nachweis: Test, der N Rotationen fährt und
+   danach die verbliebene Anzahl prüft.
+5. **Feed-Signatur** (`feeds.go:1585-1699`, `threat_intel_fabric.go:140-145`). Ohne Signatur und mit
+   leerer Host-Allowlist landen Fremdinhalte in der Kernel-Sperrliste; `threat-intel-state.json` ist
+   unauthentifiziert. Nötig: Ed25519 über den Feed mit gepinntem Schlüssel, MAC über den Zustand,
+   STALE/CRITICAL als Degradationsursache statt reiner Anzeige.
+6. **Zeitmonotonie** (`rate_limit.go:84-103`, `release.go:601`). Replay-Fenster und Soak-Fristen
+   hängen an der Wanduhr; ein Vorwärtssprung gibt IDs frei und verkürzt Fristen. Nötig: monotone
+   Quelle für Intervalle, begrenzte Abweichung für Fristen, Test mit simuliertem Sprung.
+
+**Verifikationslehre aus dieser Sitzung:** Drei Mutationsproben waren unschlüssig, weil der Patch die
+`case`-Beschriftung traf und den sicheren Rumpf stehen ließ — semantisch ein No-Op. Eine Mutation muss
+die **Verzweigung** ändern (Beispiel: `case os.IsNotExist(err):` → `case true:`), und der Lauf braucht
+`-count=1`, sonst antwortet Go aus dem Test-Cache.
 
 ## Completed
+
+- **Audit-Nacharbeit Runde 1-11 (deployt `590cd27b…`, im GitHub-Ordner synchron) — sieben Befunde behoben, jeder einzeln belegt.**
+  Ausgangslage war der vollständige VGT-100-Audit (`VGT-AUDIT-20261016-GEDEFENSE.md`, Gesamturteil
+  `RELEASE_GATE: BLOCKED`).
+  1. **Navigationsfehler:** „Angriffserkennung" öffnete „Übersicht". Ursache war kein fehlendes HTML,
+     sondern die `viewMeta`-Registry des Routers in `control/web/app.js` — unbekannte Ansichten fallen
+     dort bewusst auf `overview` zurück. Eintrag ergänzt; im laufenden Binary mit 17 Treffern auf
+     `view.detection` belegt.
+  2. **CI-Sicherheitsgate (CRITICAL des Audits):** `scripts/security-audit.sh` brach an einem
+     hartkodierten Versionsliteral ab → `make test` Exit 2 → **kein** Regressionstest lief in CI.
+     Jetzt liest das Gate die Version aus `VERSION`; zusätzlich prüft die Exec-Regel nur noch
+     Produktionscode (`--exclude='*_test.go'`), die FIM-Anker folgen dem policy-basierten Umbau
+     (`policy.maxFiles`/`policy.maxTotalBytes`), und der AstraeaOS-Vertrag steht auf 4.2.3.
+     Ergebnis: **`SECURITY AUDIT PASS`, 19 PASS / 0 FAIL, Exit 0.**
+  3. **Data Race** in `control/startup_supervisor_test.go` (brach `make test-race`) → `reportSink`
+     schreibt und die Poll-Schleife liest jetzt unter Mutex. Race-Suite über die gesamte Suite:
+     `ok`, 581 s, **0 Race-Meldungen**.
+  4. **Fehlerleck** `control/server.go:2327`: die Airlock-Inspektion gab `err.Error()` (absoluter Pfad
+     plus errno) in einer Erfolgsantwort zurück → Detail nur noch im Journal, Aufrufer erhält
+     „inspection failed".
+  5. **Flackernder Soak-Test** (`release_test.go`) → wartet begrenzt auf das Gate, statt die Uhr
+     anzunehmen; 3× unter `-race` grün.
+  6. **Klartext-Privatschlüssel (F-VGT-A, HIGH):** `storage_key_file = ""` schaltete die
+     Speicherverschlüsselung still ab. `validateConfig` erzwingt jetzt einen absoluten Schlüsselpfad
+     für Policy und XDR — Startverweigerung statt Klartext. Mit Gegenprobe belegt (leerer XDR-Pfad
+     und leerer Policy-Pfad werden abgelehnt, Standardkonfiguration bleibt gültig), Sonde danach
+     entfernt.
+  7. **Vollsuite und Schutz live:** `go test -count=1` grün (100 s), `phase=enforce`,
+     `kernel=verified-enforce`, `fail_safe_verified=True`, 564 aktive Sperren, 0 Ingest-Fehler,
+     alle drei Dienste aktiv.
+
+  **Offen (Reihenfolge):** F-VGT-B — der reaktionslose Zweig für veränderte eigene Binärdateien
+  (`xdr.go:1398`) ist **kein Versehen**, sondern die Antwort auf einen echten Vorfall (ein Update
+  degradierte die Plattform dauerhaft); die richtige Auflösung ist ein **manifest-gedeckter**
+  Deployment-Begriff (`VerifyReleaseManifest` existiert, ist aber nicht angeschlossen). Danach:
+  Dienst-Identitätssplit für das Gateway (eigener Benutzer, loopback-Bindung; der Rust-Teil —
+  pid/exe-Allowlist im Kern — ist wegen fehlender cargo-Version ≥ 1.78 **nicht baubar** und bleibt
+  dokumentierte Grenze) · Token-Rotation und Widerruf · Archiv-Aufbewahrung · Feed-Signatur ·
+  Zeitmonotonie. Kein Schein-Fix an F-VGT-B: ein geratener Guard würde entweder legitime Updates
+  blockieren oder Sicherheit nur behaupten.
+
+- **Angriffserkennung nach fremden Exploits (deployt `15be82f6…`) — eigene Seite, viersprachig,
+  konfigurierbar.** Anlass war ein BSI-Hinweis (CVE-2026-102764, BeyondTrust Remote Support): Der
+  Angreifer kommt durch ein *fremdes* Produkt, aber was er danach tut, ist bei jeder Lücke gleich —
+  Protokolle löschen, Zugangsdaten abgreifen, Tunnelwerkzeuge starten, Persistenz anlegen. Genau
+  dieser Teil ist jetzt sichtbar und vom Betreiber anpassbar:
+  - **Vier neue Regeln** (`KD.LINUX.LOG_TAMPER`, `CREDENTIAL_PATH_PROBE`, `TUNNEL_BINARY`,
+    `PERSISTENCE_DROPIN`), alle **nur meldend** — jede hat legitime Zwillinge auf einem echten Host.
+    14 Angriffsbefehle und 10 Gegenproben sind als Test festgenagelt; einen eigenen Fehlalarm
+    (`crontab -l`) habe ich dabei vor dem Testlauf gefunden und behoben.
+  - **Dateiüberwachung auf die Angriffsfläche ausgeweitet** (`control/security_roots.go`): Web-,
+    Protokoll- und Persistenzpfade, die auf dem Host existieren. Live: **15 statt 6 Wurzeln**, jeder
+    Zusatz im Journal benannt. Nicht existierende Pfade werden nie erfunden, konfigurierte nie
+    verworfen; die einmalige Baseline-Bestätigung bleibt Betreibersache.
+  - **Webshell-Kette erweitert** (lighttpd, openresty, php-fpm 8.1–8.4, tomcat, uwsgi, gunicorn,
+    haproxy, varnishd). `java`, `node`, `python` sind **bewusst ausgenommen** — sie starten legitim
+    Shells, und diese Regel darf Prozesse beenden.
+  - **Eigene Seite „Angriffserkennung"** als vollwertiger Namespace im Einstellungs-Fabric: vier
+    Regelschalter, die Zugangsdaten-Speicher des eigenen Hosts, der Wurzel-Preset — ohne Neustart
+    wirksam, mit Validierung, Revision, Export und Rollback aus dem vorhandenen Unterbau. Drei
+    Sprachschlüssel je Katalog (DE/EN/RU/ZH), vom Projekt-Konsistenztest abgedeckt.
+  - **Ehrliche Grenzen, im CHANGELOG benannt:** Die Lücke im fremden Produkt sieht kein Host-Sensor.
+    Und auf dieser Installation läuft XDR im Modus `observe`: Der Motor wertet nachweislich aus
+    (gemessen: +6 Auswertungen beim Auslösen), legt aber **keine Vorfälle** an. Das Umstellen auf
+    `enforce` ist eine Betreiberentscheidung und wurde bewusst nicht angefasst.
 
 - **Startup-Selbstprüfer mit Selbstheilung (deployt `da4fc09e…`) — der Grund für „muss ich nach jedem
   Neustart nachschauen" ist beseitigt.** Nach jedem Neustart stand die Plattform bis zu **300 s** im
@@ -79,9 +452,9 @@ VGT GeDefense 4.2.3 — Startup Self-Check, Desktop Status Socket & Qt6 Tray Int
   Modus-Parsing. **Live belegt (16.10.):** `desktop status socket ready … mode=0660`, 637-Byte-
   Telegramm, `status=alert` mit „Systemintegrität verletzt" (mein eigener Deploy), 3. Verbindung →
   `busy`, 14 schnelle Anfragen → 13 begrenzt, `nobody` → verweigert.
-  **Abgeschlossen:** Qt6-Tray-Client (`desktop/tray/`: Build, QTest, Offscreen-Screenshots),
+  **Offen:** Qt6-Tray-Client (`desktop/tray/`, eigener Agent: Build, QTest, Offscreen-Screenshots),
   Installer-Schritt „Gruppe anlegen + Desktop-Benutzer aufnehmen" (sysusers/tmpfiles sind bereits
-  ergänzt), READMEs in vier Sprachen, Versionierung konsistent auf 4.2.3 angehoben.
+  ergänzt), READMEs in vier Sprachen, Entscheidung über die Versionsnummer (Feature vs. 4.2.2).
   Der „Schnellscan"-Knopf der Skizze ist bewusst **kein** Socket-Vorgang: der Socket ist nur
   lesend, ein Scan gehört in die authentifizierte Konsole.
 

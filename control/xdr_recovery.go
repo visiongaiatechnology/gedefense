@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -274,6 +275,18 @@ func (l *IncidentLogger) archiveIncidentSegments(ctx context.Context, reasonSHA2
 	}
 	if err := syncDirectory(archiveDir); err != nil {
 		return IncidentRecoveryResult{}, err
+	}
+	// The incident ledger gets the same ceiling as the evidence ledger, so sealed history cannot fill
+	// the disk. It is skipped entirely while a marker file lies in the recovery root: a start-up that
+	// finds a marker without its archive refuses to run, and being conservative here costs a little
+	// disk while being wrong costs the operator their recovery path.
+	const incidentArchiveRetention = 24
+	if markers, markerErr := filepath.Glob(filepath.Join(recoveryRoot, "*.json")); markerErr == nil && len(markers) == 0 {
+		if removed, pruneErr := pruneCompleteArchives(recoveryRoot, "", incidentArchiveRetention, ""); pruneErr != nil {
+			log.Printf("incident archive retention: %v", pruneErr)
+		} else if removed > 0 {
+			log.Printf("incident archive retention: removed %d of %d sealed archives", removed, incidentArchiveRetention)
+		}
 	}
 	manifestDigest := sha256.Sum256(manifestBytes)
 	if err := verifyRecoverySourceStable(ctx, l.path, logMeta, l.maxBytes); err != nil {

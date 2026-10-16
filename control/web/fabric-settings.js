@@ -36,14 +36,15 @@ const MODULE_PRESENTATION = {
   integrity: { label: 'FIM', anchors: [{ label: 'FIM', target: 'integrityHeading' }, { label: 'Evidence', target: 'evidenceRecords' }, { label: 'Packages', target: 'packageIntegrityHealth' }] },
   boot_trust: { label: 'Attestation', page: 'boot', anchors: [{ label: 'Attestation', target: 'bootHeading' }, { label: 'Evidence', target: 'bootEvidence' }] },
   policy_trust: { label: 'Policy', page: 'policy', anchors: [{ label: 'Policy', target: 'policyHeading' }, { label: 'Trust Chain', target: 'policyTrustChain' }] },
-  forensics: { label: 'Cases', anchors: [{ label: 'Cases', target: 'forensicsHeading' }, { label: 'Quarantine', target: 'quarantineHeading' }, { label: 'Register', target: 'forensicsRegister' }] },
+      detection: { label: 'Detection', anchors: [{ label: 'Detection', target: 'detectionHeading' }] },
+forensics: { label: 'Cases', anchors: [{ label: 'Cases', target: 'forensicsHeading' }, { label: 'Quarantine', target: 'quarantineHeading' }, { label: 'Register', target: 'forensicsRegister' }] },
   release: { label: 'Gates', anchors: [{ label: 'Gates', target: 'releaseHeading' }, { label: 'Promotion', target: 'releasePromotion' }, { label: 'Fail-Safe', target: 'releaseEmergencySection' }] },
   settings: { label: 'Node', anchors: [{ label: 'Node', target: 'settingsHeading' }, { label: 'Allowlist', target: 'settingsAllowlist' }] },
   system: { label: 'Diagnostics', anchors: [{ label: 'Diagnostics', target: 'systemHeading' }, { label: 'Cells', target: 'cellsHeading' }] }
 };
 
 // Modules whose Settings tab is served by the Fabric module API.
-const FABRIC_MODULES = new Set(['kinetic', 'network', 'protection', 'xdr', 'l7', 'threat_intel', 'hardening', 'integrity', 'boot_trust', 'policy_trust', 'forensics', 'system']);
+const FABRIC_MODULES = new Set(['detection', 'kinetic', 'network', 'protection', 'xdr', 'l7', 'threat_intel', 'hardening', 'integrity', 'boot_trust', 'policy_trust', 'forensics', 'system']);
 
 const FEED_ACTIONS = ['BLOCK', 'CORRELATE_ONLY', 'ANNOTATE_ONLY'];
 const FEED_FORMATS = ['lines', 'json', 'ipsum'];

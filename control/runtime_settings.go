@@ -37,6 +37,9 @@ type CustomRule struct {
 	Score    int    `json:"score"`
 }
 
+// The settings document stays at version 10: the detection module is additive and optional, so a
+// document written before it existed loads unchanged and receives the module's defaults. A version
+// bump would move every migration gate for a change that has nothing to migrate.
 const fabricSettingsVersion = 10
 const runtimeSettingsHistoryLimit = 32
 
@@ -143,6 +146,9 @@ type RuntimeSettings struct {
 	Hardening *HardeningFabricSettings `json:"hardening,omitempty"`
 	// Integrity follows the same rule for the integrity namespace.
 	Integrity *IntegrityFabricSettings `json:"integrity,omitempty"`
+	// Detection owns the post-exploitation rules and the stores this host actually protects. It is
+	// the operator's page for turning a detection into one that fits their own machine.
+	Detection *DetectionFabricSettings `json:"detection,omitempty"`
 	// BootTrust follows the same rule for the boot evidence namespace.
 	BootTrust *BootTrustFabricSettings `json:"boot_trust,omitempty"`
 	// PolicyTrust follows the same rule for the policy trust namespace.
@@ -176,6 +182,7 @@ func defaultRuntimeSettings(cfg Config) RuntimeSettings {
 	threatIntel := defaultThreatIntelFabricSettings(cfg.Feeds, DefaultThreatFeedSources)
 	hardening := defaultHardeningFabricSettings(cfg, "")
 	integrity := defaultIntegrityFabricSettings(cfg)
+	detection := defaultDetectionFabricSettings()
 	bootTrust := defaultBootTrustFabricSettings()
 	policyTrust := defaultPolicyTrustFabricSettings()
 	policyTrust.RequireSigned = cfg.Policy.RequireSigned
@@ -227,6 +234,7 @@ func defaultRuntimeSettings(cfg Config) RuntimeSettings {
 		ThreatIntel: &threatIntel,
 		Hardening:   &hardening,
 		Integrity:   &integrity,
+		Detection:   &detection,
 		BootTrust:   &bootTrust,
 		PolicyTrust: &policyTrust,
 		Forensics:   &forensics,

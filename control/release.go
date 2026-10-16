@@ -259,11 +259,25 @@ func (r *ReleaseController) currentBlockersLocked(target string, includeDuration
 
 func (r *ReleaseController) refreshLocked() {
 	_, emergencyErr := os.Stat(r.cfg.Release.EmergencyStopFile)
-	r.status.EmergencyStop = emergencyErr == nil
+	emergencyUnverifiable := false
+	switch {
+	case emergencyErr == nil:
+		r.status.EmergencyStop = true
+	case os.IsNotExist(emergencyErr):
+		r.status.EmergencyStop = false
+	default:
+		// "Cannot be read" is not "not set". A marker this platform cannot see must never count as
+		// absent, or an unreadable state file would silently clear an operator's emergency stop -
+		// exactly the state in which nothing else can be trusted either.
+		r.status.EmergencyStop = true
+		emergencyUnverifiable = true
+	}
 	blockers := r.currentBlockersLocked(r.status.Phase, false)
 	r.status.Blockers = blockers
 	r.status.Ready = len(blockers) == 0
-	if r.status.EmergencyStop {
+	if emergencyUnverifiable {
+		r.status.Detail = "emergency stop state cannot be verified: " + emergencyErr.Error()
+	} else if r.status.EmergencyStop {
 		r.status.Detail = "emergency stop active"
 	} else if len(blockers) > 0 {
 		r.status.Detail = blockers[0]

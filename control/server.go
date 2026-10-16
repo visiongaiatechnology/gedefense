@@ -36,6 +36,8 @@ type APIServer struct {
 	xdr              *XDREngine
 	release          *ReleaseController
 	settings         *SettingsStore
+	tokenStamp       atomic.Int64
+	tokenLive        atomic.Pointer[string]
 	token            string
 	http             *http.Server
 	feedSyncing      atomic.Bool
@@ -717,6 +719,50 @@ func evidenceGateExempt(path string) bool {
 	return false
 }
 
+// currentToken returns the token the dashboard has to present.
+//
+// The credential loaded at start-up stays in force; replacing the token file *afterwards* rotates it,
+// and the change takes effect on the next request - no restart. That is the property a rotation needs,
+// and it is also why a test that supplies its own token is not affected by whatever token file happens
+// to exist on the machine running the tests.
+//
+// A file that cannot be read leaves the start-up credential in force: an operator whose token file is
+// temporarily unreadable must not be locked out of their own platform, and deleting the file grants no
+// privilege - whoever can delete it can read it.
+func (s *APIServer) currentToken() string {
+	path := strings.TrimSpace(s.cfg.Dashboard.TokenFile)
+	if path == "" {
+		return s.token
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return s.token
+	}
+	stamp := info.ModTime().UnixNano()
+	seen := s.tokenStamp.Load()
+	if seen == 0 {
+		// First authenticated request of this process: the file describes the credential that was
+		// loaded at start-up, so it is recorded and not re-read.
+		s.tokenStamp.CompareAndSwap(0, stamp)
+		return s.token
+	}
+	if stamp == seen {
+		// Unchanged since the last look. If a rotation already happened, its value is the one in
+		// force - returning the start-up token here was the defect this cache exists to avoid.
+		if live := s.tokenLive.Load(); live != nil {
+			return *live
+		}
+		return s.token
+	}
+	token, err := readDashboardToken(path)
+	if err != nil {
+		return s.token
+	}
+	s.tokenLive.Store(&token)
+	s.tokenStamp.Store(stamp)
+	return token
+}
+
 func (s *APIServer) auth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if o := r.Header.Get("Origin"); o != "" {
@@ -730,7 +776,16 @@ func (s *APIServer) auth(next http.HandlerFunc) http.HandlerFunc {
 			}
 		}
 		got := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-		if !tokenEqual(got, s.token) {
+		// An empty credential is never a match, whatever the expected token is. tokenEqual("", "")
+		// is true, so a request without an Authorization header would otherwise authenticate the
+		// moment the expected token became empty - which is exactly the state a token file that
+		// cannot be read produces.
+		if got == "" {
+			w.Header().Set("WWW-Authenticate", "Bearer")
+			http.Error(w, "authorization required", http.StatusUnauthorized)
+			return
+		}
+		if !tokenEqual(got, s.currentToken()) {
 			w.Header().Set("WWW-Authenticate", "Bearer")
 			http.Error(w, "authorization required", http.StatusUnauthorized)
 			return
@@ -2324,7 +2379,10 @@ func (s *APIServer) airlockInspect(w http.ResponseWriter, r *http.Request) {
 	}
 	res, err := s.xdr.Airlock().InspectFile(req.FilePath)
 	if err != nil {
-		writeJSON(w, http.StatusOK, map[string]any{"clean": false, "error": err.Error(), "result": res})
+		// The detail stays internal: an authenticated caller must not learn absolute paths or errno
+		// text from a success response. The operator receives a reason code, the journal the cause.
+		log.Printf("airlock inspect: %v", err)
+		writeJSON(w, http.StatusOK, map[string]any{"clean": false, "error": "inspection failed", "result": res})
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"clean": true, "result": res})

@@ -207,8 +207,17 @@ func TestEnforceRequiresSynchronizedManagementAllowlist(t *testing.T) {
 		t.Fatal("enforce succeeded without synchronized management allowlist")
 	}
 	state.SetAllowlistReady(true)
-	if _, err := release.Transition(ReleasePhaseEnforce, "PROMOTE:ENFORCE", "allowlist synchronized and canary complete"); err != nil {
-		t.Fatal(err)
+	// The soak gate is time-based. A slower build (for example under the race detector) must not turn
+	// a correct gate into a test failure, so the test waits for the gate to open - bounded, and with
+	// the real reason reported if it never does.
+	deadline := time.Now().Add(15 * time.Second)
+	for {
+		if _, err := release.Transition(ReleasePhaseEnforce, "PROMOTE:ENFORCE", "allowlist synchronized and canary complete"); err == nil {
+			break
+		} else if time.Now().After(deadline) {
+			t.Fatalf("enforce stayed blocked after the allowlist was synchronized: %v", err)
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
 }
 

@@ -14,7 +14,7 @@ import (
 )
 
 func TestBootTrustEndpointRequiresAuthenticationAndMarksEvidenceOnly(t *testing.T) {
-	cfg := defaultConfig()
+	cfg := isolatedTokenConfig(t, "0123456789abcdef0123456789abcdef")
 	server := NewAPIServer(cfg, NewState("test", cfg), nil, nil, nil, nil, nil, nil, "0123456789abcdef0123456789abcdef")
 	server.bootTrust = newBootTrustCollectorForTest(t.TempDir(), true, func() time.Time {
 		return time.Date(2026, 7, 28, 15, 0, 0, 0, time.UTC)
@@ -46,7 +46,7 @@ func TestBootTrustEndpointRequiresAuthenticationAndMarksEvidenceOnly(t *testing.
 }
 
 func TestMutationIntentIsCommittedBeforeHandlerAndFailureClosesGate(t *testing.T) {
-	cfg := defaultConfig()
+	cfg := isolatedTokenConfig(t, "0123456789abcdef0123456789abcdef")
 	state := NewState("test", cfg)
 	ledger, path := evidenceFixture(t)
 	if err := state.AttachEvidenceLedger(ledger); err != nil {
@@ -95,7 +95,7 @@ func TestMutationIntentIsCommittedBeforeHandlerAndFailureClosesGate(t *testing.T
 }
 
 func TestStatusRequiresBearerAuthentication(t *testing.T) {
-	cfg := defaultConfig()
+	cfg := isolatedTokenConfig(t, "0123456789abcdef0123456789abcdef")
 	state := NewState("test", cfg)
 	server := NewAPIServer(cfg, state, nil, nil, nil, nil, nil, nil, "0123456789abcdef0123456789abcdef")
 
@@ -123,7 +123,7 @@ func TestStatusRequiresBearerAuthentication(t *testing.T) {
 }
 
 func TestAuthenticatedMutationRequiresUniqueRequestID(t *testing.T) {
-	cfg := defaultConfig()
+	cfg := isolatedTokenConfig(t, "0123456789abcdef0123456789abcdef")
 	state := NewState("test", cfg)
 	server := NewAPIServer(cfg, state, nil, nil, nil, nil, nil, nil, "0123456789abcdef0123456789abcdef")
 	handler := server.auth(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
@@ -150,7 +150,7 @@ func TestAuthenticatedMutationRequiresUniqueRequestID(t *testing.T) {
 }
 
 func TestTransactionAPIRequiresPreviewAndExactConfirmation(t *testing.T) {
-	cfg := defaultConfig()
+	cfg := isolatedTokenConfig(t, "0123456789abcdef0123456789abcdef")
 	state := NewState("test", cfg)
 	ledger, _ := evidenceFixture(t)
 	if err := state.AttachEvidenceLedger(ledger); err != nil {
@@ -231,7 +231,7 @@ func TestBoundedGuardsFailClosedAtCapacity(t *testing.T) {
 }
 
 func TestEmbeddedAssetsHonorETag(t *testing.T) {
-	cfg := defaultConfig()
+	cfg := isolatedTokenConfig(t, "0123456789abcdef0123456789abcdef")
 	server := NewAPIServer(cfg, NewState("test", cfg), nil, nil, nil, nil, nil, nil, "0123456789abcdef0123456789abcdef")
 
 	first := httptest.NewRecorder()
@@ -253,7 +253,7 @@ func TestEmbeddedAssetsHonorETag(t *testing.T) {
 }
 
 func TestLocalBrandAssetIsAllowlistedAndTyped(t *testing.T) {
-	cfg := defaultConfig()
+	cfg := isolatedTokenConfig(t, "0123456789abcdef0123456789abcdef")
 	server := NewAPIServer(cfg, NewState("test", cfg), nil, nil, nil, nil, nil, nil, "0123456789abcdef0123456789abcdef")
 
 	recorder := httptest.NewRecorder()
@@ -312,7 +312,7 @@ func TestTLSMaterialRejectsUnsafeFiles(t *testing.T) {
 }
 
 func TestBeta5SecurityHeadersAndI18nAssetAllowlist(t *testing.T) {
-	cfg := defaultConfig()
+	cfg := isolatedTokenConfig(t, "0123456789abcdef0123456789abcdef")
 	server := NewAPIServer(cfg, NewState("test", cfg), nil, nil, nil, nil, nil, nil, "0123456789abcdef0123456789abcdef")
 
 	recorder := httptest.NewRecorder()
@@ -352,7 +352,7 @@ func TestBeta5SecurityHeadersAndI18nAssetAllowlist(t *testing.T) {
 }
 
 func TestAllWebAssetsAreAllowlistedAndAccessible(t *testing.T) {
-	cfg := defaultConfig()
+	cfg := isolatedTokenConfig(t, "0123456789abcdef0123456789abcdef")
 	server := NewAPIServer(cfg, NewState("test", cfg), nil, nil, nil, nil, nil, nil, "0123456789abcdef0123456789abcdef")
 
 	contentTypes := map[string]string{
@@ -391,7 +391,7 @@ func TestAllWebAssetsAreAllowlistedAndAccessible(t *testing.T) {
 }
 
 func TestBackendOriginAndBearerChecksCannotBeBypassed(t *testing.T) {
-	cfg := defaultConfig()
+	cfg := isolatedTokenConfig(t, "0123456789abcdef0123456789abcdef")
 	server := NewAPIServer(cfg, NewState("test", cfg), nil, nil, nil, nil, nil, nil, "0123456789abcdef0123456789abcdef")
 
 	cases := []struct {

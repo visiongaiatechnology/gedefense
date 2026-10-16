@@ -419,6 +419,22 @@ var fabricSettingDefinitions = []fabricSettingDefinition{
 	{module: "hardening", group: "Airlock", key: "airlock.auto_quarantine", label: "Automatic Quarantine", kind: FabricTypeBoolean, def: false, class: FabricApplyHot, risk: FabricRiskMedium,
 		desc: "Stage a refused upload into the quarantine vault so the evidence survives the request."},
 
+	// ------------------------------------------------------------- detection
+	// The rules that name what happens after a break-in, whoever caused it. Every switch defaults to
+	// on, and every one of them can be adapted to this host without touching the binary.
+	{module: "detection", group: "Post-Exploitation Rules", key: "rule_log_tamper", label: "Detect Log Tampering", kind: FabricTypeBoolean, def: true, class: FabricApplyHot, risk: FabricRiskLow,
+		desc: "Reports forensic logs that are deleted, truncated or emptied, and shell histories that are wiped - the anti-forensics step of a real intrusion."},
+	{module: "detection", group: "Post-Exploitation Rules", key: "rule_credential_probe", label: "Detect Credential Access", kind: FabricTypeBoolean, def: true, class: FabricApplyHot, risk: FabricRiskLow,
+		desc: "Reports bulk reads, copies and encodings of the credential stores this host keeps."},
+	{module: "detection", group: "Post-Exploitation Rules", key: "rule_tunnel_binary", label: "Detect Tunnelling Tools", kind: FabricTypeBoolean, def: true, class: FabricApplyHot, risk: FabricRiskLow,
+		desc: "Reports executed tunnelling and proxy tools. Reporting only: these tools have legitimate uses, so the rule never terminates a process."},
+	{module: "detection", group: "Post-Exploitation Rules", key: "rule_persistence_dropin", label: "Detect Persistence Entries", kind: FabricTypeBoolean, def: true, class: FabricApplyHot, risk: FabricRiskLow,
+		desc: "Reports scheduled tasks, units and authorised keys written outside package management."},
+	{module: "detection", group: "Protected Surface", key: "protection_roots_preset", label: "Protect Web, Log and Persistence Paths", kind: FabricTypeBoolean, def: true, class: FabricApplyRestart, risk: FabricRiskLow,
+		desc: "Adds the web, log and persistence directories that exist on this host to the protected roots, so a dropped web shell and a deleted log become findings. A one-time acceptance of the new baseline follows."},
+	{module: "detection", group: "Protected Surface", key: "credential_paths", label: "Credential Stores On This Host", kind: FabricTypeList, def: []string{"/etc/vgt/gedefense/secrets", "/opt/beyondtrust"}, class: FabricApplyHot, risk: FabricRiskLow,
+		desc: "Absolute paths, up to 32. They become one operator rule, quoted literally, so a path can never introduce regular-expression syntax."},
+
 	// ------------------------------------------------------------- integrity
 	{module: "integrity", group: "File Integrity", key: "fim.enabled", label: "File Integrity Monitoring", kind: FabricTypeBoolean, def: true, class: FabricApplyHot, risk: FabricRiskHigh,
 		desc: "Disabling FIM stops periodic verification and refuses on-demand scans. The encrypted baseline is retained."},
@@ -604,6 +620,7 @@ func fabricModuleSettings(module string) []FabricSettingMetadata {
 var fabricModuleGroups = map[string][]string{
 	"kinetic":      {"Engine & Response", "Rate, Flood & Portscan", "Botnet / Subnet Correlation", "Service Classification"},
 	"network":      {"CIDR Policy Limits", "Management Survival"},
+	"detection":    {"Post-Exploitation Rules", "Protected Surface"},
 	"protection":   {"Fabric Safety"},
 	"xdr":          {"Engine & Sensors", "Scanning & Pipeline", "Decision Scores & Response", "Behavior Learning", "Process Scope", "Rule Modules"},
 	"l7":           {"Engine", "Request Limits", "Scores", "Client Rate Limiting", "Sensitive Path Limiting", "Peer Authentication", "Inline Edge", "TLS Defense", "L7 Rule Registry"},
