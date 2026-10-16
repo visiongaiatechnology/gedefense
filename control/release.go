@@ -636,6 +636,68 @@ func (r *ReleaseController) recoverIfGatesPassLocked() {
 	log.Printf("release: recovered to enforce after a held calm; the cause was: %s", previousReason)
 }
 
+// ReArmVerified restores enforcement after the startup self-check verified every module.
+//
+// It exists because the ladder answers a different question. The observe and canary soaks qualify a
+// host that has not been qualified yet - a new kernel, a new interface, a new release. When the
+// self-check has just proved every module healthy and the host is the one that was qualified
+// before, waiting five more minutes protects nothing; it only leaves the operator wondering whether
+// the platform is on. The safety properties are unchanged: an active emergency stop refuses, an
+// unsatisfied gate refuses, unverified kernel enforcement refuses, and a changed host goes through
+// the visible ladder instead.
+func (r *ReleaseController) ReArmVerified(reason string) (ReleaseStatus, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.status.EmergencyStop {
+		return cloneReleaseStatus(r.status), errors.New("emergency stop is active")
+	}
+	if r.status.Phase == ReleasePhaseEnforce {
+		return cloneReleaseStatus(r.status), nil
+	}
+	if r.status.KernelPolicyState != "verified-enforce" || !r.status.FailSafeVerified {
+		return cloneReleaseStatus(r.status), errors.New("kernel enforcement is not verified")
+	}
+	if blockers := r.currentBlockersLocked(ReleasePhaseEnforce, false); len(blockers) > 0 {
+		return cloneReleaseStatus(r.status), fmt.Errorf("release gates are not satisfied: %s", strings.Join(blockers, "; "))
+	}
+	if err := r.reconcileVerifiedLocked(); err != nil {
+		// The kernel could not be confirmed. Stay in the fail-safe: declaring an enforcing state
+		// that was not verified is the defect this whole path exists to avoid.
+		return cloneReleaseStatus(r.status), fmt.Errorf("kernel could not be confirmed: %w", err)
+	}
+	now := time.Now().UTC()
+	r.status.Phase = ReleasePhaseEnforce
+	r.status.Since = now
+	r.status.LastTransition = &now
+	r.status.Ready = true
+	r.status.Blockers = nil
+	r.status.KernelPolicyState = "verified-enforce"
+	r.status.FailSafeVerified = true
+	r.status.FailSafeReason = ""
+	r.status.FailSafeAt = nil
+	r.status.NominalSince = nil
+	r.status.Detail = "startup self-check verified every module; enforcement re-armed without the ladder"
+	r.state.SetModes("enforce", "enforce")
+	if err := r.policy.Persist(r.cfg.Node.Name, "enforce", "enforce", r.state.BlocksSnapshot()); err != nil {
+		log.Printf("release: re-arm policy persistence failed: %v", err)
+	}
+	r.state.SetPolicyStatus(r.policy.Status())
+	r.state.AddEvent(Event{
+		Severity: "high", Kind: "release.startup_rearmed", Source: "release-gate",
+		Message: "Startup self-check verified every module and re-armed protection. Reason: " + reason,
+	})
+	log.Printf("release: protection re-armed after the startup self-check: %s", reason)
+	return cloneReleaseStatus(r.status), nil
+}
+
+// ReconcileVerifiedPolicy re-applies and re-confirms the verified kernel policy. It is the canonical
+// repair for the enforcement module of the startup self-check.
+func (r *ReleaseController) ReconcileVerifiedPolicy() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.reconcileVerifiedLocked()
+}
+
 // FailSafe lowers the release phase and retains the kernel enforcement.
 //
 // The name is kept because callers across the platform express "fall back because something

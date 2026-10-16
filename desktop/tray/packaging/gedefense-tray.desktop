@@ -1,0 +1,25 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=GeDefense Status
+Name[de]=GeDefense Statusanzeige
+Name[ru]=GeDefense: индикатор состояния
+Name[zh]=GeDefense 状态指示器
+GenericName=Security status monitor
+GenericName[de]=Sicherheitsstatus-Überwachung
+GenericName[ru]=Монитор состояния защиты
+GenericName[zh]=安全状态监视器
+Comment=Shows the current GeDefense protection status and opens the console
+Comment[de]=Zeigt den aktuellen GeDefense-Schutzstatus und öffnet die Konsole
+Comment[ru]=Показывает текущее состояние защиты GeDefense и открывает консоль
+Comment[zh]=显示当前的 GeDefense 防护状态并打开控制台
+Exec=gedefense-tray
+Icon=gedefense-tray
+Terminal=false
+Categories=System;Security;Monitor;
+Keywords=gedefense;security;status;tray;
+Keywords[de]=gedefense;sicherheit;status;tray;
+Keywords[ru]=gedefense;безопасность;статус;
+Keywords[zh]=gedefense;安全;状态;托盘;
+StartupNotify=false
+StartupWMClass=gedefense-tray

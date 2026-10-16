@@ -391,15 +391,30 @@ func (s *State) SetFeedState(blockCount, correlateCount, annotateCount int, gen 
 	s.mu.Unlock()
 }
 
+// SetXDREnabled publishes the operator's enablement switch.
+//
+// It must not write the sensor label while XDR is enabled. That label is composed by the engine from
+// the individual sensors (xdrSensorMode: fanotify, eBPF exec, cgroup egress, BPF-LSM cell) and it is
+// the only signal the interface has to decide whether the fanotify execution channel is flowing -
+// the malware card and the integrity badge are both derived from it. This function used to overwrite
+// it with a coarse "procfs+network-bounded" on every status tick; because the engine composes the
+// precise label on the line before the tick calls this function, the coarse one always won. The
+// integrity view then reported HANDLUNGSBEDARF and the malware card "not verified" while the Rust
+// core was running with on_access=fanotify-exec. A switch is not a sensor report.
 func (s *State) SetXDREnabled(enabled, networkSensor bool) {
 	s.mu.Lock()
 	s.xdr.Enabled = enabled
-	if !enabled {
+	switch {
+	case !enabled:
+		// Off is a definite statement about the sensor, and only this function knows it.
 		s.xdr.Sensor = "disabled-by-operator"
-	} else if networkSensor {
-		s.xdr.Sensor = "procfs+network-bounded"
-	} else {
-		s.xdr.Sensor = "procfs-bounded"
+	case s.xdr.Sensor == "" || s.xdr.Sensor == "initializing":
+		// Nothing precise has been reported yet: name the fallback that the engine will refine.
+		if networkSensor {
+			s.xdr.Sensor = "procfs+network-bounded"
+		} else {
+			s.xdr.Sensor = "procfs-bounded"
+		}
 	}
 	s.mu.Unlock()
 }
