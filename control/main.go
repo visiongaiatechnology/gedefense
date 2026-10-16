@@ -667,6 +667,41 @@ func main() {
 	}
 	watchdogCtx, cancelWatchdog := context.WithCancel(context.Background())
 	defer cancelWatchdog()
+	// The desktop indicator socket is not a protection component: if it cannot be served, the
+	// platform keeps protecting and the journal names the reason. It is started after the API is
+	// ready so the first telegram already describes a fully populated state.
+	desktopCtx, cancelDesktop := context.WithCancel(context.Background())
+	defer cancelDesktop()
+	desktopStatus := NewDesktopStatusServer(cfg.Desktop, state)
+	go func() {
+		if desktopErr := desktopStatus.Start(desktopCtx); desktopErr != nil {
+			log.Printf("desktop status socket unavailable: %v", desktopErr)
+		}
+	}()
+	// The startup self-check. It verifies the modules that carry the protection, repairs the ones
+	// with a canonical repair, and re-arms without the operator when the host is the one that was
+	// qualified - so a restart no longer means five minutes of a paused automatic response and a
+	// manual check.
+	if cfg.Startup.Enabled {
+		supervisor := &StartupSupervisor{
+			modules: newStartupModules(StartupDeps{
+				Release: release, State: state, Core: core, Policy: policy, Settings: settings,
+				XDR: xdr, Interface: iface,
+			}),
+			fingerprint: newStartupFingerprint(state, iface),
+			reArm: func(reason string) (ReleaseStatus, error) {
+				return release.ReArmVerified(reason)
+			},
+			status:       release.Status,
+			now:          func() time.Time { return time.Now().UTC() },
+			rounds:       cfg.Startup.Rounds,
+			roundGap:     time.Duration(cfg.Startup.RoundGapSeconds) * time.Second,
+			armInterval:  time.Duration(cfg.Startup.ArmIntervalSec) * time.Second,
+			healAttempts: cfg.Startup.HealAttempts,
+			qualifyPath:  cfg.Startup.QualificationFile,
+		}
+		go supervisor.Run(desktopCtx)
+	}
 	go startSystemdWatchdog(watchdogCtx, func() string {
 		status := release.Status()
 		return fmt.Sprintf("phase=%s ready=%t core_misses=%d", status.Phase, status.Ready, status.CoreMisses)

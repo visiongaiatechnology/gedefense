@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- GeDefense tray status: alert. The shield is split into two pieces, the
+     lower part sheared away - an active breach. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" role="img">
+  <title>GeDefense: alert</title>
+  <rect x="0.5" y="0.5" width="23" height="23" rx="6" fill="#050912" stroke="#8f742e" stroke-width="1"/>
+  <path d="M12 3.2 L19.2 5.9 V11.3 L4.8 11.3 L4.8 5.9 Z"
+        fill="#d84a59" shape-rendering="geometricPrecision"/>
+  <path d="M6.8 12.6 C6.8 16.8 9.8 20.2 14.0 21.7 C18.2 20.2 21.2 16.8 21.2 12.6 Z"
+        fill="#d84a59" shape-rendering="geometricPrecision"/>
+  <path d="M12 6.3 V9.0" fill="none" stroke="#050912" stroke-width="1.8" stroke-linecap="round"/>
+  <circle cx="12" cy="10.2" r="1.0" fill="#050912"/>
+</svg>

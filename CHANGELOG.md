@@ -1,5 +1,48 @@
 # Changelog
 
+## Unreleased - Desktop Status Indicator (Tray)
+
+A per-user indicator for Linux desktops. It is not a control channel: it reports, and nothing else.
+
+### A third local surface, deliberately minimal
+
+The dashboard API requires the operator token and the core IPC is VGT3-authenticated for the control
+plane, so neither can serve a desktop indicator. `gedefense-control` now also listens on a
+read-only Unix socket at `/run/gedefense/gedefense.sock` with one operation and one bounded JSON
+line:
+
+```json
+{"v":1,"op":"status"}
+{"v":1,"status":"secure","status_reason":"…","threat_count_today":18,"ebpf_active":true,"active_alert":null,…}
+```
+
+Limits, in the order a connection passes them: peer credentials from the kernel (`SO_PEERCRED`,
+the same audited helper the L7 edge uses) are the identity for every limit; at most two connections
+per identity; a token bucket of 60 requests per minute; a 3 s read and 2 s write deadline; a 256
+byte request and a 4096 byte response; a strict allowlist of one operation and one protocol version.
+A refusal never carries state. Nothing in the telegram names a path, a hash or a secret, control
+characters are stripped and every string is bounded and cut at a rune boundary.
+
+The socket lives in a set-group-id directory (`2750 gedefense:gedefense-desktop`) and is mode `0660`,
+so a local user outside the group is refused by the kernel, not by the application.
+
+### The indicator does not cry wolf
+
+A blocked attack does not turn the indicator red. Blocking is the product working, and on an exposed
+host it happens hundreds of times a day; a permanently red light is alarm fatigue, and the security-UI
+rule forbids it. Red is reserved for the unresolved: violated file integrity, a critical finding
+inside a ten minute window, or a protection that is not active at all. Every state carries the
+sentence that explains it, because a badge that reports a condition without naming it is a defect
+this product has already had to fix twice.
+
+### Systemd, learned the hard way
+
+Three deployment facts are part of the feature now: `ProtectSystem=strict` requires
+`/run/gedefense` in `ReadWritePaths`; `RestrictSUIDSGID=true` forbids the service from setting the
+set-group-id bit, so `packaging/tmpfiles` owns the directory; and the control plane needs
+`SupplementaryGroups=gedefense-desktop` to reach it at all. The service checks the directory
+ownership before binding and names the expected combination instead of logging a bare `EPERM`.
+
 ## 4.2.2 - Fail-Closed Enforcement, Ledger Rotation and an Honest Panel
 
 A hardening release. It removes the paths on which the platform could lose its own

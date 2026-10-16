@@ -26,6 +26,8 @@ type Config struct {
 	Runtime   RuntimeConfig
 	Cells     CellsConfig
 	Kinetic   KineticConfig
+	Desktop   DesktopConfig
+	Startup   StartupSupervisorConfig
 }
 
 type NodeConfig struct {
@@ -212,7 +214,9 @@ type FeedConfig struct {
 
 func defaultConfig() Config {
 	return Config{
-		Node: NodeConfig{Name: "VGT-Beta-Node", Interface: "auto", Mode: "standalone"},
+		Node:    NodeConfig{Name: "VGT-Beta-Node", Interface: "auto", Mode: "standalone"},
+		Desktop: defaultDesktopConfig(),
+		Startup: defaultStartupSupervisorConfig(),
 		Dashboard: DashboardConfig{
 			Listen: "127.0.0.1:9843", TokenFile: "/var/lib/vgt/gedefense/dashboard.token",
 			AllowedHosts:       []string{"127.0.0.1", "localhost", "[::1]"},
@@ -421,6 +425,62 @@ func assignConfig(cfg *Config, section, key, raw string) error {
 	case "node.mode":
 		v, e := str()
 		cfg.Node.Mode = v
+		return e
+	case "startup.enabled":
+		v, e := parseBool(raw)
+		cfg.Startup.Enabled = v
+		return e
+	case "startup.rounds":
+		v, e := parseInt(raw, 1, 240)
+		cfg.Startup.Rounds = v
+		return e
+	case "startup.round_gap_seconds":
+		v, e := parseInt(raw, 1, 300)
+		cfg.Startup.RoundGapSeconds = v
+		return e
+	case "startup.arm_interval_seconds":
+		v, e := parseInt(raw, 30, 86400)
+		cfg.Startup.ArmIntervalSec = v
+		return e
+	case "startup.heal_attempts":
+		v, e := parseInt(raw, 1, 20)
+		cfg.Startup.HealAttempts = v
+		return e
+	case "startup.qualification_file":
+		v, e := str()
+		cfg.Startup.QualificationFile = v
+		return e
+	case "desktop.enabled":
+		v, e := parseBool(raw)
+		cfg.Desktop.Enabled = v
+		return e
+	case "desktop.socket":
+		v, e := str()
+		cfg.Desktop.SocketPath = v
+		return e
+	case "desktop.socket_mode":
+		v, e := str()
+		cfg.Desktop.SocketMode = v
+		return e
+	case "desktop.socket_group":
+		v, e := str()
+		cfg.Desktop.SocketGroup = v
+		return e
+	case "desktop.alert_window_seconds":
+		v, e := parseInt(raw, 60, 86400)
+		cfg.Desktop.AlertWindowSeconds = v
+		return e
+	case "desktop.max_connections_per_user":
+		v, e := parseInt(raw, 1, 32)
+		cfg.Desktop.MaxConnectionsPerUser = v
+		return e
+	case "desktop.rate_limit_per_minute":
+		v, e := parseInt(raw, 1, 100000)
+		cfg.Desktop.RateLimitPerMinute = v
+		return e
+	case "desktop.rate_limit_burst":
+		v, e := parseInt(raw, 1, 10000)
+		cfg.Desktop.RateLimitBurst = v
 		return e
 	case "dashboard.listen":
 		v, e := str()

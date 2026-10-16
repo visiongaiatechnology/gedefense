@@ -4,6 +4,87 @@ VGT GeDefense 4.2.2 — Fail-Closed-Härtung nach dem Vorfall vom 08.10.2026 (Sc
 
 ## Completed
 
+- **Startup-Selbstprüfer mit Selbstheilung (deployt `da4fc09e…`) — der Grund für „muss ich nach jedem
+  Neustart nachschauen" ist beseitigt.** Nach jedem Neustart stand die Plattform bis zu **300 s** im
+  Fail-safe („Automatische Reaktion ausgesetzt"), und wenn ein Modul wirklich hing, blieb sie stehen,
+  bis jemand „Schutz aktivieren" klickte. Jetzt prüft sie sich selbst:
+  `control/startup_supervisor.go` (Ablauf, Entscheidung, Qualifikation) und
+  `control/startup_modules.go` (die Checkliste als **Daten**, nicht als Code).
+  **Ablauf:** bis zu 12 Runden à 5 s; jede Runde prüft 10 Module, heilt was heilbar ist (mit den
+  **vorhandenen** kanonischen Pfaden — kein zweiter Weg in Kernel-Policy, Ledger oder Allowlist),
+  prüft **nach** der Heilung erneut und verlangt **zwei saubere Durchläufe**, bevor es bewaffnet.
+  Danach läuft die Prüfung als Watch weiter (Intervall = Re-Arm-Intervall/5, mind. 15 s) und heilt
+  auch eine Degradierung, die erst Stunden später auftritt.
+  **Module:** `core_ipc`, `kernel_enforcement` (Heilung: `ReconcileVerifiedPolicy`), `management_allowlist`
+  (Heilung: `syncCoreAllowlist`), `sensor_coverage`, `signed_policy` (Heilung: `Policy.Load`),
+  `evidence_ledger` (Heilung: inkrementelle Prüfung bzw. Rotation bei 90 %), `incident_log`
+  (Heilung: `RecoverIncidentLedger`) — alle blockierend; `host_keyring`, `system_integrity`,
+  `threat_intel` — berichtend, **nicht** blockierend. Die beiden teuren Prüfungen laufen beim Start,
+  die billigen zusätzlich im Watch (`continuous`).
+  **Zwei Vertrauensentscheidungen bleiben beim Betreiber und sind getestet:** eine veränderte
+  Systemdatei (FIM) wird **nie** automatisch als neue Baseline akzeptiert, die Fall-Historie **nie**
+  im Hintergrund umgeschrieben — beide werden benannt, blockieren die Bewaffnung aber nicht.
+  **Sofortige Wiederbewaffnung statt Leiter:** `ReleaseController.ReArmVerified` bewaffnet direkt,
+  wenn (a) kein Not-Aus aktiv ist, (b) die Gates erfüllt sind, (c) die Kernel-Durchsetzung verifiziert
+  ist und (d) der **Host-Fingerabdruck** (Kernel, Release, Node, Interface) dem zuletzt qualifizierten
+  Start entspricht. Weicht er ab (neuer Kernel, neue NIC, neues Release), greift weiterhin die
+  **sichtbare Canary-Leiter** — genau die Re-Qualifizierung, die `OPERATIONS.md` verlangt. Rate-Limit
+  300 s gegen Flattern; die Qualifikation wird geschrieben, sobald die Plattform verifiziert
+  `enforce` erreicht (`/var/lib/vgt/gedefense/release-qualification.json`, atomar, 0600).
+  **Abnahmetest live (16.10.):** Neustart der Kontrollplane → `enforce` nach **24,2 Sekunden**,
+  ohne jeden Klick; im Journal `startup self-check: all 10 blocking modules verified` →
+  `release: protection re-armed after the startup self-check: all modules verified and the host is
+  unchanged`. Vorher: 300 s plus Betreiber. (Beim allerersten Lauf greift bewusst die Leiter, weil
+  noch kein qualifizierter Fingerabdruck existiert — das ist die konservative Richtung.)
+  **Tests:** `control/startup_supervisor_test.go` — Entscheidungstabelle (9 Fälle inkl. Not-Aus,
+  geänderter Kernel, Rate-Limit), Modulklassifikation (geheilt / kaputt-blockierend / Betreiber),
+  Vertrauensentscheidungen (kein Auto-Repair, nicht blockierend), Qualifikations-Roundtrip inkl.
+  defekter Datei, Ablauf mit zwei sauberen Durchläufen, und „bewaffnet **nicht** bei kaputtem Modul".
+- **Desktop-Indikator (Tray) — Daemon-Seite und Qt6-Client fertig und verifiziert.**
+  Dritte, bewusst minimale lokale Schnittstelle neben der token-geschützten HTTP-API und der
+  VGT3-authentifizierten Kern-IPC: ein **nur lesender** Unix-Socket unter
+  `/run/gedefense/gedefense.sock` (`control/desktop_status.go`, `desktop_status_linux.go`).
+  Ein Telegramm, ein Vorgang, harte Grenzen — Protokoll v1:
+  `{"v":1,"op":"status"}` → eine JSON-Zeile mit `status` (`secure|warning|alert|stopped`),
+  **`status_reason`**, `product_version`, `node_name`, `release_phase`, `enforcement`,
+  `kernel_policy`, `ebpf_active`, `sensor`, `threat_count_today`, `blocked_active`,
+  `last_anomaly_at`, `last_anomaly_summary`, `active_alert`.
+  **Härtung:** Anfrage ≤ 256 B, Antwort ≤ 4 KiB, Lese-Deadline 3 s / Schreib-Deadline 2 s,
+  Identität ausschließlich aus `SO_PEERCRED` (wiederverwendet: `l7PeerCredentialsFromConn`),
+  max. 2 Verbindungen **pro Identität**, Token-Bucket 60/min (Burst 10), Obergrenze 4096
+  verfolgter Identitäten, Steuerzeichen entfernt, alle Zeichenketten längenbegrenzt und
+  UTF-8-sicher gekürzt, **keine** Pfade/Hashes/Tokens im Wire-Format. Unbekannter Vorgang,
+  falsche Version, Zusatzfelder, Müll und HTTP-Anfragen erhalten eine begrenzte
+  `{"v":1,"error":"invalid request"}` **ohne jeden Zustand**.
+  **Rechte:** Verzeichnis `2750 gedefense:gedefense-desktop` (setgid), Socket `0660` derselben
+  Gruppe — der Fremdbenutzer `nobody` erhält live `Permission denied`.
+  **Semantik (bewusste Abweichung von der Skizze):** ein *blockierter* Angriff färbt den Indikator
+  **nicht** rot. Blockieren ist das Produkt bei der Arbeit und passiert auf einem exponierten Host
+  hundertfach am Tag; Dauerrot ist Alarmmüdigkeit und vom Security-UI-Standard verboten. Rot
+  (alert) bleibt dem Unerledigten: verletzte Integrität, kritischer Vorfall im Fenster (10 min).
+  Gelb (warning): Automatik ausgesetzt bei erhaltener Durchsetzung, Phase unter `enforce`,
+  Forensik-Ledger ungesund, Vorfall hoher Schwere. Grau/rot (stopped): Kern nicht verbunden oder
+  Durchsetzung nicht `enforce`.
+  **Deploy-Lehren aus der Live-Inbetriebnahme (alle drei behoben und im Repo):**
+  1. `ProtectSystem=strict` braucht `/run/gedefense` in `ReadWritePaths` (sonst kein Socket),
+  2. das Setgid-Bit darf der Dienst wegen `RestrictSUIDSGID=true` **nicht** setzen — es kommt aus
+     `packaging/tmpfiles` (Verzeichnis gehört `gedefense`, Gruppe `gedefense-desktop`),
+  3. der Dienst braucht `SupplementaryGroups=gedefense-desktop`, sonst scheitert schon der
+     Verzeichniszugriff (`packaging/systemd/gedefense-control.service`).
+  Der Code prüft die Verzeichnis-Eigentümerschaft jetzt **vor** dem Binden und nennt die erwartete
+  Kombination, statt ein nacktes EPERM zu protokollieren.
+  **Tests:** `control/desktop_status_test.go` — Ableitungstabelle (11 Fälle inkl. Fenstergrenzen),
+  Tageszählung, Budget-/UTF-8-/Steuerzeichen-Grenzen, Anfrage-Allowlist, Protokoll über echten
+  Socket, feindliche Eingaben, Verbindungsgrenze, Ratenlimit, Doppelbindung, Pfadwächter,
+  Modus-Parsing. **Live belegt (16.10.):** `desktop status socket ready … mode=0660`, 637-Byte-
+  Telegramm, `status=alert` mit „Systemintegrität verletzt" (mein eigener Deploy), 3. Verbindung →
+  `busy`, 14 schnelle Anfragen → 13 begrenzt, `nobody` → verweigert.
+  **Offen:** Qt6-Tray-Client (`desktop/tray/`, eigener Agent: Build, QTest, Offscreen-Screenshots),
+  Installer-Schritt „Gruppe anlegen + Desktop-Benutzer aufnehmen" (sysusers/tmpfiles sind bereits
+  ergänzt), READMEs in vier Sprachen, Entscheidung über die Versionsnummer (Feature vs. 4.2.2).
+  Der „Schnellscan"-Knopf der Skizze ist bewusst **kein** Socket-Vorgang: der Socket ist nur
+  lesend, ein Scan gehört in die authentifizierte Konsole.
+
 - **Ursachenanalyse der Entwaffnung:** ein einzelner ungültiger Kernel-Datensatz (`decode_ingress_event` verletzt bei gemischten Protokoll-Aggregaten seine TCP-Invariante, `take_ingress_events` bricht daraufhin den **ganzen** Batch ab) markierte den Ingress-Sensor als degradiert; das Release-Gate antwortete mit `reconcileLocked("observe")` und **leerte die gesamte Kernel-Blockliste**. Der Host blieb 20 Stunden ungeschützt, weil nichts die Phase zurücknimmt.
 - **Fail-Closed-Satz (deployt, `378509be…`):** automatische Degradierung leert die verifizierte Kernel-Policy nie mehr, sondern bestätigt und behält sie (`reconcileVerifiedLocked` prüft jeden Block per idempotentem ADD, weil der Core keinen Read-back hat); Promotionen senken eine verifizierte Enforcement nicht mehr (`retainedEnforcementLocked`); der Start behält die Enforcement aus der signierten Policy (`InitializeStartup`); Wiederbewaffnung nach gehaltener Ruhe mit Anti-Flatter-Soak (`recoverIfGatesPassLocked`, `NominalSince`); Beobachtungsqualität und Enforcement-Fähigkeit sind getrennt (`evaluateKineticSensorHealth` — ein Drain-Fehler ist kein Sensorausfall); Übergänge werden im Journal protokolliert.
 - **Vorfalls-Ledger:** `SIZE_BUDGET_EXHAUSTED` ist wiederherstellbar statt terminal. Live belegt: `recoverable: true` → `POST /api/v1/xdr/recovery` (mit `X-VGT-Request-ID`) → `HTTP 200`, Archiv `20261009T175614…`, Manifest-SHA256, danach `health=healthy`, `blockers=[]`.
