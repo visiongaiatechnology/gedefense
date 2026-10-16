@@ -88,7 +88,57 @@ Sicherheitslücke gefunden oder Verbesserungsvorschlag? **Eröffne ein Issue ode
 > 
 > ### ➔ [📘 ARCHITECTURE.md — Vollständige technische Architektur & Spezifikation](ARCHITECTURE.md)
 > 
-> *Über 2.200 Zeilen zur Spezifikation des 7-stufigen Architekturbaums, der Kernel-eBPF/XDP-Data-Plane, der Go-Control-Plane, des typisierten Rust-Response-Cores, der nativen L7-WAF-Engine, des kryptografischen Evidenz-Ledgers und der reversiblen Härtungs-Engine.*
+> *Über 4.400 Zeilen zur Spezifikation des 7-stufigen Architekturbaums, der Kernel-eBPF/XDP-Data-Plane, der Go-Control-Plane, des typisierten Rust-Response-Cores, der nativen L7-WAF-Engine, des kryptografischen Evidenz-Ledgers und der reversiblen Härtungs-Engine.*
+
+---
+
+## 🧪 Verify Yourself — Vollständige Test-Suite & Selbstaudit-Leitfaden
+
+> [!TIP]
+> **„Don't Trust, Verify“ — Maximale Transparenz & Reproduzierbarkeit**
+> GeDefense wurde für Zero-Trust-Umgebungen entwickelt. Jedes Sicherheitsversprechen, jede Vertrauensgrenze, jeder Parser, jede kryptografische Invariante und jeder Kernel-Wire-Speed-Filter ist durch eine automatisierte Test-Suite abgesichert. Sie können alle **634+ nativen Testfunktionen** und **19 Sicherheits-Audit-Gates** mit einem einzigen Befehl lokal selbst durchtesten.
+
+### 📊 Übersicht der Test-Suites & Testabdeckung
+
+| Test-Suite / Komponente | Pfad / Datei | Tests / Szenarien | Getestete Fähigkeiten & Zusicherungen | Direkter Ausführungsbefehl |
+| :--- | :--- | :---: | :--- | :--- |
+| **Control Plane Unit & Integration** | [`control/*_test.go`](control/) | **574 Tests**<br>*(108 Dateien + 25 Subtests)* | XDR-DAG-Korrelation, L7-WAF Multi-Pass-Dekodierung, FIM SHA-256-Baselines, Fail-Closed Release-Gates, duale Ledger-Rotation (90%-Schwelle), Self-Artifact-Updates | `cd control && go test -v ./...` |
+| **Sicherheits-Fuzzing-Suite** | [`control/*fuzz_test.go`](control/) | **8 Fuzz-Targets** | Speichersicherheit & Panik-Resistenz bei fehlerhaften Eingaben: L7-Normalisierer, TLS ClientHello, verschlüsselte Umschläge, Core-IPC-Antworten, `/proc/stat` | `make fuzz-smoke` |
+| **Gateway & Perimeter-Authentifizierung** | [`gateway/*_test.go`](gateway/) | **28 Tests**<br>*(6 Dateien)* | TLS 1.3 Post-Quantum ML-KEM-Kurven, Argon2id-Passwortprüfung, `__Host-`-Cookie-Isolation, CSRF-Synchronizer-Tokens, Origin-Scrubbing | `cd gateway && go test -v ./...` |
+| **Rust Kernel-Protokoll & Data Plane** | [`rust/gedefense-common`](rust/gedefense-common/) | **6 Tests** | Zero-Copy-Netzwerk-Header-Parsing, IPv4/IPv6 VLAN/QinQ-Grenzen, Wire-Event-Dekoder | `cargo test --locked --manifest-path rust/Cargo.toml -p gedefense-common` |
+| **Rust Privileged Response Core** | [`rust/gedefense-core`](rust/gedefense-core/) | **18 Tests** | Replay-Guard-LRU/Eviction, Sysctl Compare-and-Set-Vertrag, Streaming-Malware-Scanner (Polyglot/EICAR), AES-256-GCM Quarantäne-Tresor | `cargo test --locked --manifest-path rust/Cargo.toml -p gedefense-core` |
+| **Automatisierter Sicherheitsaudit** | [`scripts/security-audit.sh`](scripts/security-audit.sh) | **19 Audit-Gates** | Keine unsicheren DOM-Sinks (`innerHTML`, `eval`), strikte CSP-Validierung, I18N 4-Sprachen-Schlüsselparität, Socket-/Dateiberechtigungen (`0700`/`0600`) | `bash scripts/security-audit.sh` |
+| **Kinetic Wire-Speed Lastakzeptanz** | [`scripts/validate-kinetic-release-candidate.sh`](scripts/validate-kinetic-release-candidate.sh) | **Suite** | Ingress-Burst-Dauertests, gleitende Telemetriefenster, LPM-Trie Drop-Benchmark | `bash scripts/validate-kinetic-release-candidate.sh` |
+| **Linux-Distributionsintegration** | [`scripts/validate-distro-integration.sh`](scripts/validate-distro-integration.sh) | **Suite** | Multi-Distributions-Prüfung (Systemd-Verträge für Arch, Debian, Fedora, SUSE) | `bash scripts/validate-distro-integration.sh` |
+| **Quarantäne-DAC & Tresorberechtigungen** | [`scripts/validate-quarantine-dac.sh`](scripts/validate-quarantine-dac.sh) | **Suite** | Prüfung auf Root-Exklusivrechte, Non-Executable-Flags, Verzeichnisausbruchsfallen | `bash scripts/validate-quarantine-dac.sh` |
+| **Systemd-Sandbox-Validierung** | [`scripts/validate-systemd.sh`](scripts/validate-systemd.sh) | **Suite** | Prüfung auf `DynamicUser`, `ProtectSystem=strict` und Capability-Dropping aller Services | `bash scripts/validate-systemd.sh` |
+| **Viersprachige I18N-Parität** | [`scripts/validate-i18n.mjs`](scripts/validate-i18n.mjs) | **Suite** | 100%ige Übersetzungsschlüssel-Synchronisation für DE, EN, RU und ZH-CN | `node scripts/validate-i18n.mjs` |
+
+### ⚡ Schnellstart: Tests lokal auf dem eigenen System ausführen
+
+```bash
+# 1. Alle Go-Tests, statische Analysen, JS-Syntax-Checks & Sicherheitsaudits ausführen
+make test
+
+# 2. Go-Tests mit aktivem Race-Detector durchlaufen lassen
+make test-race
+
+# 3. Alle nativen Rust-Tests (Kernel Common & Response Core) ausführen
+cargo test --locked --manifest-path rust/Cargo.toml -p gedefense-common -p gedefense-core
+
+# 4. Die 8 Go-Sicherheits-Fuzzing-Tests starten
+make fuzz-smoke
+
+# 5. Den vollständigen statischen Sicherheits-Audit durchführen
+bash scripts/security-audit.sh
+
+# 6. Die vollständige End-to-End-Repository-Validierung starten
+bash scripts/validate.sh
+```
+
+> 📖 **Formaler Beta-Testplan:** Die vollständige Matrix für operative Testphasen (Observe, Canary, Enforce, AstraeaOS) finden Sie in [**BETA-TEST-PLAN.md**](BETA-TEST-PLAN.md).
+
+---
 
 ### Übersicht: 7-stufiges souveränes Verteidigungsgewebe
 

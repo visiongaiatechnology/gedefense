@@ -92,7 +92,57 @@ Found a vulnerability or have an improvement? **Open an issue or contact us dire
 > 
 > ### ➔ [📘 ARCHITECTURE.md — Complete Technical Architecture & Specification](ARCHITECTURE.md)
 > 
-> *Over 2,200 lines specifying the 7-tier architecture tree, kernel eBPF/XDP data plane, Go control plane, typed Rust response core, native L7 WAF engine, cryptographic evidence ledger, and reversible posture engine.*
+> *Over 4,400 lines specifying the 7-tier architecture tree, kernel eBPF/XDP data plane, Go control plane, typed Rust response core, native L7 WAF engine, cryptographic evidence ledger, and reversible posture engine.*
+
+---
+
+## 🧪 Verify Yourself — Full Test Suite & Independent Self-Audit
+
+> [!TIP]
+> **"Don't Trust, Verify" — Complete Transparency & Reproducibility**
+> GeDefense is engineered for zero-trust environments. Every claim, security boundary, parser, cryptographic invariant, and wire-speed kernel filter is backed by an automated test suite. You can run all **634+ native test functions** and **19 security audit gates** locally with a single command.
+
+### 📊 Test Suite & Coverage Breakdown
+
+| Test Suite / Component | Location | Tests / Scenarios | Target Capabilities & Assurances | Direct Execution Command |
+| :--- | :--- | :---: | :--- | :--- |
+| **Control Plane Unit & Integration** | [`control/*_test.go`](control/) | **574 Tests**<br>*(108 files + 25 subtests)* | XDR DAG correlation, L7 WAF multi-pass decoding, FIM SHA-256 baselines, fail-closed release gates, dual ledger rotation (90% threshold), self-artifact updates | `cd control && go test -v ./...` |
+| **Security Fuzzing Suite** | [`control/*fuzz_test.go`](control/) | **8 Fuzz Targets** | Memory safety & panic resistance under malformed inputs: L7 normalizer, TLS ClientHello, encrypted envelope, Core IPC responses, `/proc/stat` | `make fuzz-smoke` |
+| **Gateway & Perimeter Auth** | [`gateway/*_test.go`](gateway/) | **28 Tests**<br>*(6 files)* | TLS 1.3 Post-Quantum ML-KEM curves, Argon2id password verification, `__Host-` cookie isolation, CSRF synchronizer tokens, origin stripping | `cd gateway && go test -v ./...` |
+| **Rust Kernel Protocol & Data Plane** | [`rust/gedefense-common`](rust/gedefense-common/) | **6 Tests** | Zero-copy packet header parsing, IPv4/IPv6 VLAN/QinQ bounds, wire event decoders | `cargo test --locked --manifest-path rust/Cargo.toml -p gedefense-common` |
+| **Rust Privileged Response Core** | [`rust/gedefense-core`](rust/gedefense-core/) | **18 Tests** | Replay guard eviction, sysctl compare-and-set contract, streaming malware scanner (polyglot/EICAR), AES-256-GCM quarantine vault | `cargo test --locked --manifest-path rust/Cargo.toml -p gedefense-core` |
+| **Automated Security Audit** | [`scripts/security-audit.sh`](scripts/security-audit.sh) | **19 Audit Gates** | Zero unsafe DOM sinks (`innerHTML`, `eval`), strict CSP validation, I18N 4-language key parity, socket DAC file modes (`0700`/`0600`) | `bash scripts/security-audit.sh` |
+| **Kinetic Wire-Speed Acceptance** | [`scripts/validate-kinetic-release-candidate.sh`](scripts/validate-kinetic-release-candidate.sh) | **Suite** | Ingress burst soak testing, invariant sliding windows, LPM trie drop benchmark | `bash scripts/validate-kinetic-release-candidate.sh` |
+| **Linux Distro Integration** | [`scripts/validate-distro-integration.sh`](scripts/validate-distro-integration.sh) | **Suite** | Multi-distribution verification (Arch, Debian, Fedora, SUSE systemd contracts) | `bash scripts/validate-distro-integration.sh` |
+| **Quarantine DAC & Vault Permissions** | [`scripts/validate-quarantine-dac.sh`](scripts/validate-quarantine-dac.sh) | **Suite** | Verifies root-only permissions, non-executable bits, directory boundary traversal traps | `bash scripts/validate-quarantine-dac.sh` |
+| **Systemd Sandbox Validation** | [`scripts/validate-systemd.sh`](scripts/validate-systemd.sh) | **Suite** | Audits `DynamicUser`, `ProtectSystem=strict`, capability dropping across all service units | `bash scripts/validate-systemd.sh` |
+| **Quad-Lingual I18N Parity** | [`scripts/validate-i18n.mjs`](scripts/validate-i18n.mjs) | **Suite** | 100% key synchronization check across DE, EN, RU, and ZH-CN catalogs | `node scripts/validate-i18n.mjs` |
+
+### ⚡ Quick-Start: Run the Tests on Your Machine
+
+```bash
+# 1. Run all Go tests, static analysis, JS syntax checks & security audit (One-Click)
+make test
+
+# 2. Run Go tests with Go race detector enabled
+make test-race
+
+# 3. Run all native Rust tests (Kernel Common & Response Core)
+cargo test --locked --manifest-path rust/Cargo.toml -p gedefense-common -p gedefense-core
+
+# 4. Run the 8 Go security fuzzing smoke tests
+make fuzz-smoke
+
+# 5. Run the comprehensive static security audit script
+bash scripts/security-audit.sh
+
+# 6. Run the complete end-to-end repository validation
+bash scripts/validate.sh
+```
+
+> 📖 **Formal Beta Test Plan:** For the full operational verification matrix across Observe, Canary, Enforce, and AstraeaOS, refer to [**BETA-TEST-PLAN.md**](BETA-TEST-PLAN.md).
+
+---
 
 ### 7-Tier Sovereign Defense Fabric Overview
 

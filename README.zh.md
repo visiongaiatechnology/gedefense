@@ -88,7 +88,57 @@ VGT GeDefense 4.2.2 是主权 Linux 安全防御体系的旗舰产品 — 将经
 > 
 > ### ➔ [📘 ARCHITECTURE.md — 完整技术架构规范文档](ARCHITECTURE.md)
 > 
-> *超过 2200 行详细规范，涵盖 7 层架构拓扑、内核 eBPF/XDP 数据平面、Go 控制平面、Rust 响应核心、原生 L7 WAF 引擎、加密证据账本以及可逆系统加固引擎。*
+> *超过 4400 行详细规范，涵盖 7 层架构拓扑、内核 eBPF/XDP 数据平面、Go 控制平面、Rust 响应核心、原生 L7 WAF 引擎、加密证据账本以及可逆系统加固引擎。*
+
+---
+
+## 🧪 Verify Yourself — 完整测试套件与自主审计指南
+
+> [!TIP]
+> **“不盲信，重验证”（Don't Trust, Verify）—— 极致透明与完全可复现**
+> GeDefense 专为零信任（Zero Trust）环境打造。每一项安全承诺、信任边界、解析器、密码学不变量以及内核级线速过滤器均拥有自动化测试套件的严格保障。只需一行命令，即可在本地运行所有 **634+ 项原生测试函数** 与 **19 道自动化安全审计关卡**。
+
+### 📊 测试套件与覆盖范围概览
+
+| 测试套件 / 组件 | 路径与文件 | 测试用例 / 场景数 | 验证能力与安全保证 | 直接执行命令 |
+| :--- | :--- | :---: | :--- | :--- |
+| **控制平面单元与集成测试** | [`control/*_test.go`](control/) | **574 项测试**<br>*(108 个文件 + 25 个子测试)* | XDR DAG 关联分析、L7 WAF 多重解码、FIM SHA-256 基线、故障闭锁发布门禁、双账本 90% 阈值轮换、自身构件安全更新识别 | `cd control && go test -v ./...` |
+| **安全模糊测试套件 (Fuzzing)** | [`control/*fuzz_test.go`](control/) | **8 个 Fuzz 目标** | 畸形输入下的内存安全性与防 Panic 能力：L7 规范化器、TLS ClientHello、加密信封、Core IPC 响应、`/proc/stat` | `make fuzz-smoke` |
+| **接入网关与边界认证测试** | [`gateway/*_test.go`](gateway/) | **28 项测试**<br>*(6 个文件)* | TLS 1.3 ML-KEM 后量子曲线、Argon2id 密码哈希、`__Host-` Cookie 隔离、CSRF 同步令牌、跨源头清洗 | `cd gateway && go test -v ./...` |
+| **Rust 内核协议与数据平面** | [`rust/gedefense-common`](rust/gedefense-common/) | **6 项测试** | 零拷贝网络协议头解析、IPv4/IPv6 与 VLAN/QinQ 边界检查、线缆事件解码器 | `cargo test --locked --manifest-path rust/Cargo.toml -p gedefense-common` |
+| **Rust 特权响应核心** | [`rust/gedefense-core`](rust/gedefense-core/) | **18 项测试** | 重放保护 LRU 淘汰机制、Sysctl CAS 原子契约、流式恶意软件检测 (Polyglot/EICAR)、AES-256-GCM 隔离保险库 | `cargo test --locked --manifest-path rust/Cargo.toml -p gedefense-core` |
+| **自动化安全审计门禁** | [`scripts/security-audit.sh`](scripts/security-audit.sh) | **19 道审计关卡** | 零不安全 DOM Sinks (`innerHTML`, `eval`)、严格 CSP 验证、I18N 四语系词条严格对齐、套接字文件权限 (`0700`/`0600`) | `bash scripts/security-audit.sh` |
+| **Kinetic 线速负载验收** | [`scripts/validate-kinetic-release-candidate.sh`](scripts/validate-kinetic-release-candidate.sh) | **完整套件** | 入站突发流量浸泡测试、滑动遥测窗口、LPM Trie 硬件线速丢弃基准 | `bash scripts/validate-kinetic-release-candidate.sh` |
+| **Linux 发行版契约集成** | [`scripts/validate-distro-integration.sh`](scripts/validate-distro-integration.sh) | **完整套件** | 多发行版兼容性测试（涵盖 Arch、Debian、Fedora、SUSE 的 systemd 服务契约） | `bash scripts/validate-distro-integration.sh` |
+| **隔离区 DAC 与权限验证** | [`scripts/validate-quarantine-dac.sh`](scripts/validate-quarantine-dac.sh) | **完整套件** | 根用户专有访问控制、禁止执行位、防目录遍历陷阱 | `bash scripts/validate-quarantine-dac.sh` |
+| **Systemd 沙盒指令验证** | [`scripts/validate-systemd.sh`](scripts/validate-systemd.sh) | **完整套件** | 严格审查所有服务单元的 `DynamicUser`、`ProtectSystem=strict` 与 Linux Capabilities 丢弃 | `bash scripts/validate-systemd.sh` |
+| **四语系 I18N 词条对齐验证** | [`scripts/validate-i18n.mjs`](scripts/validate-i18n.mjs) | **完整套件** | 德语、英语、俄语、简体中文 100% 翻译键严格对齐校验 | `node scripts/validate-i18n.mjs` |
+
+### ⚡ 快速开始：在本地机器上亲自运行测试
+
+```bash
+# 1. 运行全部 Go 测试、静态分析、JS 语法检查与安全审计（一键运行）
+make test
+
+# 2. 启用 Go Race Detector 运行并发竞争检测测试
+make test-race
+
+# 3. 运行全部原生 Rust 测试（Kernel Common 与 Response Core）
+cargo test --locked --manifest-path rust/Cargo.toml -p gedefense-common -p gedefense-core
+
+# 4. 运行 8 项 Go 安全模糊测试（Fuzzing Smoke）
+make fuzz-smoke
+
+# 5. 执行全面的静态安全审计脚本
+bash scripts/security-audit.sh
+
+# 6. 执行端到端完整仓库验证
+bash scripts/validate.sh
+```
+
+> 📖 **正式公测测试方案：** 涵盖 Observe、Canary、Enforce 及 AstraeaOS 的完整阶段测试矩阵，请参阅 [**BETA-TEST-PLAN.md**](BETA-TEST-PLAN.md)。
+
+---
 
 ### 7 层主权安全防御架构概览
 
