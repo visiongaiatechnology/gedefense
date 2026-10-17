@@ -19,7 +19,7 @@ import (
 
 func desktopTestSnapshot() Snapshot {
 	return Snapshot{
-		Version: "4.2.4", NodeName: "test-node", CoreConnected: true, Enforcement: "enforce",
+		Version: "4.2.5", NodeName: "test-node", CoreConnected: true, Enforcement: "enforce",
 		XDR:      XDRStatus{Enabled: true, Mode: "enforce", Sensor: "fanotify-exec+procfs-fallback"},
 		Release:  ReleaseStatus{Phase: ReleasePhaseEnforce, KernelPolicyState: "verified-enforce", FailSafeVerified: true},
 		Evidence: EvidenceStatus{Enabled: true, Healthy: true},

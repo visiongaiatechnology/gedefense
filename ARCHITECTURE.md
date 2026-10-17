@@ -1,9 +1,9 @@
-# Architecture Map: VGT GeDefense (4.2.4)
+# Architecture Map: VGT GeDefense (4.2.5)
 
 // STATUS: DIAMANT VGT SUPREME
 // CLASSIFICATION: TECHNICAL ARCHITECTURE SPECIFICATION & DATA TREE
 // SYSTEM: VISIONGAIATECHNOLOGY MASTER INTELLIGENCE SYSTEM
-// TARGET RELEASE: V4.2.4 FAIL-CLOSED KINETIC REWORK & PERSISTENT SECURITY FABRIC
+// TARGET RELEASE: V4.2.5 FAIL-CLOSED KINETIC REWORK & PERSISTENT SECURITY FABRIC
 
 ---
 
@@ -74,7 +74,7 @@
 ## 1. Global Architecture Tree
 
 ```text
-VGT GeDefense System (v4.2.4 — Fail-Closed Kinetic Rework & Security Fabric)
+VGT GeDefense System (v4.2.5 — Fail-Closed Kinetic Rework & Security Fabric)
 │
 ├── 1. PUBLIC ACCESS GATEWAY (Go · Unprivileged Reverse Proxy · gateway/)
 │   ├── TLS 1.3 Termination (Curve Preferences: X25519MLKEM768, X25519, P-256)
@@ -2487,7 +2487,7 @@ Datenbank / Storage:
 
 Konfiguration:
 - TOOLCHAINS.lock
-- VERSION (4.2.4)
+- VERSION (4.2.5)
 
 Tests:
 - scripts/validate-systemd.sh
@@ -4374,7 +4374,7 @@ This cross-reference details the core functions, data structures, and constants 
 
 ## 11. Architectural Anomalies & Audit Findings
 
-During the comprehensive analysis of GeDefense 4.2.4, the following technical anomalies, unused files, and architectural observations were identified. Per VGT Analyticer guidelines, these are strictly documented without unauthorized source code modifications.
+During the comprehensive analysis of GeDefense 4.2.5, the following technical anomalies, unused files, and architectural observations were identified. Per VGT Analyticer guidelines, these are strictly documented without unauthorized source code modifications.
 
 ### 11.1 Orphaned Test & QA Scripts in Project Root
 The repository root contains over 65 WSL test and diagnostic shell scripts (`wsl-*.sh`, e.g., `wsl-diag2.sh`, `wsl-final-sweep.sh`, `wsl-tamper-probe.sh`, `wsl-waf-check.sh`, `wsl-phase-*.sh`).
@@ -4406,4 +4406,30 @@ The embedded GeoIP resolver relies on `/var/lib/vgt/gedefense/geoip.csv`.
 
 ---
 
-// VGT GeDefense 4.2.4 Architectural Specification Complete.
+// VGT GeDefense 4.2.5 Architectural Specification Complete.
+
+
+## Linux overview threat map — WP presentation parity (17.10.2026)
+
+The overview uses the WP control center visual language: local Mercator landmass,
+animated quadratic attack trajectories, co-located source clusters, a verified host hub,
+and a six-column telemetry table with blocked/probe filters. Kinetic's separate map is unchanged.
+
+- `control/web/overview-map-data.js`: bounded API normalization (500 sources / 300 events),
+  coordinate validation, snake_case mapping, and incident/source joins for ASN and organization.
+- `control/web/overview-map-renderer.js`: SVG country paths from the existing MIT-vendored
+  `world-merc.js` (176 country paths identical to WP), WP Mercator projection and arc geometry,
+  at most 240 plotted sources / 40 animated trajectories, zoom/pan and keyboard-accessible clusters.
+- `control/web/overview-map.js`: existing authenticated overview API, five-second refresh,
+  abort/deadline handling, visibility/pause lifecycle, translated table, filters and source inspector.
+- `control/web/overview-map.css`: scoped WP colors/materials/motion and responsive presentation.
+- `control/server.go`: explicit allowlisting of both new ES modules; existing auth and CSP preserved.
+
+No coordinates are invented: unknown source positions stay in the table; an unknown host position
+suppresses destination arcs. Local host findings remain in the table without a map location.
+Animation pauses offscreen, in background tabs, and on operator pause; reduced motion freezes
+SMIL and removes decorative CSS movement. Failed refreshes retain the last snapshot with a stale
+indicator. Dynamic telemetry uses DOM construction and textContent exclusively.
+
+Verification harness: `node qa/overview-map-check.mjs` starts the existing offline fixture server
+and real Chrome; fixtures and screenshots are explicitly test evidence, not live host telemetry.

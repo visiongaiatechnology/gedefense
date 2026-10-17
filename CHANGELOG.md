@@ -1,5 +1,53 @@
 # Changelog
 
+## 4.2.5 - Real-Time Multi-Vector Threat Map, Immediate Post-Update Re-Arm and Self-Healing Telemetry
+
+### Real-time attack map on the overview page
+
+The overview page now carries a large, animated map that shows **every detection path at once** - the
+packet path and the incident stream (layer 7, post-exploitation, their correlation) - rather than the
+packet path alone. The focused map on the Kinetic page is unchanged and keeps its own data.
+
+- **Arcs towards this host's real position.** The origin is resolved from this machine's own global
+  address, never guessed; when it cannot be resolved the map says why instead of placing a dot. A GeoIP
+  record that could not place an address reports zeroes, and zeroes are treated as "not placeable" -
+  drawing them would put an attacker in the Gulf of Guinea.
+- **Seven counters, split by path:** sources, placed, blocked, countries, and Kinetic / L7 / XDR
+  separately, so an operator can see which layer is seeing what.
+- **The map is always there.** It is drawn before any data arrives and is never cleared, so a quiet
+  minute reads as "no attacks in the observation window" rather than as a broken panel.
+- **An activity band underneath** shows the newest ten entries from the incident ledger - with time,
+  detecting path, source address and country, the finding, and whether it was blocked. It reads the
+  ledger rather than the live stream, so it stays populated when nothing is arriving at this moment.
+- **No external request.** The world map is a vendored module (MIT), the geometry is an import, and the
+  GeoIP matrix with 950,000 entries stays on the host. Vectors are capped and the arc animation is
+  switched off entirely under `prefers-reduced-motion`.
+- Available in all four languages.
+
+### Protection re-arms within seconds of an update
+
+Installing an update used to leave the platform paused: the qualification record held one fingerprint
+that contained the release version, so a new version invalidated it, the self-check refused the
+immediate re-arm and the host waited for the visible canary ladder - five minutes of a paused automatic
+response, or twenty through the full ladder, on a host whose own self-check had just verified every
+module.
+
+- **Host and release are separate facts.** A changed kernel, node name or interface means the platform
+  is protecting something it was never qualified against, and that still walks the canary ladder. A new
+  release on that same host is a planned change: the self-check re-verifies every module against it, so
+  there is nothing left for a soak to prove.
+- **Measured on the production host:** 6-7 seconds from service start to `enforce`, 12 seconds including
+  the stop and start of the previous process, for a release change on a qualified host.
+- **The traffic-derived sensor repairs itself.** `l7_application` derives its coverage from an inspected
+  request counter, which a restart resets - so the sensor honestly reported "awaiting traffic" and the
+  platform stayed paused until somebody happened to use the dashboard. The `sensor_coverage` module now
+  has the canonical repair it lacked: one probe through the real inspection path (the same self-test the
+  L7 page offers), bounded to three attempts per start.
+- **The kernel health is asked before the first tick,** so a restart cannot be reported as unhealthy
+  merely because the sensor was one second younger than the checklist.
+- A qualification file written by an earlier release is still understood: the release is lifted out of
+  the old combined fingerprint instead of being read as a changed host.
+
 ## 4.2.4 - Gateway Identity Split and Full Audit Hardening
 
 A security release. It closes the findings of the complete VGT-100 audit
@@ -33,6 +81,15 @@ two remaining ones documented with their first step.
   one malicious scenario was never exercised.
 - **Navigation fix:** the "Angriffserkennung" page fell back to "Übersicht" because the view was
   missing from the dashboard's `viewMeta` registry. Confirmed in the running binary.
+- **A drifted TLS pair could take the gateway offline without saying so.** The unit loaded its key as a
+  systemd credential from `/etc/vgt/gedefense/tls` but pinned the certificate in
+  `/etc/vgt/gedefense-access`. Once a renewal replaced one half, the gateway exited with
+  `tls: private key does not match public key`; systemd's restart burst limit tripped after four
+  attempts and the operator's browser showed `ERR_CONNECTION_REFUSED` while the control plane stayed
+  healthy. A root pre-step now copies the certificate from the same directory the key comes from on
+  every start, and both gates check the pairing: `scripts/validate-systemd.sh` refuses a template that
+  sources the two halves from different directories, and `scripts/validate-installed-linux-host.sh`
+  compares the public keys on the live host.
 
 **Known limits, stated plainly.** Unsigned threat feeds remain (109,144 entries from unsigned sources
 in the kernel blocklist). The release branch that treats a changed own binary as a deployment still
@@ -40,7 +97,7 @@ decides without a signed manifest; the environment override it keys on is set no
 installation, so it needs root to abuse. Monotonic time across restarts is identified but not yet
 implemented; within a running process the soak gate already uses the monotonic clock, so the exposure
 is limited to a clock jump *between* restarts. The built binary carries no commit stamp, so its
-provenance is verified by content comparison rather than by the artifact itself.
+proven provenance is verified by content comparison rather than by the artifact itself.
 
 ## 4.2.3 - Startup Self-Check with Self-Healing, Desktop Status Socket and Qt6 Tray
 

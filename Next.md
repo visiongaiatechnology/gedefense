@@ -1,5 +1,48 @@
 # Current Task
 
+WP-Kontrollzentrum-Karte in die Linux-Übersicht übernehmen. Abgeschlossen am 17.10.2026.
+
+## Completed
+
+- WP-Design mit identischen 176 Länderpfaden, Farben, Bézier-Bögen, animierten Lichtpunkten, Sonar-Markern, Clustern und Sovereign Host Hub umgesetzt.
+- Sechsspaltige Telemetrietabelle: Zeit, Quell-IP/Geo, Zielpfad, Erkennungsmodul, Aktion, ASN/Organisation. Filter für alle Vektoren, geblockte Quellen und Abtastungen; gemeinsame Detailansicht und Hervorhebung.
+- Echte Linux-API beibehalten, snake_case-Felder normalisiert, ASN/Organisation mit Ereignissen verbunden, Paketquellen ohne Incident ebenfalls gelistet.
+- Lokale Module explizit im Go-Server freigegeben. Begrenzte Quellen/Animationen, Abbruch/Deadline, Pause, Sichtbarkeitssteuerung, Tastatur und reduzierte Bewegung umgesetzt. Keine externen Assets oder neuen Bibliotheken.
+- Verifiziert: 37 Browserchecks mit echtem Chrome, Desktop 1600 px / Tablet 1000 px / Mobile 390 px, vier Sprachen, tatsächliche Photon-Bewegung, Cluster, Filter, Fokus/Escape, Pause/Fortsetzen, verborgene Ansicht, leere Daten, unbekannter Host, XSS-Text, Fehler und Wiederabruf. Keine unbehandelten Browserexceptions.
+- Linux/WSL: `go vet ./...` und vollständiges `go test -count=1 ./...` grün (250,796 s). Finale Asset-/Modulverträge nochmals grün (0,240 s); `go build` erfolgreich, Prüfbinary nur unter `/tmp/gedefense-control-map-check`.
+- Vorhandene Dashboard-Regressionsfixture B2 grün (4/4). JavaScript-Syntax geprüft. 176/176 WP-Länderpfade exakt identisch.
+- Betroffene Dateien im vorhandenen GitHub-Upload-Spiegel synchronisiert; betroffene Hash-Einträge in Quell-/Uploadmanifesten aktualisiert.
+
+## Current State
+
+Lokale Implementierung vollständig, Status PLATIN für diesen Änderungsumfang. Kein Produktionsdeploy, keine Dienstneustarts, keine Änderung an Backend-Erkennung oder Kinetic-Karte. Browsernachweise verwenden klar abgegrenzte Testtelemetrie; keine Aussage über die aktuell deployte Oberfläche. Der benannte Quellordner trug bereits `VERSION=4.2.4`; die Versionsnummer wurde nicht verändert. Historische Betriebsübergabe unten unverändert erhalten.
+
+## Next
+
+Kein Implementierungsschritt für diesen Auftrag offen. Ein Deployment ist ein gesonderter Betreiberauftrag.
+
+## Relevant Files
+
+- `control/web/overview-map.js`: Lebenszyklus, Tabelle, Filter, Detailansicht.
+- `control/web/overview-map-data.js`: begrenzte Transportnormalisierung und Quellen-/Ereigniszuordnung.
+- `control/web/overview-map-renderer.js`: lokale SVG-Geometrie, Cluster, Animation und Zoom/Pan.
+- `control/web/overview-map.css`, `control/web/index.html`, `control/web/i18n.js`, `control/web/api.js`.
+- `control/server.go`: explizite Asset-Freigabe; `control/overview_map.go`: unveränderter Datenvertrag.
+- `qa/overview-map-check.mjs`: reproduzierbare Browserprüfung (startet Fixture-Server selbst).
+- `qa/overview-map-results/{report.json,desktop.png,tablet.png,mobile.png}`: Prüfnachweise.
+- `ARCHITECTURE.md`: Modulzuständigkeiten am Dokumentende.
+
+## Important Decisions
+
+- Daten aus `/api/v1/overview/threat-map`; keine erfundenen Geo-Positionen oder Zielbögen.
+- WP-Look auf Linux-Daten adaptiert. Bestehende lokal vendorte MIT-Weltkarte unverändert genutzt.
+- API-Ausfall bleibt sichtbar; letzter erfolgreicher Stand wird als veraltet markiert. Dynamische Telemetrie ausschließlich über DOM/textContent.
+- Spiegel nur für betroffene Dateien synchronisiert, fremde Änderungen und historische Betriebsentscheidungen erhalten. Kein Git-Repository im Arbeitswurzelverzeichnis.
+
+---
+
+# Current Task
+
 ## ✅ F-01 GESCHLOSSEN (16.10.) — Dienstidentität des Gateways getrennt
 
 **Live verifiziert:** Das internetnahe Gateway läuft als eigenes Konto `gedefense-access`, ohne

@@ -73,6 +73,12 @@ func (s *APIServer) runKineticRuntime(ctx context.Context) {
 	healthFailures := 0
 	var lastHealth *CoreIngressHealth
 
+	// Ask for the enforcement path's own counters before the first tick. The startup self-check runs
+	// immediately after the server is ready and treats "the sensor has not been verified yet" as a
+	// blocking module; without this first probe a restart could be reported as unhealthy merely
+	// because the sensor was one second younger than the checklist.
+	s.probeIngressHealth(&eventFailures, &healthFailures, &lastHealth)
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -106,24 +112,7 @@ func (s *APIServer) runKineticRuntime(ctx context.Context) {
 			}
 			eventFailures = 0
 		case <-healthTick.C:
-			current, err := s.core.IngressHealth()
-			if err != nil {
-				healthFailures++
-				status, selfTest, reason := evaluateKineticSensorHealth(eventFailures, healthFailures, lastHealth, nil)
-				s.setKineticSensorState(status, selfTest, fmt.Sprintf("%s; health query: %v", reason, err))
-				continue
-			}
-			healthFailures = 0
-			s.state.UpdateKineticTelemetry(func(t *KineticTelemetry) {
-				t.KernelEventsEmitted = current.EventsEmitted
-				t.KernelRingDrops = current.RingDrops
-				t.KernelTrackInsertFailures = current.TrackInsertFailures
-				t.IngressMode = current.Mode
-			})
-			status, selfTest, reason := evaluateKineticSensorHealth(eventFailures, healthFailures, lastHealth, &current)
-			s.setKineticSensorState(status, selfTest, reason)
-			copyHealth := current
-			lastHealth = &copyHealth
+			s.probeIngressHealth(&eventFailures, &healthFailures, &lastHealth)
 		case now := <-sweep.C:
 			// The Kinetic runtime owns only detector bucket ageing here. Temporary
 			// network-policy expiry is owned by the single central expiry worker in
@@ -132,6 +121,30 @@ func (s *APIServer) runKineticRuntime(ctx context.Context) {
 			s.kinetic.Sweep(now.UTC())
 		}
 	}
+}
+
+// probeIngressHealth asks the core for the enforcement path's own counters and republishes the
+// verdict. It runs once before the ticker loop, so the startup self-check sees a verified sensor on
+// its first pass instead of reporting a sensor that is merely a second younger than the checklist.
+func (s *APIServer) probeIngressHealth(eventFailures, healthFailures *int, lastHealth **CoreIngressHealth) {
+	current, err := s.core.IngressHealth()
+	if err != nil {
+		(*healthFailures)++
+		status, selfTest, reason := evaluateKineticSensorHealth(*eventFailures, *healthFailures, *lastHealth, nil)
+		s.setKineticSensorState(status, selfTest, fmt.Sprintf("%s; health query: %v", reason, err))
+		return
+	}
+	*healthFailures = 0
+	s.state.UpdateKineticTelemetry(func(t *KineticTelemetry) {
+		t.KernelEventsEmitted = current.EventsEmitted
+		t.KernelRingDrops = current.RingDrops
+		t.KernelTrackInsertFailures = current.TrackInsertFailures
+		t.IngressMode = current.Mode
+	})
+	status, selfTest, reason := evaluateKineticSensorHealth(*eventFailures, *healthFailures, *lastHealth, &current)
+	s.setKineticSensorState(status, selfTest, reason)
+	copyHealth := current
+	*lastHealth = &copyHealth
 }
 
 // evaluateKineticSensorHealth keeps the two facts a sensor reports apart.

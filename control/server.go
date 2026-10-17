@@ -200,6 +200,8 @@ func NewAPIServer(cfg Config, state *State, core *CoreClient, feeds *FeedManager
 	mux.HandleFunc("GET /api/v1/kinetic/events", s.auth(s.getKineticEvents))
 	mux.HandleFunc("GET /api/v1/kinetic/sources", s.auth(s.getKineticSources))
 	mux.HandleFunc("GET /api/v1/kinetic/map", s.auth(s.getKineticMap))
+	// The overview map reads every detection path at once, not just the packet path: see overview_map.go.
+	mux.HandleFunc("GET /api/v1/overview/threat-map", s.auth(s.overviewThreatMap))
 	mux.HandleFunc("POST /api/v1/kinetic/reconcile", s.auth(s.reconcileKinetic))
 	mux.HandleFunc("POST /api/v1/xdr/incidents/{id}/ack", s.auth(s.ackIncident))
 	mux.HandleFunc("GET /api/v1/xdr/attack-stories", s.auth(s.attackStories))
@@ -865,11 +867,18 @@ var webAssetAllowlist = map[string]bool{
 	"i18n.js":            true,
 	"kinetic.js":         true,
 	"l7-integration.js":  true, "l7.js": true,
-	"operations.js":   true,
-	"protection.js":   true,
-	"render.js":       true,
-	"threat-intel.js": true,
-	"v4.css":          true,
+	"operations.js": true,
+	// The overview threat map: its module and its stylesheet. Both are part of the dashboard surface,
+	// so they belong in the allowlist - the exhaustive test refuses a file that is embedded but not
+	// reachable, and equally a file that is reachable but not embedded.
+	"overview-map.css":         true,
+	"overview-map.js":          true,
+	"overview-map-data.js":     true,
+	"overview-map-renderer.js": true,
+	"protection.js":            true,
+	"render.js":                true,
+	"threat-intel.js":          true,
+	"v4.css":                   true,
 	"vendor/jsvectormap/js/components/base.js":                  true,
 	"vendor/jsvectormap/js/components/concerns/interactable.js": true,
 	"vendor/jsvectormap/js/components/line.js":                  true,

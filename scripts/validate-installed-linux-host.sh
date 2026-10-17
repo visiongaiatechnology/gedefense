@@ -3,6 +3,8 @@
 set -Eeuo pipefail
 
 readonly cert=/etc/vgt/gedefense/tls/access.crt
+readonly tls_key=/etc/vgt/gedefense/tls/access.key
+readonly gateway_cert=/etc/vgt/gedefense-access/access.crt
 readonly token=/var/lib/vgt/gedefense/dashboard.token
 readonly core_socket=/run/vgt-gedefense/core.sock
 readonly interface=${1:-$(ip -4 route show default | awk 'NR==1{for(i=1;i<=NF;i++)if($i=="dev"){print $(i+1);exit}}')}
@@ -22,7 +24,16 @@ done
 
 [[ -S $core_socket && ! -L $core_socket ]] || fail 'authenticated core socket is unavailable'
 [[ -f $cert && ! -L $cert ]] || fail 'TLS certificate is unavailable'
+[[ -f $tls_key && ! -L $tls_key ]] || fail 'TLS private key is unavailable'
+[[ -f $gateway_cert && ! -L $gateway_cert ]] || fail 'gateway certificate copy is unavailable'
 [[ -f $token && ! -L $token ]] || fail 'dashboard token is unavailable'
+# The gateway reads its key as a systemd credential from the TLS directory and its certificate from the
+# gateway directory. Those two halves are written by different steps, so a drifted pair only shows up as a
+# dead listener ("ERR_CONNECTION_REFUSED") long after the fact. Assert the pairing while both are intact.
+command -v openssl >/dev/null 2>&1 || fail 'openssl is required for the TLS pairing check'
+[[ $(openssl x509 -in "$gateway_cert" -noout -pubkey | openssl sha256) == \
+   "$(openssl pkey -in "$tls_key" -pubout | openssl sha256)" ]] ||
+  fail 'gateway certificate and private key do not match'
 curl --fail --silent --show-error --max-time 3 http://127.0.0.1:9844/bootz >/dev/null || fail 'control boot gate failed'
 curl --fail --silent --show-error --max-time 3 --cacert "$cert" https://127.0.0.1:9843/gateway/livez >/dev/null || fail 'TLS gateway gate failed'
 

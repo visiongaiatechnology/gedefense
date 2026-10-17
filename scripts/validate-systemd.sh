@@ -50,6 +50,9 @@ for path in \
 done
 install -m 0755 /usr/bin/mount "${TEST_ROOT}/bin/mount"
 install -m 0755 /usr/bin/bash "${TEST_ROOT}/usr/bin/bash"
+# The access unit runs privileged pre-steps with /usr/bin/install; systemd-analyze verify rejects a unit
+# whose Exec lines are missing from the fake root, so the helper has to be present there too.
+install -m 0755 /usr/bin/install "${TEST_ROOT}/usr/bin/install"
 
 systemd-analyze verify --recursive-errors=no --root="$TEST_ROOT" \
   gedefense-bpffs.service \
@@ -57,6 +60,22 @@ systemd-analyze verify --recursive-errors=no --root="$TEST_ROOT" \
   gedefense-control.service \
   gedefense-access.service \
   gedefense-astraeaos-provision.service
+
+access_unit=$(
+  <"$UNIT_DIR/gedefense-access.service"
+)
+credential_key=$(sed -n 's/^LoadCredential=tls-key:\(.*\)$/\1/p' <<<"$access_unit")
+if [[ -z $credential_key ]]; then
+  printf 'gedefense-access does not load its TLS key as a systemd credential.\n' >&2
+  exit 1
+fi
+# The key arrives as a credential from the TLS directory while the certificate is pinned by path. If the
+# two halves are sourced from different directories they drift apart on the next renewal and the gateway
+# dies with "tls: private key does not match public key" - a listener that silently stops answering.
+if ! grep -qF -- "$(dirname "$credential_key")/access.crt" <<<"$access_unit"; then
+  printf 'gedefense-access sources its certificate outside %s.\n' "$(dirname "$credential_key")" >&2
+  exit 1
+fi
 
 gaia_access_dropin=$(
   <"$UNIT_DIR/gedefense-access.service.d/10-astraeaos-loopback.conf"

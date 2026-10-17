@@ -88,9 +88,72 @@ type startupModule struct {
 	heal        func(context.Context) error
 }
 
+// startupIdentity separates what is protected (the host) from what protects it (the release).
+//
+// The two used to be one string. Installing an update - the most routine event on a defended host -
+// therefore changed the "host" fingerprint, invalidated the qualification and sent every restart down
+// the twenty-minute canary ladder, even though the self-check had just verified every module on the
+// very same machine. What a qualification has to cover is the thing being defended: a new kernel, a
+// renamed interface or a different node. A new release on that host is a planned change that the
+// self-check re-verifies module by module, and it is exactly the case that must not crawl.
+type startupIdentity struct {
+	Host    string
+	Release string
+}
+
+func (i startupIdentity) String() string {
+	switch {
+	case i.Host == "":
+		return ""
+	case i.Release == "":
+		return i.Host
+	}
+	return "release=" + i.Release + "; " + i.Host
+}
+
+func (i startupIdentity) known() bool { return i.Host != "" }
+
+// parseStartupIdentity reads a stored qualification. Files written before the split carry only the
+// combined string, so the release element is lifted out of it to recover the host part; an operator
+// who upgrades into this version keeps their qualification instead of re-qualifying by accident.
+func parseStartupIdentity(host, release, legacy string) startupIdentity {
+	if host != "" {
+		return startupIdentity{Host: host, Release: release}
+	}
+	release = ""
+	parts := make([]string, 0, 4)
+	for _, part := range strings.Split(legacy, "; ") {
+		part = strings.TrimSpace(part)
+		switch {
+		case part == "":
+		case strings.HasPrefix(part, "release="):
+			release = strings.TrimPrefix(part, "release=")
+		default:
+			parts = append(parts, part)
+		}
+	}
+	if len(parts) == 0 {
+		return startupIdentity{}
+	}
+	return startupIdentity{Host: strings.Join(parts, "; "), Release: release}
+}
+
+// startupQualification is the on-disk record. Host and Release are the fields that decide; Fingerprint
+// stays for operators and for backwards compatibility with files written by earlier releases.
+type startupQualification struct {
+	Fingerprint string    `json:"fingerprint"`
+	Host        string    `json:"host"`
+	Release     string    `json:"release"`
+	QualifiedAt time.Time `json:"qualified_at"`
+}
+
+func (q startupQualification) identity() startupIdentity {
+	return parseStartupIdentity(q.Host, q.Release, q.Fingerprint)
+}
+
 type StartupSupervisor struct {
 	modules      []startupModule
-	fingerprint  func(context.Context) (string, error)
+	identity     func(context.Context) (startupIdentity, error)
 	reArm        func(reason string) (ReleaseStatus, error)
 	status       func() ReleaseStatus
 	reportSink   func(StartupReport)
@@ -189,12 +252,12 @@ func (s *StartupSupervisor) watch(ctx context.Context) {
 			// The platform is protecting. Being in this state is what "qualified" means, so the
 			// fingerprint is recorded here and not only when the supervisor armed it itself - the
 			// operator's own promotion has to count as a qualification too.
-			if fingerprint, err := s.fingerprint(ctx); err == nil && fingerprint != "" {
-				if stored, ok := s.readQualification(); !ok || stored != fingerprint {
-					if err := s.writeQualification(fingerprint); err != nil {
+			if current, err := s.identity(ctx); err == nil && current.known() {
+				if stored, ok := s.readQualification(); !ok || stored.identity() != current {
+					if err := s.writeQualification(current); err != nil {
 						log.Printf("startup self-check: qualification could not be updated: %v", err)
 					} else {
-						log.Printf("startup self-check: host qualified while enforcing (%s)", fingerprint)
+						log.Printf("startup self-check: host qualified while enforcing (%s)", current)
 					}
 				}
 			}
@@ -301,15 +364,15 @@ func (s *StartupSupervisor) publish(report StartupReport) {
 }
 
 func (s *StartupSupervisor) arm(ctx context.Context, report StartupReport) {
-	fingerprint, err := s.fingerprint(ctx)
+	current, err := s.identity(ctx)
 	if err != nil {
-		log.Printf("startup self-check: host fingerprint unavailable, keeping the normal ladder: %v", err)
+		log.Printf("startup self-check: host identity unavailable, keeping the normal ladder: %v", err)
 	}
 	qualified, known := s.readQualification()
-	decision, reason := decideStartupReArm(s.status(), fingerprint, qualified, known, s.lastArm, s.now(), s.armInterval)
+	decision, reason := decideStartupReArm(s.status(), current, qualified, known, s.lastArm, s.now(), s.armInterval)
 	report.ReArm = decision
 	report.ReArmReason = reason
-	report.Fingerprint = fingerprint
+	report.Fingerprint = current.String()
 	s.publish(report)
 
 	switch decision {
@@ -321,12 +384,12 @@ func (s *StartupSupervisor) arm(ctx context.Context, report StartupReport) {
 		s.mu.Lock()
 		s.lastArm = s.now()
 		s.mu.Unlock()
-		if fingerprint != "" {
-			if err := s.writeQualification(fingerprint); err != nil {
+		if current.known() {
+			if err := s.writeQualification(current); err != nil {
 				log.Printf("startup self-check: qualification could not be persisted: %v", err)
 			}
 		}
-		log.Printf("startup self-check: protection re-armed immediately; the host is the one that was qualified")
+		log.Printf("startup self-check: protection re-armed immediately; %s", reason)
 	case startupReArmLadder:
 		log.Printf("startup self-check: %s - using the visible canary ladder instead of an immediate re-arm", reason)
 	case startupReArmEmergencyStop:
@@ -338,7 +401,12 @@ func (s *StartupSupervisor) arm(ctx context.Context, report StartupReport) {
 
 // decideStartupReArm is the whole safety question in one pure function, so it is testable and so
 // nobody has to read the surrounding control flow to answer "why did it not arm".
-func decideStartupReArm(status ReleaseStatus, fingerprint, qualified string, known bool, lastArm, now time.Time, armInterval time.Duration) (string, string) {
+//
+// The order is the safety argument. Nothing is decided before the kernel enforcement is verified and
+// the gates are satisfied, and a host that is not the qualified one still has to walk the visible
+// canary ladder. What changed is only the last step: an update on that same host is re-armed at once,
+// because the self-check has just re-verified every module against it.
+func decideStartupReArm(status ReleaseStatus, current startupIdentity, qualified startupQualification, known bool, lastArm, now time.Time, armInterval time.Duration) (string, string) {
 	if status.EmergencyStop {
 		return startupReArmEmergencyStop, "emergency stop is active; only the operator re-arms the platform"
 	}
@@ -351,46 +419,58 @@ func decideStartupReArm(status ReleaseStatus, fingerprint, qualified string, kno
 	if len(status.Blockers) > 0 {
 		return startupReArmBlocked, "release gates are not satisfied: " + status.Blockers[0]
 	}
-	if fingerprint == "" {
-		return startupReArmLadder, "host fingerprint is unavailable; the host has to be re-qualified"
+	if !current.known() {
+		return startupReArmLadder, "the host identity is unavailable; the host has to be re-qualified"
 	}
-	if !known || qualified == "" || qualified != fingerprint {
-		// A new kernel, a new interface or a new release changes what the platform is protecting.
+	stored := qualified.identity()
+	if !known || !stored.known() {
+		// Never qualified, or a qualification from before this platform was trusted at all.
+		return startupReArmLadder, "this host has not been qualified yet; canary re-qualification required"
+	}
+	if stored.Host != current.Host {
+		// A new kernel, a new interface or a different node changes what the platform is protecting.
 		// That is the case the canary exists for, and it stays visible and slow on purpose.
-		return startupReArmLadder, "host fingerprint changed since the last qualified start; canary re-qualification required"
+		return startupReArmLadder, "the host changed since the last qualified start (kernel, node or interface); canary re-qualification required"
 	}
 	if !lastArm.IsZero() && now.Sub(lastArm) < armInterval {
 		return startupReArmBlocked, fmt.Sprintf("an automatic re-arm happened %s ago", now.Sub(lastArm).Round(time.Second))
 	}
+	if stored.Release != current.Release {
+		return startupReArmArmed, fmt.Sprintf(
+			"release %s replaced %s on the qualified host and the startup self-check verified every module",
+			current.Release, stored.Release)
+	}
 	return startupReArmArmed, "all modules verified and the host is unchanged"
 }
 
-func (s *StartupSupervisor) readQualification() (string, bool) {
+func (s *StartupSupervisor) readQualification() (startupQualification, bool) {
 	if s.qualifyPath == "" {
-		return "", false
+		return startupQualification{}, false
 	}
 	raw, err := os.ReadFile(s.qualifyPath)
 	if err != nil {
-		return "", false
+		return startupQualification{}, false
 	}
-	var stored struct {
-		Fingerprint string    `json:"fingerprint"`
-		QualifiedAt time.Time `json:"qualified_at"`
-	}
+	var stored startupQualification
 	if err := json.Unmarshal(raw, &stored); err != nil {
-		return "", false
+		return startupQualification{}, false
 	}
-	return stored.Fingerprint, stored.Fingerprint != ""
+	if !stored.identity().known() {
+		return startupQualification{}, false
+	}
+	return stored, true
 }
 
-func (s *StartupSupervisor) writeQualification(fingerprint string) error {
+func (s *StartupSupervisor) writeQualification(identity startupIdentity) error {
 	if s.qualifyPath == "" {
 		return nil
 	}
-	payload, err := json.Marshal(struct {
-		Fingerprint string    `json:"fingerprint"`
-		QualifiedAt time.Time `json:"qualified_at"`
-	}{Fingerprint: fingerprint, QualifiedAt: s.now().UTC()})
+	payload, err := json.Marshal(startupQualification{
+		Fingerprint: identity.String(),
+		Host:        identity.Host,
+		Release:     identity.Release,
+		QualifiedAt: s.now().UTC(),
+	})
 	if err != nil {
 		return err
 	}
