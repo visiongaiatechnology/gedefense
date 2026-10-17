@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="/assets/app.css">
       <link rel="stylesheet" href="/assets/vendor/jsvectormap/jsvectormap.css">
   <link rel="stylesheet" href="/assets/v4.css">
+    <link rel="stylesheet" href="/assets/overview-map.css">
   <script type="module" src="/assets/app.js"></script>
 </head>
 <body>
@@ -120,7 +121,7 @@
             <small id="sidebarMode">OBSERVE</small>
           </div>
         </div>
-        <span class="powered-line">GeDefense <span id="versionText">4.2.4</span></span>
+        <span class="powered-line">GeDefense <span id="versionText">4.2.5</span></span>
         <small class="vgt-credit" data-i18n="brand.powered">powered by VisionGaiaTechnology</small>
       </div>
     </aside>
@@ -169,7 +170,7 @@
         <section class="view active" data-page="overview" aria-labelledby="overviewHeading">
           <div class="hero-cockpit">
             <div class="hero-copy">
-              <p class="eyebrow" data-i18n="overview.kicker">GEDEFENSE 4.2.4 // SOVEREIGN KINETIC DEFENSE</p>
+              <p class="eyebrow" data-i18n="overview.kicker">GEDEFENSE 4.2.5 // SOVEREIGN KINETIC DEFENSE</p>
               <h2 id="overviewHeading" data-i18n="overview.heading">Abwehr, die den Host als Gesamtsystem versteht.</h2>
               <p data-i18n="overview.description">Rust-XDP, signierte Policy-Snapshots, native L7 Application Defense und Linux-XDR korrelieren Netzwerk, Prozesse, Integrität und Verhalten – lokal, nachvollziehbar und ohne Cloud-Abhängigkeit.</p>
               <div class="hero-state">
@@ -195,6 +196,114 @@
               </div>
             </div>
           </div>
+
+          <!-- ===================================================================
+               OVERVIEW THREAT MAP (GLASS 2100)
+               The large, animated map of the overview page. It shows every detection path at once -
+               packet level and the incident stream (layer 7, post-exploitation, correlation) - unlike
+               the focused map on the Kinetic page, and it draws arcs towards this host's real position.
+               The Kinetic page keeps its own map untouched.
+               =================================================================== -->
+          <article class="glass-panel overview-threat-panel" id="overviewThreatPanel">
+            <header class="overview-threat-header">
+              <div class="overview-threat-title">
+                <span class="overview-threat-icon" aria-hidden="true">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
+                </span>
+                <div>
+                  <h3 data-i18n="overview.map.title">ECHTZEIT THREAT KARTE &amp; GLOBALE ANGRIFFSVEKTOREN</h3>
+                  <p class="text-muted" data-i18n="overview.map.subtitle">Paketpfad und Vorfallstrom gemeinsam, verortet über die lokale GeoIP-Matrix. Keine externe Abfrage.</p>
+                </div>
+              </div>
+              <div class="overview-threat-badges">
+                <span class="overview-threat-live" id="overviewMapStatus" role="status" aria-live="polite">TELEMETRIE WIRD GELADEN</span>
+                <span class="overview-threat-note" id="overviewMapGeo" title="GeoIP-Matrix"></span>
+                <!-- The map library wires the zoom controls during construction, so they have to exist
+                     before the map is built. Without them it creates its own raw element instead. -->
+                <span class="overview-threat-zoom" role="toolbar" aria-label="Kartensteuerung">
+                  <button type="button" id="overviewMapZoomIn" title="vergrößern" aria-label="Karte vergrößern">+</button>
+                  <button type="button" id="overviewMapZoomOut" title="verkleinern" aria-label="Karte verkleinern">−</button>
+                  <button type="button" id="overviewMapPause" aria-pressed="false" data-i18n-aria="overview.map.pause" aria-label="Telemetrie pausieren">Ⅱ</button>
+                  <button type="button" id="overviewMapZoomReset" title="zentrieren" aria-label="Ansicht zurücksetzen">⟲</button>
+                </span>
+              </div>
+            </header>
+
+            <div class="overview-threat-chips" role="list">
+              <div class="overview-threat-chip" role="listitem"><span data-i18n="overview.map.sources">Quellen</span><strong id="overviewMapSources">0</strong></div>
+              <div class="overview-threat-chip" role="listitem"><span data-i18n="overview.map.placed">verortet</span><strong id="overviewMapPlaced">0</strong></div>
+              <div class="overview-threat-chip danger" role="listitem"><span data-i18n="overview.map.blocked">geblockt</span><strong id="overviewMapBlocked">0</strong></div>
+              <div class="overview-threat-chip" role="listitem"><span data-i18n="overview.map.countries">Länder</span><strong id="overviewMapCountries">0</strong></div>
+              <div class="overview-threat-chip area-kinetic" role="listitem"><span data-i18n="overview.map.kinetic">Kinetic</span><strong id="overviewMapKinetic">0</strong></div>
+              <div class="overview-threat-chip area-l7" role="listitem"><span data-i18n="overview.map.l7">L7</span><strong id="overviewMapL7">0</strong></div>
+              <div class="overview-threat-chip area-xdr" role="listitem"><span data-i18n="overview.map.xdr">XDR</span><strong id="overviewMapXdr">0</strong></div>
+            </div>
+
+            <div class="overview-threat-stage">
+              <div id="overviewThreatMap" class="overview-threat-canvas" aria-label="Weltkarte der Angriffsquellen mit Bögen zum eigenen Standort"></div>
+              <p class="overview-threat-empty" id="overviewMapEmpty" hidden></p>
+              <div class="overview-threat-clean" id="overviewMapClean" hidden>
+                <span class="overview-threat-clean-pulse" aria-hidden="true"></span>
+                <div><strong data-i18n="overview.map.calmTitle">DERZEIT KEINE ANGRIFFE IM BEOBACHTUNGSFENSTER</strong>
+                  <small data-i18n="overview.map.calmBody">Die Weltkarte steht bereit. Erkannte Quellen erscheinen hier.</small></div>
+              </div>
+              <div class="overview-map-legend" aria-label="Kartenlegende">
+                <span><i class="blocked" aria-hidden="true"></i><span data-i18n="overview.map.legendBlocked">Kritisch / Geblockt</span></span>
+                <span><i class="suspicious" aria-hidden="true"></i><span data-i18n="overview.map.legendSuspicious">Abtastung / Warnung</span></span>
+                <span><i class="tracked" aria-hidden="true"></i><span data-i18n="overview.map.legendObserved">Erfasst / Monitored</span></span>
+                <span><i class="origin" aria-hidden="true"></i><span data-i18n="overview.map.legendOrigin">Souveräner Server-Hub</span></span>
+              </div>
+              <div class="overview-threat-card" id="overviewMapCard" hidden role="dialog" data-i18n-aria="overview.map.details" aria-label="Details zur Quelle">
+                <div class="overview-threat-card-head">
+                  <span class="overview-threat-card-flag" id="overviewCardFlag" aria-hidden="true">—</span>
+                  <strong class="overview-threat-card-ip" id="overviewCardIP">—</strong>
+                  <span class="overview-threat-card-badge" id="overviewCardBadge"></span>
+                  <button type="button" class="overview-threat-card-close" id="overviewCardClose" data-i18n-aria="overview.map.close" aria-label="Details schließen">×</button>
+                </div>
+                <dl class="overview-threat-card-body">
+                  <div><dt data-i18n="overview.map.country">Land</dt><dd id="overviewCardCountry">—</dd></div>
+                  <div><dt data-i18n="overview.map.network">Netz</dt><dd id="overviewCardAsn">—</dd></div>
+                  <div><dt data-i18n="overview.map.target">Ziel</dt><dd id="overviewCardPath">—</dd></div>
+                  <div><dt data-i18n="overview.map.finding">Befund</dt><dd id="overviewCardDetail">—</dd></div>
+                  <div><dt data-i18n="overview.map.seen">Gesehen</dt><dd id="overviewCardSeen">—</dd></div>
+                </dl>
+                <div class="overview-threat-card-cluster" id="overviewCardCluster" hidden></div>
+              </div>
+            </div>
+            <div class="overview-threat-feed" id="overviewMapFeed" role="region" aria-labelledby="overviewMapStreamTitle">
+              <div class="overview-threat-stream-header">
+                <div class="overview-stream-title">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+                  <h4 id="overviewMapStreamTitle" data-i18n="overview.map.streamTitle">ECHTZEIT-TELEMETRIE &amp; ANOMALIE-STREAM</h4>
+                  <span class="overview-stream-counter" id="overviewMapEventCount"></span>
+                </div>
+                <div class="overview-stream-filters" role="group" data-i18n-aria="overview.map.filters" aria-label="Telemetrie filtern">
+                  <button type="button" class="overview-filter-pill" data-filter="all" aria-pressed="true" data-i18n="overview.map.filterAll">Alle Vektoren</button>
+                  <button type="button" class="overview-filter-pill" data-filter="blocked" aria-pressed="false" data-i18n="overview.map.filterBlocked">Nur Geblockt</button>
+                  <button type="button" class="overview-filter-pill" data-filter="suspicious" aria-pressed="false" data-i18n="overview.map.filterSuspicious">Nur Abtastungen</button>
+                </div>
+              </div>
+              <div class="overview-threat-table-wrapper" tabindex="0" role="region" aria-labelledby="overviewMapStreamTitle">
+                <table class="overview-threat-stream-table" aria-labelledby="overviewMapStreamTitle">
+                  <thead><tr>
+                    <th scope="col" data-i18n="overview.map.columnTime">ZEIT</th>
+                    <th scope="col" data-i18n="overview.map.columnSource">QUELL-IP &amp; GEO</th>
+                    <th scope="col" data-i18n="overview.map.columnTarget">ZIELPFAD (TARGET URI)</th>
+                    <th scope="col" data-i18n="overview.map.columnModule">ERKENNUNGSMODUL</th>
+                    <th scope="col" data-i18n="overview.map.columnAction">AKTION</th>
+                    <th scope="col" data-i18n="overview.map.columnNetwork">ASN &amp; ORGANISATION (LOKAL)</th>
+                  </tr></thead>
+                  <tbody id="overviewMapFeedList"></tbody>
+                </table>
+              </div>
+              <p class="overview-threat-feed-empty" id="overviewMapFeedEmpty" hidden></p>
+              <div class="overview-threat-feed-head">
+                <span class="overview-threat-feed-host" id="overviewMapHost" data-i18n="overview.map.hostPending">Host wird bestimmt …</span>
+                <span id="overviewMapUpdated"></span>
+              </div>
+            </div>
+            <footer class="overview-threat-footer"><span id="overviewMapOrigin" data-i18n="overview.map.originPending">Standort des Hosts wird bestimmt …</span></footer>
+          </article>
 
           <div class="defense-telemetry node-board" aria-label="Knotenzustand und Direktzugriffe">
             <div class="telemetry-group">

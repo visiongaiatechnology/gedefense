@@ -207,6 +207,8 @@ export const getKineticLive = (window = 'live', limit = 100, state = 'all') => a
 export const getKineticEvents = () => api('/api/v1/kinetic/events');
 export const getKineticSources = (limit = 100) => api(`/api/v1/kinetic/sources?limit=${encodeURIComponent(limit)}`);
 export const getKineticMap = () => api('/api/v1/kinetic/map');
+// The overview map reads every detection path at once instead of the packet path alone.
+export const getOverviewThreatMap = (limit = 250, events = 120, signal) => api(`/api/v1/overview/threat-map?limit=${encodeURIComponent(limit)}&events=${encodeURIComponent(events)}`, { signal });
 export const reconcileKinetic = () => api('/api/v1/kinetic/reconcile', { method: 'POST', json: {} });
 export const getThreatIntelStatus = () => api('/api/v1/feeds/status');
 export const applyFeeds = () => api('/api/v1/feeds/apply', { method: 'POST', json: {} });

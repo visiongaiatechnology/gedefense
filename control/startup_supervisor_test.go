@@ -20,48 +20,75 @@ import (
 // platform may now answer itself, and which it may not.
 func TestStartupReArmDecision(t *testing.T) {
 	now := time.Unix(1_800_000_000, 0).UTC()
-	const fingerprint = "kernel=7.0.0; release=4.2.4; node=n; interface=ens6"
+	const host = "kernel=7.0.0; node=n; interface=ens6"
+	current := startupIdentity{Host: host, Release: "4.2.4"}
+	qualified := startupQualification{
+		Fingerprint: current.String(), Host: host, Release: "4.2.4",
+		QualifiedAt: now.Add(-time.Hour),
+	}
 	verified := ReleaseStatus{Phase: ReleasePhaseDegraded, KernelPolicyState: "verified-enforce", FailSafeVerified: true}
 
 	cases := []struct {
-		name        string
-		status      ReleaseStatus
-		fingerprint string
-		qualified   string
-		known       bool
-		lastArm     time.Time
-		want        string
-		wantReason  string
+		name       string
+		status     ReleaseStatus
+		current    startupIdentity
+		qualified  startupQualification
+		known      bool
+		lastArm    time.Time
+		want       string
+		wantReason string
 	}{
 		{"emergency stop is never overridden", func() ReleaseStatus {
 			s := verified
 			s.EmergencyStop = true
 			return s
-		}(), fingerprint, fingerprint, true, time.Time{}, startupReArmEmergencyStop, "emergency stop"},
+		}(), current, qualified, true, time.Time{}, startupReArmEmergencyStop, "emergency stop"},
 		{"an enforcing platform needs nothing", func() ReleaseStatus {
 			s := verified
 			s.Phase = ReleasePhaseEnforce
 			return s
-		}(), fingerprint, fingerprint, true, time.Time{}, startupReArmArmed, "already"},
+		}(), current, qualified, true, time.Time{}, startupReArmArmed, "already"},
 		{"unverified kernel enforcement blocks", func() ReleaseStatus {
 			s := verified
 			s.KernelPolicyState = "unverified"
 			return s
-		}(), fingerprint, fingerprint, true, time.Time{}, startupReArmBlocked, "not verified"},
+		}(), current, qualified, true, time.Time{}, startupReArmBlocked, "not verified"},
 		{"a failed gate blocks", func() ReleaseStatus {
 			s := verified
 			s.Blockers = []string{"mandatory evidence ledger is unavailable"}
 			return s
-		}(), fingerprint, fingerprint, true, time.Time{}, startupReArmBlocked, "gates"},
-		{"an unknown host goes through the ladder", verified, fingerprint, "", false, time.Time{}, startupReArmLadder, "fingerprint"},
-		{"a changed kernel goes through the ladder", verified, fingerprint, "kernel=6.9.0; release=4.2.4; node=n; interface=ens6", true, time.Time{}, startupReArmLadder, "changed"},
-		{"a missing fingerprint goes through the ladder", verified, "", fingerprint, true, time.Time{}, startupReArmLadder, "fingerprint"},
-		{"the rate limit prevents flapping", verified, fingerprint, fingerprint, true, now.Add(-30 * time.Second), startupReArmBlocked, "ago"},
-		{"the qualified host is re-armed at once", verified, fingerprint, fingerprint, true, now.Add(-time.Hour), startupReArmArmed, "unchanged"},
+		}(), current, qualified, true, time.Time{}, startupReArmBlocked, "gates"},
+		{"an unknown host goes through the ladder", verified, current, startupQualification{}, false, time.Time{}, startupReArmLadder, "qualified"},
+		{"a changed kernel goes through the ladder", verified, current,
+			startupQualification{Fingerprint: "kernel=6.9.0; node=n; interface=ens6; release=4.2.4", Host: "kernel=6.9.0; node=n; interface=ens6", Release: "4.2.4"},
+			true, time.Time{}, startupReArmLadder, "changed"},
+		{"a changed interface goes through the ladder", verified, current,
+			startupQualification{Host: "kernel=7.0.0; node=n; interface=ens3", Release: "4.2.4"},
+			true, time.Time{}, startupReArmLadder, "changed"},
+		{"a missing identity goes through the ladder", verified, startupIdentity{}, qualified, true, time.Time{}, startupReArmLadder, "unavailable"},
+		{"the rate limit prevents flapping", verified, current, qualified, true, now.Add(-30 * time.Second), startupReArmBlocked, "ago"},
+		{"the qualified host is re-armed at once", verified, current, qualified, true, now.Add(-time.Hour), startupReArmArmed, "unchanged"},
+		// The case this split exists for: an update installs a new release on the host that was
+		// already qualified. The self-check has just verified every module, so there is nothing left
+		// for a twenty-minute soak to prove.
+		{"an updated release on the qualified host re-arms at once", verified,
+			startupIdentity{Host: host, Release: "4.2.5"},
+			startupQualification{Host: host, Release: "4.2.4"}, true, now.Add(-time.Hour), startupReArmArmed, "release"},
+		// The upgrade path: the stored file was written before host and release were separated, so
+		// the release has to be lifted out of the combined string. The host part matches, therefore
+		// this is an update on a qualified host - not a changed host.
+		{"a qualification written by an earlier release is understood", verified,
+			startupIdentity{Host: host, Release: "4.2.4"},
+			startupQualification{Fingerprint: "kernel=7.0.0; release=4.2.3; node=n; interface=ens6"},
+			true, now.Add(-time.Hour), startupReArmArmed, "release"},
+		{"a legacy qualification of the same release is still the same host", verified,
+			startupIdentity{Host: host, Release: "4.2.4"},
+			startupQualification{Fingerprint: "kernel=7.0.0; release=4.2.4; node=n; interface=ens6"},
+			true, now.Add(-time.Hour), startupReArmArmed, "unchanged"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			decision, reason := decideStartupReArm(tc.status, tc.fingerprint, tc.qualified, tc.known, tc.lastArm, now, 5*time.Minute)
+			decision, reason := decideStartupReArm(tc.status, tc.current, tc.qualified, tc.known, tc.lastArm, now, 5*time.Minute)
 			if decision != tc.want {
 				t.Fatalf("decision = %q, want %q (reason %q)", decision, tc.want, reason)
 			}
@@ -69,6 +96,30 @@ func TestStartupReArmDecision(t *testing.T) {
 				t.Fatalf("reason %q does not name %q", reason, tc.wantReason)
 			}
 		})
+	}
+}
+
+// TestStartupIdentitySeparatesHostFromRelease pins the classification itself, because every decision
+// above rests on it: an update must not move the host part.
+func TestStartupIdentitySeparatesHostFromRelease(t *testing.T) {
+	const host = "kernel=7.0.0; node=n; interface=ens6"
+	before := startupIdentity{Host: host, Release: "4.2.3"}
+	after := startupIdentity{Host: host, Release: "4.2.4"}
+	if before.Host != after.Host {
+		t.Fatalf("the host part moved on a release change: %q vs %q", before.Host, after.Host)
+	}
+	if before.Release == after.Release {
+		t.Fatal("the release part did not change")
+	}
+	if !strings.Contains(after.String(), "release=4.2.4") || !strings.Contains(after.String(), "interface=ens6") {
+		t.Fatalf("the rendered identity lost a component: %q", after.String())
+	}
+	legacy := parseStartupIdentity("", "", "kernel=7.0.0; release=4.2.3; node=n; interface=ens6")
+	if legacy.Host != host || legacy.Release != "4.2.3" {
+		t.Fatalf("legacy record parsed as host=%q release=%q", legacy.Host, legacy.Release)
+	}
+	if empty := parseStartupIdentity("", "", ""); empty.known() {
+		t.Fatal("an empty record claimed a known host")
 	}
 }
 
@@ -194,6 +245,59 @@ func TestStartupModulesKeepTheTrustDecisions(t *testing.T) {
 	}
 }
 
+// TestSensorCoverageModuleRepairsItselfWithTheCanonicalProbe pins the repair that keeps an update from
+// leaving the host paused: the traffic-derived sensor is re-verified with the L7 self-test instead of
+// waiting for somebody to send a request through the path.
+func TestSensorCoverageModuleRepairsItselfWithTheCanonicalProbe(t *testing.T) {
+	ctx := context.Background()
+	state := NewState("test", Config{})
+
+	// Without an L7 service the module still reports, and says why it cannot repair itself.
+	plain := modulesByName(newStartupModules(StartupDeps{State: state}))
+	coverage, ok := plain["sensor_coverage"]
+	if !ok {
+		t.Fatal("sensor_coverage module missing")
+	}
+	if coverage.heal == nil {
+		t.Fatal("sensor_coverage has no canonical repair")
+	}
+	if err := coverage.heal(ctx); err == nil {
+		t.Fatal("a missing L7 service did not fail the repair")
+	}
+
+	// With the probe attached, a PASS is the repair and a FAIL is reported as one.
+	probe := &fakeL7SelfTest{result: L7SelfTestResult{Outcome: L7SelfTestPass}}
+	withProbe := modulesByName(newStartupModules(StartupDeps{State: state, L7: probe}))["sensor_coverage"]
+	if err := withProbe.heal(ctx); err != nil {
+		t.Fatalf("a passing self-test did not repair the module: %v", err)
+	}
+	if probe.calls != 1 {
+		t.Fatalf("self-test called %d times, want 1", probe.calls)
+	}
+	probe.result = L7SelfTestResult{Outcome: L7SelfTestFail, Detail: "inspection counter did not move"}
+	if err := withProbe.heal(ctx); err == nil || !strings.Contains(err.Error(), "counter did not move") {
+		t.Fatalf("a failing self-test was not reported: %v", err)
+	}
+}
+
+type fakeL7SelfTest struct {
+	result L7SelfTestResult
+	calls  int
+}
+
+func (f *fakeL7SelfTest) RunSelfTest(context.Context) L7SelfTestResult {
+	f.calls++
+	return f.result
+}
+
+func modulesByName(modules []startupModule) map[string]startupModule {
+	index := make(map[string]startupModule, len(modules))
+	for _, module := range modules {
+		index[module.name] = module
+	}
+	return index
+}
+
 // TestStartupQualificationRoundTrip keeps the fingerprint honest across restarts: a corrupt or
 // missing file means "not qualified", never "assume it was".
 func TestStartupQualificationRoundTrip(t *testing.T) {
@@ -203,12 +307,22 @@ func TestStartupQualificationRoundTrip(t *testing.T) {
 	if _, known := supervisor.readQualification(); known {
 		t.Fatal("an absent qualification file reported a qualified host")
 	}
-	if err := supervisor.writeQualification("kernel=7.0.0"); err != nil {
+	stored := startupIdentity{Host: "kernel=7.0.0; node=n; interface=ens6", Release: "4.2.4"}
+	if err := supervisor.writeQualification(stored); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 	got, known := supervisor.readQualification()
-	if !known || got != "kernel=7.0.0" {
-		t.Fatalf("round trip = %q known=%v", got, known)
+	if !known || got.identity() != stored {
+		t.Fatalf("round trip = %+v known=%v", got, known)
+	}
+	// The record is written by hand as well: an older release wrote only the combined fingerprint, and
+	// that file has to keep its qualification instead of reading as a changed host.
+	if err := os.WriteFile(path, []byte(`{"fingerprint":"kernel=7.0.0; release=4.2.3; node=n; interface=ens6"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	legacy, known := supervisor.readQualification()
+	if !known || legacy.identity() != (startupIdentity{Host: stored.Host, Release: "4.2.3"}) {
+		t.Fatalf("legacy record = %+v known=%v", legacy, known)
 	}
 	if err := os.WriteFile(path, []byte("{not json"), 0o600); err != nil {
 		t.Fatal(err)
@@ -221,7 +335,8 @@ func TestStartupQualificationRoundTrip(t *testing.T) {
 // TestStartupRunRearmsAfterTwoCleanPasses is the behaviour the operator asked for: a restart that
 // passes its own check no longer waits for a human.
 func TestStartupRunRearmsAfterTwoCleanPasses(t *testing.T) {
-	const fingerprint = "kernel=7.0.0; release=4.2.4; node=n; interface=ens6"
+	const host = "kernel=7.0.0; node=n; interface=ens6"
+	identity := startupIdentity{Host: host, Release: "4.2.4"}
 	dir := t.TempDir()
 	var (
 		mu        sync.Mutex
@@ -232,7 +347,7 @@ func TestStartupRunRearmsAfterTwoCleanPasses(t *testing.T) {
 		modules: []startupModule{
 			{name: "always_ok", blocking: true, probe: func(context.Context) error { return nil }},
 		},
-		fingerprint: func(context.Context) (string, error) { return fingerprint, nil },
+		identity: func(context.Context) (startupIdentity, error) { return identity, nil },
 		reArm: func(reason string) (ReleaseStatus, error) {
 			mu.Lock()
 			reArmCall++
@@ -248,7 +363,7 @@ func TestStartupRunRearmsAfterTwoCleanPasses(t *testing.T) {
 		healAttempts: 1,
 		qualifyPath:  filepath.Join(dir, "release-qualification.json"),
 	}
-	if err := supervisor.writeQualification(fingerprint); err != nil {
+	if err := supervisor.writeQualification(identity); err != nil {
 		t.Fatal(err)
 	}
 	var last StartupReport
@@ -296,7 +411,9 @@ func TestStartupRunKeepsEnforcingWhenAModuleStaysBroken(t *testing.T) {
 		modules: []startupModule{
 			{name: "never_ok", blocking: true, probe: func(context.Context) error { return errors.New("sensor offline") }},
 		},
-		fingerprint: func(context.Context) (string, error) { return "fp", nil },
+		identity: func(context.Context) (startupIdentity, error) {
+			return startupIdentity{Host: "kernel=7.0.0; node=n; interface=ens6", Release: "4.2.4"}, nil
+		},
 		reArm: func(string) (ReleaseStatus, error) {
 			reArmed = true
 			return ReleaseStatus{}, nil

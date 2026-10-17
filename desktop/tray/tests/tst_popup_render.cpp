@@ -55,7 +55,7 @@ StatusPayload basePayload(StatusState state, const QString& reason)
     payload.state = state;
     payload.statusReason = reason;
     payload.generatedAt = timestamp(2026, 10, 16, 14, 57, 3);
-    payload.productVersion = QStringLiteral("4.2.4");
+    payload.productVersion = QStringLiteral("4.2.5");
     payload.nodeName = QStringLiteral("visiongaia.de");
     payload.releasePhase = QStringLiteral("enforce");
     payload.enforcement = QStringLiteral("enforce");

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 )
 
 // The module checklist of the startup self-check.
@@ -32,7 +33,15 @@ type StartupDeps struct {
 	Policy    *PolicyStore
 	Settings  *SettingsStore
 	XDR       *XDREngine
+	L7        l7SelfTester
 	Interface string
+}
+
+// l7SelfTester is the part of the L7 service the self-check needs: the canonical probe that sends one
+// request through the real inspection path and reports whether the counter moved. It is an interface
+// only so the checklist can be tested without standing up a listener.
+type l7SelfTester interface {
+	RunSelfTest(context.Context) L7SelfTestResult
 }
 
 func newStartupModules(deps StartupDeps) []startupModule {
@@ -98,6 +107,24 @@ func newStartupModules(deps StartupDeps) []startupModule {
 					summary = "coverage status " + string(coverage.OverallStatus)
 				}
 				return fmt.Errorf("%s", summary)
+			},
+			// The traffic-derived sensor is the one that needs a repair. After a restart the L7
+			// counter is empty, so the coverage derivation honestly reports "awaiting traffic" and
+			// the platform stays paused until somebody happens to send a request through the path -
+			// the update that was supposed to protect the host instead leaves it idle. One
+			// canonical probe through the real inspection path is that request, and it is the same
+			// action the operator triggers from the L7 page.
+			heal: func(ctx context.Context) error {
+				if deps.L7 == nil {
+					return fmt.Errorf("no L7 inspection service is attached")
+				}
+				probeCtx, cancel := context.WithTimeout(ctx, l7SelfTestTimeout+time.Second)
+				defer cancel()
+				result := deps.L7.RunSelfTest(probeCtx)
+				if result.Outcome != L7SelfTestPass {
+					return fmt.Errorf("L7 self-test outcome %s: %s", result.Outcome, boundedSummary(result.Detail))
+				}
+				return nil
 			},
 		})
 	}
@@ -205,11 +232,12 @@ func newStartupModules(deps StartupDeps) []startupModule {
 	return modules
 }
 
-// newStartupFingerprint describes the host the platform was qualified on. A change here means the
-// platform is protecting something it has not been qualified against, and that is what the visible
-// canary ladder is for.
-func newStartupFingerprint(state *State, iface string) func(context.Context) (string, error) {
-	return func(ctx context.Context) (string, error) {
+// newStartupIdentity describes the host this platform was qualified on, and the release it was
+// qualified with. A change in the host part means the platform is protecting something it has not been
+// qualified against, and that is what the visible canary ladder is for. A change in the release part
+// is an update on a host that already passed - it is re-verified by the self-check, not re-soaked.
+func newStartupIdentity(state *State, iface string) func(context.Context) (startupIdentity, error) {
+	return func(ctx context.Context) (startupIdentity, error) {
 		kernel := "unknown"
 		if raw, err := os.ReadFile("/proc/sys/kernel/osrelease"); err == nil {
 			kernel = strings.TrimSpace(string(raw))
@@ -218,11 +246,13 @@ func newStartupFingerprint(state *State, iface string) func(context.Context) (st
 		if state != nil {
 			node = state.Snapshot().NodeName
 		}
-		return strings.Join([]string{
-			"kernel=" + kernel,
-			"release=" + version,
-			"node=" + node,
-			"interface=" + iface,
-		}, "; "), nil
+		return startupIdentity{
+			Host: strings.Join([]string{
+				"kernel=" + kernel,
+				"node=" + node,
+				"interface=" + iface,
+			}, "; "),
+			Release: version,
+		}, nil
 	}
 }

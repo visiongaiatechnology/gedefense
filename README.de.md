@@ -8,9 +8,9 @@
 ### Linux Security Fabric
 
 [![License](https://img.shields.io/badge/License-AGPL--3.0--only-blue?style=for-the-badge)](https://www.gnu.org/licenses/agpl-3.0)
-[![Version](https://img.shields.io/badge/Version-4.2.4-orange?style=for-the-badge)](#)
-[![Status](https://img.shields.io/badge/Status-Release_v4.2.4-yellow?style=for-the-badge)](#)
-[![Installer](https://img.shields.io/badge/Installer-4.2.4_Universal_Linux-green?style=for-the-badge)](#-schnellstart)
+[![Version](https://img.shields.io/badge/Version-4.2.5-orange?style=for-the-badge)](#)
+[![Status](https://img.shields.io/badge/Status-Release_v4.2.5-yellow?style=for-the-badge)](#)
+[![Installer](https://img.shields.io/badge/Installer-4.2.5_Universal_Linux-green?style=for-the-badge)](#-schnellstart)
 [![Platform](https://img.shields.io/badge/Platform-Linux_x86__64-lightgrey?style=for-the-badge&logo=linux)](#)
 [![Data Plane](https://img.shields.io/badge/Data_Plane-Rust_eBPF%2FXDP-red?style=for-the-badge&logo=rust)](#-architektur)
 [![Control Plane](https://img.shields.io/badge/Control_Plane-Go-00ADD8?style=for-the-badge&logo=go)](#-architektur)
@@ -33,7 +33,7 @@
 
 ---
 
-## 🚨 KRITISCHER SICHERHEITSHINWEIS & WARNUNG — RELEASE v4.2.4
+## 🚨 KRITISCHER SICHERHEITSHINWEIS & WARNUNG — RELEASE v4.2.5
 
 > [!CAUTION]
 > **DRINGENDER SICHERHEITSHINWEIS FÜR ALLE BETREIBER & SYSTEMADMINISTRATOREN (UPGRADE DRINGEND EMPFOHLEN):**
@@ -68,9 +68,9 @@
 
 ---
 
-## ⚠️ STABILITÄT & ZUSICHERUNG — RELEASE v4.2.4 · UNIVERSELLE LINUX-PLATTFORM
+## ⚠️ STABILITÄT & ZUSICHERUNG — RELEASE v4.2.5 · UNIVERSELLE LINUX-PLATTFORM
 
-VGT GeDefense 4.2.4 ist das Flaggschiff des Linux-Sicherheitsgewebes — die gehärtete Verteidigungskette mit Kernel-Geschwindigkeit, kombiniert mit der neuen **Security Fabric Control Plane**, universeller Linux-Integration, gehärteter Release-Pipeline und konkreten Kernel-/NIC-Qualifikations-Gates. Es wurde für souveränen Host- und Netzwerkschutz entwickelt.
+VGT GeDefense 4.2.5 ist das Flaggschiff des Linux-Sicherheitsgewebes — die gehärtete Verteidigungskette mit Kernel-Geschwindigkeit, kombiniert mit der neuen **Security Fabric Control Plane**, universeller Linux-Integration, gehärteter Release-Pipeline und konkreten Kernel-/NIC-Qualifikations-Gates. Es wurde für souveränen Host- und Netzwerkschutz entwickelt.
 
 **Die Produktionsfreigabe ist bewusst eine Eigenschaft des konkret auditierten Ziel-Hosts — nicht allein des Quellcodes.**
 
@@ -609,14 +609,14 @@ Ist die Gaia Cells-Laufzeit **nicht vorhanden**, meldet der Adapter `runtime_not
 
 ```bash
 # Installer herunterladen
-wget https://github.com/visiongaiatechnology/gedefense/releases/download/v4.2.4/GeDefense-4.2.4-OneClick.run
+wget https://github.com/visiongaiatechnology/gedefense/releases/download/v4.2.5/GeDefense-4.2.5-OneClick.run
 
 # SHA-256 verifizieren
-sha256sum --check GeDefense-4.2.4-OneClick.run.sha256
+sha256sum --check GeDefense-4.2.5-OneClick.run.sha256
 
 # Installieren (Root erforderlich)
-chmod 700 GeDefense-4.2.4-OneClick.run
-sudo ./GeDefense-4.2.4-OneClick.run
+chmod 700 GeDefense-4.2.5-OneClick.run
+sudo ./GeDefense-4.2.5-OneClick.run
 ```
 
 > Der Installer und die Prüfsumme werden erst veröffentlicht, nachdem alle GitHub-CI- und konkreten Linux-Host-Qualifikations-Gates bestanden wurden. Führe niemals eine nicht verifizierte RUN-Datei aus.
@@ -651,7 +651,7 @@ Die Firewall-Regel für den HTTPS-Gateway-Port (TCP 9843) kann während der Inst
 
 ---
 
-## 🚧 Bekannte Einschränkungen (4.2.4)
+## 🚧 Bekannte Einschränkungen (4.2.5)
 
 - Keine Swarm- / Mesh-Unterstützung
 - Kein QUIC-Offloading
@@ -669,7 +669,24 @@ Die Firewall-Regel für den HTTPS-Gateway-Port (TCP 9843) kann während der Inst
 
 ## 📋 Changelog
 
-### v4.2.4 — Fail-Closed-Durchsetzung, Ledger-Rotation und ein ehrliches Panel *(Aktuell)*
+### v4.2.5 — Multi-Vektor-Echtzeit-Bedrohungskarte, sofortige Reaktivierung nach Updates & selbstheilende Sensorik *(Aktuell)*
+
+Ein Visualisierungs- und Resilienz-Release. Es bringt eine konsolidierte Echtzeit-Angriffskarte über alle Erkennungspfade, blitzschnelle Schutz-Reaktivierung nach Software-Updates und autonome Sensor-Selbstheilung.
+
+* **Konsolidierte Echtzeit-Bedrohungskarte auf der Übersichtsseite:**
+  * **Alle Erkennungspfade auf einen Blick:** Das Übersichts-Dashboard visualisiert nun gleichzeitig Paketfilter-Drops (eBPF/XDP), Layer-7-Anwendungsangriffe und Post-Exploitation-/Host-XDR-Vorfälle in einer interaktiven Weltkarte.
+  * **Souveräner Host-Ursprung & Bézier-Angriffsbögen:** Animierte Flugbögen zielen präzise auf die echte aufgelöste Geo-Position des Ziel-Hosts (via lokaler GeoIP-Datenbank). Nicht lokalisierbare IPs und Null-Koordinaten werden unterdrückt, um Fehlplatzierungen zu verhindern.
+  * **Sieben pfadbezogene Zähler:** Separate Zähler für Quellen, platzierte Knoten, geblockte Angriffe, Länder sowie individuelle Metriken für Kinetic-, L7- und XDR-Pfade.
+  * **Echtzeit-Aktivitätsband:** Ein tabellarisches Band unterhalb der Karte zeigt die 10 neuesten Einträge des Vorfalls-Ledgers mit Zeitstempel, Erkennungspfad, Quell-IP/Land, Befund und Blockierstatus.
+  * **100 % lokal & datensouverän:** Lokales MIT-SVG-Modul, 950.000 GeoIP-Einträge verbleiben auf dem Host, keine externen Requests. Barrierefrei mit Tastatursteuerung und automatischer Abschaltung von Animationen bei `prefers-reduced-motion`. Vollständig lokalisiert in Deutsch, Englisch, Russisch und Chinesisch.
+* **Sofortige Schutz-Reaktivierung nach Updates (6–7 Sekunden):**
+  * **Trennung von Host-Qualifikation und Release-Version:** Der Startup-Supervisor trennt die Hardware-/Kernel-Identität von der Software-Release-Nummer. Bei geplanten Updates auf einem bereits qualifizierten Host entfällt die künstliche 20-minütige Canary-Warteleiter; der volle Schutz (`enforce`) steht nach 6–7 Sekunden wieder bereit.
+* **Autonome Sensor-Selbstheilung & Gateway-Härtung:**
+  * **Selbstreparierende L7-Sensorabdeckung:** Der Sensor `l7_application` verharrt nach Neustarts nicht mehr im Status „auf Traffic warten“. Das Modul `sensor_coverage` führt automatisch einen kanonischen Test-Probe durch die Inspektionspipeline aus (max. 3 Versuche).
+  * **Kernel-Gesundheitsabfrage vor erstem Tick:** Verhindert Fehlalarme beim Hochfahren.
+  * **Strikte TLS-Zertifikats- und Schlüsselpaarung:** Systemd-Templates erzwingen identische Verzeichnisse für Zertifikat und Key, wodurch Verbindungsabbrüche (`ERR_CONNECTION_REFUSED`) zuverlässig verhindert werden.
+
+### v4.2.4 — Fail-Closed-Durchsetzung, Ledger-Rotation und ein ehrliches Panel
 
 Eine Härtungsversion. Sie entfernt die Wege, auf denen die Plattform ihren eigenen Schutz verlieren konnte, und bringt jede Oberfläche dazu, zu sagen, was der Kernel tatsächlich tut.
 
@@ -923,6 +940,6 @@ sudo python3 scripts/update-geoip-db.py /var/lib/vgt/gedefense/geoip.csv
 
 [![VGT](https://img.shields.io/badge/VisionGaia-Technology-cyan?style=for-the-badge)](https://visiongaiatechnology.de)
 
-*VGT GeDefense 4.2.4 — Universelles Linux Sicherheitsgewebe // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidenz-Ledger // AES-256-GCM verschlüsselter Vault // Reversible Härtung // AstraeaOS-nativer Adapter // Getrennte Vertrauensdomänen // Keine Cloud-Control-Plane // AGPL-3.0-only // Linux x86_64*
+*VGT GeDefense 4.2.5 — Universelles Linux Sicherheitsgewebe // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidenz-Ledger // AES-256-GCM verschlüsselter Vault // Reversible Härtung // AstraeaOS-nativer Adapter // Getrennte Vertrauensdomänen // Keine Cloud-Control-Plane // AGPL-3.0-only // Linux x86_64*
 
 </div>

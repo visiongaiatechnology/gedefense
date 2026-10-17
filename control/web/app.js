@@ -1,6 +1,9 @@
 // STATUS: DIAMANT VGT SUPREME
 'use strict';
 
+// The overview threat map owns its own refresh cycle and only runs while the overview is visible.
+import { startOverviewThreatMap } from './overview-map.js';
+
 import {
   acknowledgeIncident,
   addAllowlist,
@@ -1036,7 +1039,7 @@ function updateSnapshot(data) {
   const policy = data.policy || {};
   const behavior = xdr.behavior || {};
   const release = data.release || {};
-  text('versionText', data.version || '4.2.4');
+  text('versionText', data.version || '4.2.3');
   if (data.settings) applySettings(data.settings);
   text('nodeName', data.node_name || 'VGT Node');
   text('uptime', formatUptime(data.uptime_seconds));
@@ -1910,6 +1913,15 @@ function bindActions() {
   document.addEventListener('gedefense:language', () => {
     const currentView = location.hash.replace('#', '') || 'overview';
     activateView(currentView);
+  // A failure while starting the overview map must not take the rest of the dashboard down with it,
+  // and it must not look like a quiet network: the reason is written into the panel itself.
+  try {
+    startOverviewThreatMap();
+  } catch (error) {
+    console.error('overview threat map: start failed', error);
+    const host = document.getElementById('overviewMapHost');
+    if (host) host.textContent = `Kartenfehler: ${error?.message || error}`;
+  }
     if (snapshot) updateSnapshot(snapshot);
   });
   globalThis.addEventListener('resize', () => {

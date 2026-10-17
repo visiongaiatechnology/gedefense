@@ -17,7 +17,7 @@ import (
 	"time"
 )
 
-const version = "4.2.4"
+const version = "4.2.5"
 
 func detectInterface(requested string) (string, error) {
 	if requested != "" && requested != "auto" {
@@ -690,12 +690,18 @@ func main() {
 	// qualified - so a restart no longer means five minutes of a paused automatic response and a
 	// manual check.
 	if cfg.Startup.Enabled {
+		startupDeps := StartupDeps{
+			Release: release, State: state, Core: core, Policy: policy, Settings: settings,
+			XDR: xdr, Interface: iface,
+		}
+		// Assigned only when the service exists: a nil *L7Service stored in the interface field
+		// would look present and only fail at the first probe.
+		if l7Service != nil {
+			startupDeps.L7 = l7Service
+		}
 		supervisor := &StartupSupervisor{
-			modules: newStartupModules(StartupDeps{
-				Release: release, State: state, Core: core, Policy: policy, Settings: settings,
-				XDR: xdr, Interface: iface,
-			}),
-			fingerprint: newStartupFingerprint(state, iface),
+			modules:  newStartupModules(startupDeps),
+			identity: newStartupIdentity(state, iface),
 			reArm: func(reason string) (ReleaseStatus, error) {
 				return release.ReArmVerified(reason)
 			},

@@ -8,9 +8,9 @@
 ### Фабрика безопасности Linux (Linux Security Fabric)
 
 [![License](https://img.shields.io/badge/License-AGPL--3.0--only-blue?style=for-the-badge)](https://www.gnu.org/licenses/agpl-3.0)
-[![Version](https://img.shields.io/badge/Version-4.2.4-orange?style=for-the-badge)](#)
-[![Status](https://img.shields.io/badge/Status-Release_v4.2.4-yellow?style=for-the-badge)](#)
-[![Installer](https://img.shields.io/badge/Installer-4.2.4_Universal_Linux-green?style=for-the-badge)](#-быстрый-старт)
+[![Version](https://img.shields.io/badge/Version-4.2.5-orange?style=for-the-badge)](#)
+[![Status](https://img.shields.io/badge/Status-Release_v4.2.5-yellow?style=for-the-badge)](#)
+[![Installer](https://img.shields.io/badge/Installer-4.2.5_Universal_Linux-green?style=for-the-badge)](#-быстрый-старт)
 [![Platform](https://img.shields.io/badge/Platform-Linux_x86__64-lightgrey?style=for-the-badge&logo=linux)](#)
 [![Data Plane](https://img.shields.io/badge/Data_Plane-Rust_eBPF%2FXDP-red?style=for-the-badge&logo=rust)](#-архитектура)
 [![Control Plane](https://img.shields.io/badge/Control_Plane-Go-00ADD8?style=for-the-badge&logo=go)](#-архитектура)
@@ -33,7 +33,7 @@
 
 ---
 
-## 🚨 КРИТИЧЕСКОЕ ПРЕДУПРЕЖДЕНИЕ БЕЗОПАСНОСТИ — РЕЛИЗ v4.2.4
+## 🚨 КРИТИЧЕСКОЕ ПРЕДУПРЕЖДЕНИЕ БЕЗОПАСНОСТИ — РЕЛИЗ v4.2.5
 
 > [!CAUTION]
 > **СРОЧНОЕ УВЕДОМЛЕНИЕ ДЛЯ ОПЕРАТОРОВ И СИСТЕМНЫХ АДМИНИСТРАТОРОВ (ОБНОВЛЕНИЕ НАСТОЯТЕЛЬНО РЕКОМЕНДУЕТСЯ):**
@@ -68,9 +68,9 @@
 
 ---
 
-## ⚠️ СТАБИЛЬНОСТЬ И ГАРАНТИИ — РЕЛИЗ v4.2.4 · УНИВЕРСАЛЬНАЯ ПЛАТФОРМА LINUX
+## ⚠️ СТАБИЛЬНОСТЬ И ГАРАНТИИ — РЕЛИЗ v4.2.5 · УНИВЕРСАЛЬНАЯ ПЛАТФОРМА LINUX
 
-VGT GeDefense 4.2.4 — это флагманская фабрика безопасности Linux: закаленная цепочка обороны на скорости ядра в сочетании с новой **Security Fabric Control Plane**, универсальной интеграцией с Linux, защищенным конвейером релизов и конкретными гейтами квалификации ядра/NIC. Разработано для суверенной защиты хоста и сети.
+VGT GeDefense 4.2.5 — это флагманская фабрика безопасности Linux: закаленная цепочка обороны на скорости ядра в сочетании с новой **Security Fabric Control Plane**, универсальной интеграцией с Linux, защищенным конвейером релизов и конкретными гейтами квалификации ядра/NIC. Разработано для суверенной защиты хоста и сети.
 
 **Допуск к эксплуатации в продакшене намеренно является свойством конкретно проверенного целевого хоста, а не только исходного кода.**
 
@@ -609,14 +609,14 @@ Observe ──→ Canary ──→ Enforce
 
 ```bash
 # Загрузить инсталлятор
-wget https://github.com/visiongaiatechnology/gedefense/releases/download/v4.2.4/GeDefense-4.2.4-OneClick.run
+wget https://github.com/visiongaiatechnology/gedefense/releases/download/v4.2.5/GeDefense-4.2.5-OneClick.run
 
 # Проверить SHA-256
-sha256sum --check GeDefense-4.2.4-OneClick.run.sha256
+sha256sum --check GeDefense-4.2.5-OneClick.run.sha256
 
 # Установить (требуются права root)
-chmod 700 GeDefense-4.2.4-OneClick.run
-sudo ./GeDefense-4.2.4-OneClick.run
+chmod 700 GeDefense-4.2.5-OneClick.run
+sudo ./GeDefense-4.2.5-OneClick.run
 ```
 
 > Инсталлятор и контрольные суммы публикуются только после успешного прохождения всех этапов GitHub CI и квалификационных проверок целевого хоста. Никогда не запускайте непроверенные файлы RUN.
@@ -651,7 +651,7 @@ sudo ./GeDefense-4.2.4-OneClick.run
 
 ---
 
-## 🚧 Известные ограничения (4.2.4)
+## 🚧 Известные ограничения (4.2.5)
 
 - Отсутствие поддержки Swarm / Mesh
 - Отсутствие разгрузки QUIC
@@ -669,7 +669,24 @@ sudo ./GeDefense-4.2.4-OneClick.run
 
 ## 📋 Журнал изменений (Changelog)
 
-### v4.2.4 — Принудительное применение fail-closed, ротация реестров и честная панель *(Текущая версия)*
+### v4.2.5 — Мультивекторная карта угроз реального времени, мгновенный возврат защиты после обновлений и самоисцеление *(Текущая версия)*
+
+Релиз визуализации и отказоустойчивости платформы. Включает единую глобальную карту атак по всем векторам, моментальное включение защиты после обновлений и автономное самоисцеление сенсоров.
+
+* **Единая интерактивная карта угроз на главной странице:**
+  * **Все пути обнаружения одновременно:** Главный дашборд теперь отображает пакетные блокировки (eBPF/XDP), атаки прикладного уровня L7 и телеметрию хоста XDR на анимированной глобальной карте.
+  * **Координаты суверенного хоста и дуги атак:** Траектории направлены точно на реальную геопозицию хоста (по локальной базе GeoIP). Нулевые и неопределимые координаты скрываются.
+  * **Семь раздельных счетчиков:** Источники, размещенные точки, блокировки, страны и раздельные показатели Kinetic, L7 и XDR.
+  * **Лента недавней активности:** Таблица под картой выводит 10 последних записей журнала инцидентов с таймштампом, вектором, IP-адресом, страной, вердиктом и классификацией.
+  * **100% локально без внешних запросов:** Встроенный MIT SVG-модуль геометрии, локальная матрица GeoIP на 950 000 записей. Поддержка доступности (`prefers-reduced-motion`) и управление с клавиатуры. Локализовано на 4 языках.
+* **Мгновенное повторное включение защиты после обновлений (6–7 секунд):**
+  * **Разделение квалификации хоста и версии релиза:** Идентификатор хоста (ядро, узел, интерфейс) отделен от версии ПО. Плановое обновление на квалифицированном хосте не требует 20-минутного ожидания канареечной лестницы; режим `enforce` активируется за 6–7 секунд.
+* **Автономное самоисцеление сенсоров и защита шлюза:**
+  * **Самовосстановление покрытия L7:** Сенсор `l7_application` больше не зависает в статусе ожидания трафика после перезапуска благодаря автопроверке через реальный путь инспекции (до 3 попыток).
+  * **Опрос ядра до первого тика супервизора:** Исключение ложных сообщений о сбое при старте.
+  * **Проверка спаренности TLS-сертификатов в systemd:** Устранение риска рассогласования ключей и ошибки `ERR_CONNECTION_REFUSED`.
+
+### v4.2.4 — Принудительное применение fail-closed, ротация реестров и честная панель
 
 Релиз укрепления. Он устраняет пути, на которых платформа могла потерять собственную защиту, и заставляет каждую поверхность сообщать, что ядро действительно делает.
 
@@ -898,6 +915,6 @@ sudo python3 scripts/update-geoip-db.py /var/lib/vgt/gedefense/geoip.csv
 
 [![VGT](https://img.shields.io/badge/VisionGaia-Technology-cyan?style=for-the-badge)](https://visiongaiatechnology.de)
 
-*VGT GeDefense 4.2.4 — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
+*VGT GeDefense 4.2.5 — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
 
 </div>
