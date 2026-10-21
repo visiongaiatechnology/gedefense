@@ -54,7 +54,8 @@ var supportedL7RuleOverrides = map[string]struct{}{
 	"L7.HTTP.DUPLICATE_CONTENT_LENGTH": {}, "L7.HTTP.INVALID_CONTENT_LENGTH": {}, "L7.HTTP.CL_TE_AMBIGUITY": {},
 	"L7.HTTP.INVALID_TRANSFER_ENCODING": {}, "L7.HTTP.TRACE_METHOD": {},
 	"L7.UPLOAD.INVALID_MULTIPART": {}, "L7.UPLOAD.PART_BUDGET": {}, "L7.UPLOAD.SIZE_BUDGET": {}, "L7.UPLOAD": {},
-	"L7.RATE_LIMIT.CLIENT": {}, "L7.RATE_LIMIT.SENSITIVE_ROUTE": {}, "L7.RATE_LIMIT.SENSITIVE_ROUTE_GLOBAL": {}, "L7.RATE_LIMIT": {},
+	"L7.PHP.SESSION_UPLOAD_PROGRESS": {},
+	"L7.RATE_LIMIT.CLIENT":           {}, "L7.RATE_LIMIT.SENSITIVE_ROUTE": {}, "L7.RATE_LIMIT.SENSITIVE_ROUTE_GLOBAL": {}, "L7.RATE_LIMIT": {},
 	"L7.RESPONSE.SQL_ERROR": {}, "L7.RESPONSE.SOURCE_CODE": {}, "L7.RESPONSE.STACK_TRACE": {},
 	"L7.RESPONSE.DIRECTORY_INDEX": {}, "L7.RESPONSE.PRIVATE_KEY": {}, "L7.RESPONSE.TECHNOLOGY_DISCLOSURE": {},
 	"TLS.CLIENTHELLO.MALFORMED": {}, "TLS.CLIENT_IP.INVALID": {}, "TLS.JA3.MALICIOUS": {}, "TLS.JA3.STRUCTURAL_SPOOF": {},
@@ -66,6 +67,17 @@ var supportedL7RuleOverrides = map[string]struct{}{
 // prefix over runtime-generated rule identifiers, for example
 // "L7.RATE_LIMIT" covering "L7.RATE_LIMIT.CLIENT".
 var l7RuleFamilyPrefixes = []string{"L7.RATE_LIMIT", "L7.UPLOAD"}
+
+// l7DetectorRuleMetadata describes built-in rules produced by detectors instead of the read-only
+// pattern set. Without it the rule catalogue renders them as disabled entries with empty metadata,
+// which reads like a broken rule rather than an administrable one.
+var l7DetectorRuleMetadata = map[string]l7RuleView{
+	"L7.PHP.SESSION_UPLOAD_PROGRESS": {
+		Category: "php-upload-progress",
+		Summary:  "PHP session upload-progress field detected",
+		Score:    110, Confidence: 96, Enabled: true,
+	},
+}
 
 func l7RuleOverrideIDAllowed(id string) bool {
 	_, ok := supportedL7RuleOverrides[id]
@@ -98,6 +110,11 @@ type L7FabricSettings struct {
 
 	AlertScore int `json:"alert_score"`
 	BlockScore int `json:"block_score"`
+	// EnforceRules restricts block eligibility to the listed built-in rules or families.
+	// Empty means the historical behaviour: every rule that is not alert-only may block.
+	// The field is omitempty on purpose: the runtime settings document is authenticated over its
+	// canonical JSON, so an empty field must not add a byte to documents written by older builds.
+	EnforceRules []string `json:"enforce_rules,omitempty"`
 
 	ClientRatePerMinute          int      `json:"client_rate_per_minute"`
 	ClientRateBurst              int      `json:"client_rate_burst"`
@@ -145,6 +162,7 @@ func defaultL7FabricSettings(cfg L7Config) L7FabricSettings {
 		MaxDecodeDepth: cfg.MaxDecodeDepth, MaxJSONDepth: cfg.MaxJSONDepth, MaxFormFields: cfg.MaxFormFields,
 		MaxMultipartParts: cfg.MaxMultipartParts,
 		AlertScore:        cfg.AlertScore, BlockScore: cfg.BlockScore,
+		EnforceRules:        append([]string(nil), cfg.EnforceRules...),
 		ClientRatePerMinute: cfg.ClientRatePerMinute, ClientRateBurst: cfg.ClientRateBurst,
 		SensitiveRatePerMinute: cfg.SensitiveRatePerMinute, SensitiveRateBurst: cfg.SensitiveRateBurst,
 		SensitiveGlobalRatePerMinute: cfg.SensitiveGlobalRatePerMinute, SensitiveGlobalRateBurst: cfg.SensitiveGlobalRateBurst,
@@ -170,6 +188,7 @@ func cloneL7FabricSettings(in L7FabricSettings) L7FabricSettings {
 	out.AllowedPeerGIDs = append([]uint32(nil), in.AllowedPeerGIDs...)
 	out.TLSAllowedDomains = append([]string(nil), in.TLSAllowedDomains...)
 	out.Rules = append([]L7RuleOverride(nil), in.Rules...)
+	out.EnforceRules = append([]string(nil), in.EnforceRules...)
 	return out
 }
 
@@ -199,6 +218,7 @@ func (f L7FabricSettings) toConfig() L7Config {
 		MaxDecodeDepth: f.MaxDecodeDepth, MaxJSONDepth: f.MaxJSONDepth, MaxFormFields: f.MaxFormFields,
 		MaxMultipartParts: f.MaxMultipartParts,
 		AlertScore:        f.AlertScore, BlockScore: f.BlockScore,
+		EnforceRules:        append([]string(nil), f.EnforceRules...),
 		ClientRatePerMinute: f.ClientRatePerMinute, ClientRateBurst: f.ClientRateBurst,
 		SensitiveRatePerMinute: f.SensitiveRatePerMinute, SensitiveRateBurst: f.SensitiveRateBurst,
 		SensitiveGlobalRatePerMinute: f.SensitiveGlobalRatePerMinute, SensitiveGlobalRateBurst: f.SensitiveGlobalRateBurst,
@@ -435,6 +455,27 @@ func validateL7FabricSettings(settings *L7FabricSettings) error {
 		}
 	}
 	sort.Slice(settings.Rules, func(i, j int) bool { return settings.Rules[i].ID < settings.Rules[j].ID })
+	if len(settings.EnforceRules) > l7RuleOverrideLimit {
+		return fmt.Errorf("l7 enforce rule limit of %d exceeded", l7RuleOverrideLimit)
+	}
+	seenEnforce := make(map[string]struct{}, len(settings.EnforceRules))
+	normalizedEnforce := make([]string, 0, len(settings.EnforceRules))
+	for _, raw := range settings.EnforceRules {
+		id := strings.ToUpper(strings.TrimSpace(raw))
+		if id == "" {
+			continue
+		}
+		if !l7RuleOverrideIDAllowed(id) && !isL7RuleFamily(id) {
+			return fmt.Errorf("l7 enforce rule %q is not a supported built-in rule or family", raw)
+		}
+		if _, duplicate := seenEnforce[id]; duplicate {
+			continue
+		}
+		seenEnforce[id] = struct{}{}
+		normalizedEnforce = append(normalizedEnforce, id)
+	}
+	sort.Strings(normalizedEnforce)
+	settings.EnforceRules = normalizedEnforce
 	settings.TLSJA3Reload = false
 	return nil
 }
@@ -492,6 +533,11 @@ type l7RuntimeSnapshot struct {
 	ruleExact    map[string]L7RuleOverride
 	ruleFamilies []string
 	ruleByFamily map[string]L7RuleOverride
+
+	// enforceScope is the set of rule IDs and families that may authorise a block. Both empty
+	// means every block-eligible finding may block (historical behaviour).
+	enforceExact    map[string]struct{}
+	enforceFamilies []string
 }
 
 // l7Runtime owns the published snapshot.
@@ -509,6 +555,7 @@ func buildL7RuntimeSnapshot(settings L7FabricSettings, revision uint64) *l7Runti
 		unknownFingerprintScore: effective.TLSUnknownFingerprintScore,
 		ruleExact:               make(map[string]L7RuleOverride, len(effective.Rules)),
 		ruleByFamily:            make(map[string]L7RuleOverride, len(l7RuleFamilyPrefixes)),
+		enforceExact:            make(map[string]struct{}, len(effective.EnforceRules)),
 	}
 	for _, path := range effective.SensitivePaths {
 		snapshot.sensitiveExact[path] = struct{}{}
@@ -532,6 +579,16 @@ func buildL7RuntimeSnapshot(settings L7FabricSettings, revision uint64) *l7Runti
 	}
 	sort.Slice(snapshot.ruleFamilies, func(i, j int) bool {
 		return len(snapshot.ruleFamilies[i]) > len(snapshot.ruleFamilies[j])
+	})
+	for _, id := range effective.EnforceRules {
+		if isL7RuleFamily(id) {
+			snapshot.enforceFamilies = append(snapshot.enforceFamilies, id)
+			continue
+		}
+		snapshot.enforceExact[id] = struct{}{}
+	}
+	sort.Slice(snapshot.enforceFamilies, func(i, j int) bool {
+		return len(snapshot.enforceFamilies[i]) > len(snapshot.enforceFamilies[j])
 	})
 	return snapshot
 }
@@ -624,6 +681,23 @@ func (s *l7RuntimeSnapshot) overrideFor(ruleID string) (L7RuleOverride, bool) {
 // returns the findings that remain block-eligible. Disabled rules are removed
 // entirely; alert-only rules still contribute to the aggregated alert score
 // but can never cross the block threshold on their own.
+// blockEligible reports whether a finding may contribute to a block decision. An empty scope
+// keeps the historical behaviour: every finding that survived the rule overrides is eligible.
+func (s *l7RuntimeSnapshot) blockEligible(ruleID string) bool {
+	if s == nil || (len(s.enforceExact) == 0 && len(s.enforceFamilies) == 0) {
+		return true
+	}
+	if _, ok := s.enforceExact[ruleID]; ok {
+		return true
+	}
+	for _, family := range s.enforceFamilies {
+		if strings.HasPrefix(ruleID, family+".") {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *l7RuntimeSnapshot) applyRuleOverrides(findings []L7Finding) ([]L7Finding, []L7Finding) {
 	if s == nil || len(findings) == 0 {
 		return findings, findings
@@ -739,6 +813,22 @@ func applyL7FabricSettings(engine *L7Engine, settings L7FabricSettings, revision
 	return result, nil
 }
 
+// syncL7StatusFromLive republishes the operator-visible status from the active snapshot after a
+// settings revision. The inline edge refreshes counters on traffic, but a mode change is not a
+// traffic event: without this call the status record keeps reporting the boot mode while the live
+// engine already enforces the new one.
+func syncL7StatusFromLive(state *State, engine *L7Engine) {
+	if state == nil || engine == nil {
+		return
+	}
+	live := engine.LiveSettings()
+	state.UpdateL7Status(func(status *L7Status) {
+		status.Enabled = live.Enabled
+		status.Mode = live.Mode
+		status.Socket = live.Socket
+	})
+}
+
 // l7FabricView is the module view returned by the Fabric Settings API.
 type l7FabricView struct {
 	Settings L7FabricSettings `json:"settings"`
@@ -798,6 +888,11 @@ func describeL7RuleCatalog() []l7RuleView {
 	}
 	catalog := l7RuleCatalog()
 	out := make([]l7RuleView, 0, len(catalog))
+	for id, detail := range l7DetectorRuleMetadata {
+		detail.ID = id
+		detail.Administrable = true
+		metadata[id] = detail
+	}
 	for _, entry := range catalog {
 		if detail, ok := metadata[entry.ID]; ok {
 			out = append(out, detail)

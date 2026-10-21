@@ -23,6 +23,11 @@ import {
   getEvidence,
   getFIM,
   getHardeningPosture,
+  rollbackKernelMitigation,
+  applyKernelMitigation,
+  planKernelMitigation,
+  getKernelMitigation,
+  getKernelExposure,
   getPackageIntegrity,
   getRelease,
   getSettings,
@@ -33,6 +38,7 @@ import {
   previewTransaction,
   previewQuarantine,
   previewCellAction,
+  confineIncident,
   removeAllowlist,
   reverseTransaction,
   scanFIM,
@@ -106,6 +112,9 @@ const configurableHardeningControls = new Set([
   'kernel.dmesg',
   'kernel.ptrace',
   'kernel.bpf',
+  // Managed because a host that cannot take the kernel update can still close this entry point; the
+  // advisory layer then scores the difference. Rootless containers stop working, so it stays a switch.
+  'kernel.userns',
   'filesystem.protected-links',
   'filesystem.suid-dumps',
   'network.syn-cookies',
@@ -807,9 +816,68 @@ function renderHardening(payload) {
   body.replaceChildren(...rows);
 }
 
+// Kernel advisory panel: exposure, the advisories behind it, and the guarded mitigation with its
+// dry run, apply and rollback. The buttons are bound once; the panel re-renders on every load.
+let kernelAdvisoryBound = false;
+
+function renderKernelAdvisory(exposure, mitigation) {
+  if (!exposure) return;
+  text('kernExposureScore', `${exposure.score ?? 0} / 100`);
+  text('kernExposureVerdict', String(exposure.verdict || 'unknown'));
+  text('kernExposureKernel', `${exposure.kernel?.release || '?'} (${exposure.kernel?.channel || '?'})`);
+  text('kernExposureSummary', String(exposure.recommendation || exposure.unknown_reason || ''));
+  const grade = byID('kernExposureGrade');
+  if (grade) {
+    grade.textContent = String(exposure.grade || 'UNKNOWN');
+    grade.className = `status-pill ${exposure.grade === 'EXPOSED' ? 'danger' : exposure.grade === 'HARDENED' ? 'good' : 'warn'}`;
+  }
+  const list = byID('kernAdvisoryList');
+  if (list) {
+    list.replaceChildren(...(exposure.advisories || []).map(advisory => {
+      const item = document.createElement('li');
+      item.textContent = `${advisory.id} - ${advisory.verdict} (reachability ${advisory.reachability ?? 0}%)`;
+      return item;
+    }));
+  }
+  if (mitigation) {
+    text('kernMitigationState', `${mitigation.state || 'idle'}${mitigation.enabled ? '' : ' (auto aus)'}`);
+    text('kernMitigationDetail', mitigation.key ? `${mitigation.key}=${mitigation.current || ''} ${mitigation.reason || ''}` : (mitigation.reason || ''));
+  }
+  if (kernelAdvisoryBound) return;
+  kernelAdvisoryBound = true;
+  byID('kernMitigationPlan')?.addEventListener('click', async () => {
+    try {
+      const plan = await planKernelMitigation();
+      toast(`${t('advisory.plan')}: ${plan.applicable ? `${plan.key} ${plan.current} -> ${plan.desired}` : plan.reason}`, plan.applicable ? 'warn' : 'good');
+    } catch (error) { handleActionError(error); }
+  });
+  byID('kernMitigationApply')?.addEventListener('click', async () => {
+    const reason = (window.prompt(t('advisory.reason'), '') || '').trim();
+    if (reason.length < 3) { toast(t('cells.reasonRequired'), 'bad'); return; }
+    try { const plan = await planKernelMitigation(); await applyKernelMitigation(reason, `APPLY ${plan.key}`); toast(t('advisory.applied'), 'good'); await loadKernelAdvisory(); }
+    catch (error) { handleActionError(error); }
+  });
+  byID('kernMitigationRollback')?.addEventListener('click', async () => {
+    const reason = (window.prompt(t('advisory.reason'), '') || '').trim();
+    if (reason.length < 3) { toast(t('cells.reasonRequired'), 'bad'); return; }
+    try { const status = await getKernelMitigation(); await rollbackKernelMitigation(reason, `ROLLBACK ${status.key}`); toast(t('advisory.reverted'), 'good'); await loadKernelAdvisory(); }
+    catch (error) { handleActionError(error); }
+  });
+}
+
+async function loadKernelAdvisory() {
+  try {
+    const [exposure, mitigation] = await Promise.all([getKernelExposure(), getKernelMitigation()]);
+    renderKernelAdvisory(exposure, mitigation);
+  } catch (_) {
+    // The panel stays empty rather than inventing a state; the API is the source of truth.
+  }
+}
+
 async function loadHardening() {
   const payload = await getHardeningPosture();
   renderHardening(payload);
+  await loadKernelAdvisory();
   return payload;
 }
 
@@ -1246,9 +1314,14 @@ function updateSnapshot(data) {
     : (release.fail_safe_verified ? t('dynamic.failSafeVerified') : t('dynamic.failSafeUnverified')));
   renderReleaseBlockers(release.blockers || [], release);
 
-  renderEvents(data.events || []);
-  renderRules(data.blocks || [], removeRule);
-  renderIncidents(data.incidents || [], acknowledge);
+  // The XDR view owns the incident timeline; the generic snapshot pass must not replace it
+  // underneath its own renderer. Both wrote the same tbody, and each pass replaced the
+  // other's rows.
+  const activePage = document.querySelector('[data-page].active')?.getAttribute('data-page');
+
+  renderStableList('events', data.events || [], renderEvents);
+  renderStableList('blocks', data.blocks || [], list => renderRules(list, removeRule));
+  renderStableList('incidents', data.incidents || [], list => renderIncidents(list, acknowledge, confineWorkload, { skipMain: activePage === 'xdr' }));
 
   const l7 = data.l7 || {};
   text('overviewL7Inspected', number(l7.requests_total || 0));
@@ -1265,7 +1338,6 @@ function updateSnapshot(data) {
 
   loadProtectionState(data).catch(() => {});
 
-  const activePage = document.querySelector('[data-page].active')?.getAttribute('data-page');
   if (activePage === 'l7') {
     loadL7View(data).catch(() => {});
   }
@@ -1279,6 +1351,126 @@ function updateSnapshot(data) {
   if (activePage === 'xdr') {
     loadXDRView(data).catch(() => {});
   }
+}
+
+// Long lists are bounded: every table shows its newest 50 rows inside a scroll pane and can be
+// expanded to the full history. The pane is applied generically so a future table inherits it.
+//
+// Row order is not a detail here. The server publishes every list newest first - incidents and
+// events are reversed before they leave the control plane, block rules are ordered by the next
+// expiry - so the pane must keep the FIRST rows and collapse the tail. The first version of this
+// function hid `index < length - limit` instead, which on a 250-row incident log collapsed the
+// 200 newest entries and left exactly the two-hour-old tail on screen. A wrong pane alone would
+// have been a display bug; what made it an endless jump was the second half: the pane was
+// re-applied from a two-second timer while every stream snapshot rebuilt the table from scratch.
+// Fresh rows appeared unbounded, the timer collapsed the newest ones, the next snapshot rebuilt,
+// and the list oscillated between the top and the old tail.
+const TABLE_PANE_LIMIT = 50;
+
+// The pane follows the DOM, not a clock. Any renderer that inserts rows schedules one pass on the
+// next animation frame; the pass runs before that frame is painted, so fresh rows are bounded
+// before they can flash at full length, and an unchanged table is never touched at all.
+let paneApplyScheduled = false;
+
+function scheduleApplyTablePanes() {
+  if (paneApplyScheduled) return;
+  paneApplyScheduled = true;
+  requestAnimationFrame(() => {
+    paneApplyScheduled = false;
+    try {
+      applyTablePanes();
+    } catch (_) {
+      // A broken table must not stall the frame loop of the whole dashboard.
+    }
+  });
+}
+
+function applyTablePanes() {
+  document.querySelectorAll('.view .table-wrap').forEach(wrap => {
+    const body = wrap.querySelector('table tbody');
+    if (!body) return;
+    const rows = Array.from(body.rows);
+    const expanded = wrap.dataset.paneExpanded === '1';
+    const limited = !expanded && rows.length > TABLE_PANE_LIMIT;
+    rows.forEach((row, index) => {
+      const hide = limited && index >= TABLE_PANE_LIMIT;
+      if (row.hidden !== hide) row.hidden = hide;
+    });
+    let more = wrap.querySelector('.table-pane-more');
+    if (rows.length <= TABLE_PANE_LIMIT) {
+      if (more) more.remove();
+      return;
+    }
+    if (!more) {
+      more = document.createElement('div');
+      more.className = 'table-pane-more';
+      const toggle = document.createElement('button');
+      toggle.type = 'button';
+      toggle.className = 'button button-quiet';
+      toggle.addEventListener('click', () => {
+        wrap.dataset.paneExpanded = wrap.dataset.paneExpanded === '1' ? '0' : '1';
+        applyTablePanes();
+      });
+      more.append(toggle);
+      wrap.append(more);
+    }
+    const toggle = more.querySelector('button');
+    const label = expanded ? t('table.showFewer') : t('table.showAll');
+    if (toggle.textContent !== label) toggle.textContent = label;
+  });
+}
+
+if (typeof MutationObserver === 'function' && document.body) {
+  new MutationObserver(scheduleApplyTablePanes).observe(document.body, { childList: true, subtree: true });
+}
+
+// Two independent sources feed these tables: the SSE snapshot push and the polling refresh. They can
+// arrive with different completeness, and the smaller frame used to erase the fuller list for a
+// second - the flicker an operator sees as "only warnings", then "the real list", then warnings again.
+// A smaller list therefore has to persist for a settle window before it replaces a fuller one.
+const stableListState = new Map();
+
+// The server payload is stable (a HAR capture of 21 consecutive /status calls showed the same 250
+// incidents in the same order), yet the list visibly jumped between two scroll positions every second.
+// The reason was DOM churn: every poll replaced the whole table body, and a replaced body inside a
+// bounded scroll pane does not keep its viewport reliably. The rule is therefore: render only when the
+// data actually changed. Two guards work together -
+//   * an identical signature is not re-rendered at all (scroll position and focus stay untouched),
+//   * a frame whose newest entry is older than what is on screen never replaces it (a stale frame from a
+//     second source cannot rewind the list).
+function listSignature(items) {
+  return items.map(item => `${item?.id || ''}|${item?.acknowledged ? 1 : 0}|${item?.decision || ''}|${item?.outcome || ''}`).join(';');
+}
+
+function listNewest(items) {
+  let newest = 0;
+  for (const item of items) {
+    const value = Date.parse(item?.time || item?.created_at || item?.last_seen || '');
+    if (Number.isFinite(value) && value > newest) newest = value;
+  }
+  return newest;
+}
+
+function renderStableList(key, items, render) {
+  const previous = stableListState.get(key);
+  const now = Date.now();
+  const signature = listSignature(items);
+  if (previous) {
+    if (previous.signature === signature) {
+      previous.at = now;
+      return;
+    }
+    const incoming = listNewest(items);
+    if (previous.newest && incoming && incoming < previous.newest && now - previous.at < 15000) {
+      render(previous.items);
+      return;
+    }
+  }
+  stableListState.set(key, {
+    items, at: now, newest: listNewest(items), signature,
+    ids: new Set(items.map(item => item?.id)),
+  });
+  render(items);
 }
 
 async function refreshOnce() {
@@ -1391,6 +1583,26 @@ async function removeRule(id) {
     await refresh();
   } catch (error) {
     handleActionError(error);
+  }
+}
+
+// Manual isolation from the incident row: the operator names the reason, the platform resolves the
+// Gaia Cell that owns the workload and applies the change through the transaction engine.
+async function confineWorkload(incident) {
+  if (!incident || !incident.id) return;
+  const entered = window.prompt(t('cells.confine'), '');
+  const reason = (entered || '').trim();
+  if (reason.length < 3) {
+    toast(t('cells.reasonRequired'), 'bad');
+    return;
+  }
+  try {
+    await confineIncident(incident.id, 'revoke-network', reason);
+    toast(t('cells.confineDone'), 'good');
+    await refresh();
+  } catch (error) {
+    handleActionError(error);
+    toast(t('cells.confineFailed'), 'bad');
   }
 }
 

@@ -121,7 +121,7 @@
             <small id="sidebarMode">OBSERVE</small>
           </div>
         </div>
-        <span class="powered-line">GeDefense <span id="versionText">4.2.5</span></span>
+        <span class="powered-line">GeDefense <span id="versionText">4.4.0</span><span id="uiBuild" class="ui-build" title="UI-Build des laufenden Browser-Tabs">UI 20261021-D</span></span>
         <small class="vgt-credit" data-i18n="brand.powered">powered by VisionGaiaTechnology</small>
       </div>
     </aside>
@@ -170,7 +170,7 @@
         <section class="view active" data-page="overview" aria-labelledby="overviewHeading">
           <div class="hero-cockpit">
             <div class="hero-copy">
-              <p class="eyebrow" data-i18n="overview.kicker">GEDEFENSE 4.2.5 // SOVEREIGN KINETIC DEFENSE</p>
+              <p class="eyebrow" data-i18n="overview.kicker">GEDEFENSE 4.4.0 // SOVEREIGN KINETIC DEFENSE</p>
               <h2 id="overviewHeading" data-i18n="overview.heading">Abwehr, die den Host als Gesamtsystem versteht.</h2>
               <p data-i18n="overview.description">Rust-XDP, signierte Policy-Snapshots, native L7 Application Defense und Linux-XDR korrelieren Netzwerk, Prozesse, Integrität und Verhalten – lokal, nachvollziehbar und ohne Cloud-Abhängigkeit.</p>
               <div class="hero-state">
@@ -270,6 +270,7 @@
                 <div class="overview-threat-card-cluster" id="overviewCardCluster" hidden></div>
               </div>
             </div>
+            <div id="overviewMapTopCountries" class="overview-map-top-countries" aria-live="polite"></div>
             <div class="overview-threat-feed" id="overviewMapFeed" role="region" aria-labelledby="overviewMapStreamTitle">
               <div class="overview-threat-stream-header">
                 <div class="overview-stream-title">
@@ -755,7 +756,31 @@
             </article>
           </div>
 
-          <article class="glass-panel panel-padded mt-lg">
+          <article class="glass-panel panel-padded mt-lg" id="kernelAdvisoryPanel">
+  <div class="section-head flex-between">
+    <div>
+      <p class="eyebrow" data-i18n="advisory.kicker">KERNEL ADVISORY</p>
+      <h3 class="m-0" data-i18n="advisory.title">Kernel-Risiko und Gegenmassnahmen</h3>
+    </div>
+    <span id="kernExposureGrade" class="status-pill muted">-</span>
+  </div>
+  <div class="flex-row gap-lg wrap mt-md">
+    <div><span class="fs-xs text-muted d-block" data-i18n="advisory.score">Risiko</span><strong id="kernExposureScore">-</strong></div>
+    <div><span class="fs-xs text-muted d-block" data-i18n="advisory.verdict">Bewertung</span><strong id="kernExposureVerdict">-</strong></div>
+    <div><span class="fs-xs text-muted d-block" data-i18n="advisory.channel">Kernel/Channel</span><strong id="kernExposureKernel">-</strong></div>
+    <div><span class="fs-xs text-muted d-block" data-i18n="advisory.mitigation">Gegenmassnahme</span><strong id="kernMitigationState">-</strong></div>
+  </div>
+  <p id="kernExposureSummary" class="fs-xs text-muted mt-sm"></p>
+  <ul id="kernAdvisoryList" class="fs-xs mt-sm"></ul>
+  <div class="flex-row gap-sm mt-sm">
+    <button id="kernMitigationPlan" class="button button-quiet" type="button" data-i18n="advisory.plan">Eingriff pruefen</button>
+    <button id="kernMitigationApply" class="button button-primary" type="button" data-i18n="advisory.apply">Eingreifen</button>
+    <button id="kernMitigationRollback" class="button button-quiet" type="button" data-i18n="advisory.rollback">Zuruecknehmen</button>
+  </div>
+  <p id="kernMitigationDetail" class="fs-xs text-muted mt-xs"></p>
+</article>
+
+<article class="glass-panel panel-padded mt-lg">
             <div class="section-head flex-between">
               <div>
                 <p class="eyebrow" data-i18n="hardening.controlsKicker">MODULAR HARDENING CONTROLS</p>
@@ -834,7 +859,18 @@
         </div>
       </div>
 
-      <p class="fs-xs text-muted">Jede Regel ist einzeln schaltbar. Die überwachten Wurzelpfade selbst werden auf der Seite „Integrität" gepflegt; die Bewertung jeder Regel bleibt im Regelkatalog, damit eine Regel nicht an zwei Stellen definiert ist.</p>
+      <article class="glass-panel panel-padded mt-lg">
+<div class="section-head">
+<p class="eyebrow" data-i18n="detection.panelKicker">DETECTION SURFACES</p>
+<h3 class="m-0" data-i18n="detection.panelTitle">Wo GeDefense Angriffe sieht</h3>
+</div>
+<p class="fs-xs text-muted mt-xs" data-i18n="detection.panelBody">Erkennung entsteht an drei Orten: im Paketpfad (Kinetic), in der Anwendungsschicht (L7) und nach dem Einbruch (XDR). Jede Flaeche hat ihre eigene Ansicht mit den Filtern und Massnahmen, die zu ihr gehoeren - die Regel selbst bleibt hier zentral schaltbar.</p>
+<div class="detection-links mt-md">
+<button type="button" data-nav="xdr"><strong data-i18n="view.xdr.title">GeDefense XDR</strong><small data-i18n="detection.xdrNote">Korrelierte Incidents, Scores und Antwortaktionen.</small></button>
+<button type="button" data-nav="l7"><strong data-i18n="view.l7.title">Application Defense</strong><small data-i18n="detection.l7Note">Aktuelle L7-Befunde und Inline-Pruefung.</small></button>
+<button type="button" data-nav="network"><strong data-i18n="view.network.title">Netzwerk</strong><small data-i18n="detection.networkNote">Blockregeln, Allowlist und Paketpfad.</small></button>
+</div>
+</article>
     </section>
 
     <section class="view" data-page="integrity" aria-labelledby="integrityHeading" hidden>

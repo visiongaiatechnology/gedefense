@@ -367,6 +367,7 @@ func (s *APIServer) applyRuntimeSettings(previous, updated RuntimeSettings, modu
 		if _, err := applyL7FabricSettings(s.l7, effectiveL7Settings(updated, s.cfg.L7), updated.Revision); err != nil {
 			return fmt.Errorf("apply L7 runtime settings: %w", err)
 		}
+		syncL7StatusFromLive(s.state, s.l7)
 	}
 	if s.feeds != nil {
 		if err := s.feeds.applyThreatIntelSettings(effectiveThreatIntelSettings(updated), updated.Revision); err != nil {

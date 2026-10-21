@@ -3,6 +3,7 @@
 export const LIMITS = Object.freeze({ sources: 500, markers: 240, arcs: 40, events: 300 });
 
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+const countryLimit = 60;
 const text = (value, max = 240) => typeof value === 'string' ? value.slice(0, max) : '';
 const count = value => typeof value === 'number' && Number.isFinite(value) ? Math.max(0, Math.min(1e12, Math.trunc(value))) : 0;
 const areas = new Set(['kinetic', 'l7', 'xdr', 'host']);
@@ -29,6 +30,18 @@ export function remoteIP(remote) {
 
 function strings(value) {
   return Array.isArray(value) ? value.slice(0, 16).map(item => text(item, 120)).filter(Boolean) : [];
+}
+
+// The per-country roll-up the server already computed. Bounded like every other collection in this
+// module, so a malformed or oversized frame can never turn into an unbounded DOM list.
+function normalizeCountries(value) {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, countryLimit).filter(record).map(item => ({
+    country: text(item.country, 100) || text(item.country_code, 2).toUpperCase(),
+    countryCode: text(item.country_code, 2).toUpperCase(),
+    total: count(item.total), kinetic: count(item.kinetic), l7: count(item.l7), xdr: count(item.xdr),
+    blocked: count(item.blocked), severity: text(item.severity, 16)
+  })).filter(item => item.country && item.total > 0);
 }
 
 export function normalizePayload(payload) {
@@ -70,7 +83,8 @@ export function normalizePayload(payload) {
     totals[key] = count(record(payload.totals) ? payload.totals[key] : 0);
   }
   return {
-    sources, recent, origin, totals, generated: text(payload.generated, 48),
+    sources, recent, origin, totals, countries24h: normalizeCountries(payload.countries_24h),
+    generated: text(payload.generated, 48),
     geo: { loaded: record(payload.geo) && payload.geo.loaded === true, entries: count(payload.geo?.entries) }
   };
 }

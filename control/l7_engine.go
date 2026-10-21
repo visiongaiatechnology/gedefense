@@ -194,7 +194,16 @@ func (e *L7Engine) inspect(ctx context.Context, req L7InspectionRequest, body []
 	}
 	kept, blockable := snapshot.applyRuleOverrides(findings)
 	score, confidence, unique := aggregateL7Findings(kept)
-	blockScore, _, _ := aggregateL7Findings(blockable)
+	// Enforcement scope: mode=block is global, but a deployment may restrict which rules are allowed
+	// to authorise a block. Findings outside the scope stay visible and still raise the alert score;
+	// they simply cannot push a request over the block threshold.
+	blockableScoped := make([]L7Finding, 0, len(blockable))
+	for _, finding := range blockable {
+		if snapshot.blockEligible(finding.RuleID) {
+			blockableScoped = append(blockableScoped, finding)
+		}
+	}
+	blockScore, _, _ := aggregateL7Findings(blockableScoped)
 	response := L7InspectionResponse{
 		RequestID: normalized.RequestID, Decision: "allow", Score: score, Confidence: confidence,
 		Reason: "no finding crossed the alert threshold", BodySHA256: normalized.BodySHA256, Findings: unique,

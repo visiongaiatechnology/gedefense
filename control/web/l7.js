@@ -284,7 +284,11 @@ function renderL7FindingsTable(findings = []) {
     return;
   }
 
-  const rows = findings.map(f => {
+  // Newest first: the API delivers in collection order (oldest first), and an operator scanning the
+  // list cares about the most recent finding. Sorting here keeps the table correct regardless of the
+  // order the backend happened to store.
+  const ordered = findings.slice().sort((left, right) => new Date(right.time || 0) - new Date(left.time || 0));
+  const rows = ordered.map(f => {
     const tr = el('tr', 'clickable-row');
     tr.tabIndex = 0;
     tr.setAttribute('role', 'button');

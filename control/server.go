@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"crypto/tls"
@@ -62,6 +63,19 @@ type APIServer struct {
 	// it both endpoints would have to reconstruct configuration they do not own.
 	l7Service *L7Service
 	fim       *FIMEngine
+	// kernelExposure is the shared kernel-advisory measurement (see kernel_advisories.go). It is
+	// optional: a server built without it simply has no advisory surface, which is what the unit
+	// tests that construct a bare server expect.
+	kernelExposure *kernelExposureCache
+	// mitigationGuard owns the automatic entry-point mitigation and its probation watch. Optional for
+	// the same reason as the exposure cache.
+	mitigationGuard *MitigationGuard
+	// cellGuard owns the automatic Gaia Cell isolation. Optional for the same reason.
+	cellGuard *CellGuard
+	// Rate limits for the destructive entry-point and isolation actions: one operator click is fine,
+	// a loop of them is not. Confirmation phrases prove intent, the budget proves restraint.
+	mitigationLimiter *RateLimiter
+	confineLimiter    *RateLimiter
 
 	packageMu     sync.Mutex
 	packageCancel context.CancelFunc
@@ -136,6 +150,13 @@ func NewAPIServer(cfg Config, state *State, core *CoreClient, feeds *FeedManager
 	mux.HandleFunc("GET /api/v1/status", s.auth(s.status))
 	mux.HandleFunc("GET /api/v1/boot-trust", s.auth(s.bootTrustStatus))
 	mux.HandleFunc("GET /api/v1/hardening/posture", s.auth(s.hardeningPosture))
+	mux.HandleFunc("GET /api/v1/kernel/exposure", s.auth(s.kernelExposureStatus))
+	mux.HandleFunc("GET /api/v1/kernel/mitigation", s.auth(s.kernelMitigationStatus))
+	mux.HandleFunc("GET /api/v1/kernel/mitigation/plan", s.auth(s.kernelMitigationPlan))
+	mux.HandleFunc("POST /api/v1/kernel/mitigation/apply", s.auth(s.kernelMitigationApply))
+	mux.HandleFunc("POST /api/v1/kernel/mitigation/rollback", s.auth(s.kernelMitigationRollback))
+	mux.HandleFunc("GET /api/v1/cells/confinement", s.auth(s.cellsConfinementStatus))
+	mux.HandleFunc("POST /api/v1/xdr/incidents/{id}/confine", s.auth(s.confineIncident))
 	mux.HandleFunc("GET /api/v1/evidence", s.auth(s.evidenceStatus))
 	mux.HandleFunc("GET /api/v1/evidence/verify", s.auth(s.evidenceVerify))
 	mux.HandleFunc("GET /api/v1/fim", s.auth(s.fimStatus))
@@ -261,6 +282,40 @@ func (s *APIServer) quarantineApplier() *QuarantineTransactionApplier {
 // AttachFIM binds the running file integrity engine so the Integrity module can
 // project its policy and report effective state.
 func (s *APIServer) AttachFIM(engine *FIMEngine) { s.fim = engine }
+
+// AttachKernelExposure binds the shared kernel-advisory measurement. The self-check, the release
+// gate and this server all read the same cache, so an operator never sees two exposure numbers.
+func (s *APIServer) AttachKernelExposure(exposure *kernelExposureCache) {
+	if exposure == nil {
+		return
+	}
+	s.kernelExposure = exposure
+	if s.hardening != nil {
+		s.hardening.AttachKernelExposure(exposure)
+	}
+}
+
+// AttachCellGuard binds the automatic Gaia Cell isolation.
+func (s *APIServer) AttachCellGuard(guard *CellGuard) {
+	if guard == nil {
+		return
+	}
+	s.cellGuard = guard
+	if s.confineLimiter == nil {
+		s.confineLimiter = NewRateLimiter(20, 5)
+	}
+}
+
+// AttachMitigationGuard binds the automatic entry-point mitigation and its probation watch.
+func (s *APIServer) AttachMitigationGuard(guard *MitigationGuard) {
+	if guard == nil {
+		return
+	}
+	s.mitigationGuard = guard
+	if s.mitigationLimiter == nil {
+		s.mitigationLimiter = NewRateLimiter(20, 5)
+	}
+}
 
 // AttachFeeds binds the running Threat Intelligence manager so the Fabric module
 // can report the active revision and the per-feed generation state.
@@ -1038,6 +1093,13 @@ func (s *APIServer) serveEmbedded(w http.ResponseWriter, r *http.Request, name, 
 	_, _ = w.Write(b)
 }
 
+// writePublicError answers with a caller-facing reason. It is used by the operator endpoints whose
+// message is actionable (a refused mitigation names the setting that enabled it) and never carries
+// internal detail.
+func writePublicError(w http.ResponseWriter, status int, message string) {
+	writeJSON(w, status, map[string]string{"error": message})
+}
+
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
@@ -1145,12 +1207,221 @@ func decodeStrictJSON(w http.ResponseWriter, r *http.Request, max int64, dst any
 	return nil
 }
 
+// clientSnapshot is the snapshot served to the dashboard. It carries the release readiness next
+// to the state so the interface does not have to fetch it separately: readiness used to be
+// requested twice per status frame - more traffic than the status itself - although it only
+// changes on a release transition. A controller that cannot answer leaves the field nil instead
+// of turning the whole status into an error; the screen then keeps the last readiness it knows.
+func (s *APIServer) clientSnapshot() Snapshot {
+	snapshot := s.state.Snapshot()
+	// The XDR timeline row does not render the attack story, but one correlated incident can carry
+	// hundreds of nodes: on the production host 250 incidents summed to 12.6 MB of story data and
+	// every status frame pushed ~12.9 MB through the browser. The list keeps the fields it renders;
+	// the full story stays on the surfaces that draw it (L7 findings drawer, forensics, the overview
+	// map), which read it from their own endpoints. The snapshot is a fresh slice, so clearing the
+	// field on it cannot mutate the state those endpoints read.
+	for index := range snapshot.Incidents {
+		snapshot.Incidents[index].AttackStory = nil
+	}
+	if s.release == nil {
+		return snapshot
+	}
+	canary, canaryErr := s.release.Readiness(ReleasePhaseCanary)
+	enforce, enforceErr := s.release.Readiness(ReleasePhaseEnforce)
+	if canaryErr != nil || enforceErr != nil {
+		return snapshot
+	}
+	snapshot.Readiness = &ReleaseReadinessSet{Canary: canary, Enforce: enforce}
+	return snapshot
+}
+
 func (s *APIServer) status(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, s.state.Snapshot())
+	writeJSON(w, http.StatusOK, s.clientSnapshot())
 }
 
 func (s *APIServer) bootTrustStatus(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, s.bootTrust.Collect())
+}
+
+// kernelExposureStatus reports the measured kernel-advisory exposure.
+//
+// The answer is deliberately richer than a boolean: it names the advisory, the fixed build per
+// release channel, the verdict that could not be decided and the measured entry points, so an
+// operator can see why a host is scored the way it is. ?refresh=1 re-takes the measurement, which is
+// what an operator uses right after applying a mitigation to see the score move.
+func (s *APIServer) kernelExposureStatus(w http.ResponseWriter, r *http.Request) {
+	if s.kernelExposure == nil || !s.cfg.Advisories.Enabled {
+		writeJSON(w, http.StatusOK, struct {
+			Enabled bool `json:"enabled"`
+		}{Enabled: false})
+		return
+	}
+	exposure := s.kernelExposure.Current()
+	if r.URL.Query().Get("refresh") != "" {
+		exposure = s.kernelExposure.Refresh()
+	}
+	writeJSON(w, http.StatusOK, struct {
+		Enabled     bool   `json:"enabled"`
+		Mode        string `json:"mode"`
+		MaxExposure int    `json:"max_exposure"`
+		KernelExposure
+	}{
+		Enabled: true, Mode: s.cfg.Advisories.Mode, MaxExposure: s.cfg.Advisories.MaxExposure,
+		KernelExposure: exposure,
+	})
+}
+
+// kernelMitigationStatus reports the automatic mitigation and the value the kernel actually holds.
+func (s *APIServer) kernelMitigationStatus(w http.ResponseWriter, _ *http.Request) {
+	if s.mitigationGuard == nil {
+		writeJSON(w, http.StatusOK, MitigationStatus{State: mitigationStateDisabled})
+		return
+	}
+	writeJSON(w, http.StatusOK, s.mitigationGuard.Status())
+}
+
+// kernelMitigationPlan is the dry run: what the guard would change on this host right now. It writes
+// nothing, which is what makes it safe to call on a production system before enabling the automatic
+// path.
+func (s *APIServer) kernelMitigationPlan(w http.ResponseWriter, _ *http.Request) {
+	if s.mitigationGuard == nil {
+		writeJSON(w, http.StatusOK, MitigationPlan{Reason: "no mitigation guard is attached"})
+		return
+	}
+	writeJSON(w, http.StatusOK, s.mitigationGuard.Plan())
+}
+
+type mitigationRequest struct {
+	Reason  string `json:"reason"`
+	Confirm string `json:"confirm"`
+}
+
+// expectedMitigationConfirmation mirrors the transaction engine: the phrase is derivable from the
+// target, so it proves intent, not authority. It is compared verbatim and never treated as a secret.
+func expectedMitigationConfirmation(verb, key string) string { return verb + " " + key }
+
+func decodeMitigationRequest(r *http.Request) (mitigationRequest, error) {
+	payload, err := io.ReadAll(io.LimitReader(r.Body, 4<<10))
+	if err != nil {
+		return mitigationRequest{}, err
+	}
+	var request mitigationRequest
+	if len(bytes.TrimSpace(payload)) > 0 {
+		if err := json.Unmarshal(payload, &request); err != nil {
+			return mitigationRequest{}, errors.New("the request body is not valid JSON")
+		}
+	}
+	request.Reason = strings.TrimSpace(request.Reason)
+	request.Confirm = strings.TrimSpace(request.Confirm)
+	if len([]rune(request.Reason)) < 3 {
+		return mitigationRequest{}, errors.New("a reason of at least three characters is required")
+	}
+	if len([]rune(request.Reason)) > 240 {
+		request.Reason = string([]rune(request.Reason)[:240])
+	}
+	return request, nil
+}
+
+// kernelMitigationApply closes the entry point. In report mode the guard refuses: the automatic path
+// exists only when the operator enabled it, and an unrequested kernel change is never acceptable.
+func (s *APIServer) kernelMitigationApply(w http.ResponseWriter, r *http.Request) {
+	request, err := decodeMitigationRequest(r)
+	if err != nil {
+		writePublicError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if s.mitigationGuard == nil {
+		writePublicError(w, http.StatusServiceUnavailable, "no mitigation guard is attached")
+		return
+	}
+	if !s.mitigationLimiter.Allow(remoteIdentity(r.RemoteAddr), time.Now()) {
+		apiError(w, http.StatusTooManyRequests, "too many mitigation requests", nil)
+		return
+	}
+	plan := s.mitigationGuard.Plan()
+	required := expectedMitigationConfirmation("APPLY", plan.Key)
+	if request.Confirm != required {
+		writePublicError(w, http.StatusBadRequest, "confirmation required: "+required)
+		return
+	}
+	status, err := s.mitigationGuard.Apply(request.Reason)
+	if err != nil {
+		writePublicError(w, http.StatusConflict, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, status)
+}
+
+// kernelMitigationRollback restores the previous value and is always available, including after the
+// probation window: an operator must be able to undo what the platform did.
+func (s *APIServer) kernelMitigationRollback(w http.ResponseWriter, r *http.Request) {
+	request, err := decodeMitigationRequest(r)
+	if err != nil {
+		writePublicError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if s.mitigationGuard == nil {
+		writePublicError(w, http.StatusServiceUnavailable, "no mitigation guard is attached")
+		return
+	}
+	if !s.mitigationLimiter.Allow(remoteIdentity(r.RemoteAddr), time.Now()) {
+		apiError(w, http.StatusTooManyRequests, "too many mitigation requests", nil)
+		return
+	}
+	current := s.mitigationGuard.Status()
+	required := expectedMitigationConfirmation("ROLLBACK", current.Key)
+	if request.Confirm != required {
+		writePublicError(w, http.StatusBadRequest, "confirmation required: "+required)
+		return
+	}
+	status, err := s.mitigationGuard.Rollback(request.Reason)
+	if err != nil {
+		writePublicError(w, http.StatusConflict, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, status)
+}
+
+// cellsConfinementStatus reports the automatic isolation policy and what it has done.
+func (s *APIServer) cellsConfinementStatus(w http.ResponseWriter, _ *http.Request) {
+	if s.cellGuard == nil {
+		writeJSON(w, http.StatusOK, CellConfinementStatus{Enabled: false})
+		return
+	}
+	writeJSON(w, http.StatusOK, s.cellGuard.Status())
+}
+
+// confineIncident isolates the workload behind one incident. It is the manual path; the automatic one
+// runs from the guard's own scan.
+func (s *APIServer) confineIncident(w http.ResponseWriter, r *http.Request) {
+	if s.cellGuard == nil {
+		apiError(w, http.StatusServiceUnavailable, "cell isolation is unavailable", nil)
+		return
+	}
+	incidentID := strings.TrimSpace(r.PathValue("id"))
+	var request struct {
+		Action string `json:"action"`
+		Reason string `json:"reason"`
+	}
+	if err := decodeStrictJSON(w, r, 8<<10, &request); err != nil {
+		apiError(w, http.StatusBadRequest, "invalid confinement request", err)
+		return
+	}
+	reason := strings.TrimSpace(request.Reason)
+	if len([]rune(reason)) < 3 {
+		apiError(w, http.StatusBadRequest, "a reason of at least three characters is required", nil)
+		return
+	}
+	if !s.confineLimiter.Allow(remoteIdentity(r.RemoteAddr), time.Now()) {
+		apiError(w, http.StatusTooManyRequests, "too many confinement requests", nil)
+		return
+	}
+	result, err := s.cellGuard.ConfineIncident(incidentID, request.Action, reason)
+	if err != nil {
+		apiError(w, http.StatusConflict, "the workload could not be isolated", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
 }
 
 // hardeningPosture evaluates the live posture with the administrable thresholds
@@ -1316,7 +1587,7 @@ func (s *APIServer) stream(w http.ResponseWriter, r *http.Request) {
 		s.state.RecordStreamWriteError()
 		return
 	}
-	if err := json.NewEncoder(w).Encode(s.state.Snapshot()); err != nil {
+	if err := json.NewEncoder(w).Encode(s.clientSnapshot()); err != nil {
 		s.state.RecordStreamWriteError()
 		return
 	}

@@ -65,6 +65,43 @@ type HardeningPosture struct {
 type HardeningCollector struct {
 	root string
 	now  func() time.Time
+	// exposure is optional. A collector without it reports the advisory check as UNAVAILABLE, which
+	// the summariser excludes from the score instead of counting it as a pass.
+	exposure *kernelExposureCache
+}
+
+// AttachKernelExposure gives the posture the same advisory measurement the release gate uses.
+func (c *HardeningCollector) AttachKernelExposure(exposure *kernelExposureCache) {
+	if exposure == nil {
+		return
+	}
+	c.exposure = exposure
+}
+
+// kernelAdvisoryCheck reports the measured kernel-advisory exposure as a posture check, so the
+// hardening score reflects a vulnerable kernel instead of only a kernel that does not call itself
+// "hardened".
+func (c *HardeningCollector) kernelAdvisoryCheck() HardeningCheck {
+	check := baseHardeningCheck("kernel.advisory", "kernel", "Kernel advisory exposure", 12, false)
+	if c.exposure == nil {
+		return unavailableHardening(check)
+	}
+	exposure := c.exposure.Current()
+	check.Evidence = fmt.Sprintf("%s %s (%s), reachability %d%%", exposure.Kernel.Distro, exposure.Kernel.Release, exposure.Kernel.Channel, exposure.Reachability)
+	switch exposure.Verdict {
+	case kernelVerdictUnaffected:
+		check.State = hardeningStateProtected
+	case kernelVerdictVulnerable:
+		check.State = hardeningStateUnprotected
+		check.Recommendation = exposure.Recommendation
+	default:
+		// Unknown is not a pass. The channel published no fixed build, so the host cannot be called
+		// hardened on a version argument - the mitigations are what remains.
+		check.State = hardeningStatePartial
+		check.Evidence += "; " + exposure.UnknownReason
+		check.Recommendation = exposure.Recommendation
+	}
+	return check
 }
 
 func NewHardeningCollector() *HardeningCollector {
@@ -78,11 +115,18 @@ func newHardeningCollectorForTest(root string, now func() time.Time) *HardeningC
 func (c *HardeningCollector) Collect(snapshot Snapshot, boot BootTrustReport) HardeningPosture {
 	checks := []HardeningCheck{
 		c.kernelReleaseCheck(),
+		c.kernelAdvisoryCheck(),
+		c.phpUploadProgressCheck(),
 		c.integerCheck("kernel.aslr", "kernel", "Address Space Layout Randomization", "proc/sys/kernel/randomize_va_space", 2, 10, true, "Set kernel.randomize_va_space=2."),
 		c.minimumCheck("kernel.kptr", "kernel", "Kernel pointer restriction", "proc/sys/kernel/kptr_restrict", 2, 8, true, "Set kernel.kptr_restrict=2."),
 		c.minimumCheck("kernel.dmesg", "kernel", "Kernel log restriction", "proc/sys/kernel/dmesg_restrict", 1, 7, true, "Set kernel.dmesg_restrict=1."),
 		c.minimumCheck("kernel.ptrace", "kernel", "Process tracing boundary", "proc/sys/kernel/yama/ptrace_scope", 1, 8, true, "Set kernel.yama.ptrace_scope to at least 1."),
 		c.minimumCheck("kernel.bpf", "kernel", "Unprivileged BPF restriction", "proc/sys/kernel/unprivileged_bpf_disabled", 1, 10, true, "Disable unprivileged BPF."),
+		// The unprivileged user namespace is the doorway several local kernel exploit classes need:
+		// it is what lets an unprivileged process hold CAP_NET_RAW in a namespace it owns. A host that
+		// cannot take the kernel update can still close this door, and the advisory layer scores the
+		// difference.
+		c.integerCheck("kernel.userns", "kernel", "Unprivileged user namespaces", "proc/sys/kernel/unprivileged_userns_clone", 0, 8, true, "Set kernel.unprivileged_userns_clone=0; rootless containers will stop working."),
 		c.pairedMinimumCheck("filesystem.protected-links", "filesystem", "Protected FIFOs and regular files", "proc/sys/fs/protected_fifos", "proc/sys/fs/protected_regular", 2, 7, "Protect privileged FIFO and regular-file creation."),
 		c.integerCheck("filesystem.suid-dumps", "filesystem", "SUID core-dump suppression", "proc/sys/fs/suid_dumpable", 0, 7, true, "Disable core dumps for privileged executables."),
 		c.integerCheck("network.syn-cookies", "network", "TCP SYN cookie protection", "proc/sys/net/ipv4/tcp_syncookies", 1, 6, true, "Enable TCP SYN cookies."),
@@ -561,6 +605,8 @@ func hardeningDomainTitle(id string) string {
 		return "Filesystem"
 	case "integrity":
 		return "Integrity & Evidence"
+	case "web":
+		return "Web Runtime"
 	default:
 		return id
 	}

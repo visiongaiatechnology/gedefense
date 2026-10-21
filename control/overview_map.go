@@ -95,14 +95,18 @@ type OverviewThreatMapEvent struct {
 }
 
 type OverviewThreatMapResponse struct {
-	Sources    []OverviewThreatMapSource  `json:"sources"`
-	Countries  []OverviewThreatMapCountry `json:"countries"`
-	Recent     []OverviewThreatMapEvent   `json:"recent"`
-	Origin     KineticOrigin              `json:"origin"`
-	OriginNote string                     `json:"origin_note"`
-	Geo        any                        `json:"geo,omitempty"`
-	Totals     map[string]int             `json:"totals"`
-	Generated  time.Time                  `json:"generated"`
+	Sources   []OverviewThreatMapSource  `json:"sources"`
+	Countries []OverviewThreatMapCountry `json:"countries"`
+	// Countries24h is the same roll-up restricted to sources last seen within 24 hours - the window
+	// the dashboard's "top countries" bar states. It is computed here so the window and the bucket
+	// rules live in one place instead of being repeated in the browser on every refresh.
+	Countries24h []OverviewThreatMapCountry `json:"countries_24h"`
+	Recent       []OverviewThreatMapEvent   `json:"recent"`
+	Origin       KineticOrigin              `json:"origin"`
+	OriginNote   string                     `json:"origin_note"`
+	Geo          any                        `json:"geo,omitempty"`
+	Totals       map[string]int             `json:"totals"`
+	Generated    time.Time                  `json:"generated"`
 }
 
 // severityRank orders severities so that a merged source keeps the worst one it was reported with.
@@ -272,7 +276,8 @@ func (s *APIServer) overviewThreatMap(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	countries := aggregateOverviewCountries(sources)
+	countries := aggregateOverviewCountries(sources, time.Time{})
+	countries24h := aggregateOverviewCountries(sources, time.Now().UTC().Add(-24*time.Hour))
 
 	// The activity band reads the ledger backwards, newest first. It deliberately keeps events that the
 	// map had to skip: no remote endpoint means no dot, but it is still something that happened.
@@ -318,7 +323,7 @@ func (s *APIServer) overviewThreatMap(w http.ResponseWriter, r *http.Request) {
 		"events_read": events,
 	}
 	writeJSON(w, http.StatusOK, OverviewThreatMapResponse{
-		Sources: sources, Countries: countries, Recent: recent,
+		Sources: sources, Countries: countries, Countries24h: countries24h, Recent: recent,
 		Origin: origin, OriginNote: describeOrigin(origin),
 		Geo: s.geoStatusOrNil(), Totals: totals, Generated: time.Now().UTC(),
 	})
@@ -351,9 +356,15 @@ func incidentBlocked(decision, action string) bool {
 	return false
 }
 
-func aggregateOverviewCountries(sources []OverviewThreatMapSource) []OverviewThreatMapCountry {
+// aggregateOverviewCountries rolls the bounded source list up per country. A non-zero since drops
+// sources that have not been seen since that instant, so the dashboard's 24-hour bar and the map's
+// all-source heat are one computation under two windows.
+func aggregateOverviewCountries(sources []OverviewThreatMapSource, since time.Time) []OverviewThreatMapCountry {
 	byCode := make(map[string]*OverviewThreatMapCountry)
 	for _, source := range sources {
+		if !since.IsZero() && source.LastSeen.Before(since) {
+			continue
+		}
 		if source.CountryCode == "" {
 			continue
 		}

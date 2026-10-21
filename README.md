@@ -8,9 +8,9 @@
 ### Linux Security Fabric
 
 [![License](https://img.shields.io/badge/License-AGPL--3.0--only-blue?style=for-the-badge)](https://www.gnu.org/licenses/agpl-3.0)
-[![Version](https://img.shields.io/badge/Version-4.2.5-orange?style=for-the-badge)](#)
-[![Status](https://img.shields.io/badge/Status-Release_v4.2.5-yellow?style=for-the-badge)](#)
-[![Installer](https://img.shields.io/badge/Installer-4.2.5_Universal_Linux-green?style=for-the-badge)](#-quick-start)
+[![Version](https://img.shields.io/badge/Version-4.4.0-orange?style=for-the-badge)](#)
+[![Status](https://img.shields.io/badge/Status-Release_v4.4.0-yellow?style=for-the-badge)](#)
+[![Installer](https://img.shields.io/badge/Installer-Universal_Linux-green?style=for-the-badge)](#-quick-start)
 [![Platform](https://img.shields.io/badge/Platform-Linux_x86__64-lightgrey?style=for-the-badge&logo=linux)](#)
 [![Data Plane](https://img.shields.io/badge/Data_Plane-Rust_eBPF%2FXDP-red?style=for-the-badge&logo=rust)](#-architecture)
 [![Control Plane](https://img.shields.io/badge/Control_Plane-Go-00ADD8?style=for-the-badge&logo=go)](#-architecture)
@@ -37,7 +37,10 @@
 
 
 
-## 🚨 CRITICAL SECURITY ADVISORY & WARNING — RELEASE v4.2.5
+## 🚨 CRITICAL SECURITY ADVISORY & WARNING — RELEASE v4.4.0
+
+> **Release 4.4.0 operational security update.** The PHP upload-progress mitigation (`session.upload_progress.enabled = Off`), the critical L7 rule `L7.PHP.SESSION_UPLOAD_PROGRESS` and rule-scoped inline enforcement (`l7.enforce_rules`, `mode = "block"`) are active. The L7 origin is bound to loopback, so direct origin access cannot bypass inspection. The historical 4.2.x advisory below remains part of the remediation record.
+
 
 > [!CAUTION]
 > **URGENT SECURITY NOTICE FOR ALL OPERATORS & SYSTEM ADMINISTRATORS (UPGRADE STRONGLY RECOMMENDED):**
@@ -72,9 +75,9 @@
 
 ---
 
-## ⚠️ STABILITY & ASSURANCE — RELEASE v4.2.5 · UNIVERSAL LINUX PLATFORM
+## ⚠️ STABILITY & ASSURANCE — RELEASE v4.4.0 · UNIVERSAL LINUX PLATFORM
 
-VGT GeDefense 4.2.5 is the flagship Linux security fabric — the hardened kernel-speed defense chain combined with the new **Security Fabric Control Plane**, universal Linux integration, hardened release pipeline, and concrete kernel/NIC qualification gates. It is engineered for sovereign host and network protection.
+VGT GeDefense 4.4.0 is the flagship Linux security fabric — the hardened kernel-speed defense chain combined with the new **Security Fabric Control Plane**, universal Linux integration, hardened release pipeline, and concrete kernel/NIC qualification gates. It is engineered for sovereign host and network protection.
 
 **Production clearance is deliberately a property of the concretely audited target host — not merely the source code.**
 
@@ -617,15 +620,17 @@ If the Gaia Cells runtime is **not present**, the adapter reports `runtime_not_i
 
 ```bash
 # Download installer
-wget https://github.com/visiongaiatechnology/gedefense/releases/download/v4.2.5/GeDefense-4.2.5-OneClick.run
+wget https://github.com/visiongaiatechnology/gedefense/releases/download/v4.4.0/GeDefense-4.4.0-OneClick.run
 
 # Verify SHA-256
-sha256sum --check GeDefense-4.2.5-OneClick.run.sha256
+sha256sum --check GeDefense-4.4.0-OneClick.run.sha256
 
 # Install (root required)
-chmod 700 GeDefense-4.2.5-OneClick.run
-sudo ./GeDefense-4.2.5-OneClick.run
+chmod 700 GeDefense-4.4.0-OneClick.run
+sudo ./GeDefense-4.4.0-OneClick.run
 ```
+
+> **Installer availability:** The official v4.4.0 self-contained installer (`GeDefense-4.4.0-OneClick.run`) is verified and published under GitHub Releases.
 
 > The installer and checksum are published only after all GitHub CI and concrete
 > Linux host qualification gates pass. Never execute an unverified RUN file.
@@ -660,7 +665,7 @@ The firewall rule for the HTTPS gateway port (TCP 9843) can be configured via UF
 
 ---
 
-## 🚧 Known Limitations (4.2.5)
+## 🚧 Known Limitations (4.4.0)
 
 - No Swarm / Mesh support
 - No QUIC offloading
@@ -678,7 +683,20 @@ The firewall rule for the HTTPS gateway port (TCP 9843) can be configured via UF
 
 ## 📋 Changelog
 
-### v4.2.5 — Real-Time Multi-Vector Threat Map, Immediate Post-Update Re-Arm & Self-Healing Telemetry *(Current)*
+### v4.4.0 — Automatic Gaia-Cell Isolation, Guarded Kernel Mitigation & Operational PHP/L7 Hardening *(Current)*
+
+- **Automatic and manual Gaia-Cell isolation:** incidents at or above `cells.auto_confine_score` isolate the owning cell through the reversible transaction engine; manual isolation is available on each incident row. APIs: `POST /api/v1/xdr/incidents/{id}/confine`, `GET /api/v1/cells/confinement`.
+- **Kernel mitigation guard:** opt-in sysctl mitigation with a bounded probation window, host-service verification and automatic rollback; the hardening view exposes dry-run, apply and rollback with a written reason.
+- **PHP upload-progress mitigation:** the critical L7 rule `L7.PHP.SESSION_UPLOAD_PROGRESS` (score 110) and the hardening control `web.php-upload-progress`; `session.upload_progress.enabled = Off` is verified against the effective web SAPI.
+- **Rule-scoped L7 enforcement:** `l7.enforce_rules` limits blocking to named rules/families; the inline edge self-test passes and the origin is loopback-only, so direct origin access cannot bypass inspection.
+
+### v4.3.0 — Kernel Advisory Exposure: Detect, Score and Block What the Sensors Cannot See
+
+- Runtime release/channel exposure against the shipped advisory catalogue, with `unknown` never presented as safe.
+- Reachability-weighted exposure scoring and the kernel-risk dashboard panel (dry-run, apply, rollback).
+
+
+### v4.2.5 — Real-Time Multi-Vector Threat Map, Immediate Post-Update Re-Arm & Self-Healing Telemetry
 
 A visualization and platform resilience release. It brings a unified real-time detection overview across all attack vectors, immediate re-arm following software upgrades, and autonomous sensor self-healing.
 
@@ -957,6 +975,6 @@ sudo python3 scripts/update-geoip-db.py /var/lib/vgt/gedefense/geoip.csv
 
 [![VGT](https://img.shields.io/badge/VisionGaia-Technology-cyan?style=for-the-badge)](https://visiongaiatechnology.de)
 
-*VGT GeDefense 4.2.5 — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
+*VGT GeDefense 4.4.0 — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
 
 </div>

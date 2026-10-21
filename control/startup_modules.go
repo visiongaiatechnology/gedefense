@@ -27,14 +27,18 @@ import (
 //   - the threat-intel feed re-synchronises on its own schedule; a failure there narrows detection
 //     quality and is reported, but it does not stop the kernel from enforcing.
 type StartupDeps struct {
-	Release   *ReleaseController
-	State     *State
-	Core      *CoreClient
-	Policy    *PolicyStore
-	Settings  *SettingsStore
-	XDR       *XDREngine
-	L7        l7SelfTester
-	Interface string
+	Release  *ReleaseController
+	State    *State
+	Core     *CoreClient
+	Policy   *PolicyStore
+	Settings *SettingsStore
+	XDR      *XDREngine
+	L7       l7SelfTester
+	// Exposure is the kernel-advisory measurement. The caller that owns the cache attaches it here so
+	// the self-check, the release gate and the API all read the same observation.
+	Exposure   *kernelExposureCache
+	Advisories AdvisoryConfig
+	Interface  string
 }
 
 // l7SelfTester is the part of the L7 service the self-check needs: the canonical probe that sends one
@@ -125,6 +129,28 @@ func newStartupModules(deps StartupDeps) []startupModule {
 					return fmt.Errorf("L7 self-test outcome %s: %s", result.Outcome, boundedSummary(result.Detail))
 				}
 				return nil
+			},
+		})
+	}
+
+	// The kernel-advisory module is the one entry the network sensors cannot cover: a local kernel
+	// trust failure that no packet GeDefense sees carries. It reports exposure the way the self-check
+	// reports every other module, and in strict mode it blocks like any other mandatory module.
+	if deps.Exposure != nil && deps.Advisories.Enabled {
+		modules = append(modules, startupModule{
+			name:        "kernel_advisory",
+			blocking:    deps.Advisories.Mode == advisoryModeStrict,
+			continuous:  true,
+			description: "running kernel measured against the shipped advisory catalogue",
+			probe: func(ctx context.Context) error {
+				exposure := deps.Exposure.Current()
+				if exposure.Verdict == kernelVerdictUnaffected {
+					return nil
+				}
+				if exposure.Highest == "" {
+					return fmt.Errorf("%s: kernel exposure %d of 100", exposure.Grade, exposure.Score)
+				}
+				return fmt.Errorf("%s: %s, exposure %d of 100", exposure.Grade, exposure.Highest, exposure.Score)
 			},
 		})
 	}

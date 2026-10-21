@@ -27,12 +27,12 @@ def sha256_file(path: Path) -> str:
 
 def main():
     root = Path(__file__).resolve().parent.parent
-    assets_dir = root.parent.parent / "release-v4.2.5-assets"
-    if not assets_dir.exists():
-        assets_dir.mkdir(parents=True, exist_ok=True)
+    downloads = Path("C:/Users/Masterboard/Downloads")
+    if not downloads.exists():
+        downloads.mkdir(parents=True, exist_ok=True)
 
     version = (root / "VERSION").read_text(encoding="utf-8").strip()
-    if version != "4.2.5":
+    if version != "4.4.0":
         raise ValueError(f"Unexpected VERSION: {version}")
 
     print(f"Packaging GeDefense {version} from {root}...")
@@ -103,9 +103,15 @@ def main():
     dt = datetime.datetime(2026, 10, 6, 17, 30, 0, tzinfo=datetime.timezone.utc)
     zip_dt = (dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second)
 
+    workspace_root = root if (root / "GitHub Upload").exists() else root.parent.parent
+    release_dir = workspace_root / f"release-v{version}-assets"
+    release_dir.mkdir(parents=True, exist_ok=True)
+
     targets = [
-        (f"gedefense-{version}", assets_dir / f"gedefense-{version}.zip"),
-        (f"VGT_GeDefense_Beta_v4_{version}", assets_dir / f"VGT_GeDefense_Beta_v4_{version}_Source.zip"),
+        (f"gedefense-{version}", downloads / f"gedefense-{version}.zip"),
+        (f"VGT_GeDefense_Beta_v4_{version}", downloads / f"VGT_GeDefense_Beta_v4_{version}_Source.zip"),
+        (f"gedefense-{version}", release_dir / f"gedefense-{version}.zip"),
+        (f"VGT_GeDefense_Beta_v4_{version}", release_dir / f"VGT_GeDefense_Beta_v4_{version}_Source.zip"),
     ]
 
     for prefix, out_zip in targets:

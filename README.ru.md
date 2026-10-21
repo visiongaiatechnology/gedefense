@@ -8,9 +8,9 @@
 ### Фабрика безопасности Linux (Linux Security Fabric)
 
 [![License](https://img.shields.io/badge/License-AGPL--3.0--only-blue?style=for-the-badge)](https://www.gnu.org/licenses/agpl-3.0)
-[![Version](https://img.shields.io/badge/Version-4.2.5-orange?style=for-the-badge)](#)
-[![Status](https://img.shields.io/badge/Status-Release_v4.2.5-yellow?style=for-the-badge)](#)
-[![Installer](https://img.shields.io/badge/Installer-4.2.5_Universal_Linux-green?style=for-the-badge)](#-быстрый-старт)
+[![Version](https://img.shields.io/badge/Version-4.4.0-orange?style=for-the-badge)](#)
+[![Status](https://img.shields.io/badge/Status-Release_v4.4.0-yellow?style=for-the-badge)](#)
+[![Installer](https://img.shields.io/badge/Installer-Universal_Linux-green?style=for-the-badge)](#-быстрый-старт)
 [![Platform](https://img.shields.io/badge/Platform-Linux_x86__64-lightgrey?style=for-the-badge&logo=linux)](#)
 [![Data Plane](https://img.shields.io/badge/Data_Plane-Rust_eBPF%2FXDP-red?style=for-the-badge&logo=rust)](#-архитектура)
 [![Control Plane](https://img.shields.io/badge/Control_Plane-Go-00ADD8?style=for-the-badge&logo=go)](#-архитектура)
@@ -33,7 +33,10 @@
 
 ---
 
-## 🚨 КРИТИЧЕСКОЕ ПРЕДУПРЕЖДЕНИЕ БЕЗОПАСНОСТИ — РЕЛИЗ v4.2.5
+## 🚨 КРИТИЧЕСКОЕ ПРЕДУПРЕЖДЕНИЕ БЕЗОПАСНОСТИ — РЕЛИЗ v4.4.0
+
+> **Оперативное обновление безопасности 4.4.0.** Активны митигация PHP upload-progress (`session.upload_progress.enabled = Off`), критическое L7-правило `L7.PHP.SESSION_UPLOAD_PROGRESS` и rule-scoped inline-enforcement (`l7.enforce_rules`, `mode = "block"`). Origin L7 привязан к loopback, поэтому прямой доступ к origin не обходит инспекцию. Историческое уведомление 4.2.x ниже остаётся частью истории remediation.
+
 
 > [!CAUTION]
 > **СРОЧНОЕ УВЕДОМЛЕНИЕ ДЛЯ ОПЕРАТОРОВ И СИСТЕМНЫХ АДМИНИСТРАТОРОВ (ОБНОВЛЕНИЕ НАСТОЯТЕЛЬНО РЕКОМЕНДУЕТСЯ):**
@@ -68,9 +71,9 @@
 
 ---
 
-## ⚠️ СТАБИЛЬНОСТЬ И ГАРАНТИИ — РЕЛИЗ v4.2.5 · УНИВЕРСАЛЬНАЯ ПЛАТФОРМА LINUX
+## ⚠️ СТАБИЛЬНОСТЬ И ГАРАНТИИ — РЕЛИЗ v4.4.0 · УНИВЕРСАЛЬНАЯ ПЛАТФОРМА LINUX
 
-VGT GeDefense 4.2.5 — это флагманская фабрика безопасности Linux: закаленная цепочка обороны на скорости ядра в сочетании с новой **Security Fabric Control Plane**, универсальной интеграцией с Linux, защищенным конвейером релизов и конкретными гейтами квалификации ядра/NIC. Разработано для суверенной защиты хоста и сети.
+VGT GeDefense 4.4.0 — это флагманская фабрика безопасности Linux: закаленная цепочка обороны на скорости ядра в сочетании с новой **Security Fabric Control Plane**, универсальной интеграцией с Linux, защищенным конвейером релизов и конкретными гейтами квалификации ядра/NIC. Разработано для суверенной защиты хоста и сети.
 
 **Допуск к эксплуатации в продакшене намеренно является свойством конкретно проверенного целевого хоста, а не только исходного кода.**
 
@@ -609,15 +612,17 @@ Observe ──→ Canary ──→ Enforce
 
 ```bash
 # Загрузить инсталлятор
-wget https://github.com/visiongaiatechnology/gedefense/releases/download/v4.2.5/GeDefense-4.2.5-OneClick.run
+wget https://github.com/visiongaiatechnology/gedefense/releases/download/v4.4.0/GeDefense-4.4.0-OneClick.run
 
 # Проверить SHA-256
-sha256sum --check GeDefense-4.2.5-OneClick.run.sha256
+sha256sum --check GeDefense-4.4.0-OneClick.run.sha256
 
 # Установить (требуются права root)
-chmod 700 GeDefense-4.2.5-OneClick.run
-sudo ./GeDefense-4.2.5-OneClick.run
+chmod 700 GeDefense-4.4.0-OneClick.run
+sudo ./GeDefense-4.4.0-OneClick.run
 ```
+
+> **Доступность инсталлятора:** Официальные автономные установочные ассеты v4.4.0 (`GeDefense-4.4.0-OneClick.run`) проверены и опубликованы в GitHub Releases.
 
 > Инсталлятор и контрольные суммы публикуются только после успешного прохождения всех этапов GitHub CI и квалификационных проверок целевого хоста. Никогда не запускайте непроверенные файлы RUN.
 
@@ -651,7 +656,7 @@ sudo ./GeDefense-4.2.5-OneClick.run
 
 ---
 
-## 🚧 Известные ограничения (4.2.5)
+## 🚧 Известные ограничения (4.4.0)
 
 - Отсутствие поддержки Swarm / Mesh
 - Отсутствие разгрузки QUIC
@@ -669,7 +674,20 @@ sudo ./GeDefense-4.2.5-OneClick.run
 
 ## 📋 Журнал изменений (Changelog)
 
-### v4.2.5 — Мультивекторная карта угроз реального времени, мгновенный возврат защиты после обновлений и самоисцеление *(Текущая версия)*
+### v4.4.0 — Автоматическая изоляция Gaia Cells, защищённая kernel-митигация и оперативное PHP/L7-усиление *(Текущая версия)*
+
+- **Автоматическая и ручная изоляция Gaia Cells:** инциденты с оценкой выше `cells.auto_confine_score` изолируют связанную cell через обратимый transaction engine; ручная изоляция доступна в строке инцидента. API: `POST /api/v1/xdr/incidents/{id}/confine`, `GET /api/v1/cells/confinement`.
+- **Kernel mitigation guard:** opt-in sysctl-митигация с ограниченным probation-окном, проверкой сервисов хоста и автоматическим rollback; панель hardening предлагает dry-run, apply и rollback с указанием причины.
+- **Митигация PHP upload-progress:** критическое L7-правило `L7.PHP.SESSION_UPLOAD_PROGRESS` (score 110) и контроль `web.php-upload-progress`; `session.upload_progress.enabled = Off` проверяется по фактическому web-SAPI.
+- **Rule-scoped L7 enforcement:** `l7.enforce_rules` ограничивает блокировку указанными правилами/семействами; inline edge self-test PASS, origin слушает только loopback, поэтому прямой доступ к origin не обходит инспекцию.
+
+### v4.3.0 — Экспозиция kernel-рекомендаций: обнаруживать, оценивать и блокировать то, чего не видят сенсоры
+
+- Оценка экспозиции релиза/канала по поставляемому каталогу рекомендаций; `unknown` никогда не выдаётся за безопасное состояние.
+- Оценка с учётом достижимости и панель kernel-risk в dashboard (dry-run, apply, rollback).
+
+
+### v4.2.5 — Мультивекторная карта угроз реального времени, мгновенный возврат защиты после обновлений и самоисцеление
 
 Релиз визуализации и отказоустойчивости платформы. Включает единую глобальную карту атак по всем векторам, моментальное включение защиты после обновлений и автономное самоисцеление сенсоров.
 
@@ -915,6 +933,6 @@ sudo python3 scripts/update-geoip-db.py /var/lib/vgt/gedefense/geoip.csv
 
 [![VGT](https://img.shields.io/badge/VisionGaia-Technology-cyan?style=for-the-badge)](https://visiongaiatechnology.de)
 
-*VGT GeDefense 4.2.5 — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
+*VGT GeDefense 4.4.0 — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
 
 </div>

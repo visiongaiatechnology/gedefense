@@ -2278,3 +2278,116 @@ dialog::backdrop { background: rgba(1, 6, 13, .77); backdrop-filter: blur(12px) 
 .evidence-full-notice strong { display: block; color: #f4c76a; font-size: .78rem; letter-spacing: .01em; }
 .evidence-full-notice p { margin: 7px 0 0; color: #cbb894; font-size: .72rem; line-height: 1.6; }
 .evidence-full-notice .evidence-full-action { color: #a8bccb; }
+
+
+/* ---- bounded list panes (2026-10-20) ----
+   Every long table gets its own scroll area so a view cannot grow to several screens. The pane is
+   the list, not the page: the surrounding panel keeps its header, actions and footer reachable. */
+.view .table-wrap {
+  max-height: 460px;
+  overflow-y: auto;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(120, 190, 255, .45) transparent;
+  overscroll-behavior: contain;
+  /* A rebuilt table must not let the browser re-anchor the scroll position by itself. */
+  overflow-anchor: none;
+}
+.view .table-wrap::-webkit-scrollbar { width: 10px; height: 10px; }
+.view .table-wrap::-webkit-scrollbar-track { background: transparent; }
+.view .table-wrap::-webkit-scrollbar-thumb {
+  background: rgba(120, 190, 255, .35);
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+.view .table-wrap::-webkit-scrollbar-thumb:hover { background: rgba(120, 190, 255, .6); background-clip: padding-box; }
+.table-pane-more {
+  display: flex;
+  justify-content: center;
+  padding: .5rem 0 .25rem;
+}
+.view .stack { display: grid; grid-template-columns: 1fr; gap: 1.25rem; }
+.nav, aside, .sidebar, .side-nav, .app-nav {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(120, 190, 255, .4) transparent;
+  overscroll-behavior: contain;
+}
+.nav::-webkit-scrollbar, aside::-webkit-scrollbar, .sidebar::-webkit-scrollbar,
+.side-nav::-webkit-scrollbar, .app-nav::-webkit-scrollbar { width: 8px; }
+.nav::-webkit-scrollbar-thumb, aside::-webkit-scrollbar-thumb, .sidebar::-webkit-scrollbar-thumb,
+.side-nav::-webkit-scrollbar-thumb, .app-nav::-webkit-scrollbar-thumb {
+  background: rgba(120, 190, 255, .35);
+  border-radius: 8px;
+}
+/* Settings: the module switches become a responsive grid of cards instead of a long column. */
+.toggle-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: .6rem;
+}
+.toggle-list .toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .75rem;
+  padding: .6rem .8rem;
+  border: 1px solid rgba(120, 190, 255, .16);
+  border-radius: .7rem;
+  background: rgba(10, 24, 40, .35);
+}
+.detection-links { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: .8rem; }
+.detection-links button {
+  text-align: left;
+  padding: .9rem 1rem;
+  border-radius: .8rem;
+  border: 1px solid rgba(120, 190, 255, .2);
+  background: rgba(10, 24, 40, .35);
+  color: inherit;
+  cursor: pointer;
+}
+.detection-links button:hover { border-color: rgba(120, 190, 255, .5); }
+.detection-links strong { display: block; margin-bottom: .25rem; }
+
+/* ---- Fabric settings tables must not run out of their panel (2026-10-21) ----
+   The feed/rule editors render a table whose inputs carry their own widths. The table is allowed to be
+   wider than the panel, but the panel must scroll it instead of clipping it: without this, the last
+   columns (bounds, refresh, generation) were cut off at the glass edge and unreachable. */
+.settings-feeds, .settings-rules {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: visible;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(120, 190, 255, .45) transparent;
+  overscroll-behavior-x: contain;
+}
+.settings-feeds::-webkit-scrollbar, .settings-rules::-webkit-scrollbar { height: 9px; }
+.settings-feeds::-webkit-scrollbar-thumb, .settings-rules::-webkit-scrollbar-thumb {
+  background: rgba(120, 190, 255, .35);
+  border-radius: 8px;
+}
+.settings-feeds .settings-feed-table, .settings-rules .settings-rule-table {
+  width: max-content;
+  min-width: 100%;
+}
+
+/* ---- grid children must be allowed to shrink (2026-10-21) ----
+   A CSS grid/flex item defaults to min-width:auto, so a wide table inside the right column expanded
+   the column instead of scrolling inside it - which is why the feed editor was cut off at "Bounds"
+   even though its wrapper had overflow-x. Setting the floor to zero makes the scroll real. */
+.grid-2 > *, .grid-2 .glass-panel,
+.fabric-module, .fabric-module > *, .settings-row, .settings-row > *,
+.settings-feeds, .settings-rules { min-width: 0; }
+.settings-feeds .settings-feed-table, .settings-rules .settings-rule-table { max-width: none; }
+
+/* Build stamp in the sidebar footer. The control plane serves the dashboard from its embedded
+   filesystem, but a tab that was already open keeps the old module graph in memory until it is
+   reloaded; in a screenshot there is otherwise no way to tell a stale tab from a fixed build.
+   The stamp is deliberately quiet. */
+.ui-build {
+  margin-left: .45rem;
+  color: rgba(150, 178, 200, .55);
+  font-size: .62rem;
+  letter-spacing: .05em;
+  font-weight: 500;
+}

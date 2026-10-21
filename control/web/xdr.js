@@ -171,6 +171,20 @@ export function renderModernIncidents(incidents = []) {
   const root = byID('incidents');
   if (!root) return;
 
+  // The XDR timeline and the generic incident table renderer share this tbody. Both used to draw
+  // on every snapshot; on a 250-row log that replaced the whole table every second, and the scroll
+  // pane returned to the top each time. The signature makes an unchanged frame a no-op, and the
+  // owner marker keeps the generic renderer away from this table while XDR is the active page.
+  const signature = incidents
+    .map(inc => [inc?.id || '', inc?.acknowledged ? 1 : 0, inc?.score || 0, inc?.severity || '', inc?.decision || '', inc?.outcome || '', (inc?.categories || []).join(',')].join('|'))
+    .join(';');
+  if (root.dataset.owner === 'xdr' && root.dataset.renderSignature === signature) return;
+  root.dataset.owner = 'xdr';
+  root.dataset.renderSignature = signature;
+
+  const wrap = root.closest('.table-wrap');
+  const scrollTop = wrap ? wrap.scrollTop : 0;
+
   if (!incidents.length) {
     const tr = el('tr');
     const td = el('td', 'empty-cell', t('dynamic.noIncidents'));
@@ -239,6 +253,7 @@ export function renderModernIncidents(incidents = []) {
   });
 
   root.replaceChildren(...rows);
+  if (wrap && scrollTop) wrap.scrollTop = scrollTop;
 }
 
 function renderBehaviorProfiles(profiles = []) {

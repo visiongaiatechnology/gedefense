@@ -17,7 +17,7 @@ import (
 	"time"
 )
 
-const version = "4.2.5"
+const version = "4.4.0"
 
 func detectInterface(requested string) (string, error) {
 	if requested != "" && requested != "auto" {
@@ -326,6 +326,12 @@ func main() {
 	if err := state.AttachTransactions(transactions); err != nil {
 		log.Fatalf("transaction state attachment: %v", err)
 	}
+	// Automatic cell isolation runs off the same transaction engine and the same cells adapter the
+	// dashboard uses, so an isolation it performs is exactly as auditable and reversible as a manual one.
+	cellCtx, cancelCells := context.WithCancel(context.Background())
+	defer cancelCells()
+	cellGuard := NewCellGuard(state, cfg.Cells)
+	go cellGuard.Run(cellCtx)
 	transactionReconcileErr := transactions.ReconcileApplied()
 	if fim.Status().Health == "QUARANTINED" {
 		state.AddEvent(Event{
@@ -384,6 +390,63 @@ func main() {
 	}
 
 	release := NewReleaseController(cfg, state, core, policy, settings)
+	// Kernel advisories are measured once here and shared by the self-check, the release gate and the
+	// dashboard. The measurement is cheap but it reads the host, so it is cached and re-taken on a
+	// short interval rather than per request or per gate evaluation.
+	kernelExposure := newKernelExposureCache(
+		func() time.Time { return time.Now().UTC() },
+		func() kernelExposureSource { return osExposureSource{root: string(filepath.Separator)} },
+	)
+	release.AttachKernelExposure(kernelExposure)
+	// The network sensors cannot see a local kernel trust failure, so the exposure is announced on the
+	// event stream once at startup: an operator who never opens the advisories panel still learns that
+	// this host's kernel is affected and which door is open.
+	if cfg.Advisories.Enabled {
+		if exposure := kernelExposure.Current(); exposure.Verdict != kernelVerdictUnaffected {
+			state.AddEvent(Event{
+				Severity: "high", Kind: "kernel.advisory_exposure", Source: "advisories",
+				Message: fmt.Sprintf("Kernel exposure %d of 100 (%s): %s", exposure.Score, exposure.Grade, exposure.Recommendation),
+			})
+		}
+	}
+	// The mitigation guard owns the only automatic kernel change the platform may make. It is created
+	// here so the same exposure measurement, the same privileged core and the same event stream drive
+	// it; the watch probes are the host's own services, not GeDefense's opinion of itself.
+	mitigationGuard := NewMitigationGuard(core, kernelExposure, cfg.Advisories, state, DefaultMitigationProbes(
+		func(ctx context.Context) error {
+			_, err := core.Ping()
+			return err
+		}))
+	// The start is a race with the privileged core. If the record is missing or the core was not ready,
+	// the guard retries for a bounded time instead of leaving a real protection unasserted.
+	go func() {
+		for attempt := 0; attempt < 30; attempt++ {
+			select {
+			case <-time.After(10 * time.Second):
+			}
+			mitigationGuard.HealIfUnasserted()
+		}
+	}()
+	// A mitigation recorded by the previous run is re-established before anything else claims the host.
+	if err := mitigationGuard.Restore(); err != nil {
+		log.Printf("kernel mitigation: restore after restart not possible: %v", err)
+	}
+	if cfg.Advisories.AutoMitigate {
+		go func() {
+			// The core IPC and the first exposure measurement need a moment after start; retry instead
+			// of giving up on the first attempt, and never retry after a refusal that is about policy.
+			for attempt := 0; attempt < 6; attempt++ {
+				select {
+				case <-time.After(20 * time.Second):
+				}
+				if _, err := mitigationGuard.ApplyAutomatic("startup: automatic mitigation for a reachable advisory entry point"); err != nil {
+					log.Printf("kernel mitigation: attempt %d not applied: %v", attempt+1, err)
+					continue
+				}
+				return
+			}
+		}()
+	}
 	// The verified signed policy decides what the kernel holds at startup. A platform that
 	// verified enforcement before the restart keeps it; only an absent or non-enforcing
 	// intent starts from a verified-empty kernel.
@@ -644,6 +707,9 @@ func main() {
 	}()
 
 	srv := NewAPIServer(cfg, state, core, feeds, policy, xdr, release, settings, token)
+	srv.AttachKernelExposure(kernelExposure)
+	srv.AttachMitigationGuard(mitigationGuard)
+	srv.AttachCellGuard(cellGuard)
 	if l7Engine != nil {
 		srv.AttachL7(l7Engine)
 	}
@@ -692,7 +758,7 @@ func main() {
 	if cfg.Startup.Enabled {
 		startupDeps := StartupDeps{
 			Release: release, State: state, Core: core, Policy: policy, Settings: settings,
-			XDR: xdr, Interface: iface,
+			XDR: xdr, Exposure: kernelExposure, Advisories: cfg.Advisories, Interface: iface,
 		}
 		// Assigned only when the service exists: a nil *L7Service stored in the interface field
 		// would look present and only fail at the first probe.

@@ -8,9 +8,9 @@
 ### Linux 主权安全矩阵 (Linux Security Fabric)
 
 [![License](https://img.shields.io/badge/License-AGPL--3.0--only-blue?style=for-the-badge)](https://www.gnu.org/licenses/agpl-3.0)
-[![Version](https://img.shields.io/badge/Version-4.2.5-orange?style=for-the-badge)](#)
-[![Status](https://img.shields.io/badge/Status-Release_v4.2.5-yellow?style=for-the-badge)](#)
-[![Installer](https://img.shields.io/badge/Installer-4.2.5_Universal_Linux-green?style=for-the-badge)](#-快速上手)
+[![Version](https://img.shields.io/badge/Version-4.4.0-orange?style=for-the-badge)](#)
+[![Status](https://img.shields.io/badge/Status-Release_v4.4.0-yellow?style=for-the-badge)](#)
+[![Installer](https://img.shields.io/badge/Installer-Universal_Linux-green?style=for-the-badge)](#-快速上手)
 [![Platform](https://img.shields.io/badge/Platform-Linux_x86__64-lightgrey?style=for-the-badge&logo=linux)](#)
 [![Data Plane](https://img.shields.io/badge/Data_Plane-Rust_eBPF%2FXDP-red?style=for-the-badge&logo=rust)](#-系统架构)
 [![Control Plane](https://img.shields.io/badge/Control_Plane-Go-00ADD8?style=for-the-badge&logo=go)](#-系统架构)
@@ -33,7 +33,10 @@
 
 ---
 
-## 🚨 严重安全警告与公告 — RELEASE v4.2.5
+## 🚨 严重安全警告与公告 — RELEASE v4.4.0
+
+> **4.4.0 操作安全更新。** 已启用 PHP 上传进度缓解（`session.upload_progress.enabled = Off`）、关键 L7 规则 `L7.PHP.SESSION_UPLOAD_PROGRESS` 以及按规则范围的内联强制（`l7.enforce_rules`，`mode = "block"`）。L7 源站仅绑定 loopback，直接访问源站无法绕过检测。下方的 4.2.x 历史公告仍属于修复记录。
+
 
 > [!CAUTION]
 > **全体系统运维人员与管理员紧急安全通告（强烈建议立即升级）：**
@@ -68,9 +71,9 @@
 
 ---
 
-## ⚠️ 稳定性与可靠性承诺 — RELEASE v4.2.5 · 通用 LINUX 平台
+## ⚠️ 稳定性与可靠性承诺 — RELEASE v4.4.0 · 通用 LINUX 平台
 
-VGT GeDefense 4.2.5 是主权 Linux 安全防御体系的旗舰产品 — 将经过深度加固的内核级防御链与全新的 **Security Fabric Control Plane（安全织网控制平面）**、通用 Linux 原生集成、加固级发布流水线以及真实的内核/网卡适格门禁融为一体。专为主权主机与高对抗网络防御而设计。
+VGT GeDefense 4.4.0 是主权 Linux 安全防御体系的旗舰产品 — 将经过深度加固的内核级防御链与全新的 **Security Fabric Control Plane（安全织网控制平面）**、通用 Linux 原生集成、加固级发布流水线以及真实的内核/网卡适格门禁融为一体。专为主权主机与高对抗网络防御而设计。
 
 **生产环境准入明确属于具体经过审计的目标主机的属性 — 而非仅仅取决于源代码本身。**
 
@@ -608,15 +611,17 @@ Rust Core **未提供任何通用的系统 Shell、文件系统或 Sysctl 执行
 
 ```bash
 # 下载安装程序
-wget https://github.com/visiongaiatechnology/gedefense/releases/download/v4.2.5/GeDefense-4.2.5-OneClick.run
+wget https://github.com/visiongaiatechnology/gedefense/releases/download/v4.4.0/GeDefense-4.4.0-OneClick.run
 
 # 校验 SHA-256 完整性指纹
-sha256sum --check GeDefense-4.2.5-OneClick.run.sha256
+sha256sum --check GeDefense-4.4.0-OneClick.run.sha256
 
 # 执行安装（需要 root 权限）
-chmod 700 GeDefense-4.2.5-OneClick.run
-sudo ./GeDefense-4.2.5-OneClick.run
+chmod 700 GeDefense-4.4.0-OneClick.run
+sudo ./GeDefense-4.4.0-OneClick.run
 ```
+
+> **安装程序可用性：** 官方 v4.4.0 自包含安装程序（`GeDefense-4.4.0-OneClick.run`）已通过验证并发布于 GitHub Releases。
 
 > 安装包与校验和文件仅在通过全部 GitHub CI 测试及实体 Linux 节点验证后发布。切勿运行未经验签的 RUN 可执行文件。
 
@@ -650,7 +655,7 @@ sudo ./GeDefense-4.2.5-OneClick.run
 
 ---
 
-## 🚧 当前已知局限（4.2.5）
+## 🚧 当前已知局限（4.4.0）
 
 - 暂未集成 Swarm / 集群网格（Mesh）支持
 - 暂不支持 QUIC 协议网络卸载
@@ -668,7 +673,20 @@ sudo ./GeDefense-4.2.5-OneClick.run
 
 ## 📋 版本更新日志 (Changelog)
 
-### v4.2.5 — 全向量实时威胁地图、升级后秒级重防护与传感器自愈 *(当前版本)*
+### v4.4.0 — 自动 Gaia Cell 隔离、受控内核缓解与 PHP/L7 操作加固 *(当前版本)*
+
+- **自动与手动 Gaia Cell 隔离：** 达到或超过 `cells.auto_confine_score` 的事件会通过可逆事务引擎隔离所属 cell；每个事件行提供手动隔离。API：`POST /api/v1/xdr/incidents/{id}/confine`、`GET /api/v1/cells/confinement`。
+- **内核缓解保护：** 可选 sysctl 缓解，带有限试用窗口、主机服务验证与自动回滚；hardening 视图提供 dry-run、apply、rollback 及原因说明。
+- **PHP 上传进度缓解：** 关键 L7 规则 `L7.PHP.SESSION_UPLOAD_PROGRESS`（score 110）与 hardening 控制 `web.php-upload-progress`；`session.upload_progress.enabled = Off` 按实际 Web SAPI 验证。
+- **按规则的 L7 强制：** `l7.enforce_rules` 将阻断限定为指定规则/家族；inline edge 自检 PASS，源站仅绑定 loopback，直接访问源站无法绕过检测。
+
+### v4.3.0 — 内核公告暴露：发现、评分并阻断传感器看不到的风险
+
+- 按随发布提供的内核公告目录评估运行时暴露；`unknown` 绝不被表述为安全。
+- 可达性加权评分与 dashboard 的 kernel-risk 面板（dry-run、apply、rollback）。
+
+
+### v4.2.5 — 全向量实时威胁地图、升级后秒级重防护与传感器自愈
 
 可视化与平台韧性更新。带来汇聚全部攻击向量的实时威胁地图、软件升级后的即时防护重启以及自动化的传感器自愈机制。
 
@@ -940,6 +958,6 @@ sudo python3 scripts/update-geoip-db.py /var/lib/vgt/gedefense/geoip.csv
 
 [![VGT](https://img.shields.io/badge/VisionGaia-Technology-cyan?style=for-the-badge)](https://visiongaiatechnology.de)
 
-*VGT GeDefense 4.2.5 — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
+*VGT GeDefense 4.4.0 — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
 
 </div>

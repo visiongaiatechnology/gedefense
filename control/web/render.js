@@ -119,11 +119,15 @@ export function renderRules(blocks = [], onDelete) {
   root.replaceChildren(...rows);
 }
 
-export function renderIncidents(items = [], onAck) {
+export function renderIncidents(items = [], onAck, confineAction, options = {}) {
   const roots = [byID('incidents'), byID('forensicIncidents')];
   const main = roots[0];
   const forensic = roots[1];
-  if (main) {
+  // The XDR view renders its incident timeline itself. When it is the active page this generic
+  // renderer leaves that table alone; otherwise it marks the table as its own so the XDR renderer
+  // knows it has to take it back when the operator returns.
+  if (main && !options.skipMain) {
+    main.dataset.owner = 'classic';
     if (!items.length) main.replaceChildren(emptyRow(7, t('dynamic.noIncidents')));
     else {
       const rows = items.slice(0, 80).map(incident => {
@@ -138,6 +142,15 @@ export function renderIncidents(items = [], onAck) {
           cell(incident.outcome || 'observed')
         );
         const action = document.createElement('td');
+        if (typeof confineAction === 'function') {
+          const isolate = document.createElement('button');
+          isolate.type = 'button';
+          isolate.className = 'icon-button';
+          isolate.textContent = t('cells.confine');
+          isolate.title = t('cells.confine');
+          isolate.addEventListener('click', () => confineAction(incident));
+          action.append(isolate, document.createTextNode(' '));
+        }
         if (!incident.acknowledged) {
           const button = document.createElement('button');
           button.type = 'button';

@@ -46,42 +46,46 @@ type Telemetry struct {
 }
 
 type Snapshot struct {
-	Version              string              `json:"version"`
-	NodeName             string              `json:"node_name"`
-	NodeMode             string              `json:"node_mode"`
-	Enforcement          string              `json:"enforcement"`
-	StartedAt            time.Time           `json:"started_at"`
-	UptimeSeconds        int64               `json:"uptime_seconds"`
-	CoreConnected        bool                `json:"core_connected"`
-	CoreMode             string              `json:"core_mode"`
-	AllowlistReady       bool                `json:"allowlist_ready"`
-	FeedVectors          int                 `json:"feed_vectors"`
-	FeedStatus           string              `json:"feed_status,omitempty"`
-	LastFeedSync         *time.Time          `json:"last_feed_sync,omitempty"`
-	LastFeedAttempt      *time.Time          `json:"last_feed_attempt,omitempty"`
-	LastFeedFullSync     *time.Time          `json:"last_feed_full_sync,omitempty"`
-	FeedGeneration       uint64              `json:"feed_generation,omitempty"`
-	FeedFingerprint      string              `json:"feed_fingerprint,omitempty"`
-	FeedBlockVectors     int                 `json:"feed_block_vectors,omitempty"`
-	FeedCorrelateVectors int                 `json:"feed_correlate_vectors,omitempty"`
-	FeedAnnotateVectors  int                 `json:"feed_annotate_vectors,omitempty"`
-	Blocks               []BlockEntry        `json:"blocks"`
-	Events               []Event             `json:"events"`
-	Telemetry            Telemetry           `json:"telemetry"`
-	XDR                  XDRStatus           `json:"xdr"`
-	L7                   L7Status            `json:"l7"`
-	Incidents            []XDRIncident       `json:"incidents"`
-	Policy               PolicyStatus        `json:"policy"`
-	Release              ReleaseStatus       `json:"release"`
-	Settings             RuntimeSettings     `json:"settings"`
-	Evidence             EvidenceStatus      `json:"evidence"`
-	FIM                  FIMStatus           `json:"fim"`
-	Cases                CaseStatus          `json:"cases"`
-	Cells                GaiaCellsStatus     `json:"cells"`
-	Kinetic              KineticTelemetry    `json:"kinetic"`
-	Coverage             SystemCoverage      `json:"coverage"`
-	Stream               StreamDiagnostics   `json:"stream"`
-	DetectionRules       DetectionRulesCount `json:"detection_rules"`
+	Version              string        `json:"version"`
+	NodeName             string        `json:"node_name"`
+	NodeMode             string        `json:"node_mode"`
+	Enforcement          string        `json:"enforcement"`
+	StartedAt            time.Time     `json:"started_at"`
+	UptimeSeconds        int64         `json:"uptime_seconds"`
+	CoreConnected        bool          `json:"core_connected"`
+	CoreMode             string        `json:"core_mode"`
+	AllowlistReady       bool          `json:"allowlist_ready"`
+	FeedVectors          int           `json:"feed_vectors"`
+	FeedStatus           string        `json:"feed_status,omitempty"`
+	LastFeedSync         *time.Time    `json:"last_feed_sync,omitempty"`
+	LastFeedAttempt      *time.Time    `json:"last_feed_attempt,omitempty"`
+	LastFeedFullSync     *time.Time    `json:"last_feed_full_sync,omitempty"`
+	FeedGeneration       uint64        `json:"feed_generation,omitempty"`
+	FeedFingerprint      string        `json:"feed_fingerprint,omitempty"`
+	FeedBlockVectors     int           `json:"feed_block_vectors,omitempty"`
+	FeedCorrelateVectors int           `json:"feed_correlate_vectors,omitempty"`
+	FeedAnnotateVectors  int           `json:"feed_annotate_vectors,omitempty"`
+	Blocks               []BlockEntry  `json:"blocks"`
+	Events               []Event       `json:"events"`
+	Telemetry            Telemetry     `json:"telemetry"`
+	XDR                  XDRStatus     `json:"xdr"`
+	L7                   L7Status      `json:"l7"`
+	Incidents            []XDRIncident `json:"incidents"`
+	Policy               PolicyStatus  `json:"policy"`
+	Release              ReleaseStatus `json:"release"`
+	// Readiness is only attached to the dashboard-facing snapshot (APIServer.clientSnapshot).
+	// The release controller owns it, not the state; nil means this snapshot came straight from the
+	// state and does not carry the readiness projection.
+	Readiness      *ReleaseReadinessSet `json:"readiness,omitempty"`
+	Settings       RuntimeSettings      `json:"settings"`
+	Evidence       EvidenceStatus       `json:"evidence"`
+	FIM            FIMStatus            `json:"fim"`
+	Cases          CaseStatus           `json:"cases"`
+	Cells          GaiaCellsStatus      `json:"cells"`
+	Kinetic        KineticTelemetry     `json:"kinetic"`
+	Coverage       SystemCoverage       `json:"coverage"`
+	Stream         StreamDiagnostics    `json:"stream"`
+	DetectionRules DetectionRulesCount  `json:"detection_rules"`
 }
 
 type DetectionRulesCount struct {
@@ -129,6 +133,7 @@ type State struct {
 	caseHistoryFailures                      int
 	l7                                       L7Status
 	incidents                                []XDRIncident
+	incidentDedupe                           map[string]time.Time
 	incidentCap                              int
 	policy                                   PolicyStatus
 	release                                  ReleaseStatus
@@ -643,6 +648,16 @@ func (s *State) RestoreIncidents(incidents []XDRIncident) {
 	// and the restored records are already counted in the log they came from.
 }
 
+// incidentFingerprint identifies repeated evidence: the same rule finding the same thing at the same
+// place is one event with repetitions, not a new event every few seconds.
+func incidentFingerprint(i XDRIncident) string {
+	rule := ""
+	if len(i.RuleIDs) > 0 {
+		rule = i.RuleIDs[0]
+	}
+	return rule + "|" + i.Severity + "|" + i.Process + "|" + i.Remote + "|" + i.Summary
+}
+
 func (s *State) AddIncident(i XDRIncident) {
 	if i.ID == "" {
 		i.ID = randomID()
@@ -651,6 +666,33 @@ func (s *State) AddIncident(i XDRIncident) {
 		i.Time = time.Now().UTC()
 	}
 	s.mu.Lock()
+	// Repeated identical evidence must not become a flood of rows. Internet background scanners hit the
+	// public web endpoint every few seconds with the same probe; without this, one rule produced 218 of
+	// 250 incidents in the visible window and pushed every other finding out of sight.
+	// Only re-ingested internet background noise is collapsed. An integrity finding is never suppressed:
+	// a second modification of a protected object must be visible as a second incident, which is exactly
+	// what TestOneReplacedProtectedObjectIsReportedOnce enforces.
+	if len(i.RuleIDs) > 0 && strings.HasPrefix(i.RuleIDs[0], "L7.SCANNER") {
+		if s.incidentDedupe == nil {
+			s.incidentDedupe = make(map[string]time.Time, 256)
+		}
+		fingerprint := incidentFingerprint(i)
+		now := time.Now().UTC()
+		if last, seen := s.incidentDedupe[fingerprint]; seen && now.Sub(last) < 60*time.Second {
+			s.incidentDedupe[fingerprint] = now
+			s.mu.Unlock()
+			return
+		}
+		if len(s.incidentDedupe) > 4096 {
+			for key := range s.incidentDedupe {
+				delete(s.incidentDedupe, key)
+				if len(s.incidentDedupe) <= 2048 {
+					break
+				}
+			}
+		}
+		s.incidentDedupe[fingerprint] = now
+	}
 	s.incidents = append(s.incidents, i)
 	if len(s.incidents) > s.incidentCap {
 		s.incidents = append([]XDRIncident(nil), s.incidents[len(s.incidents)-s.incidentCap:]...)

@@ -304,6 +304,8 @@ var fabricSettingDefinitions = []fabricSettingDefinition{
 		desc: "Score contributed by the unknown-fingerprint finding when the behaviour is 'alert'."},
 	{module: "l7", group: "L7 Rule Registry", key: "rules", label: "Rule Registry", kind: FabricTypeJSON, class: FabricApplyHot, risk: FabricRiskHigh,
 		desc: "Array of {id, enabled, score, confidence, alert_only}. Built-in detection patterns are read-only; enablement, score, confidence and block eligibility are administrable. Alert-only rules can never authorise a block decision."},
+	{module: "l7", group: "L7 Rule Registry", key: "enforce_rules", label: "Block-Eligible Rules", kind: FabricTypeList, class: FabricApplyHot, risk: FabricRiskHigh,
+		desc: "Optional list of built-in rule IDs or families (for example L7.PHP.SESSION_UPLOAD_PROGRESS or L7.UPLOAD) that may authorise a block in block mode. Empty keeps the historical behaviour: every rule that is not alert-only may block. Findings outside the list are still recorded and still raise the alert score."},
 
 	// ------------------------------------------------------------ threat_intel
 	{module: "threat_intel", group: "Global", key: "enabled", label: "Threat Intelligence", kind: FabricTypeBoolean, def: false, class: FabricApplyHot, risk: FabricRiskHigh,

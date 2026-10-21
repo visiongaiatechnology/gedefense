@@ -291,6 +291,7 @@ func (d l7UploadDetector) Detect(ctx context.Context, req l7NormalizedRequest, s
 	reader := multipart.NewReader(bytes.NewReader(req.Body), params["boundary"])
 	findings := make([]L7Finding, 0, 2)
 	parts := 0
+	progressSeen := false
 	for {
 		if err := ctx.Err(); err != nil {
 			return nil, err
@@ -307,6 +308,18 @@ func (d l7UploadDetector) Detect(ctx context.Context, req l7NormalizedRequest, s
 		if parts > cfg.MaxMultipartParts {
 			findings = append(findings, newL7Finding("L7.UPLOAD.PART_BUDGET", "file-upload", "high", 75, 99, "body.multipart", req.BodySHA256, "Multipart part budget exceeded"))
 			break
+		}
+		// PHP processes the session upload-progress handler before any application script runs,
+		// which is exactly the path a WAF loaded through auto_prepend_file cannot protect. The
+		// field name is the observable trigger of that handler family; it is flagged once per
+		// request and is administrable like every other built-in L7 rule.
+		if !progressSeen && phpUploadProgressField(part.FormName()) {
+			progressSeen = true
+			findings = append(findings, newL7Finding(
+				"L7.PHP.SESSION_UPLOAD_PROGRESS", "php-upload-progress", "critical", 110, 96,
+				"body.multipart.field", req.BodySHA256,
+				"PHP session upload-progress field detected; PHP handles this request before application code, the suspected exploit surface of the disclosed PHP vulnerability",
+			))
 		}
 		filename := part.FileName()
 		if filename == "" {
@@ -334,6 +347,14 @@ func (d l7UploadDetector) Detect(ctx context.Context, req l7NormalizedRequest, s
 		}
 	}
 	return findings, nil
+}
+
+// phpUploadProgressField matches the default session.upload_progress.name multipart field name.
+// The directive is configurable, but the default form is what an attacker can target on a host
+// that never changed it; array forms (name[]) keep the prefix and are matched as well.
+func phpUploadProgressField(name string) bool {
+	normalized := strings.ToUpper(strings.TrimSpace(name))
+	return normalized == "PHP_SESSION_UPLOAD_PROGRESS" || strings.HasPrefix(normalized, "PHP_SESSION_UPLOAD_PROGRESS")
 }
 
 func newL7Finding(id, category, severity string, score, confidence int, location, evidence, summary string) L7Finding {

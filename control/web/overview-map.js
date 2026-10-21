@@ -187,6 +187,7 @@ function status(kind) {
 
 export function updateOverviewThreatMap(raw) {
   payload = normalizePayload(raw);
+  try { renderTopCountries(payload); } catch (_) { /* panel is optional */ }
   stale = false;
   rows = telemetryRows(payload);
   renderMetadata();
@@ -290,6 +291,7 @@ export function startOverviewThreatMap() {
   document.addEventListener('gedefense:language', () => {
     const currentStatus = $('overviewMapStatus').dataset.state;
     renderMetadata(); renderFeed(true);
+    if (payload) { try { renderTopCountries(payload); } catch (_) { /* panel is optional */ } }
     status(currentStatus || 'loading');
     if (currentStatus === 'failed') {
       $('overviewMapClean').hidden = true;
@@ -339,3 +341,88 @@ export const overviewMapLimits = () => LIMITS;
 
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', startOverviewThreatMap, { once: true });
 else startOverviewThreatMap();
+
+// Top three countries of the last 24 hours. The server publishes the same roll-up under
+// countries_24h, so the browser does not repeat the window and the bucket rules on every refresh;
+// the source-based aggregation stays as the fallback for a control plane that predates the field.
+// The window is explicit in the label, the unit is explicit on every chip (distinct source IPs, not
+// hits), and a source without a parseable timestamp is not counted.
+function renderTopCountries(payload) {
+  const node = document.getElementById('overviewMapTopCountries');
+  if (!node) return;
+  const top = topCountries24h(payload).slice(0, 3);
+  node.replaceChildren();
+  if (!top.length) return;
+  const label = document.createElement('span');
+  label.className = 'top-countries-label';
+  label.textContent = t('overview.map.topCountries');
+  node.append(label);
+  for (const entry of top) {
+    const total = Number(entry.total || 0);
+    const blocked = Number(entry.blocked || 0);
+    const chip = document.createElement('span');
+    chip.className = 'top-country';
+    const dot = document.createElement('i');
+    dot.className = topCountryState(entry);
+    dot.setAttribute('aria-hidden', 'true');
+    const name = document.createElement('span');
+    name.textContent = `${entry.country || entry.countryCode} (${total} ${total === 1 ? 'IP' : 'IPs'})`;
+    chip.append(dot, name);
+    chip.title = t('overview.map.topCountriesTooltip', { count: total, blocked });
+    chip.setAttribute('aria-label', `${entry.country || entry.countryCode}: ${chip.title}`);
+    node.append(chip);
+  }
+}
+
+function topCountries24h(payload) {
+  if (Array.isArray(payload?.countries24h) && payload.countries24h.length) return payload.countries24h;
+  return aggregateCountries24h(payload?.sources || []);
+}
+
+// Fallback for a backend without countries_24h: the same window and the same unit as the server
+// roll-up, so an older control plane renders an honest bar instead of an empty one.
+function aggregateCountries24h(sources) {
+  const cutoff = Date.now() - 24 * 3600 * 1000;
+  const byCountry = new Map();
+  for (const source of sources) {
+    const seen = Date.parse(source.lastSeen || '');
+    if (!Number.isFinite(seen) || seen < cutoff) continue;
+    const country = source.country || source.countryCode;
+    if (!country) continue;
+    const key = source.countryCode || country;
+    let entry = byCountry.get(key);
+    if (!entry) {
+      entry = { country, countryCode: source.countryCode || '', total: 0, blocked: 0, kinetic: 0, l7: 0, xdr: 0, severity: '' };
+      byCountry.set(key, entry);
+    }
+    entry.total += 1;
+    if (source.blocked) entry.blocked += 1;
+    if (source.area === 'kinetic') entry.kinetic += 1;
+    if (source.area === 'l7') entry.l7 += 1;
+    if (source.area === 'xdr') entry.xdr += 1;
+    if (severityRank(source.severity) > severityRank(entry.severity)) entry.severity = source.severity;
+  }
+  return [...byCountry.values()].sort((left, right) => right.total - left.total || left.countryCode.localeCompare(right.countryCode));
+}
+
+function severityRank(value) {
+  switch (String(value || '').toLowerCase()) {
+    case 'critical': return 4;
+    case 'high': return 3;
+    case 'medium': return 2;
+    case 'low': return 1;
+    default: return 0;
+  }
+}
+
+// The dot keeps the map legend's meaning instead of a rank colour: red only when every source from
+// that country is blocked, amber when something was blocked or a high/critical finding is present,
+// cyan otherwise.
+function topCountryState(entry) {
+  const total = Number(entry.total || 0);
+  const blocked = Number(entry.blocked || 0);
+  const severity = String(entry.severity || '').toLowerCase();
+  if (total > 0 && blocked >= total) return 'blocked';
+  if (blocked > 0 || severity === 'critical' || severity === 'high') return 'suspicious';
+  return 'tracked';
+}

@@ -13,8 +13,12 @@ import { t } from './i18n.js';
 import { byID, el, formatTime, text, toast } from './render.js';
 
 let currentPhase = 'observe';
-let countdownTimer = 0;
-let soakTargetTime = 0;
+let soakDeadline = { canary: 0, enforce: 0 };
+let soakTickTimer = 0;
+// The readiness fallback is only consulted when the snapshot does not carry it, and it refreshes
+// at most once a minute: it is a compatibility path, not the normal data route.
+const READINESS_FALLBACK_TTL_MS = 60000;
+let readinessFallback = { signature: '', at: 0, canary: null, enforce: null };
 
 export function initProtectionCenter() {
   const activateModal = byID('activateProtectionDialog');
@@ -78,7 +82,50 @@ export async function loadProtectionState(snap) {
 
   updateTopEmergencyVisibility(currentPhase, rel.emergency_stop);
   renderProtectionHero(snapshot);
+  // The stepper and the blocker list exist only on the protection page. While another view is on
+  // screen the hero still follows every snapshot, but there is nothing to compute and no countdown
+  // to run for a page nobody is looking at.
+  if (!protectionViewActive()) {
+    stopSoakTick();
+    return;
+  }
   await renderProtectionStepper(snapshot);
+}
+
+function protectionViewActive() {
+  const page = document.querySelector('[data-page="protection"]');
+  return Boolean(page && page.classList.contains('active'));
+}
+
+function releaseStateSignature(snapshot) {
+  const rel = (snapshot && snapshot.release) || {};
+  return [
+    rel.phase || '',
+    rel.since || '',
+    rel.ready ? 1 : 0,
+    rel.emergency_stop ? 1 : 0,
+    rel.kernel_policy_state || '',
+    rel.detail || '',
+    (rel.blockers || []).join('|')
+  ].join('§');
+}
+
+// Only a server that does not publish readiness inside the snapshot reaches this path. The answer
+// is reused while the release state is unchanged and for at most one minute, so even this fallback
+// cannot become the per-frame poll it replaced.
+async function fetchReadinessFallback(snapshot) {
+  const signature = releaseStateSignature(snapshot);
+  const fresh = readinessFallback.at > 0 && Date.now() - readinessFallback.at < READINESS_FALLBACK_TTL_MS;
+  if (fresh && readinessFallback.signature === signature) {
+    return readinessFallback;
+  }
+  try {
+    const [canary, enforce] = await Promise.all([getReleaseReadiness('canary'), getReleaseReadiness('enforce')]);
+    readinessFallback = { signature, at: Date.now(), canary, enforce };
+  } catch (_) {
+    // Keep the previous answer: a stale readiness frame is better than a blank stepper.
+  }
+  return readinessFallback;
 }
 
 function updateTopEmergencyVisibility(phase, isEmergency) {
@@ -199,14 +246,17 @@ async function renderProtectionStepper(snapshot) {
   const stepperContainer = byID('protectionStepperContainer');
   if (!stepperContainer) return;
 
-  let readinessCanary = null;
-  let readinessEnforce = null;
-
-  try {
-    readinessCanary = await getReleaseReadiness('canary');
-    readinessEnforce = await getReleaseReadiness('enforce');
-  } catch (err) {
-    // Graceful fallback if server unavailable
+  // Readiness arrives with the snapshot. It used to be fetched twice per status frame - two
+  // requests per refresh, more traffic than the status itself - although it changes only on a
+  // release transition. The endpoint stays for the activation preflight, which must be fresh at
+  // the moment of a privileged action.
+  const embedded = (snapshot && snapshot.readiness) || {};
+  let readinessCanary = embedded.canary || null;
+  let readinessEnforce = embedded.enforce || null;
+  if (!readinessCanary || !readinessEnforce) {
+    const fallback = await fetchReadinessFallback(snapshot);
+    readinessCanary = readinessCanary || fallback.canary;
+    readinessEnforce = readinessEnforce || fallback.enforce;
   }
 
   const rel = snapshot.release || {};
@@ -327,7 +377,7 @@ async function renderProtectionStepper(snapshot) {
   }
 
   // Update Soak timers
-  renderSoakTimers(readinessCanary, readinessEnforce, phase);
+  renderSoakTimers(readinessCanary, readinessEnforce);
 
   // Update buttons
   const btnActivateCanary = byID('btnActivateCanary');
@@ -356,27 +406,57 @@ async function renderProtectionStepper(snapshot) {
   renderActiveBlockers(snapshot, readinessCanary, readinessEnforce);
 }
 
-function renderSoakTimers(canary, enforce, phase) {
-  const canaryTimer = byID('canarySoakTimer');
-  const enforceTimer = byID('enforceSoakTimer');
+// The countdown is computed on the client from the absolute promotion time the server reports.
+// It used to be redrawn only when a readiness response arrived, which worked because that response
+// was fetched on every frame - one of the reasons the fetch existed. With readiness carried by the
+// snapshot the timer ticks locally and no request is needed to animate it.
+function renderSoakTimers(canary, enforce) {
+  soakDeadline.canary = soakDeadlineFromReadiness(canary);
+  soakDeadline.enforce = soakDeadlineFromReadiness(enforce);
+  paintSoakTimers();
+}
 
-  if (canaryTimer) {
-    if (canary && canary.soak_remaining_seconds > 0) {
-      canaryTimer.textContent = formatDuration(canary.soak_remaining_seconds);
-      canaryTimer.parentElement.hidden = false;
-    } else {
-      canaryTimer.parentElement.hidden = true;
-    }
-  }
+function soakDeadlineFromReadiness(readiness) {
+  if (!readiness) return 0;
+  const readyAt = Date.parse(String(readiness.ready_at || ''));
+  if (Number.isFinite(readyAt)) return readyAt;
+  const remaining = Number(readiness.soak_remaining_seconds || 0);
+  return remaining > 0 ? Date.now() + remaining * 1000 : 0;
+}
 
-  if (enforceTimer) {
-    if (enforce && enforce.soak_remaining_seconds > 0) {
-      enforceTimer.textContent = formatDuration(enforce.soak_remaining_seconds);
-      enforceTimer.parentElement.hidden = false;
-    } else {
-      enforceTimer.parentElement.hidden = true;
-    }
+function paintSoakTimers() {
+  for (const key of ['canary', 'enforce']) {
+    if (soakDeadline[key] > 0 && soakDeadline[key] <= Date.now()) soakDeadline[key] = 0;
   }
+  paintSoakTimer('canarySoakTimer', soakDeadline.canary);
+  paintSoakTimer('enforceSoakTimer', soakDeadline.enforce);
+  if (soakDeadline.canary > 0 || soakDeadline.enforce > 0) startSoakTick();
+  else stopSoakTick();
+}
+
+function paintSoakTimer(id, deadline) {
+  const node = byID(id);
+  if (!node) return;
+  const parent = node.parentElement;
+  const remaining = deadline > 0 ? Math.max(0, Math.ceil((deadline - Date.now()) / 1000)) : 0;
+  if (remaining <= 0) {
+    if (parent) parent.hidden = true;
+    return;
+  }
+  if (parent) parent.hidden = false;
+  const label = formatDuration(remaining);
+  if (node.textContent !== label) node.textContent = label;
+}
+
+function startSoakTick() {
+  if (soakTickTimer) return;
+  soakTickTimer = setInterval(paintSoakTimers, 1000);
+}
+
+function stopSoakTick() {
+  if (!soakTickTimer) return;
+  clearInterval(soakTickTimer);
+  soakTickTimer = 0;
 }
 
 function renderActiveBlockers(snapshot, canary, enforce) {

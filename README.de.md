@@ -8,9 +8,9 @@
 ### Linux Security Fabric
 
 [![License](https://img.shields.io/badge/License-AGPL--3.0--only-blue?style=for-the-badge)](https://www.gnu.org/licenses/agpl-3.0)
-[![Version](https://img.shields.io/badge/Version-4.2.5-orange?style=for-the-badge)](#)
-[![Status](https://img.shields.io/badge/Status-Release_v4.2.5-yellow?style=for-the-badge)](#)
-[![Installer](https://img.shields.io/badge/Installer-4.2.5_Universal_Linux-green?style=for-the-badge)](#-schnellstart)
+[![Version](https://img.shields.io/badge/Version-4.4.0-orange?style=for-the-badge)](#)
+[![Status](https://img.shields.io/badge/Status-Release_v4.4.0-yellow?style=for-the-badge)](#)
+[![Installer](https://img.shields.io/badge/Installer-Universal_Linux-green?style=for-the-badge)](#-schnellstart)
 [![Platform](https://img.shields.io/badge/Platform-Linux_x86__64-lightgrey?style=for-the-badge&logo=linux)](#)
 [![Data Plane](https://img.shields.io/badge/Data_Plane-Rust_eBPF%2FXDP-red?style=for-the-badge&logo=rust)](#-architektur)
 [![Control Plane](https://img.shields.io/badge/Control_Plane-Go-00ADD8?style=for-the-badge&logo=go)](#-architektur)
@@ -33,7 +33,10 @@
 
 ---
 
-## 🚨 KRITISCHER SICHERHEITSHINWEIS & WARNUNG — RELEASE v4.2.5
+## 🚨 KRITISCHER SICHERHEITSHINWEIS & WARNUNG — RELEASE v4.4.0
+
+> **Betriebliches Sicherheitsupdate in 4.4.0.** Die PHP-Upload-Progress-Mitigation (`session.upload_progress.enabled = Off`), die kritische L7-Regel `L7.PHP.SESSION_UPLOAD_PROGRESS` und regelbasiertes Inline-Enforcement (`l7.enforce_rules`, `mode = "block"`) sind aktiv. Der L7-Origin ist auf Loopback gebunden, damit direkter Origin-Zugriff die Inspektion nicht umgeht. Der historische 4.2.x-Hinweis unten bleibt Teil der Remediation-Historie.
+
 
 > [!CAUTION]
 > **DRINGENDER SICHERHEITSHINWEIS FÜR ALLE BETREIBER & SYSTEMADMINISTRATOREN (UPGRADE DRINGEND EMPFOHLEN):**
@@ -68,9 +71,9 @@
 
 ---
 
-## ⚠️ STABILITÄT & ZUSICHERUNG — RELEASE v4.2.5 · UNIVERSELLE LINUX-PLATTFORM
+## ⚠️ STABILITÄT & ZUSICHERUNG — RELEASE v4.4.0 · UNIVERSELLE LINUX-PLATTFORM
 
-VGT GeDefense 4.2.5 ist das Flaggschiff des Linux-Sicherheitsgewebes — die gehärtete Verteidigungskette mit Kernel-Geschwindigkeit, kombiniert mit der neuen **Security Fabric Control Plane**, universeller Linux-Integration, gehärteter Release-Pipeline und konkreten Kernel-/NIC-Qualifikations-Gates. Es wurde für souveränen Host- und Netzwerkschutz entwickelt.
+VGT GeDefense 4.4.0 ist das Flaggschiff des Linux-Sicherheitsgewebes — die gehärtete Verteidigungskette mit Kernel-Geschwindigkeit, kombiniert mit der neuen **Security Fabric Control Plane**, universeller Linux-Integration, gehärteter Release-Pipeline und konkreten Kernel-/NIC-Qualifikations-Gates. Es wurde für souveränen Host- und Netzwerkschutz entwickelt.
 
 **Die Produktionsfreigabe ist bewusst eine Eigenschaft des konkret auditierten Ziel-Hosts — nicht allein des Quellcodes.**
 
@@ -609,15 +612,17 @@ Ist die Gaia Cells-Laufzeit **nicht vorhanden**, meldet der Adapter `runtime_not
 
 ```bash
 # Installer herunterladen
-wget https://github.com/visiongaiatechnology/gedefense/releases/download/v4.2.5/GeDefense-4.2.5-OneClick.run
+wget https://github.com/visiongaiatechnology/gedefense/releases/download/v4.4.0/GeDefense-4.4.0-OneClick.run
 
 # SHA-256 verifizieren
-sha256sum --check GeDefense-4.2.5-OneClick.run.sha256
+sha256sum --check GeDefense-4.4.0-OneClick.run.sha256
 
 # Installieren (Root erforderlich)
-chmod 700 GeDefense-4.2.5-OneClick.run
-sudo ./GeDefense-4.2.5-OneClick.run
+chmod 700 GeDefense-4.4.0-OneClick.run
+sudo ./GeDefense-4.4.0-OneClick.run
 ```
+
+> **Installer-Verfügbarkeit:** Die offiziellen v4.4.0 Self-Contained-Installer-Assets (`GeDefense-4.4.0-OneClick.run`) sind verifiziert und im GitHub Release bereitgestellt.
 
 > Der Installer und die Prüfsumme werden erst veröffentlicht, nachdem alle GitHub-CI- und konkreten Linux-Host-Qualifikations-Gates bestanden wurden. Führe niemals eine nicht verifizierte RUN-Datei aus.
 
@@ -651,7 +656,7 @@ Die Firewall-Regel für den HTTPS-Gateway-Port (TCP 9843) kann während der Inst
 
 ---
 
-## 🚧 Bekannte Einschränkungen (4.2.5)
+## 🚧 Bekannte Einschränkungen (4.4.0)
 
 - Keine Swarm- / Mesh-Unterstützung
 - Kein QUIC-Offloading
@@ -669,7 +674,20 @@ Die Firewall-Regel für den HTTPS-Gateway-Port (TCP 9843) kann während der Inst
 
 ## 📋 Changelog
 
-### v4.2.5 — Multi-Vektor-Echtzeit-Bedrohungskarte, sofortige Reaktivierung nach Updates & selbstheilende Sensorik *(Aktuell)*
+### v4.4.0 — Automatische Gaia-Cell-Isolation, bewachte Kernel-Mitigation & operatives PHP/L7-Hardening *(Aktuell)*
+
+- **Automatische und manuelle Gaia-Cell-Isolation:** Incidents ab `cells.auto_confine_score` isolieren die zugehörige Cell über die reversible Transaction-Engine; die manuelle Isolation steht pro Incident-Zeile bereit. APIs: `POST /api/v1/xdr/incidents/{id}/confine`, `GET /api/v1/cells/confinement`.
+- **Kernel-Mitigation-Guard:** opt-in sysctl-Mitigation mit begrenztem Probation-Fenster, Host-Service-Verifikation und automatischem Rollback; die Hardening-Ansicht bietet Dry-Run, Apply und Rollback mit Begründung.
+- **PHP-Upload-Progress-Mitigation:** kritische L7-Regel `L7.PHP.SESSION_UPLOAD_PROGRESS` (Score 110) und Hardening-Kontrolle `web.php-upload-progress`; `session.upload_progress.enabled = Off` wird gegen den effektiven Web-SAPI verifiziert.
+- **Regelbasiertes L7-Enforcement:** `l7.enforce_rules` begrenzt Blocking auf benannte Regeln/Familien; der Inline-Edge-Self-Test ist PASS und der Origin nur auf Loopback gebunden, sodass direkter Origin-Zugriff die Inspektion nicht umgeht.
+
+### v4.3.0 — Kernel-Advisory-Exposition: erkennen, bewerten und blocken, was die Sensoren nicht sehen
+
+- Laufzeit-Exposition von Release/Channel gegen den mitgelieferten Advisory-Katalog; `unknown` wird nie als sicher dargestellt.
+- Erreichbarkeitsgewichtete Exposition und Kernel-Risk-Panel im Dashboard (Dry-Run, Apply, Rollback).
+
+
+### v4.2.5 — Multi-Vektor-Echtzeit-Bedrohungskarte, sofortige Reaktivierung nach Updates & selbstheilende Sensorik
 
 Ein Visualisierungs- und Resilienz-Release. Es bringt eine konsolidierte Echtzeit-Angriffskarte über alle Erkennungspfade, blitzschnelle Schutz-Reaktivierung nach Software-Updates und autonome Sensor-Selbstheilung.
 
@@ -940,6 +958,6 @@ sudo python3 scripts/update-geoip-db.py /var/lib/vgt/gedefense/geoip.csv
 
 [![VGT](https://img.shields.io/badge/VisionGaia-Technology-cyan?style=for-the-badge)](https://visiongaiatechnology.de)
 
-*VGT GeDefense 4.2.5 — Universelles Linux Sicherheitsgewebe // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidenz-Ledger // AES-256-GCM verschlüsselter Vault // Reversible Härtung // AstraeaOS-nativer Adapter // Getrennte Vertrauensdomänen // Keine Cloud-Control-Plane // AGPL-3.0-only // Linux x86_64*
+*VGT GeDefense 4.4.0 — Universelles Linux Sicherheitsgewebe // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidenz-Ledger // AES-256-GCM verschlüsselter Vault // Reversible Härtung // AstraeaOS-nativer Adapter // Getrennte Vertrauensdomänen // Keine Cloud-Control-Plane // AGPL-3.0-only // Linux x86_64*
 
 </div>

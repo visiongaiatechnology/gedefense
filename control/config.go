@@ -14,20 +14,21 @@ import (
 )
 
 type Config struct {
-	Node      NodeConfig
-	Dashboard DashboardConfig
-	Core      CoreConfig
-	Defense   DefenseConfig
-	Policy    PolicyConfig
-	Feeds     FeedConfig
-	XDR       XDRConfig
-	L7        L7Config
-	Release   ReleaseConfig
-	Runtime   RuntimeConfig
-	Cells     CellsConfig
-	Kinetic   KineticConfig
-	Desktop   DesktopConfig
-	Startup   StartupSupervisorConfig
+	Node       NodeConfig
+	Dashboard  DashboardConfig
+	Core       CoreConfig
+	Defense    DefenseConfig
+	Policy     PolicyConfig
+	Feeds      FeedConfig
+	XDR        XDRConfig
+	L7         L7Config
+	Release    ReleaseConfig
+	Runtime    RuntimeConfig
+	Cells      CellsConfig
+	Kinetic    KineticConfig
+	Desktop    DesktopConfig
+	Startup    StartupSupervisorConfig
+	Advisories AdvisoryConfig
 }
 
 type NodeConfig struct {
@@ -88,26 +89,30 @@ type L7Config struct {
 	// CoverageRequired decides whether an idle L7 engine degrades the platform:
 	// "auto" requires the traffic path only once something is attached, "required"
 	// always does, "optional" never does.
-	CoverageRequired             string
-	Socket                       string
-	SocketGroup                  string
-	RequestTimeoutMillis         int
-	MaxConcurrent                int
-	MaxEnvelopeBytes             int
-	MaxBodyBytes                 int
-	MaxURIBytes                  int
-	MaxHeaderBytes               int
-	MaxHeaders                   int
-	MaxValueBytes                int
-	MaxInspectionBytes           int
-	MaxDecodedValues             int
-	MaxDecodeDepth               int
-	MaxJSONDepth                 int
-	MaxFormFields                int
-	MaxMultipartParts            int
-	MaxUploadBytes               int
-	AlertScore                   int
-	BlockScore                   int
+	CoverageRequired     string
+	Socket               string
+	SocketGroup          string
+	RequestTimeoutMillis int
+	MaxConcurrent        int
+	MaxEnvelopeBytes     int
+	MaxBodyBytes         int
+	MaxURIBytes          int
+	MaxHeaderBytes       int
+	MaxHeaders           int
+	MaxValueBytes        int
+	MaxInspectionBytes   int
+	MaxDecodedValues     int
+	MaxDecodeDepth       int
+	MaxJSONDepth         int
+	MaxFormFields        int
+	MaxMultipartParts    int
+	MaxUploadBytes       int
+	AlertScore           int
+	BlockScore           int
+	// EnforceRules optionally limits which findings may authorise a block. Empty keeps the
+	// historical behaviour: every finding that is not alert-only may block. Findings outside the
+	// list are still recorded and still raise the alert score; only the block decision is scoped.
+	EnforceRules                 []string
 	ClientRatePerMinute          int
 	ClientRateBurst              int
 	SensitiveRatePerMinute       int
@@ -188,6 +193,14 @@ type CellsConfig struct {
 	Socket               string
 	AuthKeyFile          string
 	RequestTimeoutMillis int
+	// Automatic isolation: when an incident scores at or above AutoConfineScore and its workload is
+	// bound to a Gaia Cell, the cell is isolated through the transaction engine. Off by default - it
+	// takes a capability away from a running workload and that is an operator decision.
+	AutoConfine                bool
+	AutoConfineAction          string
+	AutoConfineScore           int
+	AutoConfineIntervalSeconds int
+	AutoConfineCooldownSeconds int
 }
 
 type KineticConfig struct {
@@ -228,9 +241,10 @@ type FeedConfig struct {
 
 func defaultConfig() Config {
 	return Config{
-		Node:    NodeConfig{Name: "VGT-Beta-Node", Interface: "auto", Mode: "standalone"},
-		Desktop: defaultDesktopConfig(),
-		Startup: defaultStartupSupervisorConfig(),
+		Node:       NodeConfig{Name: "VGT-Beta-Node", Interface: "auto", Mode: "standalone"},
+		Desktop:    defaultDesktopConfig(),
+		Startup:    defaultStartupSupervisorConfig(),
+		Advisories: defaultAdvisoryConfig(),
 		Dashboard: DashboardConfig{
 			Listen: "127.0.0.1:9843", TokenFile: "/var/lib/vgt/gedefense/dashboard.token",
 			AllowedHosts:       []string{"127.0.0.1", "localhost", "[::1]"},
@@ -283,6 +297,8 @@ func defaultConfig() Config {
 		Runtime: RuntimeConfig{SettingsFile: "/var/lib/vgt/gedefense/runtime-settings.json", KeyFile: "/var/lib/vgt/gedefense/runtime-settings.key", StorageKeyFile: "/etc/vgt/gedefense/secrets/storage-master.key"},
 		Cells: CellsConfig{
 			Enabled: false, Socket: "/run/gaia-cells/control.sock",
+			AutoConfine: false, AutoConfineAction: cellActionRevokeNetwork, AutoConfineScore: 80,
+			AutoConfineIntervalSeconds: 15, AutoConfineCooldownSeconds: 300,
 			AuthKeyFile:          "/etc/vgt/gedefense/secrets/gaia-cells.key",
 			RequestTimeoutMillis: 1500,
 		},
@@ -343,7 +359,7 @@ func loadConfig(path string) (Config, error) {
 		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
 			section = strings.TrimSpace(line[1 : len(line)-1])
 			switch section {
-			case "node", "dashboard", "core", "defense", "policy", "feeds", "xdr", "l7", "release", "runtime", "cells", "kinetic":
+			case "node", "dashboard", "core", "defense", "policy", "feeds", "xdr", "l7", "release", "runtime", "cells", "kinetic", "advisories":
 			default:
 				return cfg, fmt.Errorf("line %d: unknown section %q", lineNo, section)
 			}
@@ -464,6 +480,34 @@ func assignConfig(cfg *Config, section, key, raw string) error {
 	case "startup.qualification_file":
 		v, e := str()
 		cfg.Startup.QualificationFile = v
+		return e
+	case "advisories.enabled":
+		v, e := parseBool(raw)
+		cfg.Advisories.Enabled = v
+		return e
+	case "advisories.mode":
+		v, e := str()
+		cfg.Advisories.Mode = v
+		return e
+	case "advisories.max_exposure":
+		v, e := parseInt(raw, 1, 100)
+		cfg.Advisories.MaxExposure = v
+		return e
+	case "advisories.auto_mitigate":
+		v, e := parseBool(raw)
+		cfg.Advisories.AutoMitigate = v
+		return e
+	case "advisories.mitigation_watch_seconds":
+		v, e := parseInt(raw, 30, 3600)
+		cfg.Advisories.MitigationWatchSeconds = v
+		return e
+	case "advisories.mitigation_interval_seconds":
+		v, e := parseInt(raw, 5, 300)
+		cfg.Advisories.MitigationIntervalSeconds = v
+		return e
+	case "advisories.mitigation_failures":
+		v, e := parseInt(raw, 1, 10)
+		cfg.Advisories.MitigationFailures = v
 		return e
 	case "dashboard.token_owner":
 		v, e := str()
@@ -684,6 +728,12 @@ func assignConfig(cfg *Config, section, key, raw string) error {
 	case "l7.block_score":
 		v, e := parseInt(raw, 2, 250)
 		cfg.L7.BlockScore = v
+		return e
+	case "l7.enforce_rules":
+		v, e := str()
+		if e == nil {
+			cfg.L7.EnforceRules = splitCSV(v)
+		}
 		return e
 	case "l7.client_rate_per_minute":
 		v, e := parseInt(raw, 1, 1000000)
@@ -969,6 +1019,26 @@ func assignConfig(cfg *Config, section, key, raw string) error {
 	case "cells.auth_key_file":
 		v, e := str()
 		cfg.Cells.AuthKeyFile = v
+		return e
+	case "cells.auto_confine":
+		v, e := parseBool(raw)
+		cfg.Cells.AutoConfine = v
+		return e
+	case "cells.auto_confine_action":
+		v, e := str()
+		cfg.Cells.AutoConfineAction = v
+		return e
+	case "cells.auto_confine_score":
+		v, e := parseInt(raw, 1, 249)
+		cfg.Cells.AutoConfineScore = v
+		return e
+	case "cells.auto_confine_interval_seconds":
+		v, e := parseInt(raw, 5, 3600)
+		cfg.Cells.AutoConfineIntervalSeconds = v
+		return e
+	case "cells.auto_confine_cooldown_seconds":
+		v, e := parseInt(raw, 30, 86400)
+		cfg.Cells.AutoConfineCooldownSeconds = v
 		return e
 	case "cells.request_timeout_millis":
 		v, e := parseInt(raw, 100, 10000)
@@ -1258,6 +1328,9 @@ func validateConfig(cfg *Config) error {
 	if cfg.Defense.Enforcement != "observe" && cfg.Defense.Enforcement != "enforce" {
 		return errors.New("defense.enforcement must be observe or enforce")
 	}
+	if cfg.Advisories.Mode != advisoryModeReport && cfg.Advisories.Mode != advisoryModeStrict {
+		return errors.New("advisories.mode must be report or strict")
+	}
 	if cfg.XDR.Mode != "observe" && cfg.XDR.Mode != "contain" && cfg.XDR.Mode != "enforce" {
 		return errors.New("xdr.mode must be observe, contain, or enforce")
 	}
@@ -1267,6 +1340,26 @@ func validateConfig(cfg *Config) error {
 	if cfg.L7.AlertScore >= cfg.L7.BlockScore {
 		return errors.New("l7 scores must satisfy alert < block")
 	}
+	if len(cfg.L7.EnforceRules) > l7RuleOverrideLimit {
+		return fmt.Errorf("l7.enforce_rules exceeds %d entries", l7RuleOverrideLimit)
+	}
+	seenEnforceRules := make(map[string]struct{}, len(cfg.L7.EnforceRules))
+	normalizedEnforceRules := make([]string, 0, len(cfg.L7.EnforceRules))
+	for _, raw := range cfg.L7.EnforceRules {
+		id := strings.ToUpper(strings.TrimSpace(raw))
+		if id == "" {
+			continue
+		}
+		if !l7RuleOverrideIDAllowed(id) && !isL7RuleFamily(id) {
+			return fmt.Errorf("l7.enforce_rules entry %q is not a supported built-in rule or family", raw)
+		}
+		if _, duplicate := seenEnforceRules[id]; duplicate {
+			continue
+		}
+		seenEnforceRules[id] = struct{}{}
+		normalizedEnforceRules = append(normalizedEnforceRules, id)
+	}
+	cfg.L7.EnforceRules = normalizedEnforceRules
 	if cfg.L7.MaxUploadBytes > cfg.L7.MaxBodyBytes {
 		return errors.New("l7.max_upload_bytes must not exceed l7.max_body_bytes")
 	}

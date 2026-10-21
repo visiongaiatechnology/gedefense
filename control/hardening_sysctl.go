@@ -45,6 +45,15 @@ var sysctlControlDefinitions = map[string]sysctlControlDefinition{
 	"kernel.bpf": {Mask: 1 << 4, Values: map[string]string{
 		"kernel.unprivileged_bpf_disabled": "1",
 	}},
+	// Closing the unprivileged user-namespace boundary is the one managed control that removes the
+	// entry point of a whole class of local kernel exploits: without a namespace of their own,
+	// unprivileged processes cannot hold CAP_NET_RAW and therefore cannot feed crafted packet
+	// metadata into the host stack. It is a real trade (rootless containers and bubblewrap stop
+	// working), which is why it is a switch the operator flips - never something the platform flips
+	// by itself.
+	"kernel.userns": {Mask: 1 << 10, Values: map[string]string{
+		"kernel.unprivileged_userns_clone": "0",
+	}},
 	"filesystem.protected-links": {Mask: 1 << 5, Values: map[string]string{
 		"fs.protected_fifos": "2", "fs.protected_regular": "2",
 	}},

@@ -67,6 +67,17 @@ type ReleaseController struct {
 	policy   *PolicyStore
 	settings *SettingsStore
 	status   ReleaseStatus
+	// exposure is the kernel-advisory measurement. It is attached after construction because the
+	// controller is built before the server that owns the measurement, and it stays optional so the
+	// release tests can exercise the gate without a host.
+	exposure *kernelExposureCache
+}
+
+// AttachKernelExposure gives the release gate the kernel-advisory measurement it scores against.
+func (r *ReleaseController) AttachKernelExposure(exposure *kernelExposureCache) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.exposure = exposure
 }
 
 func NewReleaseController(cfg Config, state *State, core ReleaseCore, policy *PolicyStore, settings *SettingsStore) *ReleaseController {
@@ -221,6 +232,15 @@ func (r *ReleaseController) currentBlockersLocked(target string, includeDuration
 	}
 	if r.status.CoreMisses >= releaseCfg.CoreFailureThreshold {
 		blockers = append(blockers, "core heartbeat failure threshold reached")
+	}
+	// Kernel advisories can veto a promotion, but only when the operator asked for that. The default
+	// is "report": a host whose distribution has not published a fixed build yet is still protected by
+	// everything else this gate covers, and pausing automatic response because the kernel is old would
+	// remove protection in the name of protection.
+	if r.exposure != nil {
+		if blocker := kernelAdvisoryBlocker(target, r.status.Phase, r.cfg.Advisories, r.exposure.Current()); blocker != "" {
+			blockers = append(blockers, blocker)
+		}
 	}
 	if r.status.Phase == ReleasePhaseDegraded && !r.status.FailSafeVerified {
 		blockers = append(blockers, "fail-safe transition is not verified")
@@ -890,6 +910,15 @@ type ReleaseReadiness struct {
 	SoakRemainingSeconds int64      `json:"soak_remaining_seconds"`
 	MinimumSoakSeconds   int64      `json:"minimum_soak_seconds"`
 	ElapsedSoakSeconds   int64      `json:"elapsed_soak_seconds"`
+}
+
+// ReleaseReadinessSet is the readiness of the two promotion targets the dashboard shows together.
+// It travels inside the state snapshot so a client never has to poll the readiness endpoint beside
+// the status it already receives: a browser capture showed 46 readiness requests against 21 status
+// requests, and each of them was a second round trip for data that changes with a transition.
+type ReleaseReadinessSet struct {
+	Canary  ReleaseReadiness `json:"canary"`
+	Enforce ReleaseReadiness `json:"enforce"`
 }
 
 func (r *ReleaseController) Readiness(target string) (ReleaseReadiness, error) {

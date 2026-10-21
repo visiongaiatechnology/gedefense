@@ -61,7 +61,7 @@ const MAX_INGRESS_EVENTS_PER_RESPONSE: usize = 12;
 // so it cannot be tripped by ordinary mixed-protocol aggregates.
 const INGRESS_REJECTED_ALARM_THRESHOLD: u64 = 16;
 const MAX_CELL_LSM_EVENTS_PER_RESPONSE: usize = 24;
-const HARDENING_FILE: &str = "/etc/sysctl.d/90-vgt-gedefense.conf";
+const HARDENING_FILE: &str = "/etc/sysctl.d/99-zzz-vgt-gedefense.conf";
 const RENAME_NOREPLACE: u32 = 1;
 const RENAME_EXCHANGE: u32 = 2;
 
@@ -364,6 +364,14 @@ fn sysctl_spec(key: &str) -> Option<(&'static str, &'static [&'static str])> {
         "kernel.unprivileged_bpf_disabled" => Some((
             "/proc/sys/kernel/unprivileged_bpf_disabled",
             &["0", "1", "2"],
+        )),
+        // The entry point of a local metadata-trust exploit is often an unprivileged user namespace:
+        // without it a process cannot hold CAP_NET_RAW in a namespace it owns, which several kernel
+        // packet-socket and netfilter classes need before they are reachable at all. The kernel
+        // exposes exactly 0 or 1 here, so the domain is a typed binary.
+        "kernel.unprivileged_userns_clone" => Some((
+            "/proc/sys/kernel/unprivileged_userns_clone",
+            &["0", "1"],
         )),
         "fs.protected_fifos" => Some(("/proc/sys/fs/protected_fifos", &["0", "1", "2"])),
         "fs.protected_regular" => Some(("/proc/sys/fs/protected_regular", &["0", "1", "2"])),
@@ -1649,6 +1657,14 @@ mod tests {
         assert_eq!(binary, &["0", "1"]);
         let (_, ternary) = sysctl_spec("kernel.kptr_restrict").expect("allowlisted sysctl");
         assert_eq!(ternary, &["0", "1", "2"]);
+        // The user-namespace boundary is a managed control: it must be allowlisted as a typed binary so
+        // the transactional applier can set it and verify the post-state, and it must not become a way
+        // to write an arbitrary path.
+        let (userns_path, userns_domain) =
+            sysctl_spec("kernel.unprivileged_userns_clone").expect("allowlisted userns sysctl");
+        assert_eq!(userns_path, "/proc/sys/kernel/unprivileged_userns_clone");
+        assert_eq!(userns_domain, &["0", "1"]);
+        assert!(sysctl_spec("user.max_user_namespaces").is_none());
         assert!(sysctl_spec("kernel.core_pattern").is_none());
         assert!(sysctl_spec("../kernel/kptr_restrict").is_none());
     }

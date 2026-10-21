@@ -823,3 +823,39 @@
     padding-right: 16px;
   }
 }
+
+/* Top-3 countries of the last 24 hours, in the same visual language as the map legend: coloured dot,
+   label, count in parentheses. It is its own bar below the stage instead of a lone text line. */
+.overview-map-top-countries {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 18px;
+  padding: 10px 18px;
+  border-top: 1px solid rgba(120, 190, 255, .12);
+  font-size: 12px;
+  letter-spacing: .02em;
+}
+.overview-map-top-countries .top-countries-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: rgba(150, 200, 235, .75);
+}
+.overview-map-top-countries .top-country {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: rgba(210, 235, 255, .92);
+}
+.overview-map-top-countries .top-country i {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+  box-shadow: 0 0 8px currentColor;
+}
+.overview-map-top-countries .top-country i.blocked { background: #ff3366; color: #ff3366; }
+.overview-map-top-countries .top-country i.suspicious { background: #ffaa00; color: #ffaa00; }
+.overview-map-top-countries .top-country i.tracked { background: #00f3ff; color: #00f3ff; }

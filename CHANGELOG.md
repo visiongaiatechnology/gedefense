@@ -1,5 +1,149 @@
 # Changelog
 
+## 4.4.0 - Automatic Isolation in Gaia Cells and a Guarded Kernel Mitigation
+
+Two capabilities that close the gap between "GeDefense reports a problem" and "GeDefense acts on it",
+each with a bounded blast radius and an operator undo.
+
+- **Automatic cell isolation.** When an incident's score reaches `cells.auto_confine_score` (default
+  80) and its workload is bound to a Gaia Cell, the guard isolates that cell - network revocation by
+  default, freezing only when configured - through the same transaction engine the dashboard uses. The
+  before/after state is therefore recorded, verified and reversible exactly like a manual isolation.
+  Rules: only cell-bound workloads are touched (a cgroup no cell owns is refused with a reason), one
+  isolation per workload per cooldown, and a refusal never retries on every scan.
+- **Manual isolation from the incident list.** A new action on each incident row resolves the Gaia Cell
+  that owns the workload and applies the isolation; an incident without a cell binding is refused
+  instead of guessed. API: `POST /api/v1/xdr/incidents/{id}/confine`, status at
+  `GET /api/v1/cells/confinement`.
+- **The kernel mitigation guard** (introduced in the 4.3.0 line, promoted to its own release here):
+  auto-mitigation is opt-in, runs inside a bounded probation window, is verified against the host's own
+  services and reverts itself when the change breaks something. The applied value is re-asserted on
+  every interval, so a value changed outside GeDefense is put back and counted as drift.
+- **The advisory surface in the dashboard.** The hardening view now carries a kernel-risk panel:
+  exposure score and grade, the verdict with its reason, per-advisory reachability, the mitigation
+  state, and three actions - dry-run plan, apply, rollback - each requiring a written reason. It is
+  wired to the endpoints that already existed, so the panel can never show a state the API does not
+  report, and an apply in report mode is refused with the setting that would enable it. Four languages.
+- **Manual isolation from the incident list** (see above) completes the operator side of the cells
+  work: automatic isolation runs from the scanner, manual isolation from the incident row.
+
+- **Version 4.4.0** across `VERSION`, the control plane, the dashboard identity and the release gates.
+- **Host repair, not release content:** `systemd-sysctl.service` on the audited host had been failing
+  since boot because of a malformed line in `/etc/sysctl.d/99-sysctl.conf`; it was repaired with a
+  backup and verified behaviour-neutral (seven sysctl values identical before and after). Without that
+  repair every persisted hardening value - including this release's - would have been lost at boot.
+
+### 4.4.0 operational security update (2026-10-21)
+
+- **PHP upload-progress mitigation on the web surface.** The host-wide PHP configuration keeps
+  `session.upload_progress.enabled = Off`; the platform now verifies the value in the **effective
+  web SAPI**, not only in the CLI configuration. A new hardening control, `web.php-upload-progress`,
+  reads the real chain (php.ini → scan dir → pool `php_admin_value` → `.user.ini`) and reports
+  PROTECTED only when the effective value is off. This is preventive defense-in-depth for the
+  announced PHP upload-progress RCE class and does not replace the official PHP update.
+- **New L7 rule `L7.PHP.SESSION_UPLOAD_PROGRESS`.** The multipart detector now flags the
+  `PHP_SESSION_UPLOAD_PROGRESS` field before file parts are skipped: category
+  `php-upload-progress`, critical, score 110, confidence 96, once per request; the rule is in the
+  closed admin allowlist and the dashboard registry.
+- **Rule-scoped L7 enforcement (`l7.enforce_rules`).** `mode = "block"` can be limited to an explicit
+  list of rule IDs or families. Findings outside the scope remain visible and raise the alert score
+  but cannot authorize a block, so a validated mitigation can be enforced without turning every
+  unvalidated signature into a blocking rule at once. The default remains the historical behaviour
+  (every non-alert-only rule is block-eligible).
+- **Inline edge origin hardened.** The internal PHP origin is bound to loopback only; the
+  nginx → edge.sock → L7 → origin path was verified end-to-end. Direct origin access can no longer
+  bypass inspection, and the dashboard reports the live mode, enforcement scope and inline health.
+- **Verified in production.** The new rule and hardening control were deployed with the control
+  plane, the inline self-test passed, the L7 block scope was exercised through the public HTTPS path
+  and the effective upload-progress value was confirmed off in the web SAPI.
+
+## 4.3.0 - Kernel Advisory Exposure: Detect, Score and Block What the Sensors Cannot See
+
+A new layer, not a new sensor. The packet path is unchanged; what is new is the part of the host the
+packet path was never able to see. The PwnEscape class (CVE-2026-99999) is a local trust failure
+inside the Linux networking stack: an untrusted producer supplies checksum metadata that one part of
+the kernel validates and a later part consumes against a different interpretation, which is how a
+guest or a container reaches host memory. No hook GeDefense owns carries that state, so a sensor rule
+cannot see it - but the platform can still answer the operator's three questions.
+
+- **Detect.** The running release and its release *channel* are measured against an advisory
+  catalogue that ships with the release. A version range is only meaningful inside a channel: a
+  distribution backports, so a build below the mainline fix on a channel without a published fixed
+  build is reported as `unknown`, never as safe. "We could not decide" must not read better than
+  "we decided it is fixed".
+- **Score.** Exposure is the severity class modulated by reachability, and reachability is built from
+  measured entry points, not from the CVE in the abstract: a container runtime that hands out
+  `CAP_NET_RAW`, an unprivileged user-namespace boundary, a world-writable `/dev/net/tun`, a host that
+  is itself a guest, a host that can run guests. The floor is 40% of the severity weight, because a
+  vulnerable kernel nothing can reach is still a vulnerable kernel.
+- **Block.** Two levers, both explicit. `advisories.mode = "strict"` vetoes a *promotion* when the
+  score crosses `max_exposure`; it deliberately never demotes a host that is already protecting,
+  because pausing automatic response because the kernel is old removes protection in the name of
+  protection. The second lever is the mitigation list per entry point, each with the tradeoff it
+  costs (rootless containers, VPNs, DNS for confined workloads). Mitigations are never applied
+  automatically by a monitoring plane; the platform proves whether they are in place and rescores.
+- **Honest limits, in the data.** Every catalogue entry carries what GeDefense can and cannot see of
+  it. For this class: XDP and TC run before `sk_buff` exists and cannot read `csum_start` or
+  `ip_summed`, so only the leak channel would be observable, and only on an attached interface.
+- **A blind spot is never a closed door.** The control plane runs with `PrivateDevices=true`, so
+  `/dev` is a private tmpfs and `/dev/net/tun` and `/dev/kvm` do not exist in its view while they
+  exist on the host. Those entry points are excluded from the reachability denominator and named as
+  unmeasured - the same treatment the posture score gives an unreadable check.
+- **Visible where the operator looks.** A `GET /api/v1/kernel/exposure` endpoint (with `?refresh=1`
+  to re-measure after applying a mitigation), a `kernel.advisory` check in the hardening posture, a
+  `high` event on the stream at startup, and the measurement shared by the self-check, the release
+  gate and the API so no two surfaces can disagree.
+
+**Measured on the production host** (visiongaia.de, Ubuntu 24.04, kernel `7.0.0-31-generic`, booted
+2026-09-04 - before the fix was public): verdict `unknown` because `ubuntu-noble` has published no
+fixed build, exposure **100 of 100** (`EXPOSED`), reachability 100% of the measured entry points
+(docker's default `CAP_NET_RAW`, `kernel.unprivileged_userns_clone=1`, virtio guest), unmeasured:
+`tun-writable`, `kvm-host`. Startup event: `kernel.advisory_exposure` (high). Posture:
+`kernel.advisory = PARTIAL`. Release phase stayed `enforce`: measuring is not vetoing.
+
+- **The entry point is a switch, not a recommendation.** `kernel.unprivileged_userns_clone` is now a
+  managed control: allowlisted as a typed binary in the Rust core's sysctl contract (so the
+  transactional applier can set it and verify the post-state instead of trusting a write), defined in
+  the control plane, surfaced as the `kernel.userns` posture check and offered by the dashboard as a
+  runtime switch. It is the one action that turns an advisory report into protection on a host that
+  cannot take the kernel update.
+- **Scoring is per advisory, against that advisory's own doors.** A defect that needs only an
+  unprivileged user namespace is not made worse by an open packet-socket door, and one that needs a
+  packet socket is not made safer by a closed namespace door. Each catalogue entry is scored with the
+  reachability of its own entry points; the report names the worst advisory and recommends the action
+  that closes *its* door.
+- **A second, verified catalogue entry** proves that "and similar ones" is a data edit rather than a
+  code change: CVE-2024-1086 (nf_tables double free, guard commit `f342de4e2f33`, fixed by 6.1.76-1 on
+  bookworm and 6.8 upstream, verified against the Debian security tracker) only needs the
+  user-namespace entry point. On the production host it correctly reads `unaffected` - 7.0.0 is above
+  the 6.8 mainline fix - while the unpatched-channel entry stays `unknown`.
+
+- **An automatic mitigation with a probation watch, not a switch nobody verifies.** When a reachable
+  entry point has a managed control, the guard can close it by itself (`advisories.auto_mitigate`,
+  off by default), then does what a careful operator would do: it records the previous value, applies
+  through the same compare-set-and-verify primitive as every other hardening change, and watches the
+  host's own services for a bounded window (core IPC, local web stack, container runtime). A
+  regression that persists - two consecutive failed probes - reverts the value and says so. The
+  applied value is re-asserted on every interval, so a value changed outside GeDefense is put back and
+  recorded as drift instead of silently accepted. `POST /api/v1/kernel/mitigation/apply`,
+  `.../rollback`, and a `GET .../plan` dry run that writes nothing; every transition is an event on
+  the platform's own stream. A refused apply names the setting that would enable it.
+
+**Configuration.** `[advisories] enabled`, `mode` (`report` default, `strict`), `max_exposure`
+(default 80). The shipped `gedefense.toml` documents both modes and the tradeoffs of each mitigation.
+
+**Measured in the second pass** (same host, after the managed control and the second catalogue entry
+were deployed): core binary `d6e7baba` (18/18 Rust contract tests, eBPF programs re-attached to `ens6`
+with the cgroup egress hook live), control binary `77eeba33`, `phase=enforce` throughout. Posture now
+reports `kernel.userns = UNPROTECTED (live value=1)` next to `kernel.advisory = PARTIAL`, the exposure
+API lists both advisories with their own reachability, and the served dashboard carries the switch
+(asset byte-identical to the source). The switch was deliberately **not** flipped on the production
+host: closing the namespace door stops rootless containers, and that is the operator's decision, not a
+side effect of a deployment.
+
+**Known limit at release time.** The deploy path rebuilds the control plane only; the HTTPS gateway
+binary still reports `4.2.5-access` until it is rebuilt separately.
+
 ## 4.2.5 - Real-Time Multi-Vector Threat Map, Immediate Post-Update Re-Arm and Self-Healing Telemetry
 
 ### Real-time attack map on the overview page

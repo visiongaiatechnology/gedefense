@@ -61,6 +61,10 @@ max_multipart_parts = 64
 max_upload_bytes = 2097152
 alert_score = 40
 block_score = 90
+# Optional comma-separated built-in rule IDs (or families such as L7.UPLOAD) that may authorise a
+# block in block mode. Empty keeps the historical behaviour: every rule that is not alert-only may
+# block. Findings outside the list are still recorded and still raise the alert score.
+enforce_rules = ""
 client_rate_per_minute = 600
 client_rate_burst = 100
 sensitive_rate_per_minute = 30
@@ -184,3 +188,32 @@ refresh_minutes = 60
 max_download_bytes = 8388608
 max_entries = 100000
 sources = "https://feodotracker.abuse.ch/downloads/ipblocklist.txt,https://www.spamhaus.org/drop/drop.txt"
+
+[advisories]
+# Kernel advisories are shipped with the release: a known class of kernel vulnerability, the fixed
+# build per release channel, the entry points it needs and the mitigations that close them.
+#
+#   report = measure, score and publish the exposure; never changes a release decision
+#   strict = additionally veto a promotion when the exposure score crosses max_exposure
+#
+# The default is report on purpose. A host whose distribution has not published a fixed kernel build
+# yet is still protected by everything else the release gate covers, and pausing automatic response
+# because the kernel is old would remove protection in the name of protection. Mitigations are never
+# applied automatically: each of them costs a real capability (rootless containers, VPNs, DNS for
+# confined workloads), so the operator applies them and the platform verifies the effect.
+enabled = true
+mode = "report"
+max_exposure = 80
+
+# Automatic mitigation closes a reachable entry point by itself (currently: the unprivileged
+# user-namespace door). It is off by default because the switch costs a real capability.
+#   auto_mitigate = true
+# The guard watches the host for a bounded probation window and reverts on a regression; the applied
+# value is re-asserted on every interval, so a value changed outside GeDefense is put back and recorded.
+# mitigation_watch_seconds = 120
+# mitigation_interval_seconds = 10
+# mitigation_failures = 2
+auto_mitigate = false
+mitigation_watch_seconds = 120
+mitigation_interval_seconds = 10
+mitigation_failures = 2

@@ -105,7 +105,7 @@ type HardeningFabricSettings struct {
 // can produce. A required-domain entry outside this set is rejected, so an
 // operator cannot silence a domain by inventing a name for it.
 var hardeningDomainAllowlist = []string{
-	"application-control", "boot", "encryption", "filesystem", "integrity", "kernel", "network",
+	"application-control", "boot", "encryption", "filesystem", "integrity", "kernel", "network", "web",
 }
 
 // defaultProtectedRASPNames mirrors the built-in Morpheus protected set.
