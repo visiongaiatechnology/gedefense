@@ -1,7 +1,7 @@
 > [!WARNING]
 > **测试版软件 — 禁止在无人值守的生产环境中使用**
 >
-> **VGT GeDefense 4.4.0 为 Beta 版本。** 接口、配置格式、检测规则和安全行为可能随时变更，恕不另行通知。每个构建都必须先在预发布环境验证，以 **observe 模式**启动，保留经过测试的备份和带外恢复通道；未满足 [PRODUCTION-BETA-GATE.md](PRODUCTION-BETA-GATE.md) 中的门禁条件前，不得投入生产。按 **现状** 提供，不提供任何担保，许可证为 AGPL-3.0-only。安全报告：[SECURITY.md](SECURITY.md)。
+> **VGT GeDefense 4.4.1 为 Beta 版本。** 接口、配置格式、检测规则和安全行为可能随时变更，恕不另行通知。每个构建都必须先在预发布环境验证，以 **observe 模式**启动，保留经过测试的备份和带外恢复通道；未满足 [PRODUCTION-BETA-GATE.md](PRODUCTION-BETA-GATE.md) 中的门禁条件前，不得投入生产。按 **现状** 提供，不提供任何担保，许可证为 AGPL-3.0-only。安全报告：[SECURITY.md](SECURITY.md)。
 
 <div align="center">
 
@@ -13,8 +13,8 @@
 ### Linux 主权安全矩阵 (Linux Security Fabric)
 
 [![License](https://img.shields.io/badge/License-AGPL--3.0--only-blue?style=for-the-badge)](https://www.gnu.org/licenses/agpl-3.0)
-[![Version](https://img.shields.io/badge/Version-4.4.0-orange?style=for-the-badge)](#)
-[![Status](https://img.shields.io/badge/Status-BETA_v4.4.0-yellow?style=for-the-badge)](#)
+[![Version](https://img.shields.io/badge/Version-4.4.1-orange?style=for-the-badge)](#)
+[![Status](https://img.shields.io/badge/Status-BETA_v4.4.1-yellow?style=for-the-badge)](#)
 [![Installer](https://img.shields.io/badge/Installer-Universal_Linux-green?style=for-the-badge)](#-快速上手)
 [![Platform](https://img.shields.io/badge/Platform-Linux_x86__64-lightgrey?style=for-the-badge&logo=linux)](#)
 [![Data Plane](https://img.shields.io/badge/Data_Plane-Rust_eBPF%2FXDP-red?style=for-the-badge&logo=rust)](#-系统架构)
@@ -54,7 +54,7 @@
 
 ### 实测资源占用（参考主机）
 
-**参考环境：** 8 vCPU AMD EPYC、32 GiB 内存、Ubuntu 24.04、内核 7.0、GeDefense 4.4.0、`scan_interval_millis = 750`、`worker_count = 4`；cgroup-v2 采样 300 秒（150 个样本，间隔 2 秒），2026-10-21。
+**参考环境：** 8 vCPU AMD EPYC、32 GiB 内存、Ubuntu 24.04、内核 7.0、GeDefense 4.4.1、`scan_interval_millis = 750`、`worker_count = 4`；cgroup-v2 采样 300 秒（150 个样本，间隔 2 秒），2026-10-21。
 
 | 指标 | 实测值 |
 |---|---:|
@@ -69,47 +69,25 @@
 
 以上为运营测量值，不构成 benchmark 保证。实际消耗取决于扫描配置、telemetry feed、留存策略及同机负载。容量规划请采用“建议”列，并在目标主机上验证。
 
-## 🚨 严重安全警告与公告 — RELEASE v4.4.0
+## 🧪 生产验证 — Release 4.4.1
 
-> **4.4.0 操作安全更新。** 已启用 PHP 上传进度缓解（`session.upload_progress.enabled = Off`）、关键 L7 规则 `L7.PHP.SESSION_UPLOAD_PROGRESS` 以及按规则范围的内联强制（`l7.enforce_rules`，`mode = "block"`）。L7 源站仅绑定 loopback，直接访问源站无法绕过检测。下方的 4.2.x 历史公告仍属于修复记录。
+2026-10-22 在洪水韧性与遥测排空修复之后进行的受控生产测试：
 
+| 测试 | 结果 |
+|---|---|
+| 时长 | **60 秒** |
+| 流量 | 来自两个外部测试生成器的 **11,604,741** 个 64 字节帧 |
+| 聚合速率 | **约 193,000 pps** |
+| XDP 结果 | **所有测试数据包均在内核入口路径被丢弃** |
+| Control Plane | 全程 **`phase=enforce`、`ready=true`、`core_misses=0`** |
+| Ring 缓冲区丢失 | 遥测排空修复后为 **0** |
+| 网站 | 保持可访问；**无应用影响** |
 
-> [!CAUTION]
-> **全体系统运维人员与管理员紧急安全通告（强烈建议立即升级）：**
-> 
-> 在 GeDefense 4.2.0 版本中，作为全面安全审计与验证周期的一部分，**我们排查并彻底修复了此前版本（4.0.x / 4.1.0）中存在的多个严重安全漏洞与完整性缺陷**。强烈建议所有生产环境节点立即升级至 v4.2.4：
-> 
-> 1. **金丝雀陷阱符号链接遍历提权漏洞（Canary Deployment）：**
->    - *漏洞详情：* 此前的金丝雀诱饵部署在诱饵路径或暂存路径上会跟随符号链接。攻击者若控制上级目录中的符号链接，即可将具有 root 权限的写操作重定向至文件系统的任意位置（如 `cron`、`authorized_keys`、`ld.so.preload`）→ 导致任意文件写入及 root 提权。
->    - *修复措施：* 全面替换为严格基于文件描述符的逐级路径解析（对路径中的每一个组件均使用 `openat(2)` 并附带 `O_NOFOLLOW|O_DIRECTORY`）。跨越符号链接的遍历行为将确定性地返回 `ELOOP` 错误并终止。
-> 
-> 2. **消除信息泄露的不透明错误响应（Information Disclosure）：**
->    - *漏洞详情：* 5 个 API 处理器曾将原始运行时错误直接暴露给客户端（内部文件系统路径、内核故障、上游威胁源 URL、DNS/TLS 内部状态）。此前的关键词黑名单机制脆弱且不完整。
->    - *修复措施：* 架构解耦 — 内部运行时错误绝不作为 API 响应返回，统一替换为强类型的预定义不透明错误响应。
-> 
-> 3. **CSPRNG 故障安全关闭（Fail-Closed）及随机数预测防护：**
->    - *漏洞详情：* 当加密级随机数生成器（CSPRNG）熵源不足或失败时，证据链、安全事件、阻断及事务 ID 曾降级为可预测的时间戳。
->    - *修复措施：* 实施严格的 `log.Fatalf` 故障安全终止语义 — 加密标识符绝不降级为可预测数值。
-> 
-> 4. **防崩溃原子化写入器（`atomicWriteFile`）：**
->    - 安全策略、威胁情报同步状态及 Chronos 检查点全面采用带符号链接拒绝、`O_EXCL` 标识以及对目标文件与父目录双重 `fsync` 的原子写入机制。
-> 
-> 5. **内容安全策略（CSP）加固与可信类型（Trusted Types）：**
->    - 彻底从 CSP 中剔除 `unsafe-inline` 样式指令。
->    - 浏览器端强制实施 `require-trusted-types-for 'script'` 运行时不变量（彻底阻断 DOM-XSS 汇聚点）。
-> 
-> 6. **消除引擎死锁与故障开放（Fail-Open）：**
->    - 修复 `CaseEngine.Status` 中的递归互斥锁死锁问题。
->    - 彻底消除 Airlock 检查器及 CaseEngine 中的故障开放状态。
-> 
-> 7. **提升工具链安全基线（Go ≥ 1.26.6）：**
->    - 修复了旧版 Go 标准库在反向代理入站及威胁情报源解析路径上可被触发的 6 项已知 CVE 漏洞。
+外部生成器是限制因素；这是实测下界，不是理论最大值。未使用真实僵尸网络或第三方目标。完整细节：[`docs/VALIDATION-4.4.1.md`](docs/VALIDATION-4.4.1.md)。
 
----
+## ⚠️ 稳定性与可靠性承诺 — RELEASE v4.4.1 · 通用 LINUX 平台
 
-## ⚠️ 稳定性与可靠性承诺 — RELEASE v4.4.0 · 通用 LINUX 平台
-
-VGT GeDefense 4.4.0 是主权 Linux 安全防御体系的旗舰产品 — 将经过深度加固的内核级防御链与全新的 **Security Fabric Control Plane（安全织网控制平面）**、通用 Linux 原生集成、加固级发布流水线以及真实的内核/网卡适格门禁融为一体。专为主权主机与高对抗网络防御而设计。
+VGT GeDefense 4.4.1 是主权 Linux 安全防御体系的旗舰产品 — 将经过深度加固的内核级防御链与全新的 **Security Fabric Control Plane（安全织网控制平面）**、通用 Linux 原生集成、加固级发布流水线以及真实的内核/网卡适格门禁融为一体。专为主权主机与高对抗网络防御而设计。
 
 **生产环境准入明确属于具体经过审计的目标主机的属性 — 而非仅仅取决于源代码本身。**
 
@@ -647,17 +625,17 @@ Rust Core **未提供任何通用的系统 Shell、文件系统或 Sysctl 执行
 
 ```bash
 # 下载安装程序
-wget https://github.com/visiongaiatechnology/gedefense/releases/download/v4.4.0/GeDefense-4.4.0-OneClick.run
+wget https://github.com/visiongaiatechnology/gedefense/releases/download/v4.4.1/GeDefense-4.4.1-OneClick.run
 
 # 校验 SHA-256 完整性指纹
-sha256sum --check GeDefense-4.4.0-OneClick.run.sha256
+sha256sum --check GeDefense-4.4.1-OneClick.run.sha256
 
 # 执行安装（需要 root 权限）
-chmod 700 GeDefense-4.4.0-OneClick.run
-sudo ./GeDefense-4.4.0-OneClick.run
+chmod 700 GeDefense-4.4.1-OneClick.run
+sudo ./GeDefense-4.4.1-OneClick.run
 ```
 
-> **安装程序可用性：** 官方 v4.4.0 自包含安装程序（`GeDefense-4.4.0-OneClick.run`）已通过验证并发布于 GitHub Releases。
+> **安装程序可用性：** 官方 v4.4.1 自包含安装程序（`GeDefense-4.4.1-OneClick.run`）已通过验证并发布于 GitHub Releases。
 
 > 安装包与校验和文件仅在通过全部 GitHub CI 测试及实体 Linux 节点验证后发布。切勿运行未经验签的 RUN 可执行文件。
 
@@ -691,7 +669,7 @@ sudo ./GeDefense-4.4.0-OneClick.run
 
 ---
 
-## 🚧 当前已知局限（4.4.0）
+## 🚧 当前已知局限（4.4.1）
 
 - 暂未集成 Swarm / 集群网格（Mesh）支持
 - 暂不支持 QUIC 协议网络卸载
@@ -709,7 +687,15 @@ sudo ./GeDefense-4.4.0-OneClick.run
 
 ## 📋 版本更新日志 (Changelog)
 
-### v4.4.0 — 自动 Gaia Cell 隔离、受控内核缓解与 PHP/L7 操作加固 *(当前版本)*
+### v4.4.1 — 洪水韧性与遥测排空修复（当前）
+
+- **传感器健康：** Ring/Tracking Map 压力现在报告为遥测压力，而不再将强制性的 `xdp_ingress` 传感器降级；只有经过验证的 enforcement 路径才能将传感器置为离线。
+- **遥测容量：** Ingress 事件按每 8192 个数据包聚合；Ring 缓冲区从 2 MiB 增至 8 MiB；Control Drain 每 100 ms 轮询、每轮 16 批（约 1,920 事件/秒）。
+- **生产验证：** 60 秒、1160 万外部数据包测试后，所有网站保持可访问，Control Plane 处于 `phase=enforce`，Ring 丢失为 **0**。
+- **版本 4.4.1** 已同步至 Control Plane、Gateway、Dashboard 标识、Rust workspace 与发布门禁。
+
+
+### v4.4.0 — 自动 Gaia Cell 隔离、受控内核缓解与 PHP/L7 操作加固
 
 - **自动与手动 Gaia Cell 隔离：** 达到或超过 `cells.auto_confine_score` 的事件会通过可逆事务引擎隔离所属 cell；每个事件行提供手动隔离。API：`POST /api/v1/xdr/incidents/{id}/confine`、`GET /api/v1/cells/confinement`。
 - **内核缓解保护：** 可选 sysctl 缓解，带有限试用窗口、主机服务验证与自动回滚；hardening 视图提供 dry-run、apply、rollback 及原因说明。
@@ -994,6 +980,6 @@ sudo python3 scripts/update-geoip-db.py /var/lib/vgt/gedefense/geoip.csv
 
 [![VGT](https://img.shields.io/badge/VisionGaia-Technology-cyan?style=for-the-badge)](https://visiongaiatechnology.de)
 
-*VGT GeDefense 4.4.0 — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
+*VGT GeDefense 4.4.1 — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
 
 </div>

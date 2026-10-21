@@ -21,7 +21,7 @@ inline constexpr auto kFullReply = R"({
   "status": "secure",
   "status_reason": "Alle Schutzschichten aktiv",
   "generated_at": "2026-10-16T14:57:03Z",
-  "product_version": "4.4.0",
+  "product_version": "4.4.1",
   "node_name": "visiongaia.de",
   "release_phase": "enforce",
   "enforcement": "enforce",
@@ -36,7 +36,7 @@ inline constexpr auto kFullReply = R"({
 })";
 
 inline constexpr auto kCompactReply
-    = R"({"v":1,"status":"secure","status_reason":"Alle Schutzschichten aktiv","product_version":"4.4.0",)"
+    = R"({"v":1,"status":"secure","status_reason":"Alle Schutzschichten aktiv","product_version":"4.4.1",)"
       R"("node_name":"visiongaia.de","ebpf_active":true,"blocked_active":288,"active_alert":null})";
 
 inline constexpr auto kStateSecure = R"({"v":1,"status":"secure"})";

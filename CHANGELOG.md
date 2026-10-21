@@ -1,5 +1,67 @@
 # Changelog
 
+## 4.4.1 - Flood Resilience, Telemetry Drain and Production Validation
+
+This release closes the two defects found by the maximum-capacity production test on
+2026-10-22. Both defects were in the **control/telemetry path**; the XDP packet path kept
+dropping the test traffic throughout.
+
+### Sensor health: telemetry pressure is not an enforcement failure
+
+- Ring-buffer and tracking-map pressure (`ring_drops`, `track_insert_failures`) is now
+  reported as **telemetry pressure** in the sensor reason. It no longer degrades the mandatory
+  `xdp_ingress` sensor or pauses automatic release decisions.
+- The verified enforcement-path health probe remains the only signal that can mark the sensor
+  degraded or offline. Sample-transport failures keep their existing sustained-failure handling.
+- Regression coverage: `TestEvaluateKineticSensorHealthDetectsPressureAndFailures`,
+  `TestTheSensorReasonDistinguishesPressureFromTransport` and
+  `TestRingPressureKeepsTheVerifiedEnforcementGateArmed`.
+- Security: fail-closed retention, the kernel blocklist and the release gate's enforcement
+  semantics are unchanged. Telemetry loss is still visible in the reason and the kernel counters.
+
+### Telemetry drain: no ingress ring loss under sustained flood
+
+- Root cause: eBPF emitted one ingress event per 16 packets while the control drain was capped at
+  12 events per IPC response, 8 batches per 200 ms poll (480 events/s). A 2 MiB ring buffer
+  overflowed: during the 60-second test the dashboard showed **873,250 lost events** against
+  191,594 drained events.
+- eBPF (`rust/gedefense-ebpf/src/main.rs`): ingress ring buffer 2 MiB -> 8 MiB; normal packet
+  aggregation 16 -> 8192 packets. New-port events and the one-second epoch flush remain immediate.
+- Control (`control/kinetic_runtime.go`): ingress poll 200 ms -> 100 ms; drain batches 8 -> 16,
+  giving the drain approximately 1,920 events/s of headroom.
+- Result: the same 60-second external test produced **0 ring-buffer losses** and 0 tracking-insert
+  failures.
+
+### Production validation (2026-10-22)
+
+Authorized controlled test against the production VisionGaia host; no third-party target and no
+real botnet was used.
+
+| Metric | Result |
+|---|---|
+| Duration | 60 s |
+| Traffic | 11,604,741 x 64-byte frames from two external generators |
+| Aggregate sender rate | ~193,000 pps |
+| XDP result | all test packets dropped in the ingress path |
+| Control plane (t+15/30/45/60) | `phase=enforce`, `ready=true`, `core_misses=0` |
+| Ring-buffer loss after fix | **0** |
+| Tracking-insert failures | **0** |
+| Websites | remained reachable; no application impact |
+
+The external generators were the limiting factor; the result is a measured lower bound, not a
+theoretical maximum. The Senderate and packet counts are documented in
+[`docs/VALIDATION-4.4.1.md`](docs/VALIDATION-4.4.1.md).
+
+### Release housekeeping
+
+- **Version 4.4.1** across `VERSION`, the control plane, the access gateway, the dashboard
+  identity (all four languages), the Rust workspace, desktop tray tests, the AstraeaOS contract,
+  Arch packaging, CI and the one-click release gates.
+- The obsolete 4.4.0 critical-advisory block was removed from the READMEs and replaced by the
+  production-validation section above.
+- One-click installer artifact: `GeDefense-4.4.1-OneClick.run` (built from this tag; checksum
+  published next to the artifact).
+
 ## 4.4.0 - Automatic Isolation in Gaia Cells and a Guarded Kernel Mitigation
 
 Two capabilities that close the gap between "GeDefense reports a problem" and "GeDefense acts on it",

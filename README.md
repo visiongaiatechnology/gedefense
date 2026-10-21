@@ -1,7 +1,7 @@
 > [!WARNING]
 > **BETA SOFTWARE — NOT FOR UNSUPERVISED PRODUCTION USE**
 >
-> **VGT GeDefense 4.4.0 is a beta release.** Interfaces, configuration formats, detection rules and security behavior may change without notice. Validate every build in a staging environment, start in **observe mode**, keep tested backups and out-of-band recovery access, and do not deploy to production without satisfying the gates in [PRODUCTION-BETA-GATE.md](PRODUCTION-BETA-GATE.md). Provided **as-is**, without warranty, under AGPL-3.0-only. Security reports: see [SECURITY.md](SECURITY.md).
+> **VGT GeDefense 4.4.1 is a beta release.** Interfaces, configuration formats, detection rules and security behavior may change without notice. Validate every build in a staging environment, start in **observe mode**, keep tested backups and out-of-band recovery access, and do not deploy to production without satisfying the gates in [PRODUCTION-BETA-GATE.md](PRODUCTION-BETA-GATE.md). Provided **as-is**, without warranty, under AGPL-3.0-only. Security reports: see [SECURITY.md](SECURITY.md).
 
 <div align="center">
 
@@ -13,8 +13,8 @@
 ### Linux Security Fabric
 
 [![License](https://img.shields.io/badge/License-AGPL--3.0--only-blue?style=for-the-badge)](https://www.gnu.org/licenses/agpl-3.0)
-[![Version](https://img.shields.io/badge/Version-4.4.0-orange?style=for-the-badge)](#)
-[![Status](https://img.shields.io/badge/Status-BETA_v4.4.0-yellow?style=for-the-badge)](#)
+[![Version](https://img.shields.io/badge/Version-4.4.1-orange?style=for-the-badge)](#)
+[![Status](https://img.shields.io/badge/Status-BETA_v4.4.1-yellow?style=for-the-badge)](#)
 [![Installer](https://img.shields.io/badge/Installer-Universal_Linux-green?style=for-the-badge)](#-quick-start)
 [![Platform](https://img.shields.io/badge/Platform-Linux_x86__64-lightgrey?style=for-the-badge&logo=linux)](#)
 [![Data Plane](https://img.shields.io/badge/Data_Plane-Rust_eBPF%2FXDP-red?style=for-the-badge&logo=rust)](#-architecture)
@@ -58,7 +58,7 @@ The minimum values include headroom for the OS, control plane and the measured G
 
 ### Measured footprint (reference host)
 
-**Reference:** 8 vCPU AMD EPYC, 32 GiB RAM, Ubuntu 24.04, kernel 7.0, GeDefense 4.4.0, `scan_interval_millis = 750`, `worker_count = 4`; 300 s cgroup-v2 sample (150 samples, 2 s interval), 2026-10-21.
+**Reference:** 8 vCPU AMD EPYC, 32 GiB RAM, Ubuntu 24.04, kernel 7.0, GeDefense 4.4.1, `scan_interval_millis = 750`, `worker_count = 4`; 300 s cgroup-v2 sample (150 samples, 2 s interval), 2026-10-21.
 
 | Metric | Observed |
 |---|---:|
@@ -73,47 +73,25 @@ Measured GeDefense core = `gedefense-core`, `gedefense-control`, `gedefense-acce
 
 Values are operational measurements, not a benchmark guarantee. Actual consumption depends on scan configuration, telemetry feeds, retention and co-located workloads. For capacity planning, use the recommended column and validate on the target host.
 
-## 🚨 CRITICAL SECURITY ADVISORY & WARNING — RELEASE v4.4.0
+## 🧪 Production Validation — Release 4.4.1
 
-> **Release 4.4.0 operational security update.** The PHP upload-progress mitigation (`session.upload_progress.enabled = Off`), the critical L7 rule `L7.PHP.SESSION_UPLOAD_PROGRESS` and rule-scoped inline enforcement (`l7.enforce_rules`, `mode = "block"`) are active. The L7 origin is bound to loopback, so direct origin access cannot bypass inspection. The historical 4.2.x advisory below remains part of the remediation record.
+Controlled production test on 2026-10-22, after the flood-resilience and telemetry-drain fixes:
 
+| Test | Result |
+|---|---|
+| Duration | **60 s** |
+| Traffic | **11,604,741** 64-byte frames from two external test generators |
+| Aggregate rate | **~193,000 pps** |
+| XDP result | **all test packets dropped** in the ingress path |
+| Control plane | **`phase=enforce`, `ready=true`, `core_misses=0`** throughout |
+| Ring-buffer loss | **0** after the telemetry-drain fix |
+| Websites | remained reachable; **no application impact** |
 
-> [!CAUTION]
-> **URGENT SECURITY NOTICE FOR ALL OPERATORS & SYSTEM ADMINISTRATORS (UPGRADE STRONGLY RECOMMENDED):**
-> 
-> In GeDefense version 4.2.0, as part of an exhaustive security audit and verification cycle, **multiple critical vulnerabilities and integrity flaws present in previous versions (4.0.x / 4.1.0)** were identified and completely remediated. An immediate upgrade to v4.2.4 is strongly advised for all production installations:
-> 
-> 1. **Critical Privilege Escalation via Symlink Traversal (Canary Deployment):**
->    - *Vulnerability:* The previous canary deployment followed symbolic links at the decoy or staging path. An attacker-controlled symlink in parent directories could redirect file writes with root privileges to arbitrary filesystem locations (`cron`, `authorized_keys`, `ld.so.preload`) → Arbitrary file write leading to root privilege escalation.
->    - *Remediation:* Replaced with strict descriptor-based path resolution (`openat(2)` with `O_NOFOLLOW|O_DIRECTORY` on every single path component). Traversals across symlinks fail deterministically with `ELOOP`.
-> 
-> 2. **Opaque Error Responses Eliminating Information Disclosure:**
->    - *Vulnerability:* Five API handlers leaked raw runtime errors to clients (internal filesystem paths, kernel faults, upstream feed URLs, DNS/TLS internals). The previous keyword blacklist was brittle and incomplete.
->    - *Remediation:* Structural decoupling — internal runtime errors are never forwarded as API error responses and are instead replaced by opaque, typed error responses.
-> 
-> 3. **Fail-Closed CSPRNG & Predictability Protection:**
->    - *Vulnerability:* If the CSPRNG entropy source failed, Evidence, Incident, Block, and Transaction IDs fell back to predictable timestamps.
->    - *Remediation:* Strict fail-closed semantics via `log.Fatalf` — cryptographic identifiers never degrade to predictable values.
-> 
-> 4. **Crash-Safe Atomic Writer (`atomicWriteFile`):**
->    - Policies, feed state, and Chronos checkpoints universally utilize atomic writes with symlink rejection, `O_EXCL`, and `fsync` on both the file and its parent directory.
-> 
-> 5. **Content Security Policy (CSP) Hardening & Trusted Types:**
->    - `unsafe-inline` styles have been completely eliminated from the CSP.
->    - `require-trusted-types-for 'script'` is actively enforced by the browser as a runtime invariant (zero DOM-XSS sinks).
-> 
-> 6. **Deadlock & Fail-Open Elimination in Engine:**
->    - Fixed deadlock in `CaseEngine.Status` (recursive mutex lock).
->    - Eliminated fail-open states in the Airlock inspector and CaseEngine.
-> 
-> 7. **Toolchain Security Floor (Go ≥ 1.26.6):**
->    - Remediated 6 reachable standard-library CVEs of older Go releases on the ingress reverse proxy and threat-intelligence feed paths.
+The external generators were the limiting factor; this is a measured lower bound, not a theoretical maximum. No real botnet or third-party target was used. Full test details: [`docs/VALIDATION-4.4.1.md`](docs/VALIDATION-4.4.1.md).
 
----
+## ⚠️ STABILITY & ASSURANCE — RELEASE v4.4.1 · UNIVERSAL LINUX PLATFORM
 
-## ⚠️ STABILITY & ASSURANCE — RELEASE v4.4.0 · UNIVERSAL LINUX PLATFORM
-
-VGT GeDefense 4.4.0 is the flagship Linux security fabric — the hardened kernel-speed defense chain combined with the new **Security Fabric Control Plane**, universal Linux integration, hardened release pipeline, and concrete kernel/NIC qualification gates. It is engineered for sovereign host and network protection.
+VGT GeDefense 4.4.1 is the flagship Linux security fabric — the hardened kernel-speed defense chain combined with the new **Security Fabric Control Plane**, universal Linux integration, hardened release pipeline, and concrete kernel/NIC qualification gates. It is engineered for sovereign host and network protection.
 
 **Production clearance is deliberately a property of the concretely audited target host — not merely the source code.**
 
@@ -656,17 +634,17 @@ If the Gaia Cells runtime is **not present**, the adapter reports `runtime_not_i
 
 ```bash
 # Download installer
-wget https://github.com/visiongaiatechnology/gedefense/releases/download/v4.4.0/GeDefense-4.4.0-OneClick.run
+wget https://github.com/visiongaiatechnology/gedefense/releases/download/v4.4.1/GeDefense-4.4.1-OneClick.run
 
 # Verify SHA-256
-sha256sum --check GeDefense-4.4.0-OneClick.run.sha256
+sha256sum --check GeDefense-4.4.1-OneClick.run.sha256
 
 # Install (root required)
-chmod 700 GeDefense-4.4.0-OneClick.run
-sudo ./GeDefense-4.4.0-OneClick.run
+chmod 700 GeDefense-4.4.1-OneClick.run
+sudo ./GeDefense-4.4.1-OneClick.run
 ```
 
-> **Installer availability:** The official v4.4.0 self-contained installer (`GeDefense-4.4.0-OneClick.run`) is verified and published under GitHub Releases.
+> **Installer availability:** The official v4.4.1 self-contained installer (`GeDefense-4.4.1-OneClick.run`) is verified and published under GitHub Releases.
 
 > The installer and checksum are published only after all GitHub CI and concrete
 > Linux host qualification gates pass. Never execute an unverified RUN file.
@@ -701,7 +679,7 @@ The firewall rule for the HTTPS gateway port (TCP 9843) can be configured via UF
 
 ---
 
-## 🚧 Known Limitations (4.4.0)
+## 🚧 Known Limitations (4.4.1)
 
 - No Swarm / Mesh support
 - No QUIC offloading
@@ -719,7 +697,15 @@ The firewall rule for the HTTPS gateway port (TCP 9843) can be configured via UF
 
 ## 📋 Changelog
 
-### v4.4.0 — Automatic Gaia-Cell Isolation, Guarded Kernel Mitigation & Operational PHP/L7 Hardening *(Current)*
+### v4.4.1 — Flood Resilience & Telemetry Drain Fix (current)
+
+- **Sensor health:** ring/tracking-map pressure is now reported as telemetry pressure instead of degrading the mandatory `xdp_ingress` sensor; the verified enforcement path remains the only verdict that can take the sensor offline.
+- **Telemetry capacity:** ingress events are aggregated per 8192 packets; the ring buffer grows from 2 MiB to 8 MiB; the control drain polls every 100 ms with 16 batches (≈1,920 events/s).
+- **Validated in production:** a 60-second, 11.6-million-packet external test left all websites reachable, the control plane in `phase=enforce`, and the ring losses at **0**.
+- **Version 4.4.1** across the control plane, gateway, dashboard identity, Rust workspace and release gates.
+
+
+### v4.4.0 — Automatic Gaia-Cell Isolation, Guarded Kernel Mitigation & Operational PHP/L7 Hardening
 
 - **Automatic and manual Gaia-Cell isolation:** incidents at or above `cells.auto_confine_score` isolate the owning cell through the reversible transaction engine; manual isolation is available on each incident row. APIs: `POST /api/v1/xdr/incidents/{id}/confine`, `GET /api/v1/cells/confinement`.
 - **Kernel mitigation guard:** opt-in sysctl mitigation with a bounded probation window, host-service verification and automatic rollback; the hardening view exposes dry-run, apply and rollback with a written reason.
@@ -1011,6 +997,6 @@ sudo python3 scripts/update-geoip-db.py /var/lib/vgt/gedefense/geoip.csv
 
 [![VGT](https://img.shields.io/badge/VisionGaia-Technology-cyan?style=for-the-badge)](https://visiongaiatechnology.de)
 
-*VGT GeDefense 4.4.0 — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
+*VGT GeDefense 4.4.1 — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
 
 </div>

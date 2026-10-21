@@ -1,6 +1,6 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 # STATUS: DIAMANT VGT SUPREME
-"""Pack production release ZIP archives for GeDefense 4.2.0."""
+"""Pack production release ZIP archives for GeDefense 4.4.1."""
 
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ def main():
         downloads.mkdir(parents=True, exist_ok=True)
 
     version = (root / "VERSION").read_text(encoding="utf-8").strip()
-    if version != "4.4.0":
+    if version != "4.4.1":
         raise ValueError(f"Unexpected VERSION: {version}")
 
     print(f"Packaging GeDefense {version} from {root}...")

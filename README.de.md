@@ -1,7 +1,7 @@
 > [!WARNING]
 > **BETA-SOFTWARE — NICHT FÜR UNBEAUFSICHTIGTEN PRODUKTIVBETRIEB**
 >
-> **VGT GeDefense 4.4.0 ist eine Beta-Version.** Schnittstellen, Konfigurationsformate, Erkennungsregeln und Sicherheitsverhalten können sich ohne Vorankündigung ändern. Jeden Build zuerst in einer Staging-Umgebung validieren, im **Observe-Modus** starten, getestete Backups und einen Out-of-Band-Recovery-Zugang bereithalten und nicht ohne die Gates aus [PRODUCTION-BETA-GATE.md](PRODUCTION-BETA-GATE.md) in Produktion bringen. Bereitstellung **wie besehen**, ohne Gewährleistung, unter AGPL-3.0-only. Sicherheitsmeldungen: [SECURITY.md](SECURITY.md).
+> **VGT GeDefense 4.4.1 ist eine Beta-Version.** Schnittstellen, Konfigurationsformate, Erkennungsregeln und Sicherheitsverhalten können sich ohne Vorankündigung ändern. Jeden Build zuerst in einer Staging-Umgebung validieren, im **Observe-Modus** starten, getestete Backups und einen Out-of-Band-Recovery-Zugang bereithalten und nicht ohne die Gates aus [PRODUCTION-BETA-GATE.md](PRODUCTION-BETA-GATE.md) in Produktion bringen. Bereitstellung **wie besehen**, ohne Gewährleistung, unter AGPL-3.0-only. Sicherheitsmeldungen: [SECURITY.md](SECURITY.md).
 
 <div align="center">
 
@@ -13,8 +13,8 @@
 ### Linux Security Fabric
 
 [![License](https://img.shields.io/badge/License-AGPL--3.0--only-blue?style=for-the-badge)](https://www.gnu.org/licenses/agpl-3.0)
-[![Version](https://img.shields.io/badge/Version-4.4.0-orange?style=for-the-badge)](#)
-[![Status](https://img.shields.io/badge/Status-BETA_v4.4.0-yellow?style=for-the-badge)](#)
+[![Version](https://img.shields.io/badge/Version-4.4.1-orange?style=for-the-badge)](#)
+[![Status](https://img.shields.io/badge/Status-BETA_v4.4.1-yellow?style=for-the-badge)](#)
 [![Installer](https://img.shields.io/badge/Installer-Universal_Linux-green?style=for-the-badge)](#-schnellstart)
 [![Platform](https://img.shields.io/badge/Platform-Linux_x86__64-lightgrey?style=for-the-badge&logo=linux)](#)
 [![Data Plane](https://img.shields.io/badge/Data_Plane-Rust_eBPF%2FXDP-red?style=for-the-badge&logo=rust)](#-architektur)
@@ -54,7 +54,7 @@ Die Mindestwerte enthalten Reserve für Betriebssystem, Control Plane und den ge
 
 ### Gemessener Ressourcenbedarf (Referenzhost)
 
-**Referenz:** 8 vCPU AMD EPYC, 32 GiB RAM, Ubuntu 24.04, Kernel 7.0, GeDefense 4.4.0, `scan_interval_millis = 750`, `worker_count = 4`; 300-s-cgroup-v2-Messung (150 Samples, 2-s-Intervall), 21.10.2026.
+**Referenz:** 8 vCPU AMD EPYC, 32 GiB RAM, Ubuntu 24.04, Kernel 7.0, GeDefense 4.4.1, `scan_interval_millis = 750`, `worker_count = 4`; 300-s-cgroup-v2-Messung (150 Samples, 2-s-Intervall), 21.10.2026.
 
 | Metrik | Gemessen |
 |---|---:|
@@ -69,47 +69,25 @@ Gemessener GeDefense-Kern = `gedefense-core`, `gedefense-control`, `gedefense-ac
 
 Die Werte sind Betriebsmessungen, keine Benchmark-Garantie. Der tatsächliche Verbrauch hängt von Scan-Konfiguration, Telemetrie-Feeds, Aufbewahrung und Co-Location ab. Für die Kapazitätsplanung die empfohlene Spalte verwenden und auf dem Zielhost validieren.
 
-## 🚨 KRITISCHER SICHERHEITSHINWEIS & WARNUNG — RELEASE v4.4.0
+## 🧪 Produktionsvalidierung — Release 4.4.1
 
-> **Betriebliches Sicherheitsupdate in 4.4.0.** Die PHP-Upload-Progress-Mitigation (`session.upload_progress.enabled = Off`), die kritische L7-Regel `L7.PHP.SESSION_UPLOAD_PROGRESS` und regelbasiertes Inline-Enforcement (`l7.enforce_rules`, `mode = "block"`) sind aktiv. Der L7-Origin ist auf Loopback gebunden, damit direkter Origin-Zugriff die Inspektion nicht umgeht. Der historische 4.2.x-Hinweis unten bleibt Teil der Remediation-Historie.
+Kontrollierter Produktionstest am 22.10.2026, nach den Flood-Resilience- und Telemetrie-Drain-Fixes:
 
+| Test | Ergebnis |
+|---|---|
+| Dauer | **60 s** |
+| Verkehr | **11.604.741** 64-Byte-Frames aus zwei externen Testgeneratoren |
+| Aggregierte Rate | **~193.000 pps** |
+| XDP-Ergebnis | **alle Testpakete im Ingress-Pfad verworfen** |
+| Control Plane | durchgehend **`phase=enforce`, `ready=true`, `core_misses=0`** |
+| Ring-Puffer-Verluste | **0** nach dem Telemetrie-Drain-Fix |
+| Websites | erreichbar; **kein Anwendungsimpact** |
 
-> [!CAUTION]
-> **DRINGENDER SICHERHEITSHINWEIS FÜR ALLE BETREIBER & SYSTEMADMINISTRATOREN (UPGRADE DRINGEND EMPFOHLEN):**
-> 
-> In GeDefense Version 4.2.0 wurden im Rahmen eines umfassenden Sicherheitsaudits und Verifikationszyklus **mehrere kritische Sicherheitslücken und Integritätsmängel früherer Versionen (4.0.x / 4.1.0)** identifiziert und vollständig behoben. Ein sofortiges Upgrade auf v4.2.4 wird für alle Produktionsinstallationen dringend empfohlen:
-> 
-> 1. **Kritische Rechteeskalation via Symlink-Traversal (Canary-Deployment):**
->    - *Schwachstelle:* Das bisherige Canary-Deployment folgte symbolischen Links im Decoy- oder Staging-Pfad. Ein von einem Angreifer kontrollierter Symlink in übergeordneten Verzeichnissen konnte Schreiboperationen mit Root-Rechten an beliebige Dateisystemorte umleiten (`cron`, `authorized_keys`, `ld.so.preload`) → Willkürliches Dateischreiben mit Root-Privilege-Escalation.
->    - *Behebung:* Ersetzt durch strikte deskriptorbasierte Pfadauflösung (`openat(2)` mit `O_NOFOLLOW|O_DIRECTORY` auf jeder einzelnen Pfadkomponente). Traversale über Symlinks schlagen deterministisch mit `ELOOP` fehl.
-> 
-> 2. **Opake Fehlerantworten zur Beseitigung von Informationslecks (Information Disclosure):**
->    - *Schwachstelle:* Fünf API-Handler gaben ungefilterte Laufzeitfehler an Clients weiter (interne Dateisystempfade, Kernelfehler, Upstream-Feed-URLs, DNS/TLS-Interna). Die frühere Wort-Blacklist war fragil und unvollständig.
->    - *Behebung:* Strukturelle Entkopplung — interne Laufzeitfehler werden niemals als API-Fehlerantworten weitergeleitet, sondern durch typisierte, opake Fehlerantworten ersetzt.
-> 
-> 3. **Fail-Closed CSPRNG & Vorhersagbarkeitsschutz:**
->    - *Schwachstelle:* Versagte die CSPRNG-Entropiequelle, fielen Evidenz-, Vorfalls-, Block- und Transaktions-IDs auf vorhersagbare Zeitstempel zurück.
->    - *Behebung:* Strikte Fail-Closed-Semantik via `log.Fatalf` — kryptografische Bezeichner degradieren niemals zu vorhersagbaren Werten.
-> 
-> 4. **Absturzsicherer atomarer Writer (`atomicWriteFile`):**
->    - Richtlinien (Policies), Feed-Zustände und Chronos-Checkpoints nutzen ausnahmslos atomare Schreibvorgänge mit Symlink-Zurückweisung, `O_EXCL` und `fsync` sowohl auf die Datei als auch auf das Elternverzeichnis.
-> 
-> 5. **Härtung der Content Security Policy (CSP) & Trusted Types:**
->    - `unsafe-inline`-Styles wurden vollständig aus der CSP verbannt.
->    - `require-trusted-types-for 'script'` wird vom Browser aktiv als Laufzeitinvariante erzwungen (keine DOM-XSS-Sinks).
-> 
-> 6. **Beseitigung von Deadlocks & Fail-Open in der Engine:**
->    - Deadlock in `CaseEngine.Status` behoben (rekursiver Mutex-Lock).
->    - Fail-Open-Zustände im Airlock-Inspektor und in der CaseEngine eliminiert.
-> 
-> 7. **Toolchain-Sicherheitsboden (Go ≥ 1.26.6):**
->    - Behebung von 6 erreichbaren Standardbibliotheks-CVEs älterer Go-Releases auf den Pfaden des Ingress-Reverse-Proxys und der Threat-Intelligence-Feeds.
+Die externen Generatoren waren der begrenzende Faktor; das ist eine gemessene Untergrenze, kein theoretisches Maximum. Es wurde kein echtes Botnet und kein fremdes Ziel verwendet. Vollständige Details: [`docs/VALIDATION-4.4.1.md`](docs/VALIDATION-4.4.1.md).
 
----
+## ⚠️ STABILITÄT & ZUSICHERUNG — RELEASE v4.4.1 · UNIVERSELLE LINUX-PLATTFORM
 
-## ⚠️ STABILITÄT & ZUSICHERUNG — RELEASE v4.4.0 · UNIVERSELLE LINUX-PLATTFORM
-
-VGT GeDefense 4.4.0 ist das Flaggschiff des Linux-Sicherheitsgewebes — die gehärtete Verteidigungskette mit Kernel-Geschwindigkeit, kombiniert mit der neuen **Security Fabric Control Plane**, universeller Linux-Integration, gehärteter Release-Pipeline und konkreten Kernel-/NIC-Qualifikations-Gates. Es wurde für souveränen Host- und Netzwerkschutz entwickelt.
+VGT GeDefense 4.4.1 ist das Flaggschiff des Linux-Sicherheitsgewebes — die gehärtete Verteidigungskette mit Kernel-Geschwindigkeit, kombiniert mit der neuen **Security Fabric Control Plane**, universeller Linux-Integration, gehärteter Release-Pipeline und konkreten Kernel-/NIC-Qualifikations-Gates. Es wurde für souveränen Host- und Netzwerkschutz entwickelt.
 
 **Die Produktionsfreigabe ist bewusst eine Eigenschaft des konkret auditierten Ziel-Hosts — nicht allein des Quellcodes.**
 
@@ -648,17 +626,17 @@ Ist die Gaia Cells-Laufzeit **nicht vorhanden**, meldet der Adapter `runtime_not
 
 ```bash
 # Installer herunterladen
-wget https://github.com/visiongaiatechnology/gedefense/releases/download/v4.4.0/GeDefense-4.4.0-OneClick.run
+wget https://github.com/visiongaiatechnology/gedefense/releases/download/v4.4.1/GeDefense-4.4.1-OneClick.run
 
 # SHA-256 verifizieren
-sha256sum --check GeDefense-4.4.0-OneClick.run.sha256
+sha256sum --check GeDefense-4.4.1-OneClick.run.sha256
 
 # Installieren (Root erforderlich)
-chmod 700 GeDefense-4.4.0-OneClick.run
-sudo ./GeDefense-4.4.0-OneClick.run
+chmod 700 GeDefense-4.4.1-OneClick.run
+sudo ./GeDefense-4.4.1-OneClick.run
 ```
 
-> **Installer-Verfügbarkeit:** Die offiziellen v4.4.0 Self-Contained-Installer-Assets (`GeDefense-4.4.0-OneClick.run`) sind verifiziert und im GitHub Release bereitgestellt.
+> **Installer-Verfügbarkeit:** Die offiziellen v4.4.1 Self-Contained-Installer-Assets (`GeDefense-4.4.1-OneClick.run`) sind verifiziert und im GitHub Release bereitgestellt.
 
 > Der Installer und die Prüfsumme werden erst veröffentlicht, nachdem alle GitHub-CI- und konkreten Linux-Host-Qualifikations-Gates bestanden wurden. Führe niemals eine nicht verifizierte RUN-Datei aus.
 
@@ -692,7 +670,7 @@ Die Firewall-Regel für den HTTPS-Gateway-Port (TCP 9843) kann während der Inst
 
 ---
 
-## 🚧 Bekannte Einschränkungen (4.4.0)
+## 🚧 Bekannte Einschränkungen (4.4.1)
 
 - Keine Swarm- / Mesh-Unterstützung
 - Kein QUIC-Offloading
@@ -710,7 +688,15 @@ Die Firewall-Regel für den HTTPS-Gateway-Port (TCP 9843) kann während der Inst
 
 ## 📋 Changelog
 
-### v4.4.0 — Automatische Gaia-Cell-Isolation, bewachte Kernel-Mitigation & operatives PHP/L7-Hardening *(Aktuell)*
+### v4.4.1 — Flood-Resilienz & Telemetrie-Drain-Fix (aktuell)
+
+- **Sensor-Health:** Ring-/Tracking-Map-Pressure wird jetzt als Telemetrie-Pressure gemeldet, statt den mandatory `xdp_ingress`-Sensor zu degradieren; nur der verifizierte Enforcement-Pfad kann den Sensor offline nehmen.
+- **Telemetrie-Kapazität:** Ingress-Events werden pro 8192 Pakete aggregiert; der Ring-Puffer wächst von 2 MiB auf 8 MiB; der Control-Drain pollt alle 100 ms mit 16 Batches (≈1.920 Events/s).
+- **In Produktion validiert:** Ein 60-Sekunden-Test mit 11,6 Mio. externen Paketen ließ alle Websites erreichbar, die Control Plane in `phase=enforce` und die Ring-Verluste bei **0**.
+- **Version 4.4.1** in Control Plane, Gateway, Dashboard-Identität, Rust-Workspace und Release-Gates.
+
+
+### v4.4.0 — Automatische Gaia-Cell-Isolation, bewachte Kernel-Mitigation & operatives PHP/L7-Hardening
 
 - **Automatische und manuelle Gaia-Cell-Isolation:** Incidents ab `cells.auto_confine_score` isolieren die zugehörige Cell über die reversible Transaction-Engine; die manuelle Isolation steht pro Incident-Zeile bereit. APIs: `POST /api/v1/xdr/incidents/{id}/confine`, `GET /api/v1/cells/confinement`.
 - **Kernel-Mitigation-Guard:** opt-in sysctl-Mitigation mit begrenztem Probation-Fenster, Host-Service-Verifikation und automatischem Rollback; die Hardening-Ansicht bietet Dry-Run, Apply und Rollback mit Begründung.
@@ -994,6 +980,6 @@ sudo python3 scripts/update-geoip-db.py /var/lib/vgt/gedefense/geoip.csv
 
 [![VGT](https://img.shields.io/badge/VisionGaia-Technology-cyan?style=for-the-badge)](https://visiongaiatechnology.de)
 
-*VGT GeDefense 4.4.0 — Universelles Linux Sicherheitsgewebe // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidenz-Ledger // AES-256-GCM verschlüsselter Vault // Reversible Härtung // AstraeaOS-nativer Adapter // Getrennte Vertrauensdomänen // Keine Cloud-Control-Plane // AGPL-3.0-only // Linux x86_64*
+*VGT GeDefense 4.4.1 — Universelles Linux Sicherheitsgewebe // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidenz-Ledger // AES-256-GCM verschlüsselter Vault // Reversible Härtung // AstraeaOS-nativer Adapter // Getrennte Vertrauensdomänen // Keine Cloud-Control-Plane // AGPL-3.0-only // Linux x86_64*
 
 </div>

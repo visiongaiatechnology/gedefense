@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 # STATUS: DIAMANT VGT SUPREME
 """Build a reviewable GitHub repository tree and optional release assets."""
 
@@ -119,10 +119,10 @@ EXCLUDED_SUFFIXES = (
 )
 
 RELEASE_ASSETS = (
-    "VGT_GeDefense_Beta_v4_4.2.0_OneClick.run",
-    "VGT_GeDefense_Beta_v4_4.2.0_OneClick.run.sha256",
-    "VGT_GeDefense_Beta_v4_4.2.0_Source.zip",
-    "VGT_GeDefense_Beta_v4_4.2.0_Source.zip.sha256",
+    "VGT_GeDefense_Beta_v4_4.4.1_OneClick.run",
+    "VGT_GeDefense_Beta_v4_4.4.1_OneClick.run.sha256",
+    "VGT_GeDefense_Beta_v4_4.4.1_Source.zip",
+    "VGT_GeDefense_Beta_v4_4.4.1_Source.zip.sha256",
 )
 
 FORBIDDEN_BYTE_MARKERS = (
