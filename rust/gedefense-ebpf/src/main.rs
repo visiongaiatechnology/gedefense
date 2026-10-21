@@ -22,9 +22,12 @@ const MAX_ALLOWLIST_ENTRIES: u32 = 65_536;
 const EXEC_EVENT_RING_BYTES: u32 = 1 << 20;
 const EGRESS_EVENT_RING_BYTES: u32 = 1 << 20;
 const CELL_LSM_EVENT_RING_BYTES: u32 = 1 << 20;
-const INGRESS_EVENT_RING_BYTES: u32 = 2 << 20;
+const INGRESS_EVENT_RING_BYTES: u32 = 8 << 20;
 const MAX_INGRESS_TRACKED_SOURCES: u32 = 8_192;
-const INGRESS_BATCH_PACKETS: u32 = 16;
+// One event per 8192 packets keeps the 8 MiB ring from overflowing during a
+// sustained volumetric flood while still flushing at most every few milliseconds at
+// multi-hundred-kpps rates. New ports and the per-second epoch flush remain immediate.
+const INGRESS_BATCH_PACKETS: u32 = 8192;
 const INGRESS_HEALTH_KEY: u32 = 0;
 const MAX_CELL_LSM_POLICIES: u32 = 4096;
 const AF_UNIX: i32 = 1;

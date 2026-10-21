@@ -9,11 +9,15 @@ import (
 )
 
 const (
-	kineticPollInterval      = 200 * time.Millisecond
+	kineticPollInterval      = 100 * time.Millisecond
 	kineticHealthInterval    = 1 * time.Second
 	kineticSweepInterval     = 5 * time.Second
 	kineticOfflineAfterFails = 5
-	kineticMaxDrainBatches   = 8
+	// Each IPC response carries at most twelve events. Sixteen batches per
+	// 100 ms poll give the drain ~1,920 events/s of headroom, which is well above
+	// the per-second aggregate rate emitted by a sustained flood after the
+	// kernel-side batching change.
+	kineticMaxDrainBatches = 16
 	// kineticDrainDegradeAfterFails is deliberately separate from kineticOfflineAfterFails.
 	// The health probe measures the enforcement path; the drain measures sample transport.
 	// One failed drain says nothing about whether the XDP hook is still there, so it takes a
