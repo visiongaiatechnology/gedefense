@@ -281,11 +281,13 @@ func TestTheEnforcementPathOutranksSampleNoise(t *testing.T) {
 }
 
 // TestTheSensorReasonDistinguishesPressureFromTransport keeps the three conditions apart.
+// Ring pressure is telemetry loss: it must remain visible, but it must not turn a verified
+// enforcement path into a degraded mandatory sensor during a packet flood.
 func TestTheSensorReasonDistinguishesPressureFromTransport(t *testing.T) {
 	previous := &CoreIngressHealth{EventsEmitted: 10, RingDrops: 1, TrackInsertFailures: 0, Mode: "NATIVE_XDP"}
 	current := &CoreIngressHealth{EventsEmitted: 20, RingDrops: 2, TrackInsertFailures: 0, Mode: "NATIVE_XDP"}
 	status, _, reason := evaluateKineticSensorHealth(0, 0, previous, current)
-	if status != CoverageDegraded || !strings.Contains(reason, "kernel ingress pressure") {
-		t.Fatalf("ring pressure must be reported as pressure: %s (%s)", status, reason)
+	if status != CoverageOnline || !strings.Contains(reason, "kernel ingress telemetry pressure") {
+		t.Fatalf("ring pressure must be reported as telemetry pressure without degrading enforcement: %s (%s)", status, reason)
 	}
 }

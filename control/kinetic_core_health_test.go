@@ -123,15 +123,18 @@ func TestEvaluateKineticSensorHealthRequiresVerifiedHealth(t *testing.T) {
 func TestEvaluateKineticSensorHealthDetectsPressureAndFailures(t *testing.T) {
 	previous := &CoreIngressHealth{EventsEmitted: 100, RingDrops: 2, TrackInsertFailures: 1}
 	current := &CoreIngressHealth{EventsEmitted: 140, RingDrops: 3, TrackInsertFailures: 1}
-	status, selfTest, _ := evaluateKineticSensorHealth(0, 0, previous, current)
-	if status != CoverageDegraded || selfTest != "degraded" {
-		t.Fatalf("new ring pressure must degrade sensor: status=%s self_test=%s", status, selfTest)
+	status, selfTest, reason := evaluateKineticSensorHealth(0, 0, previous, current)
+	if status != CoverageOnline || selfTest != "pass" {
+		t.Fatalf("ring pressure is telemetry loss, not an enforcement verdict: status=%s self_test=%s", status, selfTest)
+	}
+	if !strings.Contains(reason, "kernel ingress telemetry pressure") || !strings.Contains(reason, "enforcement path unaffected") {
+		t.Fatalf("ring pressure is not named honestly: %q", reason)
 	}
 
 	// A single drain failure is a transport condition, not a lost enforcement path: the health
 	// probe answered, so the sensor stays online and the operator is told what happened.
 	// Treating it as a lost hook is what disarmed the host.
-	status, selfTest, reason := evaluateKineticSensorHealth(1, 0, current, current)
+	status, selfTest, reason = evaluateKineticSensorHealth(1, 0, current, current)
 	if status != CoverageOnline || selfTest != "pass" {
 		t.Fatalf("a transient event drain failure must not change the enforcement verdict: status=%s self_test=%s", status, selfTest)
 	}

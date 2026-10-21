@@ -159,6 +159,13 @@ func (s *APIServer) probeIngressHealth(eventFailures, healthFailures *int, lastH
 // The verdict is therefore driven by the enforcement path alone. Sample-transport failures are
 // named and counted, and only a sustained run of them degrades the observation - and even then
 // they never touch enforcement, which the release gate governs by the enforcement path.
+//
+// Ring-buffer and tracking-map pressure is telemetry loss, not an enforcement verdict. Under a
+// packet flood the XDP program can legitimately report increased ring_drops while the kernel
+// blocklist continues to drop packets. Degrading the mandatory sensor on that pressure makes the
+// release gate pause automatic decisions during exactly the burst the data plane is surviving.
+// The pressure is therefore published in the reason and the existing kernel counters, while the
+// sensor remains online as long as the enforcement-path health probes answer.
 func evaluateKineticSensorHealth(eventFailures, healthFailures int, previous, current *CoreIngressHealth) (SensorCoverageStatus, string, string) {
 	if healthFailures >= kineticOfflineAfterFails {
 		return CoverageOffline, "failed", fmt.Sprintf("kernel ingress enforcement path is unavailable (health_failures=%d)", healthFailures)
@@ -169,9 +176,10 @@ func evaluateKineticSensorHealth(eventFailures, healthFailures int, previous, cu
 	if current == nil {
 		return CoverageOffline, "unverified", "kernel ingress health has not been verified"
 	}
+	pressureNote := ""
 	if previous != nil && (current.RingDrops > previous.RingDrops || current.TrackInsertFailures > previous.TrackInsertFailures) {
-		return CoverageDegraded, "degraded", fmt.Sprintf(
-			"kernel ingress pressure detected (ring_drops=%d tracking_insert_failures=%d)",
+		pressureNote = fmt.Sprintf(
+			"; kernel ingress telemetry pressure observed (ring_drops=%d tracking_insert_failures=%d), enforcement path unaffected",
 			current.RingDrops, current.TrackInsertFailures,
 		)
 	}
@@ -186,12 +194,12 @@ func evaluateKineticSensorHealth(eventFailures, healthFailures int, previous, cu
 		sampleNote = fmt.Sprintf("; %d recovered sample drain failure(s), enforcement path unaffected", eventFailures)
 	}
 	if current.EventsEmitted == 0 {
-		return CoverageOnline, "pass", "kernel ingress program and bounded health maps verified; no ingress events emitted yet" + sampleNote
+		return CoverageOnline, "pass", "kernel ingress program and bounded health maps verified; no ingress events emitted yet" + sampleNote + pressureNote
 	}
 	// The hook is named in the reason. A pass on native XDP and a pass on TC ingress are
 	// not the same statement about a host, and reporting both as "verified kernel ingress
 	// producer" hid which one the operator actually has.
-	return CoverageOnline, "pass", fmt.Sprintf("verified kernel ingress producer via %s (%d events emitted)%s", describeIngressMode(current.Mode), current.EventsEmitted, sampleNote)
+	return CoverageOnline, "pass", fmt.Sprintf("verified kernel ingress producer via %s (%d events emitted)%s%s", describeIngressMode(current.Mode), current.EventsEmitted, sampleNote, pressureNote)
 }
 
 // describeIngressMode turns the mode token into something an operator can read, and

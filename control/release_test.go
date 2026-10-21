@@ -157,6 +157,29 @@ func TestReleaseCoreFailuresAutoDegradeRetainsEnforcement(t *testing.T) {
 	}
 }
 
+// TestRingPressureKeepsTheVerifiedEnforcementGateArmed is the flood regression at the
+// release boundary. Telemetry loss must stay observable, but it must not turn a verified
+// kernel enforcement path into a degraded mandatory sensor during the burst that path is
+// supposed to survive.
+func TestRingPressureKeepsTheVerifiedEnforcementGateArmed(t *testing.T) {
+	cfg, state, _, release, _ := betaReleaseFixtureWithCore(t)
+	if _, err := release.Transition(ReleasePhaseCanary, "PROMOTE:CANARY", "enter canary before ingress pressure"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := release.Transition(ReleasePhaseEnforce, "PROMOTE:ENFORCE", "arm enforcement before ingress pressure"); err != nil {
+		t.Fatal(err)
+	}
+	previous := &CoreIngressHealth{EventsEmitted: 100, RingDrops: 2, TrackInsertFailures: 1, Mode: "NATIVE_XDP"}
+	current := &CoreIngressHealth{EventsEmitted: 140, RingDrops: 3, TrackInsertFailures: 1, Mode: "NATIVE_XDP"}
+	status, selfTest, reason := evaluateKineticSensorHealth(0, 0, previous, current)
+	server := &APIServer{cfg: cfg, state: state, release: release}
+	server.setKineticSensorState(status, selfTest, reason)
+	release.Evaluate()
+	if got := release.Status().Phase; got != ReleasePhaseEnforce {
+		t.Fatalf("ring pressure degraded the release gate: phase=%s reason=%q", got, reason)
+	}
+}
+
 func TestEmergencyStopPersistsAndBlocksPromotion(t *testing.T) {
 	cfg, _, _, release := betaReleaseFixture(t)
 	status, err := release.EmergencyStop("operator detected unsafe response behavior")
