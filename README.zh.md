@@ -1,3 +1,8 @@
+> [!WARNING]
+> **测试版软件 — 禁止在无人值守的生产环境中使用**
+>
+> **VGT GeDefense 4.4.0 为 Beta 版本。** 接口、配置格式、检测规则和安全行为可能随时变更，恕不另行通知。每个构建都必须先在预发布环境验证，以 **observe 模式**启动，保留经过测试的备份和带外恢复通道；未满足 [PRODUCTION-BETA-GATE.md](PRODUCTION-BETA-GATE.md) 中的门禁条件前，不得投入生产。按 **现状** 提供，不提供任何担保，许可证为 AGPL-3.0-only。安全报告：[SECURITY.md](SECURITY.md)。
+
 <div align="center">
 
 <img width="256" height="256" alt="GeDefense" src="https://github.com/user-attachments/assets/978d2835-c915-473d-9995-d315efaa869c" />
@@ -9,7 +14,7 @@
 
 [![License](https://img.shields.io/badge/License-AGPL--3.0--only-blue?style=for-the-badge)](https://www.gnu.org/licenses/agpl-3.0)
 [![Version](https://img.shields.io/badge/Version-4.4.0-orange?style=for-the-badge)](#)
-[![Status](https://img.shields.io/badge/Status-Release_v4.4.0-yellow?style=for-the-badge)](#)
+[![Status](https://img.shields.io/badge/Status-BETA_v4.4.0-yellow?style=for-the-badge)](#)
 [![Installer](https://img.shields.io/badge/Installer-Universal_Linux-green?style=for-the-badge)](#-快速上手)
 [![Platform](https://img.shields.io/badge/Platform-Linux_x86__64-lightgrey?style=for-the-badge&logo=linux)](#)
 [![Data Plane](https://img.shields.io/badge/Data_Plane-Rust_eBPF%2FXDP-red?style=for-the-badge&logo=rust)](#-系统架构)

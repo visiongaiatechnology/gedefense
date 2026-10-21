@@ -1,3 +1,8 @@
+> [!WARNING]
+> **БЕТА-ПРОГРАММА — НЕ ДЛЯ ПРОИЗВОДСТВЕННОЙ ЭКСПЛУАТАЦИИ БЕЗ НАБЛЮДЕНИЯ**
+>
+> **VGT GeDefense 4.4.0 — бета-версия.** Интерфейсы, форматы конфигурации, правила обнаружения и поведение безопасности могут меняться без предупреждения. Проверяйте каждую сборку в staging-среде, начинайте в **observe-режиме**, держите протестированные резервные копии и out-of-band доступ для восстановления; не выводите в production без выполнения условий из [PRODUCTION-BETA-GATE.md](PRODUCTION-BETA-GATE.md). Предоставляется **как есть**, без гарантий, по AGPL-3.0-only. Сообщения об уязвимостях: [SECURITY.md](SECURITY.md).
+
 <div align="center">
 
 <img width="256" height="256" alt="GeDefense" src="https://github.com/user-attachments/assets/978d2835-c915-473d-9995-d315efaa869c" />
@@ -9,7 +14,7 @@
 
 [![License](https://img.shields.io/badge/License-AGPL--3.0--only-blue?style=for-the-badge)](https://www.gnu.org/licenses/agpl-3.0)
 [![Version](https://img.shields.io/badge/Version-4.4.0-orange?style=for-the-badge)](#)
-[![Status](https://img.shields.io/badge/Status-Release_v4.4.0-yellow?style=for-the-badge)](#)
+[![Status](https://img.shields.io/badge/Status-BETA_v4.4.0-yellow?style=for-the-badge)](#)
 [![Installer](https://img.shields.io/badge/Installer-Universal_Linux-green?style=for-the-badge)](#-быстрый-старт)
 [![Platform](https://img.shields.io/badge/Platform-Linux_x86__64-lightgrey?style=for-the-badge&logo=linux)](#)
 [![Data Plane](https://img.shields.io/badge/Data_Plane-Rust_eBPF%2FXDP-red?style=for-the-badge&logo=rust)](#-архитектура)

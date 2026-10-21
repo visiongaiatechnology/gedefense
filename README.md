@@ -1,3 +1,8 @@
+> [!WARNING]
+> **BETA SOFTWARE — NOT FOR UNSUPERVISED PRODUCTION USE**
+>
+> **VGT GeDefense 4.4.0 is a beta release.** Interfaces, configuration formats, detection rules and security behavior may change without notice. Validate every build in a staging environment, start in **observe mode**, keep tested backups and out-of-band recovery access, and do not deploy to production without satisfying the gates in [PRODUCTION-BETA-GATE.md](PRODUCTION-BETA-GATE.md). Provided **as-is**, without warranty, under AGPL-3.0-only. Security reports: see [SECURITY.md](SECURITY.md).
+
 <div align="center">
 
 <img width="256" height="256" alt="GeDefense" src="https://github.com/user-attachments/assets/978d2835-c915-473d-9995-d315efaa869c" />
@@ -9,7 +14,7 @@
 
 [![License](https://img.shields.io/badge/License-AGPL--3.0--only-blue?style=for-the-badge)](https://www.gnu.org/licenses/agpl-3.0)
 [![Version](https://img.shields.io/badge/Version-4.4.0-orange?style=for-the-badge)](#)
-[![Status](https://img.shields.io/badge/Status-Release_v4.4.0-yellow?style=for-the-badge)](#)
+[![Status](https://img.shields.io/badge/Status-BETA_v4.4.0-yellow?style=for-the-badge)](#)
 [![Installer](https://img.shields.io/badge/Installer-Universal_Linux-green?style=for-the-badge)](#-quick-start)
 [![Platform](https://img.shields.io/badge/Platform-Linux_x86__64-lightgrey?style=for-the-badge&logo=linux)](#)
 [![Data Plane](https://img.shields.io/badge/Data_Plane-Rust_eBPF%2FXDP-red?style=for-the-badge&logo=rust)](#-architecture)
