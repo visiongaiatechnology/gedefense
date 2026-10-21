@@ -38,6 +38,37 @@
 
 ---
 
+## 🖥️ Systemanforderungen & gemessener Ressourcenbedarf
+
+Richtwerte für eine **Single-Node-**Bereitstellung von GeDefense. Die Kernel-/NIC-/XDP-Qualifikation des Zielhosts bleibt verbindlich; siehe [ONECLICK-INSTALL.md](ONECLICK-INSTALL.md) und [PRODUCTION-BETA-GATE.md](PRODUCTION-BETA-GATE.md).
+
+| Ressource | Minimum | Empfohlen |
+|---|---:|---:|
+| CPU | 2 vCPU | 4 vCPU |
+| RAM | 2 GiB | 4 GiB |
+| Freier Speicher | 10 GiB | 20 GiB |
+| Plattform | Linux x86_64, systemd, eBPF-/XDP-fähiger Kernel | Wie Minimum, zusätzlich XDP-fähige NIC |
+| Paketmanager | APT, DNF/YUM, pacman oder Zypper | Wie Minimum |
+
+Die Mindestwerte enthalten Reserve für Betriebssystem, Control Plane und den gemessenen GeDefense-Kern; **nicht** enthalten sind große Evidence-/Quarantäne-Aufbewahrungsmengen. Bei Co-Location, hoher Scanlast oder langer Aufbewahrung entsprechend größer dimensionieren.
+
+### Gemessener Ressourcenbedarf (Referenzhost)
+
+**Referenz:** 8 vCPU AMD EPYC, 32 GiB RAM, Ubuntu 24.04, Kernel 7.0, GeDefense 4.4.0, `scan_interval_millis = 750`, `worker_count = 4`; 300-s-cgroup-v2-Messung (150 Samples, 2-s-Intervall), 21.10.2026.
+
+| Metrik | Gemessen |
+|---|---:|
+| CPU, 5-Minuten-Schnitt | **11,4 % eines Kerns** = 1,43 % von 8 vCPU |
+| CPU, Lifetime-Schnitt | **15,9 % eines Kerns** = ~2,0 % von 8 vCPU |
+| RAM, cgroup-Schnitt | **672 MiB** |
+| RAM, anonymer Schnitt | **561 MiB** |
+| RAM, maximal gleichzeitig | **684 MiB** |
+| RAM, Summe der Einzelpeaks | **939 MiB** |
+
+Gemessener GeDefense-Kern = `gedefense-core`, `gedefense-control`, `gedefense-access`. Separate VGT-Dienste (`vgt-punisher`, Evaluation Gateway, Runner Agent) und Nicht-GeDefense-Dienste sind nicht enthalten. Auf dem Referenzhost umfasste der Binärbaum ~2,2 GiB inklusive Backup-Artefakten, `/var/lib/vgt` ~4,7 GiB inklusive State/Logs; eine frische Installation ist kleiner, und Evidence-/Quarantäne-Aufbewahrung bestimmt den langfristigen Speicherbedarf.
+
+Die Werte sind Betriebsmessungen, keine Benchmark-Garantie. Der tatsächliche Verbrauch hängt von Scan-Konfiguration, Telemetrie-Feeds, Aufbewahrung und Co-Location ab. Für die Kapazitätsplanung die empfohlene Spalte verwenden und auf dem Zielhost validieren.
+
 ## 🚨 KRITISCHER SICHERHEITSHINWEIS & WARNUNG — RELEASE v4.4.0
 
 > **Betriebliches Sicherheitsupdate in 4.4.0.** Die PHP-Upload-Progress-Mitigation (`session.upload_progress.enabled = Off`), die kritische L7-Regel `L7.PHP.SESSION_UPLOAD_PROGRESS` und regelbasiertes Inline-Enforcement (`l7.enforce_rules`, `mode = "block"`) sind aktiv. Der L7-Origin ist auf Loopback gebunden, damit direkter Origin-Zugriff die Inspektion nicht umgeht. Der historische 4.2.x-Hinweis unten bleibt Teil der Remediation-Historie.

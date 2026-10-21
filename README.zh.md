@@ -38,6 +38,37 @@
 
 ---
 
+## 🖥️ 系统要求与实测资源占用
+
+以下为 GeDefense **单节点**部署的参考基线。目标主机的内核/NIC/XDP 资格认证仍是最终依据；参见 [ONECLICK-INSTALL.md](ONECLICK-INSTALL.md) 与 [PRODUCTION-BETA-GATE.md](PRODUCTION-BETA-GATE.md)。
+
+| 资源 | 最低 | 建议 |
+|---|---:|---:|
+| CPU | 2 vCPU | 4 vCPU |
+| 内存 | 2 GiB | 4 GiB |
+| 可用磁盘 | 10 GiB | 20 GiB |
+| 平台 | Linux x86_64、systemd、支持 eBPF/XDP 的内核 | 同上，另需支持 XDP 的网卡 |
+| 包管理器 | APT、DNF/YUM、pacman 或 Zypper | 同上 |
+
+最低配置已为操作系统、control plane 和实测 GeDefense 核心预留余量；**不包含**大量 evidence/quarantine 留存。若与其他服务共用、扫描负载较高或留存周期较长，应相应增加资源。
+
+### 实测资源占用（参考主机）
+
+**参考环境：** 8 vCPU AMD EPYC、32 GiB 内存、Ubuntu 24.04、内核 7.0、GeDefense 4.4.0、`scan_interval_millis = 750`、`worker_count = 4`；cgroup-v2 采样 300 秒（150 个样本，间隔 2 秒），2026-10-21。
+
+| 指标 | 实测值 |
+|---|---:|
+| CPU，5 分钟平均 | **单核 11.4%** = 8 vCPU 的 1.43% |
+| CPU，生命周期平均 | **单核 15.9%** = 8 vCPU 的约 2.0% |
+| 内存，cgroup 平均 | **672 MiB** |
+| 内存，anonymous 平均 | **561 MiB** |
+| 内存，同时最大 | **684 MiB** |
+| 内存，各峰值之和 | **939 MiB** |
+
+实测 GeDefense 核心 = `gedefense-core`、`gedefense-control`、`gedefense-access`。独立的 VGT 服务（`vgt-punisher`、Evaluation Gateway、Runner Agent）及非 GeDefense 服务未计入。参考主机上二进制目录约 2.2 GiB（含 backup 产物），`/var/lib/vgt` 约 4.7 GiB（含 state/logs）；全新安装更小，长期占用取决于 evidence/quarantine 留存策略。
+
+以上为运营测量值，不构成 benchmark 保证。实际消耗取决于扫描配置、telemetry feed、留存策略及同机负载。容量规划请采用“建议”列，并在目标主机上验证。
+
 ## 🚨 严重安全警告与公告 — RELEASE v4.4.0
 
 > **4.4.0 操作安全更新。** 已启用 PHP 上传进度缓解（`session.upload_progress.enabled = Off`）、关键 L7 规则 `L7.PHP.SESSION_UPLOAD_PROGRESS` 以及按规则范围的内联强制（`l7.enforce_rules`，`mode = "block"`）。L7 源站仅绑定 loopback，直接访问源站无法绕过检测。下方的 4.2.x 历史公告仍属于修复记录。

@@ -42,6 +42,37 @@
 
 
 
+## 🖥️ System Requirements & Measured Footprint
+
+These are operational baselines for a **single-node** GeDefense deployment. The target host's kernel/NIC/XDP qualification remains authoritative; see [ONECLICK-INSTALL.md](ONECLICK-INSTALL.md) and [PRODUCTION-BETA-GATE.md](PRODUCTION-BETA-GATE.md).
+
+| Resource | Minimum | Recommended |
+|---|---:|---:|
+| CPU | 2 vCPU | 4 vCPU |
+| RAM | 2 GiB | 4 GiB |
+| Free disk | 10 GiB | 20 GiB |
+| Platform | Linux x86_64, systemd, eBPF/XDP-capable kernel | Same, plus an XDP-capable NIC |
+| Package manager | APT, DNF/YUM, pacman or Zypper | Same |
+
+The minimum values include headroom for the OS, control plane and the measured GeDefense core; they do not include large evidence/quarantine retention. Size up for co-located services, high scan loads or long retention.
+
+### Measured footprint (reference host)
+
+**Reference:** 8 vCPU AMD EPYC, 32 GiB RAM, Ubuntu 24.04, kernel 7.0, GeDefense 4.4.0, `scan_interval_millis = 750`, `worker_count = 4`; 300 s cgroup-v2 sample (150 samples, 2 s interval), 2026-10-21.
+
+| Metric | Observed |
+|---|---:|
+| CPU, 5-minute average | **11.4 % of one core** = 1.43 % of 8 vCPU |
+| CPU, lifetime average | **15.9 % of one core** = ~2.0 % of 8 vCPU |
+| RAM, cgroup average | **672 MiB** |
+| RAM, anonymous average | **561 MiB** |
+| RAM, maximum simultaneous | **684 MiB** |
+| RAM, sum of individual peaks | **939 MiB** |
+
+Measured GeDefense core = `gedefense-core`, `gedefense-control`, `gedefense-access`. Separate VGT services (`vgt-punisher`, evaluation gateway, runner agent) and non-GeDefense services are excluded. On the reference host, the binary tree was ~2.2 GiB including backup artifacts and `/var/lib/vgt` ~4.7 GiB including state/logs; a fresh install is smaller, and evidence/quarantine retention determines long-term disk use.
+
+Values are operational measurements, not a benchmark guarantee. Actual consumption depends on scan configuration, telemetry feeds, retention and co-located workloads. For capacity planning, use the recommended column and validate on the target host.
+
 ## 🚨 CRITICAL SECURITY ADVISORY & WARNING — RELEASE v4.4.0
 
 > **Release 4.4.0 operational security update.** The PHP upload-progress mitigation (`session.upload_progress.enabled = Off`), the critical L7 rule `L7.PHP.SESSION_UPLOAD_PROGRESS` and rule-scoped inline enforcement (`l7.enforce_rules`, `mode = "block"`) are active. The L7 origin is bound to loopback, so direct origin access cannot bypass inspection. The historical 4.2.x advisory below remains part of the remediation record.
