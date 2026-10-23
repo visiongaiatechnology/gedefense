@@ -1,0 +1,215 @@
+#!/usr/bin/env bash
+# STATUS: DIAMANT VGT SUPREME
+set -Eeuo pipefail
+umask 0077
+
+readonly output_dir=/run/astraeaos
+readonly output_file="$output_dir/boot-attestation.json"
+readonly pcr_public=/usr/share/astraeaos/boot-trust/pcr-public.pem
+readonly signing_mode=/usr/share/astraeaos/boot-trust/signing-mode
+readonly pcr_signature=/run/systemd/tpm2-pcr-signature.json
+readonly efi_secure_boot=/sys/firmware/efi/efivars/SecureBoot-8be4df61-93ca-11d2-aa0d-00e098032b8c
+readonly command_line_root=/usr/share/astraeaos/boot-trust
+
+die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
+need() { command -v "$1" >/dev/null 2>&1 || die "missing: $1"; }
+need python3
+need openssl
+mkdir -p "$output_dir"
+chown root:gedefense "$output_dir"
+chmod 0750 "$output_dir"
+
+[[ -r "$pcr_public" && ! -L "$pcr_public" ]] || die "PCR public key is unavailable"
+[[ -r "$signing_mode" && ! -L "$signing_mode" ]] || die "Secure Boot signing mode is unavailable"
+
+actual_cmdline="$(tr -s '[:space:]' ' ' < /proc/cmdline | sed 's/^ //;s/ $//')"
+case " $actual_cmdline " in
+  *' astraeaos.mode=live '*)
+    boot_identity=live
+    expected_cmdline="$command_line_root/kernel-command-line-live"
+    ;;
+  *' astraeaos.mode=runtime '*' astraeaos.slot=A '*)
+    boot_identity=runtime-A
+    expected_cmdline="$command_line_root/kernel-command-line-A"
+    ;;
+  *' astraeaos.mode=runtime '*' astraeaos.slot=B '*)
+    boot_identity=runtime-B
+    expected_cmdline="$command_line_root/kernel-command-line-B"
+    ;;
+  *) die "kernel command line has no valid AstraeaOS boot identity" ;;
+esac
+[[ -r "$expected_cmdline" && ! -L "$expected_cmdline" ]] || die "kernel command line policy is unavailable"
+policy_cmdline="$(tr -s '[:space:]' ' ' < "$expected_cmdline" | sed 's/^ //;s/ $//')"
+if [[ "$boot_identity" == live ]]; then
+  python3 - "$policy_cmdline" "$actual_cmdline" <<'PY' || die "live kernel command line differs from signed policy"
+# STATUS: DIAMANT VGT SUPREME
+from collections import Counter
+import re
+import sys
+
+TOKEN_LIMIT = 256
+TOKEN_BYTES_LIMIT = 1024
+expected_tokens = sys.argv[1].split()
+actual_tokens = sys.argv[2].split()
+if (
+    not expected_tokens
+    or len(expected_tokens) > TOKEN_LIMIT
+    or len(actual_tokens) > TOKEN_LIMIT
+    or any(len(token.encode("utf-8")) > TOKEN_BYTES_LIMIT for token in actual_tokens)
+):
+    print("kernel-command-line-diff: token boundary rejected", file=sys.stderr)
+    raise SystemExit(1)
+
+expected = Counter(expected_tokens)
+actual = Counter(actual_tokens)
+missing = expected - actual
+extras = actual - expected
+
+# SYSLINUX injects BOOT_IMAGE as either its selected label or the loaded kernel
+# path. initrd is transport metadata as well. Neither value may alter the
+# signed security policy, and every accepted representation is closed-set.
+allowed_transport = (
+    re.compile(r"initrd=/astraeaos/boot/x86_64/initramfs-linux-hardened[.]img"),
+    re.compile(r"BOOT_IMAGE=/astraeaos/boot/x86_64/vmlinuz-linux-hardened"),
+    re.compile(r"BOOT_IMAGE=astraeaos(?:verbose)?"),
+)
+invalid_extras = Counter()
+for token, count in extras.items():
+    if token in expected:
+        continue
+    if count != 1 or not any(pattern.fullmatch(token) for pattern in allowed_transport):
+        invalid_extras[token] = count
+
+def bounded(values: Counter[str]) -> str:
+    rendered = []
+    for token, count in sorted(values.items())[:12]:
+        safe = re.sub(r"[^A-Za-z0-9_./,=:+-]", "?", token)[:160]
+        rendered.append(f"{count}x:{safe}")
+    return " ".join(rendered) if rendered else "none"
+
+if missing or invalid_extras:
+    print(f"kernel-command-line-diff missing=[{bounded(missing)}]", file=sys.stderr)
+    print(f"kernel-command-line-diff unexpected=[{bounded(invalid_extras)}]", file=sys.stderr)
+    raise SystemExit(1)
+PY
+else
+  [[ "$actual_cmdline" == "$policy_cmdline" ]] || die "runtime kernel command line differs from signed policy"
+fi
+
+filesystem_integrity_status=not-applicable
+filesystem_integrity_sha256=
+if [[ "$boot_identity" == runtime-* ]]; then
+  readonly fsverity_evidence=/run/astraeaos/fsverity-state.json
+  [[ -r "$fsverity_evidence" && ! -L "$fsverity_evidence" ]] || die "runtime fs-verity evidence is unavailable"
+  filesystem_integrity_sha256="$(python3 - "$fsverity_evidence" <<'PY'
+# STATUS: DIAMANT VGT SUPREME
+import hashlib
+import json
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+raw = path.read_bytes()
+if len(raw) > 1024 * 1024:
+    raise SystemExit(1)
+value = json.loads(raw)
+if value.get("schema") != "astraeaos.fsverity-state.v1" or value.get("status") != "verified":
+    raise SystemExit(1)
+files = value.get("files")
+if not isinstance(files, list) or not files:
+    raise SystemExit(1)
+print(hashlib.sha256(raw).hexdigest())
+PY
+  )" || die "runtime fs-verity evidence is invalid"
+  [[ "$filesystem_integrity_sha256" =~ ^[0-9a-f]{64}$ ]] || die "runtime fs-verity evidence hash is invalid"
+  filesystem_integrity_status=verified
+fi
+
+secure_boot=false
+if [[ -r "$efi_secure_boot" ]]; then
+  secure_boot_byte="$(od -An -t u1 -j 4 -N 1 "$efi_secure_boot" | tr -d '[:space:]')"
+  [[ "$secure_boot_byte" == 1 ]] && secure_boot=true
+fi
+
+attestation_status=verified
+hardware_attestation=verified
+attestation_reason=
+pcr_output=
+pcr_signature_sha256=
+if [[ -r "$pcr_signature" && ! -L "$pcr_signature" && ( -c /dev/tpmrm0 || -c /dev/tpm0 ) ]] && command -v tpm2_pcrread >/dev/null 2>&1; then
+  if ! pcr_output="$(tpm2_pcrread 'sha256:0,2,4,7,9,11,12' 2>&1)"; then
+    pcr_output=
+  fi
+fi
+
+if [[ "$secure_boot" == true && -n "$pcr_output" && -r "$pcr_signature" && ! -L "$pcr_signature" ]]; then
+  pcr_signature_sha256="$(sha256sum "$pcr_signature" | awk '{print $1}')"
+else
+  if [[ "$boot_identity" == runtime-* ]]; then
+    [[ "$secure_boot" == true ]] || die "UEFI Secure Boot is disabled or unavailable"
+    [[ -r "$pcr_signature" && ! -L "$pcr_signature" ]] || die "UKI PCR signature is unavailable"
+    [[ -c /dev/tpmrm0 || -c /dev/tpm0 ]] || die "TPM2 device is unavailable"
+    [[ -n "$pcr_output" ]] || die "TPM2 PCR read failed"
+    die "runtime platform attestation failed"
+  fi
+  attestation_status=live-recovery
+  hardware_attestation=unavailable
+  attestation_reason=platform-attestation-unavailable
+fi
+
+boot_id="$(cat /proc/sys/kernel/random/boot_id)"
+mode="$(tr -d '\r\n' < "$signing_mode")"
+pcr_public_sha256="$(openssl pkey -pubin -in "$pcr_public" -outform DER | sha256sum | awk '{print $1}')"
+
+BOOT_ID="$boot_id" MODE="$mode" CMDLINE="$actual_cmdline" PCRS="$pcr_output" \
+PCR_SIGNATURE_SHA256="$pcr_signature_sha256" PCR_PUBLIC_SHA256="$pcr_public_sha256" \
+BOOT_IDENTITY="$boot_identity" FILESYSTEM_INTEGRITY_STATUS="$filesystem_integrity_status" \
+FILESYSTEM_INTEGRITY_SHA256="$filesystem_integrity_sha256" STATUS="$attestation_status" \
+HARDWARE_ATTESTATION="$hardware_attestation" ATTESTATION_REASON="$attestation_reason" \
+SECURE_BOOT="$secure_boot" python3 - "$output_file" <<'PY'
+# STATUS: DIAMANT VGT SUPREME
+import grp
+import json
+import os
+import pathlib
+import tempfile
+import sys
+
+output = pathlib.Path(sys.argv[1])
+hardware_verified = os.environ["HARDWARE_ATTESTATION"] == "verified"
+value = {
+    "schema": "astraeaos.boot-attestation.v1",
+    "status": os.environ["STATUS"],
+    "secure_boot": os.environ["SECURE_BOOT"] == "true",
+    "hardware_attestation": os.environ["HARDWARE_ATTESTATION"],
+    "attestation_reason": os.environ["ATTESTATION_REASON"] or None,
+    "boot_id": os.environ["BOOT_ID"],
+    "signing_mode": os.environ["MODE"],
+    "kernel_command_line": os.environ["CMDLINE"],
+    "pcr_signature_sha256": os.environ["PCR_SIGNATURE_SHA256"] or None,
+    "pcr_public_key_sha256": os.environ["PCR_PUBLIC_SHA256"],
+    "pcr_selection": [0, 2, 4, 7, 9, 11, 12] if hardware_verified else [],
+    "pcr_readout": os.environ["PCRS"] if hardware_verified else "",
+    "boot_identity": os.environ["BOOT_IDENTITY"],
+    "filesystem_integrity": {
+        "status": os.environ["FILESYSTEM_INTEGRITY_STATUS"],
+        "evidence_sha256": os.environ["FILESYSTEM_INTEGRITY_SHA256"] or None,
+    },
+}
+fd, temporary = tempfile.mkstemp(prefix=".boot-attestation.", dir=output.parent)
+try:
+    with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
+        json.dump(value, handle, indent=2, sort_keys=True)
+        handle.write("\n")
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.chmod(temporary, 0o640)
+    os.chown(temporary, 0, grp.getgrnam("gedefense").gr_gid)
+    os.replace(temporary, output)
+finally:
+    try:
+        os.unlink(temporary)
+    except FileNotFoundError:
+        pass
+PY
+printf 'AstraeaOS boot trust evidence recorded: %s.\n' "$attestation_status"

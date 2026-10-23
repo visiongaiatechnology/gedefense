@@ -1,0 +1,2821 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#040914">
+  <title>VGT GeDefense · Sovereign Linux Security Platform</title>
+  <link rel="stylesheet" href="/assets/app.css">
+      <link rel="stylesheet" href="/assets/vendor/jsvectormap/jsvectormap.css">
+  <link rel="stylesheet" href="/assets/v4.css">
+    <link rel="stylesheet" href="/assets/overview-map.css">
+  <script type="module" src="/assets/app.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#workspace" data-i18n="skip.content">Zum Inhalt</a>
+  <div class="background-grid" aria-hidden="true"></div>
+  <div id="sidebarMobileBackdrop" class="sidebar-mobile-backdrop"></div>
+
+  <div class="app-shell">
+    <aside id="sidebar" class="sidebar" data-i18n-aria="nav.label" aria-label="Hauptnavigation">
+      <div class="brand-lockup">
+        <div class="brand-mark" aria-hidden="true">
+          <img class="brand-logo" src="/assets/gedefense-logo.png" alt="">
+        </div>
+        <div class="brand-copy">
+          <strong class="brand-title">GeDefense</strong>
+          <small class="brand-sub" data-i18n="brand.sub">LINUX DEFENSE // V4</small>
+        </div>
+      </div>
+
+      <nav class="nav-stack">
+        <div class="nav-group">
+          <span class="nav-group-title" data-i18n="nav.group.overview">ÜBERSICHT</span>
+          <button class="nav-item active" type="button" data-view="overview" aria-current="page">
+            <svg viewBox="0 0 24 24" class="nav-icon-svg"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+            <b data-i18n="nav.overview">Übersicht</b>
+          </button>
+        </div>
+
+        <div class="nav-group">
+          <span class="nav-group-title" data-i18n="nav.group.titan">TITAN</span>
+          <button class="nav-item nav-item-titan" type="button" data-view="titan">
+            <svg viewBox="0 0 24 24" class="nav-icon-svg"><path d="M12 2.2l8 4.2v7.2c0 4.6-3.4 8.1-8 9.4-4.6-1.3-8-4.8-8-9.4V6.4z"/><path d="M12 7.3l4.4 2.3v3.5c0 2.4-1.9 4.3-4.4 5-2.5-.7-4.4-2.6-4.4-5V9.6z"/><path d="M12 10.4v3.8"/></svg>
+            <b data-i18n="nav.titan">Titan Integrity</b>
+            <span class="nav-badge-titan">CORE</span>
+          </button>
+        </div>
+
+        <div class="nav-group">
+          <span class="nav-group-title" data-i18n="nav.group.protection">SCHUTZEBENEN</span>
+          <button class="nav-item" type="button" data-view="protection">
+            <svg viewBox="0 0 24 24" class="nav-icon-svg"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            <b data-i18n="nav.protectionCenter">Protection Center</b>
+          </button>
+          <button class="nav-item" type="button" data-view="l7">
+            <svg viewBox="0 0 24 24" class="nav-icon-svg"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+            <b data-i18n="nav.applicationDefense">Application Defense</b>
+            <span class="nav-badge-l7">L7</span>
+          </button>
+          <button class="nav-item" type="button" data-view="xdr">
+            <svg viewBox="0 0 24 24" class="nav-icon-svg"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+            <b data-i18n="nav.xdr">GeDefense XDR</b>
+          </button>
+          <button class="nav-item" type="button" data-view="kinetic">
+            <svg viewBox="0 0 24 24" class="nav-icon-svg"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+            <b data-i18n="nav.kinetic">Kinetic Defense</b>
+            <span class="nav-badge-l7">LIVE</span>
+          </button>
+          <button class="nav-item" type="button" data-view="threat-intel">
+            <svg viewBox="0 0 24 24" class="nav-icon-svg"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
+            <b data-i18n="nav.threatIntel">Threat Intelligence</b>
+          </button>
+          <button class="nav-item" type="button" data-view="network">
+            <svg viewBox="0 0 24 24" class="nav-icon-svg"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
+            <b data-i18n="nav.network">Netzwerk</b>
+          </button>
+        </div>
+
+        <div class="nav-group">
+          <span class="nav-group-title" data-i18n="nav.group.systemSecurity">SYSTEMSICHERHEIT</span>
+          <button class="nav-item" type="button" data-view="hardening">
+            <svg viewBox="0 0 24 24" class="nav-icon-svg"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            <b data-i18n="view.hardening.title">Härtung</b>
+          </button>
+          <button class="nav-item" type="button" data-view="detection">
+            <svg viewBox="0 0 24 24" class="nav-icon-svg"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+            <b data-i18n="view.detection.title">Angriffserkennung</b>
+          </button>
+          <button class="nav-item" type="button" data-view="integrity">
+            <svg viewBox="0 0 24 24" class="nav-icon-svg"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+            <b data-i18n="view.integrity.title">Integrität</b>
+          </button>
+          <button class="nav-item" type="button" data-view="boot">
+            <svg viewBox="0 0 24 24" class="nav-icon-svg"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
+            <b data-i18n="view.boot.title">Boot Trust</b>
+          </button>
+          <button class="nav-item" type="button" data-view="policy">
+            <svg viewBox="0 0 24 24" class="nav-icon-svg"><circle cx="12" cy="8" r="6"/><polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88"/></svg>
+            <b data-i18n="nav.policy">Policy Trust</b>
+          </button>
+        </div>
+
+        <div class="nav-group">
+          <span class="nav-group-title" data-i18n="nav.group.operations">BETRIEB & INVESTIGATION</span>
+          <button class="nav-item" type="button" data-view="forensics">
+            <svg viewBox="0 0 24 24" class="nav-icon-svg"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <b data-i18n="nav.forensics">Forensik</b>
+          </button>
+          <button class="nav-item" type="button" data-view="release">
+            <svg viewBox="0 0 24 24" class="nav-icon-svg"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+            <b data-i18n="nav.release">Beta Release</b>
+          </button>
+          <button class="nav-item" type="button" data-view="settings">
+            <svg viewBox="0 0 24 24" class="nav-icon-svg"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            <b data-i18n="nav.settings">Fabric Settings</b>
+          </button>
+          <button class="nav-item" type="button" data-view="system">
+            <svg viewBox="0 0 24 24" class="nav-icon-svg"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+            <b data-i18n="nav.system">System</b>
+          </button>
+        </div>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="sidebar-status-card">
+          <span id="sidebarPulse" class="status-dot"></span>
+          <div>
+            <b id="sidebarState" data-i18n="dynamic.initializing">INITIALISIERT</b>
+            <small id="sidebarMode">OBSERVE</small>
+          </div>
+        </div>
+        <span class="powered-line">GeDefense <span id="versionText">---</span><span id="uiBuild" class="ui-build" title="UI-Build des laufenden Browser-Tabs">---</span></span>
+        <small class="vgt-credit" data-i18n="brand.powered">powered by VisionGaiaTechnology</small>
+      </div>
+    </aside>
+
+    <div class="main-column">
+      <header class="topbar">
+        <div class="topbar-left">
+          <button id="mobileMenuToggle" class="button button-quiet mobile-menu-btn" type="button" data-i18n-aria="top.menu" aria-label="Menü öffnen">
+            <svg viewBox="0 0 24 24" class="nav-icon-svg"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+          </button>
+          <div>
+            <p id="viewEyebrow" class="eyebrow" data-i18n="view.overview.eyebrow">SOVEREIGN DEFENSE FABRIC</p>
+            <h1 id="viewTitle" data-i18n="view.overview.title">Übersicht</h1>
+          </div>
+        </div>
+
+        <div class="top-actions">
+          <time id="clock" class="clock">--:--:--</time>
+          <button id="topEmergencyBtn" class="button button-emergency-top" type="button" hidden data-i18n="emergency.topBtn">EMERGENCY STOP</button>
+          <label class="language-control">
+            <span class="sr-only" data-i18n="top.language">Sprache</span>
+            <select id="languageSelect" data-i18n-aria="top.language" aria-label="Sprache">
+              <option value="de">DE</option>
+              <option value="en">EN</option>
+              <option value="ru">RU</option>
+              <option value="zh-CN">简体中文</option>
+            </select>
+          </label>
+          <button id="supportButton" class="button button-support" type="button" data-i18n="top.support">VGT unterstützen</button>
+          <button id="authButton" class="button button-quiet" type="button" data-i18n="top.operator">Operator-Key</button>
+          <span id="systemBadge" class="status-pill warn" data-i18n="dynamic.initializing">INITIALISIERT</span>
+        </div>
+      </header>
+
+      <div id="connectionBanner" class="connection-banner" role="status" aria-live="polite" hidden>
+        <span class="connection-indicator" aria-hidden="true"></span>
+        <div class="connection-copy">
+          <strong data-i18n="connection.offlineTitle">Control Plane nicht erreichbar</strong>
+          <span id="connectionDetail" data-i18n="connection.offlineDetail">Die Oberfläche bleibt verfügbar und versucht automatisch, die lokale GeDefense API wieder zu erreichen.</span>
+        </div>
+        <button id="connectionRetry" class="button button-secondary" type="button" data-i18n="connection.retry">Erneut verbinden</button>
+      </div>
+
+      <div id="undoBanner" class="undo-banner" role="status" aria-live="polite" hidden>
+        <span class="undo-indicator" aria-hidden="true"></span>
+        <div class="undo-copy"><strong id="undoMessage">---</strong></div>
+        <div class="undo-actions">
+          <button id="undoAction" class="button button-primary" type="button" data-i18n="removal.undo">Rückgängig</button>
+          <button id="undoDismiss" class="button button-quiet" type="button" data-i18n="removal.dismiss">Schließen</button>
+        </div>
+      </div>
+
+      <main id="workspace" class="workspace">
+        <!-- 1. OVERVIEW VIEW -->
+        <section class="view active" data-page="overview" aria-labelledby="overviewHeading">
+          <div class="hero-cockpit">
+            <div class="hero-copy">
+              <p class="eyebrow" data-i18n="overview.kicker">GEDEFENSE // SOVEREIGN KINETIC DEFENSE</p>
+              <h2 id="overviewHeading" data-i18n="overview.heading">Abwehr, die den Host als Gesamtsystem versteht.</h2>
+              <p data-i18n="overview.description">Rust-XDP, signierte Policy-Snapshots, native L7 Application Defense und Linux-XDR korrelieren Netzwerk, Prozesse, Integrität und Verhalten – lokal, nachvollziehbar und ohne Cloud-Abhängigkeit.</p>
+              <div class="hero-state">
+                <span id="heroPulse" class="status-dot"></span>
+                <b id="shieldState" data-i18n="dynamic.controlOnly">CONTROL ONLY</b>
+                <small id="coreMode" data-i18n="dynamic.rustOffline">Rust Core offline</small>
+                <small id="heroProtectionDesc" data-i18n="overview.hero.observeDesc">Bedrohungen werden erkannt und korreliert, aktive Abwehrmaßnahmen sind jedoch deaktiviert.</small>
+              </div>
+            </div>
+            <div class="hero-right-zone">
+              <div class="hero-protection-row">
+                <div class="flex-col-end gap-xs">
+                  <span id="heroProtectionBadge" class="status-pill muted" data-i18n="overview.hero.observeBadge">REINE ÜBERWACHUNG</span>
+                  <!-- The title carried the same translation key as the badge above it, so the headline was always a verbatim repeat of the pill. The badge names the state; the title states its consequence. -->
+              <span id="heroProtectionTitle" class="hero-protection-title" data-i18n="overview.hero.observeTitle">Abwehr ist derzeit nicht aktiv</span>
+                </div>
+                <button id="heroProtectionAction" class="button button-primary" type="button" data-i18n="overview.hero.btnActivate">Schutz aktivieren</button>
+              </div>
+              <div class="defense-radar" aria-hidden="true">
+                <div class="radar-sweep"></div>
+                <div class="radar-ring"></div>
+                <div class="radar-dot"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ===================================================================
+               OVERVIEW THREAT MAP (GLASS 2100)
+               The large, animated map of the overview page. It shows every detection path at once -
+               packet level and the incident stream (layer 7, post-exploitation, correlation) - unlike
+               the focused map on the Kinetic page, and it draws arcs towards this host's real position.
+               The Kinetic page keeps its own map untouched.
+               =================================================================== -->
+          <article class="glass-panel overview-threat-panel" id="overviewThreatPanel">
+            <header class="overview-threat-header">
+              <div class="overview-threat-title">
+                <span class="overview-threat-icon" aria-hidden="true">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
+                </span>
+                <div>
+                  <h3 data-i18n="overview.map.title">ECHTZEIT THREAT KARTE &amp; GLOBALE ANGRIFFSVEKTOREN</h3>
+                  <p class="text-muted" data-i18n="overview.map.subtitle">Paketpfad und Vorfallstrom gemeinsam, verortet über die lokale GeoIP-Matrix. Keine externe Abfrage.</p>
+                </div>
+              </div>
+              <div class="overview-threat-badges">
+                <span class="overview-threat-live" id="overviewMapStatus" role="status" aria-live="polite">TELEMETRIE WIRD GELADEN</span>
+                <span class="overview-threat-note" id="overviewMapGeo" title="GeoIP-Matrix"></span>
+                <!-- The map library wires the zoom controls during construction, so they have to exist
+                     before the map is built. Without them it creates its own raw element instead. -->
+                <span class="overview-threat-zoom" role="toolbar" aria-label="Kartensteuerung">
+                  <button type="button" id="overviewMapZoomIn" title="vergrößern" aria-label="Karte vergrößern">+</button>
+                  <button type="button" id="overviewMapZoomOut" title="verkleinern" aria-label="Karte verkleinern">−</button>
+                  <button type="button" id="overviewMapPause" aria-pressed="false" data-i18n-aria="overview.map.pause" aria-label="Telemetrie pausieren">Ⅱ</button>
+                  <button type="button" id="overviewMapZoomReset" title="zentrieren" aria-label="Ansicht zurücksetzen">⟲</button>
+                </span>
+              </div>
+            </header>
+
+            <div class="overview-threat-chips" role="list">
+              <div class="overview-threat-chip" role="listitem"><span data-i18n="overview.map.sources">Quellen</span><strong id="overviewMapSources">0</strong></div>
+              <div class="overview-threat-chip" role="listitem"><span data-i18n="overview.map.placed">verortet</span><strong id="overviewMapPlaced">0</strong></div>
+              <div class="overview-threat-chip danger" role="listitem"><span data-i18n="overview.map.blocked">geblockt</span><strong id="overviewMapBlocked">0</strong></div>
+              <div class="overview-threat-chip" role="listitem"><span data-i18n="overview.map.countries">Länder</span><strong id="overviewMapCountries">0</strong></div>
+              <div class="overview-threat-chip area-kinetic" role="listitem"><span data-i18n="overview.map.kinetic">Kinetic</span><strong id="overviewMapKinetic">0</strong></div>
+              <div class="overview-threat-chip area-l7" role="listitem"><span data-i18n="overview.map.l7">L7</span><strong id="overviewMapL7">0</strong></div>
+              <div class="overview-threat-chip area-xdr" role="listitem"><span data-i18n="overview.map.xdr">XDR</span><strong id="overviewMapXdr">0</strong></div>
+            </div>
+
+            <div class="overview-threat-stage">
+              <div id="overviewThreatMap" class="overview-threat-canvas" aria-label="Weltkarte der Angriffsquellen mit Bögen zum eigenen Standort"></div>
+              <p class="overview-threat-empty" id="overviewMapEmpty" hidden></p>
+              <div class="overview-threat-clean" id="overviewMapClean" hidden>
+                <span class="overview-threat-clean-pulse" aria-hidden="true"></span>
+                <div><strong data-i18n="overview.map.calmTitle">DERZEIT KEINE ANGRIFFE IM BEOBACHTUNGSFENSTER</strong>
+                  <small data-i18n="overview.map.calmBody">Die Weltkarte steht bereit. Erkannte Quellen erscheinen hier.</small></div>
+              </div>
+              <div class="overview-map-legend" aria-label="Kartenlegende">
+                <span><i class="blocked" aria-hidden="true"></i><span data-i18n="overview.map.legendBlocked">Kritisch / Geblockt</span></span>
+                <span><i class="suspicious" aria-hidden="true"></i><span data-i18n="overview.map.legendSuspicious">Abtastung / Warnung</span></span>
+                <span><i class="tracked" aria-hidden="true"></i><span data-i18n="overview.map.legendObserved">Erfasst / Monitored</span></span>
+                <span><i class="origin" aria-hidden="true"></i><span data-i18n="overview.map.legendOrigin">Souveräner Server-Hub</span></span>
+              </div>
+              <div class="overview-threat-card" id="overviewMapCard" hidden role="dialog" data-i18n-aria="overview.map.details" aria-label="Details zur Quelle">
+                <div class="overview-threat-card-head">
+                  <span class="overview-threat-card-flag" id="overviewCardFlag" aria-hidden="true">—</span>
+                  <strong class="overview-threat-card-ip" id="overviewCardIP">—</strong>
+                  <span class="overview-threat-card-badge" id="overviewCardBadge"></span>
+                  <button type="button" class="overview-threat-card-close" id="overviewCardClose" data-i18n-aria="overview.map.close" aria-label="Details schließen">×</button>
+                </div>
+                <dl class="overview-threat-card-body">
+                  <div><dt data-i18n="overview.map.country">Land</dt><dd id="overviewCardCountry">—</dd></div>
+                  <div><dt data-i18n="overview.map.network">Netz</dt><dd id="overviewCardAsn">—</dd></div>
+                  <div><dt data-i18n="overview.map.target">Ziel</dt><dd id="overviewCardPath">—</dd></div>
+                  <div><dt data-i18n="overview.map.finding">Befund</dt><dd id="overviewCardDetail">—</dd></div>
+                  <div><dt data-i18n="overview.map.seen">Gesehen</dt><dd id="overviewCardSeen">—</dd></div>
+                </dl>
+                <div class="overview-threat-card-cluster" id="overviewCardCluster" hidden></div>
+              </div>
+            </div>
+            <div id="overviewMapTopCountries" class="overview-map-top-countries" aria-live="polite"></div>
+            <div class="overview-threat-feed" id="overviewMapFeed" role="region" aria-labelledby="overviewMapStreamTitle">
+              <div class="overview-threat-stream-header">
+                <div class="overview-stream-title">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+                  <h4 id="overviewMapStreamTitle" data-i18n="overview.map.streamTitle">ECHTZEIT-TELEMETRIE &amp; ANOMALIE-STREAM</h4>
+                  <span class="overview-stream-counter" id="overviewMapEventCount"></span>
+                </div>
+                <div class="overview-stream-filters" role="group" data-i18n-aria="overview.map.filters" aria-label="Telemetrie filtern">
+                  <button type="button" class="overview-filter-pill" data-filter="all" aria-pressed="true" data-i18n="overview.map.filterAll">Alle Vektoren</button>
+                  <button type="button" class="overview-filter-pill" data-filter="blocked" aria-pressed="false" data-i18n="overview.map.filterBlocked">Nur Geblockt</button>
+                  <button type="button" class="overview-filter-pill" data-filter="suspicious" aria-pressed="false" data-i18n="overview.map.filterSuspicious">Nur Abtastungen</button>
+                </div>
+              </div>
+              <div class="overview-threat-table-wrapper" tabindex="0" role="region" aria-labelledby="overviewMapStreamTitle">
+                <table class="overview-threat-stream-table" aria-labelledby="overviewMapStreamTitle">
+                  <thead><tr>
+                    <th scope="col" data-i18n="overview.map.columnTime">ZEIT</th>
+                    <th scope="col" data-i18n="overview.map.columnSource">QUELL-IP &amp; GEO</th>
+                    <th scope="col" data-i18n="overview.map.columnTarget">ZIELPFAD (TARGET URI)</th>
+                    <th scope="col" data-i18n="overview.map.columnModule">ERKENNUNGSMODUL</th>
+                    <th scope="col" data-i18n="overview.map.columnAction">AKTION</th>
+                    <th scope="col" data-i18n="overview.map.columnNetwork">ASN &amp; ORGANISATION (LOKAL)</th>
+                  </tr></thead>
+                  <tbody id="overviewMapFeedList"></tbody>
+                </table>
+              </div>
+              <p class="overview-threat-feed-empty" id="overviewMapFeedEmpty" hidden></p>
+              <div class="overview-threat-feed-head">
+                <span class="overview-threat-feed-host" id="overviewMapHost" data-i18n="overview.map.hostPending">Host wird bestimmt …</span>
+                <span id="overviewMapUpdated"></span>
+              </div>
+            </div>
+            <footer class="overview-threat-footer"><span id="overviewMapOrigin" data-i18n="overview.map.originPending">Standort des Hosts wird bestimmt …</span></footer>
+          </article>
+
+          <div class="defense-telemetry node-board" aria-label="Knotenzustand und Direktzugriffe">
+            <div class="telemetry-group">
+              <h3 class="telemetry-title" data-i18n="overview.groupFabric">Fabric</h3>
+              <dl class="telemetry-list">
+                <div class="telemetry-row">
+                  <dt data-i18n="metric.kernel">Kernel Core</dt>
+                  <dd id="coreMetric" data-i18n="dynamic.offline">OFFLINE</dd>
+                </div>
+              </dl>
+              <button id="overviewXdrCard" class="telemetry-row telemetry-action" type="button">
+                <span class="telemetry-label" data-i18n="metric.xdr">XDR Engine</span>
+                <span class="telemetry-value" id="xdrMetric" data-i18n="dynamic.starting">STARTING</span>
+                <span class="telemetry-trail" aria-hidden="true">›</span>
+              </button>
+              <p class="telemetry-note">
+                <span id="coreDetail" data-i18n="metric.ipc">IPC-Prüfung</span>
+                <span aria-hidden="true"> · </span>
+                <span id="xdrDetail" data-i18n="metric.sensorInit">Sensorinitialisierung</span>
+              </p>
+            </div>
+
+            <div class="telemetry-group">
+              <h3 class="telemetry-title" data-i18n="overview.groupEnforcement">Durchsetzung</h3>
+              <button id="overviewBlockCard" class="telemetry-row telemetry-action" type="button">
+                <span class="telemetry-label" data-i18n="metric.rules">Aktive CIDR-Sperren</span>
+                <span class="telemetry-value" id="blockCount">0</span>
+                <span class="telemetry-trail" aria-hidden="true">›</span>
+              </button>
+              <button id="overviewFeedCard" class="telemetry-row telemetry-action" type="button">
+                <span class="telemetry-label" data-i18n="metric.threatFeeds">Feed-Matrix</span>
+                <span class="telemetry-value" id="overviewFeedCount">0</span>
+                <span class="telemetry-trail" aria-hidden="true">›</span>
+              </button>
+              <button id="overviewBansCard" class="telemetry-row telemetry-action" type="button">
+                <span class="telemetry-label" data-i18n="metric.bansEnforced">Sperren durchgesetzt</span>
+                <span class="telemetry-value" id="overviewBansEnforced">0</span>
+                <span class="telemetry-trail" aria-hidden="true">›</span>
+              </button>
+              <p class="telemetry-note" id="overviewFeedDetail" data-i18n="metric.threatFeedsDetail">Kernel XDP / cgroup</p>
+              <!-- The enforcement path belongs on the landing page. It is the difference
+                   between dropping in the driver path and dropping at the traffic-control
+                   layer, and the hardware decides it, not the configuration. -->
+              <p class="telemetry-note" id="overviewEnforcementPath"></p>
+            </div>
+
+            <div class="telemetry-group">
+              <h3 class="telemetry-title" data-i18n="overview.groupDetection">Erkennung</h3>
+              <button id="overviewAnomalyCard" class="telemetry-row telemetry-action" type="button">
+                <span class="telemetry-label" data-i18n="metric.anomalies">Adaptive Anomalien</span>
+                <span class="telemetry-value" id="anomalyCount">0</span>
+                <span class="telemetry-trail" aria-hidden="true">›</span>
+              </button>
+              <button id="overviewHitsCard" class="telemetry-row telemetry-action" type="button">
+                <span class="telemetry-label" data-i18n="metric.hits">Treffer</span>
+                <span class="telemetry-value" id="overviewHits">0</span>
+                <span class="telemetry-trail" aria-hidden="true">›</span>
+              </button>
+              <button id="overviewPortscansCard" class="telemetry-row telemetry-action" type="button">
+                <span class="telemetry-label" data-i18n="metric.portscans">Portscans</span>
+                <span class="telemetry-value" id="overviewPortscans">0</span>
+                <span class="telemetry-trail" aria-hidden="true">›</span>
+              </button>
+              <p class="telemetry-note" id="overviewDetectionDetail" data-i18n="metric.adaptive">adaptive Abweichungen</p>
+            </div>
+
+            <div class="telemetry-group">
+              <h3 class="telemetry-title" data-i18n="overview.groupOperation">Betrieb</h3>
+              <dl class="telemetry-list">
+                <div class="telemetry-row">
+                  <dt data-i18n="metric.uptime">Uptime</dt>
+                  <dd id="uptime">00:00:00</dd>
+                </div>
+                <div class="telemetry-row">
+                  <dt data-i18n="metric.kernelEvents">Kernel-Ereignisse</dt>
+                  <dd id="overviewKernelEvents">0</dd>
+                </div>
+                <div class="telemetry-row">
+                  <dt data-i18n="metric.ringDrops">Ring-Puffer verloren</dt>
+                  <dd id="overviewRingDrops">0</dd>
+                </div>
+              </dl>
+              <p class="telemetry-note" id="nodeName" data-i18n="system.defaultNode">VGT Node</p>
+            </div>
+          </div>
+          <div class="overview-grid">
+            <article class="glass-panel panel-padded">
+              <div class="section-head flex-between">
+                <div>
+                  <p class="eyebrow" data-i18n="network.pulse">NETWORK PULSE</p>
+                  <h3 class="m-0" data-i18n="network.throughput">Echtzeit-Durchsatz</h3>
+                </div>
+                <div class="rate-pair">
+                  <span>RX <strong id="rxRate">0 B/s</strong></span>
+                  <span>TX <strong id="txRate">0 B/s</strong></span>
+                </div>
+              </div>
+              <canvas id="trafficChart" width="800" height="240"></canvas>
+              <div class="resource-grid">
+                <div class="resource-item">
+                  <span class="resource-label">CPU <b id="cpuText">0%</b></span>
+                  <div class="progress-bar"><div id="cpuBar" class="progress-fill fill-cyan"></div></div>
+                </div>
+                <div class="resource-item">
+                  <span class="resource-label">RAM <b id="memText">0%</b></span>
+                  <div class="progress-bar"><div id="memBar" class="progress-fill fill-ice"></div></div>
+                </div>
+                <div class="resource-item">
+                  <span class="resource-label" data-i18n="network.interface">INTERFACE <b id="iface">---</b></span>
+                  <div class="progress-bar"><div class="progress-fill fill-green"></div></div>
+                </div>
+              </div>
+            </article>
+
+            <article class="glass-panel panel-padded flex-col">
+              <div class="section-head flex-between">
+                <div>
+                  <p class="eyebrow" data-i18n="overview.l7Card.title">APPLICATION DEFENSE</p>
+                  <h3 class="m-0" data-i18n="l7.heading">L7 Traffic Guard</h3>
+                </div>
+                <span id="overviewL7Pill" class="status-pill good" data-i18n="dynamic.healthy">HEALTHY</span>
+              </div>
+              <div class="l7-summary-metrics my-md">
+                <div class="l7-sum-box">
+                  <span data-i18n="l7.kpi.inspected">Inspected</span>
+                  <strong id="overviewL7Inspected">0</strong>
+                </div>
+                <div class="l7-sum-box">
+                  <span data-i18n="l7.kpi.findings">Findings</span>
+                  <strong id="overviewL7Findings" class="text-amber">0</strong>
+                </div>
+                <div class="l7-sum-box">
+                  <span data-i18n="l7.kpi.blocked">Blocked</span>
+                  <strong id="overviewL7Blocked" class="text-red">0</strong>
+                </div>
+              </div>
+              <p class="fs-sm text-muted mb-md flex-1" data-i18n="overview.l7Card.description">Native HTTP-Stream-Inspektion blockiert SQLi, XSS, SSRF, Command Injection und Protokollanomalien vor Weiterleitung an die Host-Dienste.</p>
+              <button id="overviewToL7Btn" class="button button-secondary w-full" type="button" data-i18n="overview.l7Card.view">Zu Application Defense →</button>
+            </article>
+          </div>
+
+          <article class="glass-panel panel-padded mt-lg">
+            <div class="section-head flex-between">
+              <div>
+                <p class="eyebrow" data-i18n="stream.kicker">GEDEFENSE EVIDENCE STREAM</p>
+                <h3 class="m-0" data-i18n="stream.title">Letzte Ereignisse</h3>
+              </div>
+              <span class="live-label"><i></i><span data-i18n="stream.live">LIVE</span></span>
+            </div>
+            <ol id="events" class="event-list"></ol>
+          </article>
+        </section>
+
+        <!-- 2. PROTECTION CENTER VIEW -->
+        <section id="protectionView" class="view" data-page="protection" aria-labelledby="protectionHeading" hidden>
+          <h2 id="protectionHeading" class="sr-only" data-i18n="nav.protectionCenter">Protection Center</h2>
+          <div class="view-context-bar">
+            <p class="view-context-desc" data-i18n="protection.description">Geführte, stufenweise Freigabe der aktiven GeDefense-Schutzebenen von der reinen Überwachung bis zum automatischen Vollschutz.</p>
+            <div class="view-context-actions">
+              <span id="protectionCurrentBadge" class="status-pill warn">OBSERVE</span>
+            <!-- The emergency stop sits with the state it acts on, not beside the workflow
+                 buttons. As a permanently solid-red control next to "activate Canary" it
+                 was the loudest thing in the bar and made the primary action ambiguous. -->
+            <button id="btnTriggerEmergency" class="button button-emergency" type="button" data-i18n="emergency.topBtn">EMERGENCY STOP</button>
+            </div>
+          </div>
+
+          <div id="emergencyBanner" class="banner-emergency-active flex-between-wrap gap-md" hidden>
+            <div>
+              <strong class="text-red fs-lg d-block" data-i18n="emergency.activeBanner">EMERGENCY STOP AKTIV</strong>
+              <span class="fs-sm text-muted" data-i18n="emergency.activeDetail">Sämtliche aktiven Blockier- und Eingriffshandlungen wurden gestoppt. Die Core-Engine befindet sich im passiven Beobachtungsmodus.</span>
+            </div>
+            <button id="btnClearEmergency" class="button button-primary" type="button" data-i18n="emergency.clearBtn">Emergency Stop aufheben</button>
+          </div>
+
+          <div id="protectionStepperContainer" class="stepper-grid">
+            <article id="stepCardObserve" class="step-card glass-panel is-current">
+              <header class="stepper-header flex-between">
+                <span class="stepper-num">1</span>
+                <span id="stepPillObserve" class="status-pill active" data-i18n="stepper.status.active">AKTIV</span>
+              </header>
+              <h3 data-i18n="stepper.observe.title">Observe (Überwachung)</h3>
+              <p data-i18n="stepper.observe.desc">Reine Bedrohungserkennung ohne aktive Eingriffe.</p>
+              <div class="stepper-meta">
+                <small class="fs-micro text-muted" data-i18n="stepper.authority.observeFull">REAKTIONS-AUTORITÄT: Nur Telemetrie &amp; Evidenz</small>
+              </div>
+            </article>
+
+            <article id="stepCardCanary" class="step-card glass-panel is-locked">
+              <header class="stepper-header flex-between">
+                <span class="stepper-num">2</span>
+                <span id="stepPillCanary" class="status-pill muted" data-i18n="stepper.status.locked">GESPERRT</span>
+              </header>
+              <h3 data-i18n="stepper.canary.title">Canary (Eindämmung)</h3>
+              <p data-i18n="stepper.canary.desc">Selektive Eindämmung verdächtiger Prozesse und gezielte Drops.</p>
+              <div class="stepper-meta">
+                <small class="fs-micro text-muted" data-i18n="stepper.authority.canaryFull">REAKTIONS-AUTORITÄT: Prozess-Containment &amp; Drop-Sampling</small>
+                <div class="mt-xs">
+                  <span class="fs-micro text-amber"><span data-i18n="stepper.soak.label">Soak:</span> <strong id="canarySoakTimer">--</strong></span>
+                </div>
+              </div>
+            </article>
+
+            <article id="stepCardEnforce" class="step-card glass-panel is-locked">
+              <header class="stepper-header flex-between">
+                <span class="stepper-num">3</span>
+                <span id="stepPillEnforce" class="status-pill muted" data-i18n="stepper.status.locked">GESPERRT</span>
+              </header>
+              <h3 data-i18n="stepper.enforce.title">Enforce (Vollschutz)</h3>
+              <p data-i18n="stepper.enforce.desc">Vollständige automatische Durchsetzung aller Richtlinien.</p>
+              <div class="stepper-meta">
+                <small class="fs-micro text-muted" data-i18n="stepper.authority.enforceFull">REAKTIONS-AUTORITÄT: Vollständige Echtzeit-Abwehr &amp; XDP-Drops</small>
+                <div class="mt-xs">
+                  <span class="fs-micro text-green"><span data-i18n="stepper.soak.label">Soak:</span> <strong id="enforceSoakTimer">--</strong></span>
+                </div>
+              </div>
+            </article>
+          </div>
+
+          <div class="protection-actions-bar mt-md flex-row-wrap gap-md">
+            <button id="btnActivateCanary" class="button button-primary" type="button" data-i18n="stepper.btn.activateCanary">Canary aktivieren</button>
+            <button id="btnActivateEnforce" class="button button-danger" type="button" hidden data-i18n="stepper.btn.activateEnforce">Enforce aktivieren</button>
+            <button id="btnReturnObserve" class="button button-secondary" type="button" hidden data-i18n="stepper.btn.returnObserve">Zurück zu Observe</button>
+            
+          </div>
+
+          <article class="glass-panel panel-padded mt-lg">
+            <div id="protectionReadiness" class="section-head"><p class="eyebrow" data-i18n="protection.readinessKicker">READINESS AUDIT</p><h3 class="m-0" data-i18n="dialog.activate.preflight">Aktuelle Freigabebedingungen</h3></div>
+            <ul id="protectionBlockersList" class="gate-list mt-sm"></ul>
+          </article>
+        </section>
+
+        <!-- TITAN · SOVEREIGN ENDPOINT INTEGRITY / INGRESS DEFENSE / FORENSIC EVIDENCE -->
+        <section class="view" data-page="titan" aria-labelledby="titanHeading" hidden>
+          <div class="titan-hero glass-panel">
+            <div class="titan-hero-grid">
+              <div class="titan-brand-block">
+                <span class="titan-crest" aria-hidden="true">
+                  <svg viewBox="0 0 64 64" focusable="false">
+                    <path d="M32 4l24 11.4v21.2C56 50.4 45.9 60.7 32 64 18.1 60.7 8 50.4 8 36.6V15.4z" fill="none" stroke="currentColor" stroke-width="2.2"/>
+                    <path d="M32 15.5l14 6.6v11.3c0 8-5.9 14.2-14 16.2-8.1-2-14-8.2-14-16.2V22.1z" fill="none" stroke="currentColor" stroke-width="1.8"/>
+                    <path d="M32 25.5v13.4M25.6 32.2h12.8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                  </svg>
+                </span>
+                <div class="titan-brand-copy">
+                  <p class="eyebrow m-0" data-i18n="titan.kicker">SOVEREIGN ENDPOINT INTEGRITY</p>
+                  <h2 id="titanHeading" class="titan-wordmark">GeDefense <span>TITAN</span></h2>
+                  <p class="titan-tagline" data-i18n="titan.tagline">Detect. Verify. Contain. Preserve.</p>
+                  <p class="titan-promise" data-i18n="titan.description">Titan bewertet nicht, wer eine Veränderung vorgenommen hat, sondern ob sie autorisiert war, wie sie entstand und welche unabhängigen Belege dazu vorliegen.</p>
+                </div>
+              </div>
+              <dl class="titan-hero-stats">
+                <div><dt data-i18n="titan.label.mode">Owner-Policy</dt><dd><span id="titanModeBadge" class="status-pill muted">---</span></dd></div>
+                <div><dt data-i18n="titan.label.armed">Bewaffnung</dt><dd><span id="titanArmedBadge" class="status-pill muted">---</span></dd></div>
+                <div><dt data-i18n="titan.label.sensor">Sensor</dt><dd><span id="titanSensorBadge" class="status-pill muted">---</span></dd></div>
+                <div><dt data-i18n="titan.label.updated">Stand</dt><dd><span id="titanUpdated" class="mono fs-xs">---</span></dd></div>
+              </dl>
+            </div>
+            <div class="titan-hero-actions">
+              <button id="titanRefresh" class="button button-quiet" type="button" data-i18n="titan.action.refresh">Aktualisieren</button>
+              <button id="titanPolicyOpen" class="button button-primary" type="button" data-i18n="titan.action.configurePolicy" disabled>Owner Policy</button>
+            </div>
+          </div>
+
+          <div id="titanNotice" class="titan-notice" role="status" aria-live="polite" hidden>
+            <div class="titan-notice-copy">
+              <strong id="titanNoticeTitle" data-i18n="titan.notice.unavailableTitle">Titan ist nicht verfügbar</strong>
+              <p id="titanNoticeBody" data-i18n="titan.notice.unavailableBody">Die Control Plane liefert keine Titan-Daten. Es werden keine Ersatzwerte, keine erfundenen Objekte und keine Urheberzuschreibung angezeigt.</p>
+            </div>
+            <button id="titanNoticeRetry" class="button button-quiet" type="button" data-i18n="titan.action.retry">Erneut versuchen</button>
+          </div>
+
+          <div class="titan-grid">
+            <article class="glass-panel panel-padded titan-panel titan-panel-trust">
+              <div class="section-head flex-between">
+                <div>
+                  <p class="eyebrow" data-i18n="titan.section.sovereignty">SOVEREIGNTY STATUS</p>
+                  <h3 data-i18n="titan.label.trustDistribution">Trust-Verteilung</h3>
+                </div>
+                <span id="titanTrustTotal" class="status-pill muted">---</span>
+              </div>
+              <div class="titan-trust-grid">
+                <div class="titan-trust-card" data-trust="AUTHORIZED">
+                  <span class="titan-trust-label" data-i18n="titan.trust.AUTHORIZED">Autorisiert</span>
+                  <strong id="titanTrustAuthorized">---</strong>
+                  <small data-i18n="titan.trust.AUTHORIZED.desc">Innerhalb einer gültigen, eng begrenzten Freigabe.</small>
+                  <span class="titan-trust-bar"><i id="titanTrustAuthorizedBar"></i></span>
+                </div>
+                <div class="titan-trust-card" data-trust="TOLERATED">
+                  <span class="titan-trust-label" data-i18n="titan.trust.TOLERATED">Geduldet</span>
+                  <strong id="titanTrustTolerated">---</strong>
+                  <small data-i18n="titan.trust.TOLERATED.desc">Bekannte Quelle ohne konkrete Freigabe; protokolliert oder zurückgestellt.</small>
+                  <span class="titan-trust-bar"><i id="titanTrustToleratedBar"></i></span>
+                </div>
+                <div class="titan-trust-card" data-trust="UNEXPECTED">
+                  <span class="titan-trust-label" data-i18n="titan.trust.UNEXPECTED">Unerwartet</span>
+                  <strong id="titanTrustUnexpected">---</strong>
+                  <small data-i18n="titan.trust.UNEXPECTED.desc">Passt nicht zur hinterlegten Owner-Policy.</small>
+                  <span class="titan-trust-bar"><i id="titanTrustUnexpectedBar"></i></span>
+                </div>
+                <div class="titan-trust-card" data-trust="COMPROMISED">
+                  <span class="titan-trust-label" data-i18n="titan.trust.COMPROMISED">Vertrauensbruch</span>
+                  <strong id="titanTrustCompromised">---</strong>
+                  <small data-i18n="titan.trust.COMPROMISED.desc">Mehrere belastbare Signale gegen Schutzmechanismen oder Vertrauensanker.</small>
+                  <span class="titan-trust-bar"><i id="titanTrustCompromisedBar"></i></span>
+                </div>
+              </div>
+              <div class="titan-summary-strip">
+                <div><span data-i18n="titan.label.totalEvents">Ereignisse gesamt</span><strong id="titanEventsTotal">---</strong></div>
+                <div><span data-i18n="titan.label.openFindings">Offene Feststellungen</span><strong id="titanOpenFindings">---</strong></div>
+                <div><span data-i18n="titan.label.quarantine">Quarantäne</span><strong id="titanQuarantineMetric">---</strong></div>
+              </div>
+            </article>
+
+            <article class="glass-panel panel-padded titan-panel titan-panel-policy">
+              <div class="section-head">
+                <p class="eyebrow" data-i18n="titan.section.policy">OWNER POLICY</p>
+                <h3 data-i18n="titan.label.policyMode">Policy-Modus</h3>
+              </div>
+              <div class="titan-kv"><span data-i18n="titan.label.mode">Modus</span><strong id="titanPolicyMode">---</strong></div>
+              <div class="titan-kv"><span data-i18n="titan.label.armed">Bewaffnung</span><strong id="titanPolicyArmed">---</strong></div>
+              <div class="titan-kv"><span data-i18n="titan.label.autoContain">Auto-Contain</span><strong id="titanPolicyAutoContain">---</strong></div>
+              <p id="titanPolicyHint" class="fs-xs text-muted mt-sm" data-i18n="titan.policy.readOnlyHint">Die Control Plane bewertet Autorisierung, nicht Urheberschaft. Änderungen werden serverseitig validiert und sind begründungspflichtig.</p>
+            </article>
+
+            <article class="glass-panel panel-padded titan-panel titan-panel-sensor">
+              <div class="section-head">
+                <p class="eyebrow" data-i18n="titan.section.sensor">SENSOR HEALTH</p>
+                <h3 data-i18n="titan.heading.sensor">Integritätssensor</h3>
+              </div>
+              <div class="titan-kv"><span data-i18n="titan.label.sensor">Status</span><strong id="titanSensorState">---</strong></div>
+              <div class="titan-kv"><span data-i18n="titan.label.lastObservation">Letzte Beobachtung</span><strong id="titanSensorLast" class="mono">---</strong></div>
+              <p id="titanSensorError" class="titan-inline-warning" hidden></p>
+            </article>
+
+            <article class="glass-panel panel-padded titan-panel titan-panel-corr">
+              <div class="section-head">
+                <p class="eyebrow" data-i18n="titan.section.correlation">CORRELATION QUALITY</p>
+                <h3 data-i18n="titan.label.correlation">Korrelationsgüte</h3>
+              </div>
+              <div class="titan-corr-grid">
+                <div><span data-i18n="titan.label.correlationObserved">Direkt belegt</span><strong id="titanCorrObserved">---</strong></div>
+                <div><span data-i18n="titan.label.correlationTemporal">Zeitlich korreliert</span><strong id="titanCorrTemporal">---</strong></div>
+                <div><span data-i18n="titan.label.correlationNone">Unbekannt</span><strong id="titanCorrNone">---</strong></div>
+              </div>
+              <p class="fs-xs text-muted mt-sm" data-i18n="titan.heading.correlationSub">Titan kennzeichnet belegte, lediglich zeitliche und unbekannte Zusammenhänge getrennt. Hypothesen werden nicht als Tatsachen dargestellt.</p>
+            </article>
+          </div>
+
+          <article class="glass-panel panel-padded titan-panel titan-panel-events mt-lg">
+            <div class="section-head flex-between">
+              <div>
+                <p class="eyebrow" data-i18n="titan.section.events">INGRESS TIMELINE</p>
+                <h3 data-i18n="titan.heading.events">Neueste Integritätsereignisse</h3>
+                <p class="fs-xs text-muted" data-i18n="titan.heading.eventsSub">Neueste zuerst. Die Liste ist serverseitig begrenzt und wird nur seitenweise nachgeladen.</p>
+              </div>
+              <span id="titanEventCount" class="status-pill muted">---</span>
+            </div>
+            <div id="titanEventsNotice" class="titan-inline-warning" role="status" hidden></div>
+            <p class="titan-table-hint fs-xs text-muted" data-i18n="titan.table.scrollHint">Horizontal scrollbar für weitere Spalten.</p>
+            <div class="table-wrap titan-table-wrap" tabindex="0" role="region" data-i18n-aria="titan.section.events">
+              <table class="titan-table titan-events-table">
+                <thead>
+                  <tr>
+                    <th data-i18n="titan.event.time">Zeit</th>
+                    <th data-i18n="titan.event.path">Pfad</th>
+                    <th data-i18n="titan.event.change">Änderung</th>
+                    <th data-i18n="titan.event.trust">Trust</th>
+                    <th data-i18n="titan.event.authorization">Autorisierung</th>
+                    <th data-i18n="titan.event.correlation">Korrelation</th>
+                    <th data-i18n="titan.event.response">Reaktion</th>
+                    <th data-i18n="titan.event.severity">Schwere</th>
+                    <th data-i18n="titan.event.sensor">Sensor</th>
+                    <th data-i18n="titan.event.actions">Aktionen</th>
+                  </tr>
+                </thead>
+                <tbody id="titanEventRows"></tbody>
+              </table>
+            </div>
+            <div class="titan-events-footer">
+              <span id="titanEventsInfo" class="fs-xs text-muted">---</span>
+              <div class="flex-row-wrap gap-sm">
+                <button id="titanEventsReset" class="button button-quiet" type="button" data-i18n="titan.action.reset">Neueste laden</button>
+                <button id="titanLoadMore" class="button button-secondary" type="button" data-i18n="titan.action.loadMore" hidden>Weitere Ereignisse</button>
+              </div>
+            </div>
+            <p class="fs-xs text-muted titan-note" data-i18n="titan.events.attributionNote">Titan bewertet Autorisierung, Herkunft und Korrelationsqualität. Es benennt keine Behörde, Person oder Organisation, sofern dafür keine eigenständigen Belege vorliegen.</p>
+          </article>
+
+          <article class="glass-panel panel-padded titan-panel mt-lg">
+            <div class="section-head flex-between">
+              <div>
+                <p class="eyebrow" data-i18n="titan.section.quarantine">QUARANTINE VAULT</p>
+                <h3 data-i18n="titan.heading.quarantine">Gesicherte Objekte</h3>
+                <p class="fs-xs text-muted" data-i18n="titan.heading.quarantineSub">Nur tatsächlich gesicherte Objekte mit überprüfbaren Hashes und Originalpfad. Keine erfundenen Einträge.</p>
+              </div>
+              <span id="titanQuarantineCount" class="status-pill muted">---</span>
+            </div>
+            <div id="titanQuarantineNotice" class="titan-inline-warning" role="status" hidden></div>
+            <p class="titan-table-hint fs-xs text-muted" data-i18n="titan.table.scrollHint">Horizontal scrollbar für weitere Spalten.</p>
+            <div class="table-wrap titan-table-wrap" tabindex="0" role="region" data-i18n-aria="titan.section.quarantine">
+              <table class="titan-table titan-quarantine-table">
+                <thead>
+                  <tr>
+                    <th data-i18n="titan.quarantine.created">Gesichert</th>
+                    <th data-i18n="titan.quarantine.event">Ereignis</th>
+                    <th data-i18n="titan.quarantine.path">Originalpfad</th>
+                    <th data-i18n="titan.quarantine.hash">SHA-256</th>
+                    <th data-i18n="titan.quarantine.state">Status</th>
+                  </tr>
+                </thead>
+                <tbody id="titanQuarantineRows"></tbody>
+              </table>
+            </div>
+          </article>
+
+          <div class="grid-2 mt-lg titan-limits">
+            <article class="glass-panel panel-padded">
+              <p class="eyebrow" data-i18n="titan.section.limits">LIMITS &amp; HONESTY</p>
+              <h3 data-i18n="titan.heading.limits">Was sichtbar sein muss</h3>
+              <p class="fs-sm text-muted" data-i18n="titan.heading.limitsSub">Fehlende Telemetrie, nicht unterstützte Dateisysteme und fehlende Kernelkontrolle werden ausdrücklich angezeigt. Unbekannte Vorgänge gelten nicht als nachweislich harmlos.</p>
+            </article>
+            <article class="glass-panel panel-padded">
+              <p class="eyebrow" data-i18n="titan.section.evidence">EVIDENCE &amp; WITNESS</p>
+              <h3 data-i18n="titan.heading.evidence">Nachweisgrenze</h3>
+              <p class="fs-sm text-muted" data-i18n="titan.heading.evidenceSub">Titan zeigt beobachtete technische Fakten, Autorisierungsstatus und Korrelationsgüte. Eine unabhängige Witness- oder Evidenzexport-Fläche benötigt eigene Control-Plane-Endpunkte und wird hier nicht simuliert.</p>
+            </article>
+          </div>
+        </section>
+
+        <!-- 3. APPLICATION DEFENSE (L7) VIEW -->
+        <section class="view" data-page="l7" aria-labelledby="l7Heading" hidden>
+          <h2 id="l7Heading" class="sr-only" data-i18n="nav.applicationDefense">Application Defense</h2>
+          <div class="view-context-bar">
+            <p class="view-context-desc" data-i18n="l7.description">
+              Native L7-Inspektion für HTTP-Traffic mit integrierter XDR-Korrelation – ohne Fremd-Runtimes.
+            </p>
+            <div class="view-context-actions">
+              <span id="l7StatusEnginePill" class="status-pill good">HEALTHY</span>
+            </div>
+          </div>
+
+          <div id="l7EffectiveBanner" class="banner-l7-effective glass-panel">
+            <div>
+              <strong id="l7EffectiveTitle" class="fs-base text-bright" data-i18n="l7.effective.title">Effektives Blockieren: DEAKTIVIERT (Observe Modus)</strong>
+              <p id="l7EffectiveDesc" class="m-0 fs-xs text-muted" data-i18n="l7.effective.observe">L7-Engine ist im reinen Überwachungsmodus (Observe) konfiguriert.</p>
+            </div>
+            <span id="l7EffectivePill" class="status-pill warn">OBSERVE</span>
+          </div>
+
+          <div class="defense-telemetry" aria-label="Application-Defense-Telemetrie">
+            <div class="telemetry-group">
+              <h3 class="telemetry-title">Traffic</h3>
+              <dl class="telemetry-list">
+                <div class="telemetry-row">
+                  <dt data-i18n="l7.kpi.inspected">Geprüfte Requests</dt>
+                  <dd id="l7KpiInspected" class="font-mono">0</dd>
+                </div>
+                <div class="telemetry-row">
+                  <dt data-i18n="l7.kpi.rateLimited">Rate-limited</dt>
+                  <dd id="l7KpiRateLimited" class="font-mono">0</dd>
+                </div>
+                <div class="telemetry-row">
+                  <dt data-i18n="l7.kpi.rejected">Verworfen</dt>
+                  <dd id="l7KpiRejected" class="font-mono">0</dd>
+                </div>
+              </dl>
+              <p class="telemetry-note" data-i18n="l7.kpi.trafficNote">Rate-Limiting und fehlformatierte Streams werden am Edge abgewiesen.</p>
+            </div>
+
+            <div class="telemetry-group">
+              <h3 class="telemetry-title">Urteil</h3>
+              <dl class="telemetry-list">
+                <div class="telemetry-row">
+                  <dt data-i18n="l7.kpi.findings">Erkannte Bedrohungen</dt>
+                  <dd id="l7KpiFindings" class="font-mono">0</dd>
+                </div>
+                <div class="telemetry-row">
+                  <dt data-i18n="l7.kpi.blocked">Blockierte Requests</dt>
+                  <dd id="l7KpiBlocked" class="font-mono">0</dd>
+                </div>
+                <div class="telemetry-row">
+                  <dt data-i18n="l7.kpi.responseFindings">Response Findings</dt>
+                  <dd id="l7KpiResponseFindings" class="font-mono">0</dd>
+                </div>
+              </dl>
+              <p class="telemetry-note" data-i18n="l7.kpi.verdictNote">Erkennung, Durchsetzung und Data-Leakage-Prüfung der Antwort.</p>
+            </div>
+          </div>
+
+          <article class="glass-panel panel-padded mt-lg">
+            <div id="l7IntegrationPanel" class="l7-integration">
+              <div class="section-head">
+                <div>
+                  <p class="eyebrow" data-i18n="l7.integration.kicker">TRAFFIC PATH INTEGRATION</p>
+                  <h3 class="m-0" data-i18n="l7.integration.title">Webserver anbinden</h3>
+                  <p class="l7-integration-lead" data-i18n="l7.integration.lead">GeDefense inspiziert nur, was den Inspection-Socket erreicht. Ohne Anbindung laeuft der Web-Traffic an der Engine vorbei — unabhaengig davon, wie viele Regeln aktiv sind.</p>
+                </div>
+                <div class="l7-integration-actions">
+                  <button id="btnL7SelfTest" class="button button-quiet fs-xs" type="button" data-i18n="l7.integration.selfTest">Selbsttest ausfuehren</button>
+                  <button id="btnL7Integration" class="button button-quiet fs-xs" type="button" data-i18n="l7.integration.generate">Integration erzeugen</button>
+                </div>
+              </div>
+              <div id="l7SelfTestResult" class="l7-selftest" hidden></div>
+              <div id="l7IntegrationResult" class="l7-integration-result" hidden></div>
+            </div>
+            <div class="section-head"><p class="eyebrow" data-i18n="l7.telemetry.kicker">L7 ENGINE TELEMETRY &amp; IPC</p><h3 class="m-0" data-i18n="l7.telemetry.title">Status &amp; Konfigurationsparameter</h3></div>
+            <div class="diagnostic-grid mt-md">
+              <div class="diag-card">
+                <span class="diag-label" data-i18n="l7.status.engine">L7 ENGINE</span>
+                <div class="diag-val"><span id="l7StatusEngine">HEALTHY</span> · <span id="l7StatusMode" class="badge">OBSERVE</span></div>
+                <small class="diag-sub" data-i18n="l7.telemetry.engineDetail">Go stdlib native Engine</small>
+              </div>
+              <div class="diag-card">
+                <span class="diag-label" data-i18n="l7.status.inline">INLINE SCHUTZ</span>
+                <div class="diag-val"><span id="l7StatusInline">INACTIVE</span> <span id="l7StatusInlinePill" class="badge">EDGE PROXY</span></div>
+                <small class="diag-sub" data-i18n="l7.telemetry.inlineDetail">Transparenter HTTP Proxy</small>
+              </div>
+              <div class="diag-card">
+                <span class="diag-label" data-i18n="l7.status.socket">INSPECTION SOCKET</span>
+                <div class="diag-val font-mono fs-xs" id="l7StatusSocket">/run/vgt-gedefense-l7/inspect.sock</div>
+                <small class="diag-sub" data-i18n="l7.telemetry.socketDetail">Unix Domain IPC Socket</small>
+              </div>
+              <div class="diag-card">
+                <span class="diag-label" data-i18n="l7.kpi.active">AKTIVE VERBINDUNGEN</span>
+                <div class="diag-val" id="l7SecActiveConnections">0</div>
+                <small class="diag-sub" data-i18n="l7.telemetry.activeDetail">Parallele Stream-Prüfungen</small>
+              </div>
+              <div class="diag-card">
+                <span class="diag-label" data-i18n="l7.status.lastInspection">LETZTE INSPEKTION</span>
+                <div class="diag-val fs-sm" id="l7StatusLastInspection">---</div>
+                <small class="diag-sub" data-i18n="l7.telemetry.timeDetail">UTC Zeitstempel</small>
+              </div>
+              <div class="diag-card">
+                <span class="diag-label" data-i18n="l7.telemetry.framing">FRAMING &amp; DATA LEAKAGE</span>
+                <div class="diag-val fs-sm">UPSTREAM <span id="l7SecUpstreamErrors">0</span> · RESPONSE <span id="l7SecResponseErrors">0</span></div>
+                <small class="diag-sub" data-i18n="l7.telemetry.framingDetail">Protokoll- &amp; Datenabflussschutz</small>
+              </div>
+              <div class="diag-card">
+                <span class="diag-label" data-i18n="l7.status.trafficPath">TRAFFIC PATH</span>
+                <div class="diag-val"><span id="l7StatusTrafficPathPill" class="status-pill muted">NOT ATTACHED</span></div>
+                <small class="diag-sub" data-i18n="l7.telemetry.trafficPathDetail">Ob überhaupt ein Producer oder Inline-Listener angeschlossen ist</small>
+              </div>
+              <div class="diag-card">
+                <span class="diag-label" data-i18n="l7.status.webSurface">WEB SURFACE</span>
+                <div class="diag-val fs-sm" id="l7StatusWebSurface">NOT SCANNED</div>
+                <small class="diag-sub" id="l7StatusWebSurfaceNote" data-i18n="l7.telemetry.webSurfaceDetail">Erkannte Webserver und lauschende Ports auf diesem Host</small>
+              </div>
+              <div class="diag-card diag-card-wide" id="l7MiswiredCard" hidden>
+                <span class="diag-label" data-i18n="l7.status.miswired">INTEGRATION FEHLT</span>
+                <div class="diag-val fs-sm" id="l7MiswiredText">Web-Traffic vorhanden, aber L7 ist nicht im Pfad</div>
+                <small class="diag-sub" data-i18n="l7.telemetry.miswiredDetail">Der Webserver muss seine Requests an den Inspection-Socket bzw. den Inline-Edge übergeben.</small>
+              </div>
+              <div class="diag-card">
+                <span class="diag-label" data-i18n="l7.status.coverage">TRAFFIC COVERAGE</span>
+                <div class="diag-val"><span id="l7StatusCoveragePill" class="status-pill warn">AWAITING</span></div>
+                <small id="l7StatusCoverageReason" class="diag-sub" data-i18n="l7.telemetry.coverageDetail">Verifizierter Inspektionspfad</small>
+              </div>
+              <div class="diag-card">
+                <span class="diag-label" data-i18n="l7.status.tlsPath">TLS SENSORPFAD</span>
+                <div class="diag-val"><span id="l7StatusTLSPathPill" class="status-pill warn">AWAITING</span></div>
+                <small class="diag-sub" data-i18n="l7.telemetry.tlsPathDetail">ClientHello-Telemetrie muss den Unix-Socket erreichen</small>
+              </div>
+              <div class="diag-card">
+                <span class="diag-label" data-i18n="l7.status.tlsHandshakes">TLS HANDSHAKES</span>
+                <div class="diag-val"><span id="l7StatusTLSHandshakes">0</span></div>
+                <small class="diag-sub"><span data-i18n="l7.telemetry.tlsHandshakesDetail">Letzter verifizierter Handshake:</span> <span id="l7StatusTLSLastHandshake">---</span></small>
+              </div>
+              <div class="diag-card">
+                <span class="diag-label" data-i18n="l7.status.tlsFingerprints">TLS FINGERPRINT SET</span>
+                <div class="diag-val fs-sm" id="l7StatusTLSFingerprint">---</div>
+                <small class="diag-sub" data-i18n="l7.telemetry.tlsFingerprintDetail">Lokale JA3-Signaturen und Strukturprofile</small>
+              </div>
+            </div>
+          </article>
+
+          <article class="glass-panel panel-padded mt-lg">
+            <div class="section-head flex-between">
+              <div>
+                <p class="eyebrow" data-i18n="l7.categories.title">THREAT VECTORS</p>
+                <h3 class="m-0" data-i18n="l7.categories.title">Identifizierte Angriffskategorien</h3>
+              </div>
+            </div>
+            <div id="l7CategoryPills" class="flex-row-wrap gap-sm mt-md"></div>
+          </article>
+
+          <article class="glass-panel panel-padded mt-lg">
+            <div class="section-head flex-between">
+              <div>
+                <p class="eyebrow" data-i18n="l7.findings.title">INSPECTED TRAFFIC FINDINGS</p>
+                <h3 id="l7Findings" class="m-0" data-i18n="l7.findings.title">Erkannte L7-Vorfälle</h3>
+              </div>
+            </div>
+            <div class="table-wrap mt-md">
+              <table>
+                <thead>
+                  <tr>
+                    <th data-i18n="table.time">Zeit</th>
+                    <th data-i18n="table.severity">Severity</th>
+                    <th data-i18n="table.score">Score</th>
+                    <th data-i18n="table.target">Methode &amp; Pfad</th>
+                    <th data-i18n="table.source">Client-IP</th>
+                    <th data-i18n="settings.category">Kategorie</th>
+                    <th data-i18n="table.action">Aktion</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="l7FindingsTableBody"></tbody>
+              </table>
+            </div>
+          </article>
+        </section>
+
+        <!-- 4. HARDENING VIEW -->
+        <section class="view" data-page="hardening" aria-labelledby="hardeningCenterHeading" hidden>
+          <div class="view-context-bar">
+            <div class="flex-col">
+              <p class="eyebrow m-0" data-i18n="hardening.kicker">GEDEFENSE HARDENING CENTER</p>
+              <h2 id="hardeningCenterHeading" class="m-0 fs-xl" data-i18n="hardening.heading">Systemhärtung</h2>
+              <p class="view-context-desc" data-i18n="hardening.viewDescription">GeDefense misst den echten Systemzustand und führt Änderungen ausschließlich als prüfbare, reversible Sicherheitstransaktionen aus.</p>
+            </div>
+            <div class="view-context-actions">
+              <span id="hardeningLevel" class="status-pill warn" data-i18n="dynamic.checking">WIRD GEPRÜFT</span>
+            </div>
+          </div>
+
+          <div class="grid-2">
+            <article class="glass-panel panel-padded flex-row gap-lg">
+              <div class="hardening-score-ring" id="hardeningScoreRing">
+                <span id="hardeningScore">0</span>
+              </div>
+              <div class="flex-col gap-xs">
+                <span class="eyebrow" data-i18n="hardening.postureKicker">LOKALE SCHUTZLAGE</span>
+                <h3 id="hardeningScoreTitle" class="m-0 fs-lg" data-i18n="hardening.analysisRunning">Analyse läuft</h3>
+              <!-- The score is computed only from the controls that could be read, so the
+                   basis is stated beside it. A level without its coverage invites the
+                   reader to assume the whole catalogue was measured. -->
+              <p id="hardeningCoverage" class="hardening-coverage"></p>
+                <small id="hardeningCollected" class="text-muted fs-xs" data-i18n="hardening.noMeasurement">Noch keine Messung</small>
+              </div>
+            </article>
+
+            <article class="glass-panel panel-padded">
+              <span class="eyebrow" data-i18n="hardening.pipelineKicker">ZERO-TRUST APPLY PIPELINE</span>
+              <h3 class="m-0 fs-base mt-xs" data-i18n="hardening.pipelineTitle">Auswahl → Vorschau → Bestätigung → Verifikation</h3>
+              <p class="fs-xs text-muted mt-xs" data-i18n="hardening.pipelineDescription">Jede aktivierte Kontrolle wird durch den privilegierten Rust-Core per authentifiziertem IPC gesetzt. Compare-and-Set verhindert konkurrierende Änderungen; der Vorzustand bleibt für Rollback erhalten.</p>
+            </article>
+          </div>
+
+          <article class="glass-panel panel-padded mt-lg" id="kernelAdvisoryPanel">
+  <div class="section-head flex-between">
+    <div>
+      <p class="eyebrow" data-i18n="advisory.kicker">KERNEL ADVISORY</p>
+      <h3 class="m-0" data-i18n="advisory.title">Kernel-Risiko und Gegenmassnahmen</h3>
+    </div>
+    <span id="kernExposureGrade" class="status-pill muted">-</span>
+  </div>
+  <div class="flex-row gap-lg wrap mt-md">
+    <div><span class="fs-xs text-muted d-block" data-i18n="advisory.score">Risiko</span><strong id="kernExposureScore">-</strong></div>
+    <div><span class="fs-xs text-muted d-block" data-i18n="advisory.verdict">Bewertung</span><strong id="kernExposureVerdict">-</strong></div>
+    <div><span class="fs-xs text-muted d-block" data-i18n="advisory.channel">Kernel/Channel</span><strong id="kernExposureKernel">-</strong></div>
+    <div><span class="fs-xs text-muted d-block" data-i18n="advisory.mitigation">Gegenmassnahme</span><strong id="kernMitigationState">-</strong></div>
+  </div>
+  <p id="kernExposureSummary" class="fs-xs text-muted mt-sm"></p>
+  <ul id="kernAdvisoryList" class="fs-xs mt-sm"></ul>
+  <div class="flex-row gap-sm mt-sm">
+    <button id="kernMitigationPlan" class="button button-quiet" type="button" data-i18n="advisory.plan">Eingriff pruefen</button>
+    <button id="kernMitigationApply" class="button button-primary" type="button" data-i18n="advisory.apply">Eingreifen</button>
+    <button id="kernMitigationRollback" class="button button-quiet" type="button" data-i18n="advisory.rollback">Zuruecknehmen</button>
+  </div>
+  <p id="kernMitigationDetail" class="fs-xs text-muted mt-xs"></p>
+</article>
+
+<article class="glass-panel panel-padded mt-lg">
+            <div class="section-head flex-between">
+              <div>
+                <p class="eyebrow" data-i18n="hardening.controlsKicker">MODULAR HARDENING CONTROLS</p>
+                <h3 class="m-0" data-i18n="hardening.selectControls">Schutzmaßnahmen auswählen</h3>
+              </div>
+              <span id="hardeningSelectionCount" class="status-pill muted">0</span>
+            </div>
+            <form id="hardeningSwitchForm" class="mt-md">
+              <div id="hardeningSwitches" class="hardening-switches" aria-live="polite"></div>
+              <div class="hardening-savebar flex-between-wrap gap-md mt-md">
+                <label class="flex-1">
+                  <span class="fs-xs text-muted d-block mb-xs" data-i18n="hardening.auditReason">Begründung für das Audit-Log</span>
+                  <input id="hardeningReason" autocomplete="off" maxlength="240" required placeholder="Ausgewählte Schutzmaßnahmen aktivieren">
+                </label>
+                <button class="button button-primary" type="submit" data-i18n="hardening.preflightSelection">Auswahl sicher vorprüfen</button>
+              </div>
+            </form>
+          </article>
+
+          <div id="hardeningDomains" class="hardening-domains-grid" aria-live="polite"></div>
+
+          <article class="glass-panel panel-padded mt-lg">
+            <div class="section-head flex-between">
+              <div>
+                <p class="eyebrow" data-i18n="hardening.inventoryKicker">CONTROL INVENTORY</p>
+                <h3 id="hardeningInventory" class="m-0" data-i18n="hardening.inventoryTitle">Schutzmaßnahmen und Empfehlungen</h3>
+              </div>
+              <button id="refreshHardening" class="button button-quiet" type="button" data-i18n="hardening.refresh">Neu prüfen</button>
+            </div>
+            <div class="table-wrap mt-md">
+              <table>
+                <thead><tr><th data-i18n="hardening.table.domain">Bereich</th><th data-i18n="hardening.table.control">Schutzmaßnahme</th><th data-i18n="table.status">Status</th><th data-i18n="hardening.table.value">Messwert</th><th data-i18n="hardening.table.recommendation">Empfehlung</th></tr></thead>
+                <tbody id="hardeningChecks"></tbody>
+              </table>
+            </div>
+          </article>
+
+          <article class="glass-panel panel-padded mt-lg">
+            <div class="section-head flex-between">
+              <div>
+                <p class="eyebrow" data-i18n="hardening.transactionsKicker">DURABLE SECURITY TRANSACTIONS</p>
+                <h3 id="hardeningTransactions" class="m-0" data-i18n="hardening.transactionsTitle">Sicherheitstransaktionen</h3>
+              </div>
+              <span id="transactionHealth" class="status-pill warn" data-i18n="dynamic.initializing">INITIALISIERUNG</span>
+            </div>
+            <div id="transactionSelection" class="banner-transaction-active" hidden>
+              <div class="fs-xs"><span data-i18n="hardening.selectedTransaction">Ausgewählte Transaktion</span>: <code id="selectedTransactionID" class="text-cyan">---</code></div>
+              <pre id="selectedTransactionPlan" class="transaction-plan-viewer" aria-label="Transaktionsplan"></pre>
+              <form id="transactionExecuteForm" class="flex-row gap-md mt-sm">
+                <label class="flex-1">
+                  <span class="sr-only" data-i18n="hardening.confirmation">Exakte Bestätigung</span>
+                  <input id="transactionConfirmation" class="mono" autocomplete="off" spellcheck="false" maxlength="128" placeholder="Bestätigung eingeben" required>
+                </label>
+                <button id="transactionExecute" class="button button-danger" type="submit" data-i18n="hardening.execute">Transaktion ausführen</button>
+              </form>
+            </div>
+            <div class="table-wrap mt-md">
+              <table>
+                <thead><tr><th data-i18n="table.id">ID</th><th data-i18n="table.type">Typ</th><th data-i18n="table.summary">Zusammenfassung</th><th data-i18n="table.status">Status</th><th data-i18n="table.time">Zeit</th><th></th></tr></thead>
+                <tbody id="transactionRows"></tbody>
+              </table>
+            </div>
+          </article>
+        </section>
+
+        <!-- 5. INTEGRITY VIEW -->
+        <section class="view" data-page="detection" aria-labelledby="detectionHeading" hidden>
+      <div class="view-context-bar">
+        <div>
+          <p class="eyebrow m-0" data-i18n="view.detection.eyebrow">ERKENNUNG NACH DEM EINBRUCH</p>
+          <h2 id="detectionHeading" class="m-0 fs-xl" data-i18n="view.detection.title">Angriffserkennung</h2>
+          <p class="view-context-desc" data-i18n="view.detection.description">Was nach einem Einbruch passiert, unabhängig davon, welches Produkt die Eintrittstür war: Protokolle löschen, Zugangsdaten abgreifen, Tunnelwerkzeuge starten, Persistenz anlegen. Jede Regel ist einzeln schaltbar und an den eigenen Host anpassbar.</p>
+        </div>
+        <div class="view-context-actions">
+          <span id="detectionSurfaceBadge" class="status-pill muted">---</span>
+        </div>
+      </div>
+
+      <article class="glass-panel panel-padded mt-lg">
+<div class="section-head">
+<p class="eyebrow" data-i18n="detection.panelKicker">DETECTION SURFACES</p>
+<h3 class="m-0" data-i18n="detection.panelTitle">Wo GeDefense Angriffe sieht</h3>
+</div>
+<p class="fs-xs text-muted mt-xs" data-i18n="detection.panelBody">Erkennung entsteht an drei Orten: im Paketpfad (Kinetic), in der Anwendungsschicht (L7) und nach dem Einbruch (XDR). Jede Flaeche hat ihre eigene Ansicht mit den Filtern und Massnahmen, die zu ihr gehoeren - die Regel selbst bleibt hier zentral schaltbar.</p>
+<div class="detection-links mt-md">
+<button type="button" data-nav="xdr"><strong data-i18n="view.xdr.title">GeDefense XDR</strong><small data-i18n="detection.xdrNote">Korrelierte Incidents, Scores und Antwortaktionen.</small></button>
+<button type="button" data-nav="l7"><strong data-i18n="view.l7.title">Application Defense</strong><small data-i18n="detection.l7Note">Aktuelle L7-Befunde und Inline-Pruefung.</small></button>
+<button type="button" data-nav="network"><strong data-i18n="view.network.title">Netzwerk</strong><small data-i18n="detection.networkNote">Blockregeln, Allowlist und Paketpfad.</small></button>
+</div>
+</article>
+    </section>
+
+    <section class="view" data-page="integrity" aria-labelledby="integrityHeading" hidden>
+          <div class="view-context-bar">
+            <div>
+              <p class="eyebrow m-0" data-i18n="view.integrity.eyebrow">INTEGRITY &amp; EVIDENCE</p>
+              <h2 id="integrityHeading" class="m-0 fs-xl" data-i18n="view.integrity.title">Integrität</h2>
+              <p class="view-context-desc" data-i18n="integrity.description">Dateiintegrität und die verschlüsselte, signierte Beweiskette werden getrennt überwacht und gemeinsam korreliert.</p>
+            </div>
+            <div class="view-context-actions">
+              <span id="integrityHealth" class="status-pill warn" data-i18n="dynamic.checking">WIRD GEPRÜFT</span>
+            </div>
+          </div>
+
+          <div class="grid-2">
+            <article class="glass-panel panel-padded">
+              <div class="section-head flex-between">
+                <div>
+                  <p class="eyebrow" data-i18n="fim.kicker">FILE INTEGRITY MONITOR</p>
+                  <h3 class="m-0" data-i18n="fim.baseline">FIM Baseline</h3>
+                </div>
+                <span id="fimHealth" class="status-pill muted">---</span>
+              </div>
+              <div class="grid-3 mt-md">
+                <div><span class="fs-xs text-muted" data-i18n="common.files">Dateien</span><strong id="fimBaselineCount" class="fs-lg text-bright d-block">0</strong></div>
+                <div><span class="fs-xs text-muted" data-i18n="policy.generation">Generation</span><strong id="fimGeneration" class="fs-lg text-bright d-block">0</strong></div>
+                <div><span class="fs-xs text-muted" data-i18n="common.deviations">Abweichungen</span><strong id="fimFindings" class="fs-lg text-amber d-block">0</strong></div>
+              </div>
+              <p id="fimRoots" class="fs-xs text-muted mt-sm font-mono text-break" data-i18n="fim.noPaths">Keine Pfade geladen</p>
+              <div class="flex-row gap-sm mt-md">
+                <button id="fimScan" class="button button-primary" type="button" data-i18n="fim.scanNow">Jetzt prüfen</button>
+                <button id="fimBaseline" class="button button-quiet" type="button" data-i18n="fim.rebuildBaseline">Baseline neu erstellen</button>
+              </div>
+            </article>
+
+            <article class="glass-panel panel-padded">
+              <div class="section-head flex-between">
+                <div>
+                  <p class="eyebrow" data-i18n="evidence.kicker">SIGNED EVIDENCE LEDGER</p>
+                  <h3 class="m-0" data-i18n="evidence.chain">Beweiskette</h3>
+                </div>
+                <span id="evidenceHealth" class="status-pill muted">---</span>
+              </div>
+              <!-- A full ledger refuses every operator mutation, so the panel that reports
+                   it has to carry the remedy as well. The budget lives in the Integrity
+                   namespace and that path is exempt from the evidence gate, so the route
+                   below works while the ledger is full. -->
+              <div id="evidenceFullNotice" class="evidence-full-notice" hidden>
+                <strong data-i18n="evidence.fullTitle">Retention-Budget erreicht</strong>
+                <p id="evidenceFullDetail"></p>
+                <p class="evidence-full-action" data-i18n="evidence.fullAction">Erhöhe das Budget unter Einstellungen → Integrity (max_bytes) oder rotiere das Ledger. Solange das Budget erreicht ist, wird jede Änderung abgelehnt, damit keine Handlung ohne Audit-Eintrag stattfindet.</p>
+              </div>
+              <div class="grid-3 mt-md">
+                <div><span class="fs-xs text-muted" data-i18n="evidence.records">Records</span><strong id="evidenceRecords" class="fs-lg text-bright d-block">0</strong></div>
+                <div><span class="fs-xs text-muted" data-i18n="evidence.storage">Speicher</span><strong id="evidenceBytes" class="fs-lg text-bright d-block">0 B</strong></div>
+                <div><span class="fs-xs text-muted" data-i18n="evidence.head">Head</span><strong id="evidenceHead" class="fs-sm font-mono text-cyan d-block">---</strong></div>
+              </div>
+              <p id="evidenceKey" class="fs-xs text-muted mt-sm font-mono text-break" data-i18n="dynamic.noSigner">Signer nicht geladen</p>
+              <div class="mt-md">
+                <button id="evidenceVerify" class="button button-primary" type="button" data-i18n="evidence.verify">Kette kryptografisch prüfen</button>
+              </div>
+            </article>
+          </div>
+
+          <article class="glass-panel panel-padded mt-lg">
+            <div class="section-head flex-between">
+              <div>
+                <p class="eyebrow" data-i18n="malware.kicker">ON-ACCESS MALWARE DEFENSE</p>
+                <h3 class="m-0" data-i18n="malware.title">Ausführungsschutz &amp; Inhaltsprüfung</h3>
+              </div>
+              <span id="malwareProtectionHealth" class="status-pill warn" data-i18n="dynamic.checking">WIRD GEPRÜFT</span>
+            </div>
+            <div class="grid-3 mt-md">
+              <div><span class="fs-xs text-muted" data-i18n="malware.runtimeGuard">Runtime Guard</span><strong id="malwareRuntime" class="fs-sm text-bright d-block">---</strong></div>
+              <div><span class="fs-xs text-muted" data-i18n="malware.signatureTrust">Signaturvertrauen</span><strong id="malwareSignatures" class="fs-sm text-bright d-block">---</strong></div>
+              <div><span class="fs-xs text-muted" data-i18n="malware.browserRelease">Browserfreigabe</span><strong id="malwareReleaseGate" class="fs-sm text-bright d-block">---</strong></div>
+            </div>
+            <p id="malwareProtectionDetail" class="fs-xs text-muted mt-sm" data-i18n="malware.detail">Fanotify-, Signatur- und Browserfreigabestatus werden aus der aktuellen Core-Evidenz geladen.</p>
+            <form id="malwareScanForm" class="flex-row-wrap gap-md mt-md">
+              <label class="flex-1">
+                <span class="fs-xs text-muted d-block mb-xs" data-i18n="malware.pathHint">Absolute Datei im erlaubten Benutzerpfad</span>
+                <input id="malwareScanPath" name="path" type="text" maxlength="2048" required autocomplete="off" spellcheck="false" placeholder="/home/benutzer/Downloads/datei.bin">
+              </label>
+              <button class="button button-primary items-end" type="submit" data-i18n="malware.scanFile">Datei prüfen</button>
+            </form>
+            <div class="glass-panel panel-padded-sm mt-md">
+              <div class="flex-between mb-sm">
+                <span class="fs-xs text-muted" data-i18n="malware.lastVerdict">Letztes manuelles Verdict</span>
+                <span id="malwareScanState" class="status-pill muted" data-i18n="dynamic.noResult">KEIN ERGEBNIS</span>
+              </div>
+              <div class="grid-3 fs-xs">
+                <div><span class="text-muted" data-i18n="common.pathColon">Pfad:</span> <strong id="malwareResultPath" class="font-mono text-break">---</strong></div>
+                <div><span class="text-muted" data-i18n="common.typeColon">Typ:</span> <strong id="malwareResultType">---</strong></div>
+                <div><span class="text-muted" data-i18n="common.sizeColon">Größe:</span> <strong id="malwareResultSize">---</strong></div>
+                <div><span class="text-muted" data-i18n="common.reasonColon">Grund:</span> <strong id="malwareResultReason">---</strong></div>
+                <div class="col-span-2"><span class="text-muted">SHA-256:</span> <strong id="malwareResultHash" class="font-mono text-break">---</strong></div>
+              </div>
+            </div>
+          </article>
+
+          <article class="glass-panel panel-padded mt-lg">
+            <div class="section-head flex-between">
+              <div>
+                <p class="eyebrow" data-i18n="package.kicker">PACMAN TRUST DATABASE</p>
+                <h3 class="m-0" data-i18n="package.title">Paketintegrität</h3>
+              </div>
+              <span id="packageIntegrityHealth" class="status-pill muted">---</span>
+            </div>
+            <div class="grid-3 mt-md">
+              <div><span class="fs-xs text-muted" data-i18n="package.packages">Pakete</span><strong id="packageIntegrityPackages" class="fs-lg text-bright d-block">0</strong></div>
+              <div><span class="fs-xs text-muted" data-i18n="common.files">Dateien</span><strong id="packageIntegrityFiles" class="fs-lg text-bright d-block">0</strong></div>
+              <div><span class="fs-xs text-muted" data-i18n="common.deviations">Abweichungen</span><strong id="packageIntegrityDeviations" class="fs-lg text-amber d-block">0</strong></div>
+            </div>
+            <p id="packageIntegrityDetail" class="fs-xs text-muted mt-sm" data-i18n="package.detail">Pacman-MTREE-Vertrauensbasis</p>
+            <div class="mt-md">
+              <button id="packageIntegrityScan" class="button button-primary" type="button" data-i18n="package.scan">Pakete prüfen</button>
+            </div>
+            <div class="table-wrap mt-md">
+              <table>
+                <thead><tr><th data-i18n="table.status">Status</th><th data-i18n="table.package">Paket</th><th data-i18n="table.path">Pfad</th></tr></thead>
+                <tbody id="packageIntegrityRows"></tbody>
+              </table>
+            </div>
+          </article>
+
+          <div class="grid-2 mt-lg">
+            <article class="glass-panel panel-padded">
+              <div class="section-head"><p class="eyebrow" data-i18n="fim.findingsKicker">FIM FINDINGS</p><h3 class="m-0" data-i18n="fim.recentFindings">Letzte Dateiabweichungen</h3></div>
+              <div class="table-wrap mt-md">
+                <table>
+                  <thead><tr><th data-i18n="table.status">Status</th><th data-i18n="table.path">Pfad</th><th data-i18n="table.size">Größe</th><th data-i18n="table.mode">Modus</th><th data-i18n="table.details">Details</th></tr></thead>
+                  <tbody id="fimRows"></tbody>
+                </table>
+              </div>
+            </article>
+
+            <article class="glass-panel panel-padded">
+              <div class="section-head"><p class="eyebrow" data-i18n="evidence.recordsKicker">EVIDENCE RECORDS</p><h3 class="m-0" data-i18n="evidence.events">Authentifizierte Ereignisse</h3></div>
+              <div class="table-wrap mt-md">
+                <table>
+                  <thead><tr><th data-i18n="table.sequence">Sequenz</th><th data-i18n="table.time">Zeit</th><th data-i18n="table.severity">Severity</th><th data-i18n="table.type">Typ</th><th data-i18n="table.source">Quelle</th><th data-i18n="table.message">Nachricht</th></tr></thead>
+                  <tbody id="evidenceRows"></tbody>
+                </table>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <!-- 6. BOOT TRUST VIEW -->
+        <section class="view" data-page="boot" aria-labelledby="bootHeading" hidden>
+          <div class="view-context-bar">
+            <div>
+              <p class="eyebrow m-0" data-i18n="view.boot.eyebrow">MEASURED BOOT POSTURE</p>
+              <h2 id="bootHeading" class="m-0 fs-xl" data-i18n="view.boot.title">Boot Trust</h2>
+              <p class="view-context-desc" data-i18n="boot.description">Secure Boot, Kernel Lockdown, TPM, Kernelargumente und Gaia-Cells-Basis werden als lokale Evidenz bewertet – ohne Remote-Attestierung vorzutäuschen.</p>
+            </div>
+            <div class="view-context-actions">
+              <span id="bootClaim" class="status-pill warn">EVIDENCE ONLY</span>
+            </div>
+          </div>
+
+          <div class="grid-3">
+            <article class="glass-panel panel-padded">
+              <span class="eyebrow" data-i18n="boot.platform">PLATTFORM</span>
+              <strong id="bootPlatform" class="fs-lg text-bright mt-xs d-block">---</strong>
+              <small id="bootDistro" class="text-muted fs-xs">---</small>
+            </article>
+            <article class="glass-panel panel-padded">
+              <span class="eyebrow" data-i18n="boot.astraeaos">ASTRAEAOS</span>
+              <strong id="bootGaia" class="fs-lg text-cyan mt-xs d-block">---</strong>
+              <small id="bootVersion" class="text-muted fs-xs">---</small>
+            </article>
+            <article class="glass-panel panel-padded">
+              <span class="eyebrow" data-i18n="table.summary">ZUSAMMENFASSUNG</span>
+              <strong id="bootSummary" class="fs-base text-bright mt-xs d-block">---</strong>
+              <small id="bootGenerated" class="text-muted fs-xs">---</small>
+            </article>
+          </div>
+
+          <article class="glass-panel panel-padded mt-lg">
+            <div class="section-head flex-between">
+              <div>
+                <p class="eyebrow" data-i18n="boot.evidenceKicker">BOOT EVIDENCE</p>
+                <h3 class="m-0" data-i18n="boot.anchors">Gemessene Vertrauensanker</h3>
+              </div>
+              <button id="refreshBoot" class="button button-quiet" type="button" data-i18n="boot.refresh">Neu messen</button>
+            </div>
+            <div id="bootEvidence" class="table-wrap mt-md">
+              <table>
+                <thead><tr><th data-i18n="boot.control">Kontrolle</th><th data-i18n="table.status">Status</th><th data-i18n="table.summary">Zusammenfassung</th><th data-i18n="table.source">Quelle</th><th data-i18n="boot.digestEvidence">Digest / Evidenz</th></tr></thead>
+                <tbody id="bootRows"></tbody>
+              </table>
+            </div>
+          </article>
+        </section>
+
+        <!-- 7. GEDEFENSE XDR VIEW -->
+        <section class="view" data-page="xdr" aria-labelledby="xdrHeading" hidden>
+          <div class="view-context-bar">
+            <div>
+              <p class="eyebrow m-0" data-i18n="xdr.kicker">CORRELATION FABRIC</p>
+              <h2 id="xdrHeading" class="m-0 fs-xl" data-i18n="nav.xdr">GeDefense XDR</h2>
+              <p class="view-context-desc" data-i18n="xdr.description">Prozess-, Netzwerk-, Herkunfts-, Integritäts- und Verhaltenssignale werden als unabhängige Kategorien bewertet.</p>
+            </div>
+            <div class="view-context-actions">
+              <span id="xdrModeBadge" class="status-pill warn">OBSERVE</span>
+            </div>
+          </div>
+
+          <div class="defense-telemetry" aria-label="XDR-Telemetrie">
+            <div class="telemetry-group">
+              <h3 class="telemetry-title">Sichtbarkeit</h3>
+              <dl class="telemetry-list">
+                <div class="telemetry-row">
+                  <dt data-i18n="xdr.processes">Überwachte Prozesse</dt>
+                  <dd id="xdrProcesses" class="font-mono">0</dd>
+                </div>
+                <div class="telemetry-row">
+                  <dt data-i18n="xdr.flows">Externe Flows</dt>
+                  <dd id="xdrConnections" class="font-mono">0</dd>
+                </div>
+                <div class="telemetry-row">
+                  <dt data-i18n="xdr.profiles">Verhaltensprofile</dt>
+                  <dd id="profileCount" class="font-mono">0</dd>
+                </div>
+              </dl>
+              <p class="telemetry-note" data-i18n="xdr.visibilityNote">PID-Identitäten und prozesskorrelierte Flows aus dem laufenden Scan.</p>
+            </div>
+
+            <div class="telemetry-group">
+              <h3 class="telemetry-title">Pipeline</h3>
+              <dl class="telemetry-list">
+                <div class="telemetry-row">
+                  <dt data-i18n="xdr.evaluations">Evaluierungen</dt>
+                  <dd id="evaluationCount" class="font-mono">0</dd>
+                </div>
+                <div class="telemetry-row">
+                  <dt data-i18n="xdr.queue">Analyse-Queue</dt>
+                  <dd id="queueDepth" class="font-mono">0 / 0</dd>
+                </div>
+                <div class="telemetry-row">
+                  <dt data-i18n="xdr.warmProfiles">Warme Profile</dt>
+                  <dd id="warmProfiles" class="font-mono">0</dd>
+                </div>
+              </dl>
+              <p id="queueDrops" class="telemetry-note">0 Drops</p>
+            </div>
+          </div>
+
+          <article id="xdrIntegrityPanel" class="glass-panel panel-padded mt-lg" hidden>
+            <div class="section-head flex-between gap-md">
+              <div>
+                <p class="eyebrow" data-i18n="xdr.integrity.kicker">INCIDENT LEDGER INTEGRITY</p>
+                <h3 class="m-0" data-i18n="xdr.integrity.title">XDR-Integrität erfordert Aufmerksamkeit</h3>
+              </div>
+              <span id="xdrIntegrityBadge" class="status-pill danger">DEGRADED</span>
+            </div>
+            <p id="xdrIntegritySummary" class="fs-sm text-muted mt-sm"></p>
+            <div class="grid-3 mt-md">
+              <div class="diag-card"><span class="diag-label" data-i18n="xdr.integrity.reason">URSACHE</span><strong id="xdrIntegrityReason" class="d-block mt-xs mono">---</strong></div>
+              <div class="diag-card"><span class="diag-label" data-i18n="xdr.integrity.record">BETROFFENER RECORD</span><strong id="xdrIntegrityRecord" class="d-block mt-xs mono">---</strong></div>
+              <div class="diag-card"><span class="diag-label" data-i18n="xdr.integrity.verified">VERIFIZIERTER PRÄFIX</span><strong id="xdrIntegrityVerified" class="d-block mt-xs mono">0</strong></div>
+            </div>
+            <div class="flex-row-wrap gap-sm mt-md">
+              <button id="verifyXDRIntegrity" class="button button-quiet" type="button" data-i18n="xdr.integrity.verify">Integrität erneut prüfen</button>
+              <button id="recoverXDRIntegrity" class="button button-danger" type="button" data-i18n="xdr.integrity.recover">XDR sicher wiederherstellen</button>
+            </div>
+          </article>
+
+          <article class="glass-panel panel-padded mt-lg">
+            <div class="section-head flex-between">
+              <div>
+                <p class="eyebrow" data-i18n="xdr.timelineKicker">INCIDENT TIMELINE</p>
+                <h3 class="m-0" data-i18n="xdr.incidents">Korrelierte Incidents</h3>
+              </div>
+              <button id="loadProfiles" class="button button-quiet" type="button" data-i18n="xdr.loadProfiles">Profile laden</button>
+            </div>
+            <div class="table-wrap mt-md">
+              <table>
+                <thead>
+                  <tr>
+                    <th data-i18n="table.time">Zeit</th>
+                    <th data-i18n="table.score">Score</th>
+                    <th data-i18n="table.process">Prozess</th>
+                    <th data-i18n="table.signals">Signale</th>
+                    <th data-i18n="table.decision">Entscheidung</th>
+                    <th data-i18n="table.result">Ergebnis</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="incidents"></tbody>
+              </table>
+            </div>
+          </article>
+
+          <article class="glass-panel panel-padded mt-lg">
+            <div class="section-head flex-between">
+              <div>
+                <p class="eyebrow" data-i18n="xdr.baselineKicker">ADAPTIVE BASELINE</p>
+                <h3 id="xdrBehavior" class="m-0" data-i18n="xdr.behavior">Verhaltensprofile</h3>
+              </div>
+              <span id="behaviorIntegrity" class="status-pill muted" data-i18n="dynamic.integrityUnknown">INTEGRITY UNKNOWN</span>
+            </div>
+            <div class="table-wrap mt-md">
+              <table>
+                <thead>
+                  <tr>
+                    <th data-i18n="table.executable">Executable</th>
+                    <th data-i18n="table.samples">Samples</th>
+                    <th data-i18n="table.avgConnections">Ø Verbindungen</th>
+                    <th data-i18n="table.avgTargets">Ø Ziele</th>
+                    <th data-i18n="table.knownPorts">Bekannte Ports</th>
+                    <th data-i18n="table.lastSignal">Letztes Signal</th>
+                  </tr>
+                </thead>
+                <tbody id="profiles"></tbody>
+              </table>
+            </div>
+          </article>
+        </section>
+
+        <!-- KINETIC DEFENSE LIVE VIEW -->
+        <section class="view" data-page="kinetic" aria-labelledby="kineticHeading" hidden>
+          <div class="view-context-bar kinetic-context-bar">
+            <div>
+              <p class="eyebrow m-0" data-i18n="kinetic.kicker">REALTIME INGRESS DEFENSE FABRIC</p>
+              <h2 id="kineticHeading" class="m-0 fs-xl" data-i18n="kinetic.heading">Kinetic Defense</h2>
+              <p class="view-context-desc" data-i18n="kinetic.description">Echtzeit-Ingress-Sensorik, Sliding-Window-Rate-Limiting, Subnetz-Aggregation und automatisches Containment mit Evidenzbindung.</p>
+            </div>
+            <div class="view-context-actions kinetic-context-actions">
+              <span id="kineticCoverageBadge" class="status-pill muted">VERIFYING</span>
+              <span id="kineticGeoBadge" class="status-pill muted">GEO OFFLINE</span>
+              <span id="kineticHistoryBadge" class="status-pill muted">HISTORY VERIFYING</span>
+              <button id="kineticReconcileBtn" class="button button-quiet" type="button" data-i18n="kinetic.reconcileBtn">Sweep & Abgleich</button>
+            </div>
+          </div>
+
+          <div class="kinetic-command-bar">
+            <div class="kinetic-verdict" role="status" aria-live="polite">
+              <span class="status-dot warning" id="kineticSensorDot"></span>
+              <div class="kinetic-verdict-body">
+                <strong id="kineticSensorSummary">Ingress-Sensor wird verifiziert</strong>
+                <span id="kineticSensorReason">Noch keine bestätigte Kernel-Telemetrie.</span>
+              </div>
+              <dl class="kinetic-verdict-meta font-mono">
+                <div><dt>MODE</dt><dd id="kineticEnforcementMode">OBSERVE</dd></div>
+                <div><dt>CAP</dt><dd id="kineticTrackingCapacity">65.536</dd></div>
+                <div><dt>VIEW</dt><dd id="kineticCurrentWindow">LIVE</dd></div>
+              </dl>
+            </div>
+
+            <div class="kinetic-command-controls" aria-label="Kinetic Live Filter">
+              <div class="kinetic-toolbar-group">
+                <span class="kinetic-toolbar-label" id="kineticWindowLabel">ZEITFENSTER</span>
+                <div class="kinetic-filter-group" role="group" aria-labelledby="kineticWindowLabel">
+                  <button class="button button-quiet active fs-xs" type="button" data-kinetic-window="live">LIVE</button>
+                  <button class="button button-quiet fs-xs" type="button" data-kinetic-window="1m">1M</button>
+                  <button class="button button-quiet fs-xs" type="button" data-kinetic-window="5m">5M</button>
+                  <button class="button button-quiet fs-xs" type="button" data-kinetic-window="15m">15M</button>
+                  <button class="button button-quiet fs-xs" type="button" data-kinetic-window="1h">1H</button>
+                  <button class="button button-quiet fs-xs" type="button" data-kinetic-window="24h">24H</button>
+                </div>
+              </div>
+              <div class="kinetic-toolbar-group">
+                <span class="kinetic-toolbar-label" id="kineticSourceLabel">QUELLEN</span>
+                <div class="kinetic-filter-group" role="group" aria-labelledby="kineticSourceLabel">
+                  <button class="button button-quiet active fs-xs" type="button" data-kinetic-state="all">ALL</button>
+                  <button class="button button-quiet fs-xs" type="button" data-kinetic-state="suspicious">SUSPICIOUS</button>
+                  <button class="button button-quiet fs-xs" type="button" data-kinetic-state="blocked">BLOCKED</button>
+                </div>
+              </div>
+              <div class="kinetic-toolbar-truth">
+                <span id="kineticWindowTruth" class="font-mono">SERVER WINDOW // LIVE</span>
+                <small id="kineticHistoryNote">Historie wird serverseitig verifiziert.</small>
+              </div>
+            </div>
+          </div>
+
+          <div class="defense-telemetry" aria-label="Kinetische Telemetrie">
+            <div class="telemetry-group">
+              <h3 class="telemetry-title">Fenster</h3>
+              <dl class="telemetry-list">
+                <div class="telemetry-row">
+                  <dt data-i18n="kinetic.kpiHits">Ingress-Pakete</dt>
+                  <dd id="kineticHitsTotal" class="font-mono">0</dd>
+                </div>
+                <div class="telemetry-row">
+                  <dt data-i18n="kinetic.kpiAttempts">Verbindungsversuche</dt>
+                  <dd id="kineticAttemptsWindow" class="font-mono">0</dd>
+                </div>
+              </dl>
+              <p class="telemetry-note" data-i18n="kinetic.kpiWindowNote">Serverseitig über das gewählte Fenster aggregiert, keine Browser-Schätzung.</p>
+            </div>
+
+            <div class="telemetry-group">
+              <h3 class="telemetry-title">Detektion</h3>
+              <dl class="telemetry-list">
+                <div class="telemetry-row">
+                  <dt data-i18n="kinetic.kpiActiveIPs">Aktive Quellen</dt>
+                  <dd id="kineticActiveTrackingIPs" class="font-mono">0</dd>
+                </div>
+                <div class="telemetry-row">
+                  <dt data-i18n="kinetic.kpiPortscans">Portscans &amp; Probes</dt>
+                  <dd id="kineticPortscans" class="font-mono">0</dd>
+                </div>
+                <div class="telemetry-row">
+                  <dt data-i18n="kinetic.kpiVelocity">SYN / Velocity Bursts</dt>
+                  <dd id="kineticVelocityBursts" class="font-mono">0</dd>
+                </div>
+                <div class="telemetry-row">
+                  <dt data-i18n="kinetic.kpiSubnets">Subnetz-Korrelationen</dt>
+                  <dd id="kineticSubnetStrikes" class="font-mono">0</dd>
+                </div>
+              </dl>
+              <p class="telemetry-note" data-i18n="kinetic.kpiDetectNote">Bounded Sliding-Window-Tracking · IPv4 /24, IPv6 /64.</p>
+            </div>
+
+            <div class="telemetry-group">
+              <h3 class="telemetry-title">Antwort</h3>
+              <dl class="telemetry-list">
+                <div class="telemetry-row">
+                  <dt data-i18n="kinetic.kpiBlocks">Blockiert</dt>
+                  <dd id="kineticActiveBlocks" class="font-mono">0</dd>
+                </div>
+                <div class="telemetry-row">
+                  <dt data-i18n="kinetic.kpiDrops">Tracking-Drops</dt>
+                  <dd id="kineticTrackingDrops" class="font-mono">0</dd>
+                </div>
+              </dl>
+              <p id="kineticTrackerPressure" class="telemetry-note">Bounded Capacity / Evictions</p>
+            </div>
+          </div>
+          <div class="kinetic-command-grid mt-md">
+            <div class="kinetic-left-stack">
+            <article class="glass-panel kinetic-map-panel">
+              <div class="section-head kinetic-panel-head">
+                <div>
+                  <p class="eyebrow">LIVE ORIGIN TELEMETRY</p>
+                  <h3 class="m-0">Globale Ingress-Karte</h3>
+                  <p class="kinetic-panel-copy">Geografische Einordnung aktiver Quellen aus der lokalen GeoIP/ASN-Datenbank. Keine Cloud-Abfrage.</p>
+                </div>
+                <div class="kinetic-map-legend" aria-label="Kartenlegende">
+                  <span><i class="kinetic-legend-dot tracking"></i> Tracking</span>
+                  <span><i class="kinetic-legend-dot suspicious"></i> Suspicious</span>
+                  <span><i class="kinetic-legend-dot blocked"></i> Blocked</span>
+                </div>
+              </div>
+
+              <div class="kinetic-world-wrap">
+                <div class="kinetic-geo-stage">
+                  <div id="kineticGeoMap" class="kinetic-geo-canvas" role="img"
+                       aria-label="Weltkarte der beobachteten Ingress-Quellen aus der lokalen GeoIP/ASN-Datenbank"></div>
+                  <div class="kinetic-geo-controls" role="group" aria-label="Kartenansicht">
+                    <button id="kineticGeoZoomIn" class="button button-quiet fs-xs kinetic-geo-zoom" type="button"
+                            aria-label="Karte vergrößern" data-i18n-aria-label="kinetic.geoZoomIn">+</button>
+                    <button id="kineticGeoZoomOut" class="button button-quiet fs-xs kinetic-geo-zoom" type="button"
+                            aria-label="Karte verkleinern" data-i18n-aria-label="kinetic.geoZoomOut">−</button>
+                  </div>
+                </div>
+                <p id="kineticGeoLayerNote" class="kinetic-geo-note font-mono"></p>
+                <div id="kineticMapEmpty" class="kinetic-map-empty" hidden>
+                  <strong>GeoIP noch nicht geladen</strong>
+                  <span>Live-Quellen werden bereits erfasst. Für die Karte lokale GeoIP/ASN-Daten unter dem konfigurierten Pfad bereitstellen.</span>
+                </div>
+              </div>
+
+              <div class="kinetic-map-footer">
+                <div><span class="text-muted">Geo DB</span><strong id="kineticGeoEntries" class="font-mono">0 Einträge</strong></div>
+                <div><span class="text-muted">Kartierbar</span><strong id="kineticGeoMappable" class="font-mono">0 Quellen</strong></div>
+                <div><span class="text-muted">Hot Country</span><strong id="kineticHotCountry" class="font-mono">---</strong></div>
+                <div><span class="text-muted">Hot Port</span><strong id="kineticHotPort" class="font-mono">---</strong></div>
+              </div>
+            </article>
+
+            <!-- Enforcement and effect.
+                 Two questions, two groups. "How is this host enforcing?" is answered by
+                 the hook the kernel actually attached, not by the mode the product
+                 intended, and by the kernel-side counters that show whether the channel
+                 is keeping up. "What has it done?" is answered by the detection and
+                 response totals the engine already keeps. The block reason is not
+                 repeated here: it belongs to the individual event and is carried in the
+                 decision column of the stream beside this panel. -->
+            <article class="glass-panel panel-padded">
+              <div class="section-head flex-between">
+                <div>
+                  <p class="eyebrow" data-i18n="kinetic.enforcementKicker">ENFORCEMENT PATH</p>
+                  <h3 class="m-0" data-i18n="kinetic.enforcementTitle">Durchsetzung und Wirkung</h3>
+                </div>
+                <span id="kineticIngressMode" class="status-pill muted" data-i18n="dynamic.checking">WIRD GEPRÜFT</span>
+              </div>
+              <p id="kineticIngressNote" class="kinetic-enforcement-note"></p>
+
+              <div class="kinetic-enforcement-grid mt-md">
+                <section class="kinetic-enforcement-group">
+                  <h4 data-i18n="kinetic.enforcement.kernel">Kernel-Pfad</h4>
+                  <dl class="kinetic-enforcement-facts" id="kineticKernelFacts"></dl>
+                </section>
+                <section class="kinetic-enforcement-group">
+                  <h4 data-i18n="kinetic.enforcement.detection">Erkennung</h4>
+                  <dl class="kinetic-enforcement-facts" id="kineticDetectionFacts"></dl>
+                </section>
+                <section class="kinetic-enforcement-group">
+                  <h4 data-i18n="kinetic.enforcement.response">Reaktion</h4>
+                  <!-- A row of zeros has two very different meanings: nothing was
+                       detected, or detection ran and the response stage was never
+                       entered. In observe mode it is always the second, and without
+                       this line the panel reads as if the engine had decided to do
+                       nothing. -->
+                  <p id="kineticResponseNote" class="kinetic-enforcement-hint"></p>
+                  <dl class="kinetic-enforcement-facts" id="kineticResponseFacts"></dl>
+                </section>
+              </div>
+            </article>
+
+            <article class="glass-panel panel-padded flex-col gap-md">
+              <div class="section-head">
+                <div>
+                  <p class="eyebrow" data-i18n="kinetic.feedKicker">LIVE REACTION STREAM</p>
+                  <h3 class="m-0" data-i18n="kinetic.feedTitle">Kinetischer Event-Stream</h3>
+                </div>
+                <span id="kineticEventCountBadge" class="status-pill muted">0 EVENTS</span>
+              </div>
+              <div class="table-wrap kinetic-events-wrap">
+                <table class="table-compact">
+                  <thead>
+                    <tr>
+                      <th data-i18n="table.time">Zeit</th>
+                      <th data-i18n="table.rule">Regel</th>
+                      <th data-i18n="table.source">Quell-IP</th>
+                      <th data-i18n="table.port">Zielport</th>
+                      <th data-i18n="table.hits">Hits (Rate)</th>
+                      <th data-i18n="table.action">Aktion</th>
+                      <th data-i18n="table.reason">Entscheidungsgrund</th>
+                    </tr>
+                  </thead>
+                  <tbody id="kineticEventsTableBody"></tbody>
+                </table>
+              </div>
+            </article>
+            </div>
+
+            <aside class="kinetic-intel-stack">
+              <article class="glass-panel panel-padded kinetic-intel-card">
+                <div class="section-head">
+                  <div><p class="eyebrow">SOURCE INTELLIGENCE</p><h3 class="m-0">Top Herkunft</h3></div>
+                  <span id="kineticCountryCount" class="status-pill muted">0 COUNTRIES</span>
+                </div>
+                <div id="kineticTopCountries" class="kinetic-ranked-list mt-md"></div>
+              </article>
+
+              <article class="glass-panel panel-padded kinetic-intel-card">
+                <div class="section-head">
+                  <div><p class="eyebrow">TARGET SURFACE</p><h3 class="m-0">Hot Ports</h3></div>
+                </div>
+                <div id="kineticTopPorts" class="kinetic-ranked-list mt-md"></div>
+              </article>
+
+              <article class="glass-panel panel-padded kinetic-intel-card">
+                <div class="section-head">
+                  <div><p class="eyebrow">DETECTION SIGNALS</p><h3 class="m-0">Top Regeln</h3></div>
+                </div>
+                <div id="kineticTopRules" class="kinetic-ranked-list mt-md"></div>
+              </article>
+
+              <article class="glass-panel panel-padded kinetic-intel-card">
+                <div class="section-head">
+                  <div><p class="eyebrow">SENSOR COVERAGE</p><h3 class="m-0">Datenpfad</h3></div>
+                </div>
+                <div id="kineticSensorMatrix" class="kinetic-sensor-matrix mt-md"></div>
+              </article>
+            </aside>
+          </div>
+
+          <article id="kineticSources" class="glass-panel panel-padded mt-md kinetic-source-panel">
+            <div class="section-head kinetic-source-head">
+              <div>
+                <p class="eyebrow">LIVE SOURCE MATRIX</p>
+                <h3 class="m-0">Aktive Ingress-Quellen</h3>
+                <p class="kinetic-panel-copy">Bounded Top-N der aktuell beobachteten Quellen. Status und Score werden serverseitig berechnet.</p>
+              </div>
+            </div>
+            <div class="table-wrap kinetic-source-table-wrap mt-md">
+              <table class="table-compact kinetic-source-table">
+                <thead>
+                  <tr>
+                    <th>Status</th>
+                    <th>Quell-IP</th>
+                    <th>Geo / ASN</th>
+                    <th>Rate</th>
+                    <th>SYN</th>
+                    <th>Ports</th>
+                    <th>Subnetz</th>
+                    <th>Score</th>
+                    <th>Letztes Signal</th>
+                    <th>Trigger</th>
+                  </tr>
+                </thead>
+                <tbody id="kineticSourcesTableBody"></tbody>
+              </table>
+            </div>
+          </article>
+
+          <div id="kineticStream" class="mt-md kinetic-lower-grid">
+
+            <article id="kineticDetailDrawer" class="glass-panel panel-padded flex-col gap-md kinetic-inspector" hidden>
+              <div class="section-head">
+                <div>
+                  <p class="eyebrow" data-i18n="kinetic.drawerKicker">FORENSIC INSPECTOR</p>
+                  <h3 class="m-0" data-i18n="kinetic.drawerTitle">Entscheidungskette</h3>
+                </div>
+                <button id="kineticDrawerClose" class="button button-quiet" type="button">✕</button>
+              </div>
+              <div class="kinetic-inspector-hero">
+                <span id="drawerState" class="status-pill muted">TRACKING</span>
+                <strong id="drawerTargetIP" class="font-mono text-cyan">---</strong>
+                <span id="drawerGeo" class="text-muted fs-xs">---</span>
+              </div>
+              <div class="kinetic-inspector-grid">
+                <div><span data-i18n="kinetic.drawerRule">Regel-ID</span><strong id="drawerRuleID" class="font-mono">---</strong></div>
+                <div><span data-i18n="kinetic.drawerSeverity">Schweregrad</span><strong id="drawerSeverity">---</strong></div>
+                <div><span data-i18n="kinetic.drawerScore">Risiko-Score</span><strong id="drawerScore" class="font-mono">---</strong></div>
+                <div><span data-i18n="kinetic.drawerAction">Durchsetzung</span><strong id="kineticDrawerAction">---</strong></div>
+                <div><span data-i18n="kinetic.drawerTime">Zeitstempel</span><strong id="drawerTime" class="font-mono fs-xs">---</strong></div>
+                <div><span data-i18n="kinetic.drawerPort">Ziel / Protokoll</span><strong id="drawerPortProtocol" class="font-mono fs-xs">---</strong></div>
+                <div><span data-i18n="kinetic.drawerSubnet">Subnetz</span><strong id="drawerSubnet" class="font-mono fs-xs">---</strong></div>
+                <div><span>Hits / Rate</span><strong id="drawerHitsRate" class="font-mono fs-xs">---</strong></div>
+              </div>
+              <div class="kinetic-inspector-section"><span class="text-muted fs-xs" data-i18n="kinetic.drawerDecision">Entscheidungsgrund</span><p id="kineticDrawerDecision" class="fs-xs font-mono text-cyan mt-xs">---</p></div>
+              <div class="kinetic-inspector-section"><span class="text-muted fs-xs" data-i18n="kinetic.drawerFingerprint">Dedupe Fingerprint</span><code id="drawerFingerprint" class="fs-xs font-mono text-break">---</code></div>
+            </article>
+          </div>
+        </section>
+
+
+        <!-- THREAT INTELLIGENCE VIEW -->
+        <section class="view" data-page="threat-intel" aria-labelledby="threatIntelHeading" hidden>
+          <div class="view-context-bar threat-intel-context-bar">
+            <div>
+              <p class="eyebrow m-0" data-i18n="threatIntel.kicker">GLOBAL IOC SYNCHRONIZATION</p>
+              <h2 id="threatIntelHeading" class="m-0 fs-xl" data-i18n="threatIntel.heading">Threat Intelligence</h2>
+              <p class="view-context-desc" data-i18n="threatIntel.description">Verbindliche Status-, Vektor- und Synchronisationsübersicht aller signierten Bedrohungs-Feeds mit Kernel-Applikationskontrolle.</p>
+            </div>
+            <div class="view-context-actions threat-intel-context-actions">
+              <span id="threatIntelSyncStatusBadge" class="status-pill muted">NEVER_SYNCED</span>
+              <span id="threatIntelKernelStatusBadge" class="status-pill muted">NOT_APPLIED</span>
+              <button id="threatIntelSyncBtn" class="button button-primary" type="button" data-i18n="threatIntel.syncBtn">Feeds synchronisieren</button>
+              <button id="threatIntelApplyBtn" class="button button-quiet" type="button" data-i18n="threatIntel.applyBtn">Kernel-Stand veröffentlichen</button>
+              <button id="threatIntelRefreshBtn" class="button button-quiet" type="button" data-i18n="threatIntel.refreshBtn">Aktualisieren</button>
+            </div>
+          </div>
+
+          <div id="threatIntelOperationStrip" class="threat-intel-operation-strip" role="status" aria-live="polite" hidden>
+            <span id="threatIntelOperationState" class="status-pill muted">IDLE</span>
+            <span id="threatIntelOperationDetail" class="font-mono fs-xs">---</span>
+          </div>
+
+          <div id="threatIntelTruthStrip" class="threat-intel-truth-strip" role="status">
+            <div class="threat-intel-truth-main">
+              <span id="threatIntelTruthDot" class="status-dot muted"></span>
+              <div>
+                <strong id="threatIntelTruthTitle" data-i18n="threatIntel.truthNeverTitle">Noch keine Feed-Synchronisation</strong>
+                <span id="threatIntelTruthDetail" data-i18n="threatIntel.truthNeverDetail">Es existiert noch keine bestätigte veröffentlichte Feed-Generation.</span>
+              </div>
+            </div>
+            <div class="threat-intel-truth-meta">
+              <span>FEEDS <strong id="threatIntelSourceSummary">0 / 0 OK</strong></span>
+              <span>KERNEL GEN <strong id="threatIntelKernelGeneration">---</strong></span>
+              <span>APPLIED <strong id="threatIntelKernelAppliedAt">---</strong></span>
+            </div>
+          </div>
+
+          <div class="defense-telemetry" aria-label="Threat-Intelligence-Telemetrie">
+            <div class="telemetry-group">
+              <h3 class="telemetry-title">Vektoren</h3>
+              <div class="vector-composition" role="img" aria-labelledby="threatIntelCompositionLabel">
+                <p id="threatIntelCompositionLabel" class="sr-only">Verteilung der aktiven Indikatoren nach Wirkung</p>
+                <div class="vector-track" aria-hidden="true">
+                  <span class="vector-segment vector-block" id="threatIntelBlockSegment"></span>
+                  <span class="vector-segment vector-correlate" id="threatIntelCorrelateSegment"></span>
+                  <span class="vector-segment vector-annotate" id="threatIntelAnnotateSegment"></span>
+                </div>
+              </div>
+              <dl class="telemetry-list">
+                <div class="telemetry-row">
+                  <dt><i class="telemetry-swatch vector-block" aria-hidden="true"></i><span data-i18n="threatIntel.kpiBlock">Block</span></dt>
+                  <dd id="threatIntelBlockVectors" class="font-mono">0</dd>
+                </div>
+                <div class="telemetry-row">
+                  <dt><i class="telemetry-swatch vector-correlate" aria-hidden="true"></i><span data-i18n="threatIntel.kpiCorrelate">Korrelation</span></dt>
+                  <dd id="threatIntelCorrelateVectors" class="font-mono">0</dd>
+                </div>
+                <div class="telemetry-row">
+                  <dt><i class="telemetry-swatch vector-annotate" aria-hidden="true"></i><span data-i18n="threatIntel.kpiAnnotate">Annotierung</span></dt>
+                  <dd id="threatIntelAnnotateVectors" class="font-mono">0</dd>
+                </div>
+                <div class="telemetry-row telemetry-row-total">
+                  <dt data-i18n="threatIntel.kpiTotal">Gesamt</dt>
+                  <dd id="threatIntelTotalVectors" class="font-mono">0</dd>
+                </div>
+              </dl>
+              <p class="telemetry-note" data-i18n="threatIntel.kpiVectorNote">Wirkung je Indikator: Kernel-Drop, Risiko-Erhöhung oder forensischer Kontext.</p>
+            </div>
+
+            <div class="telemetry-group">
+              <h3 class="telemetry-title">Quellen</h3>
+              <dl class="telemetry-list">
+                <div class="telemetry-row">
+                  <dt data-i18n="threatIntel.kpiHealthySources">Gesund</dt>
+                  <dd id="threatIntelHealthySources" class="font-mono">0 / 0</dd>
+                </div>
+                <div class="telemetry-row">
+                  <dt data-i18n="threatIntel.kpiProblemSources">Gestört</dt>
+                  <dd id="threatIntelProblemSources" class="font-mono">0</dd>
+                </div>
+                <div class="telemetry-row">
+                  <dt data-i18n="threatIntel.kpiGeneration">Generation</dt>
+                  <dd id="threatIntelGeneration" class="font-mono">---</dd>
+                </div>
+                <div class="telemetry-row telemetry-row-wide">
+                  <dt data-i18n="threatIntel.kpiLastSync">Letzter Voll-Sync</dt>
+                  <dd id="threatIntelLastFullSync" class="font-mono">---</dd>
+                </div>
+              </dl>
+              <p class="telemetry-note" data-i18n="threatIntel.kpiSourceNote">OK / konfiguriert · STALE und ERROR gelten als gestört.</p>
+            </div>
+          </div>
+          <div class="threat-intel-ops-grid mt-md">
+            <article class="glass-panel panel-padded threat-intel-ops-card">
+              <div class="section-head">
+                <div>
+                  <p class="eyebrow" data-i18n="threatIntel.syncStateKicker">SYNC STATE</p>
+                  <h3 id="threatIntelSyncState" class="m-0" data-i18n="threatIntel.syncStateTitle">Synchronisationswahrheit</h3>
+                </div>
+              </div>
+              <div class="threat-intel-fact-grid">
+                <div><span data-i18n="threatIntel.lastAttempt">Letzter Versuch</span><strong id="threatIntelLastAttempt" class="font-mono">---</strong></div>
+                <div><span data-i18n="threatIntel.lastGood">Letzter erfolgreicher Sync</span><strong id="threatIntelLastSuccess" class="font-mono">---</strong></div>
+                <div><span data-i18n="threatIntel.lastPartial">Letzter Teilerfolg</span><strong id="threatIntelLastPartialSync" class="font-mono">---</strong></div>
+                <div><span data-i18n="threatIntel.lastFull">Letzter vollständiger Sync</span><strong id="threatIntelLastFullSyncDetail" class="font-mono">---</strong></div>
+                <div><span data-i18n="threatIntel.feedGeneration">Feed Generation</span><strong id="threatIntelGenerationDetail" class="font-mono">---</strong></div>
+              </div>
+            </article>
+
+            <article class="glass-panel panel-padded threat-intel-ops-card">
+              <div class="section-head">
+                <div>
+                  <p class="eyebrow" data-i18n="threatIntel.kernelKicker">KERNEL APPLY</p>
+                  <h3 class="m-0" data-i18n="threatIntel.kernelTitle">Kernel-Konsistenz</h3>
+                </div>
+              </div>
+              <div class="threat-intel-fact-grid">
+                <div><span data-i18n="threatIntel.kernelStatus">Status</span><strong id="threatIntelKernelStateText" class="font-mono">NOT_APPLIED</strong></div>
+                <div><span data-i18n="threatIntel.kernelGeneration">Kernel Generation</span><strong id="threatIntelKernelGenerationDetail" class="font-mono">---</strong></div>
+                <div><span data-i18n="threatIntel.kernelLastApply">Letzte Anwendung</span><strong id="threatIntelKernelAppliedAtDetail" class="font-mono">---</strong></div>
+                <div><span data-i18n="threatIntel.kernelDelta">Letzter Commit + / -</span><strong id="threatIntelKernelDelta" class="font-mono">+0 / -0</strong></div>
+                <div><span data-i18n="threatIntel.generationRelation">Feed / Kernel</span><strong id="threatIntelGenerationRelation" class="font-mono">---</strong></div>
+              </div>
+              <div id="threatIntelKernelErrorRow" class="threat-intel-error-box" hidden>
+                <span data-i18n="threatIntel.kernelError">Kernel-Synchronisationsfehler</span>
+                <strong id="threatIntelKernelErrorMsg" class="font-mono">---</strong>
+              </div>
+            </article>
+
+            <article class="glass-panel panel-padded threat-intel-ops-card">
+              <div class="section-head">
+                <div>
+                  <p class="eyebrow" data-i18n="threatIntel.integrityKicker">INTEGRITY</p>
+                  <h3 class="m-0" data-i18n="threatIntel.integrityTitle">Snapshot-Identität</h3>
+                </div>
+              </div>
+              <div class="threat-intel-fingerprint-block">
+                <span data-i18n="threatIntel.fingerprint">Fingerprint</span>
+                <code id="threatIntelFingerprint" class="font-mono text-cyan">---</code>
+              </div>
+              <p class="threat-intel-card-note" data-i18n="threatIntel.integrityNote">Der Fingerprint gehört zur veröffentlichten Feed-Generation. Ein Kernel-Apply gilt nur bei explizit bestätigtem Apply-State als aktiv.</p>
+            </article>
+          </div>
+
+          <article class="glass-panel panel-padded mt-md threat-intel-source-panel">
+            <div class="section-head threat-intel-source-head">
+              <div>
+                <p class="eyebrow" data-i18n="threatIntel.tableKicker">SYNCHRONIZED SOURCES</p>
+                <h3 class="m-0" data-i18n="threatIntel.tableHeading">Aktive Threat-Intelligence-Quellen</h3>
+                <p class="threat-intel-table-copy" data-i18n="threatIntel.tableCopy">Last-known-good Zustand pro Feed. Fehler überschreiben einen brauchbaren alten Stand nicht stillschweigend.</p>
+              </div>
+              <div class="threat-intel-table-summary">
+                <span><i class="status-dot good"></i><strong id="threatIntelFeedOKCount">0</strong> OK</span>
+                <span><i class="status-dot warning"></i><strong id="threatIntelFeedStaleCount">0</strong> STALE</span>
+                <span><i class="status-dot danger"></i><strong id="threatIntelFeedErrorCount">0</strong> ERROR</span>
+              </div>
+            </div>
+            <div class="table-wrap threat-intel-table-wrap">
+              <table class="table-compact threat-intel-table">
+                <thead>
+                  <tr>
+                    <th data-i18n="threatIntel.colSource">Quelle</th>
+                    <th data-i18n="threatIntel.colMode">Modus</th>
+                    <th data-i18n="threatIntel.colStatus">Status</th>
+                    <th data-i18n="threatIntel.colVectors">Vektoren</th>
+                    <th data-i18n="threatIntel.colGeneration">Generation</th>
+                    <th data-i18n="threatIntel.colLastAttempt">Letzter Versuch</th>
+                    <th data-i18n="threatIntel.colLastSuccess">Last Good</th>
+                    <th data-i18n="threatIntel.colFailures">Fehlerfolge</th>
+                    <th data-i18n="threatIntel.colLastError">Letzter Fehler</th>
+                  </tr>
+                </thead>
+                <tbody id="threatIntelFeedsTableBody"></tbody>
+              </table>
+            </div>
+          </article>
+        </section>
+
+        <!-- 8. NETWORK VIEW -->
+        <section class="view" data-page="network" aria-labelledby="networkHeading" hidden>
+          <div class="view-context-bar">
+            <div>
+              <p class="eyebrow m-0" data-i18n="network.kicker">KINETIC NETWORK POLICY</p>
+              <h2 id="networkHeading" class="m-0 fs-xl" data-i18n="network.heading">Netzwerkverteidigung</h2>
+              <p class="view-context-desc" data-i18n="network.description">CIDR-Regeln werden normalisiert, zeitlich begrenzt und als signierter Policy-Snapshot persistiert.</p>
+            </div>
+            <div class="view-context-actions">
+              <span id="enforcementBadge" class="status-pill warn">OBSERVE</span>
+            </div>
+          </div>
+
+          <div class="grid-2">
+            <article class="glass-panel panel-padded">
+              <div class="section-head"><p class="eyebrow" data-i18n="network.newContainment">NEW CONTAINMENT</p><h3 class="m-0" data-i18n="network.newRule">Regel setzen</h3></div>
+              <form id="blockForm" class="flex-col gap-md mt-md">
+                <label>
+                  <span data-i18n="network.target">Ziel-IP oder CIDR</span>
+                  <input id="target" name="target" autocomplete="off" spellcheck="false" placeholder="203.0.113.4 / 2001:db8::/64" required>
+                </label>
+                <label>
+                  <span data-i18n="network.reason">Begründung</span>
+                  <input id="reason" name="reason" maxlength="240" data-i18n-placeholder="network.reasonPlaceholder" placeholder="Anomales Scan-Verhalten" required>
+                </label>
+                <label>
+                  <span data-i18n="network.ttl">Gültigkeit</span>
+                  <select id="ttl" name="ttl">
+                    <option value="900" data-i18n="network.15m">15 Minuten</option>
+                    <option value="3600" selected data-i18n="network.1h">1 Stunde</option>
+                    <option value="21600" data-i18n="network.6h">6 Stunden</option>
+                    <option value="86400" data-i18n="network.24h">24 Stunden</option>
+                  </select>
+                </label>
+                <button class="button button-primary" type="submit" data-i18n="network.activate">Policy aktivieren</button>
+              </form>
+              <div class="mt-md">
+                <button id="syncFeeds" class="button button-secondary w-full" type="button" data-i18n="network.sync">Threat Feeds synchronisieren</button>
+                <p id="actionMessage" class="fs-xs text-muted mt-sm" role="status"></p>
+              </div>
+            </article>
+
+            <article class="glass-panel panel-padded">
+              <div class="section-head flex-between">
+                <div>
+                  <p class="eyebrow" data-i18n="network.activeContainment">ACTIVE CONTAINMENT</p>
+                  <h3 id="networkRules" class="m-0" data-i18n="network.rules">Blockregeln</h3>
+                </div>
+                <span><b id="feedCount">0</b> <span class="fs-xs text-muted" data-i18n="network.feedVectors">Feed-Vektoren</span></span>
+              </div>
+              <div class="table-wrap mt-md">
+                <table>
+                  <thead>
+                    <tr>
+                      <th data-i18n="table.target">Ziel</th>
+                      <th data-i18n="table.source">Quelle</th>
+                      <th data-i18n="table.reason">Begründung</th>
+                      <th data-i18n="table.expiry">Ablauf</th>
+                      <th data-i18n="table.status">Status</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody id="rules"></tbody>
+                </table>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <!-- 9. POLICY TRUST VIEW -->
+        <section class="view" data-page="policy" aria-labelledby="policyHeading" hidden>
+          <div class="view-context-bar">
+            <div>
+              <p class="eyebrow m-0" data-i18n="policy.kicker">TRUSTED POLICY STATE</p>
+              <h2 id="policyHeading" class="m-0 fs-xl" data-i18n="policy.heading">Policy Trust</h2>
+              <p class="view-context-desc" data-i18n="policy.description">Jede persistente Regelgeneration wird deterministisch serialisiert, AES-256-GCM-verschlüsselt und mit Ed25519 signiert.</p>
+            </div>
+            <div class="view-context-actions">
+              <span id="policyBadge" class="status-pill warn">UNVERIFIED</span>
+            </div>
+          </div>
+
+          <div class="grid-3">
+            <article class="glass-panel panel-padded">
+              <span class="eyebrow" data-i18n="policy.signer">SIGNER</span>
+              <strong id="policySigner" class="fs-lg text-bright mt-xs d-block">---</strong>
+              <small class="text-muted fs-xs" data-i18n="policy.signerDetail">lokaler Ed25519-Vertrauensanker</small>
+            </article>
+            <article class="glass-panel panel-padded">
+              <span class="eyebrow" data-i18n="policy.generation">GENERATION</span>
+              <strong id="policyGeneration" class="fs-lg text-cyan mt-xs d-block">0</strong>
+              <small class="text-muted fs-xs" data-i18n="policy.generationDetail">monotoner Policy-Stand</small>
+            </article>
+            <article class="glass-panel panel-padded">
+              <span class="eyebrow" data-i18n="policy.lastUpdate">LETZTES UPDATE</span>
+              <strong id="policyUpdated" class="fs-base text-bright mt-xs d-block">---</strong>
+              <small class="text-muted fs-xs" data-i18n="policy.updateDetail">UTC-signierter Snapshot</small>
+            </article>
+          </div>
+
+          <article class="glass-panel panel-padded mt-lg">
+            <div id="policyTrustChain" class="section-head"><p class="eyebrow" data-i18n="policy.trustChain">TRUST CHAIN</p><h3 class="m-0" data-i18n="policy.lifecycle">Policy-Lebenszyklus</h3></div>
+            <div class="grid-gap-md mt-md">
+              <div class="diag-card">
+                <span class="diag-label" data-i18n="policy.cryptoVerification">KRYPTOGRAFISCHE VERIFIKATION</span>
+                <p class="fs-sm text-muted mt-xs" data-i18n="policy.cryptoDescription">Jede Policy-Mutation validiert striktes JSON, Replay-Schutz, normale CIDR-Ranges und signiert den Snapshot deterministisch mit Ed25519 vor der Übergabe an den Kernel-Core.</p>
+              </div>
+            </div>
+          </article>
+        </section>
+
+        <!-- 10. FORENSICS VIEW -->
+        <section class="view" data-page="forensics" aria-labelledby="forensicsHeading" hidden>
+          <div class="view-context-bar">
+            <div>
+              <p class="eyebrow m-0" data-i18n="forensics.kicker">EVIDENCE INTEGRITY</p>
+              <h2 id="forensicsHeading" class="m-0 fs-xl" data-i18n="forensics.heading">Forensik</h2>
+              <p class="view-context-desc" data-i18n="forensics.description">Incidents werden redigiert, AES-256-GCM-verschlüsselt, HMAC-verkettet und gegen einen atomischen Head-Checkpoint geprüft.</p>
+            </div>
+            <div class="view-context-actions">
+              <button id="exportForensics" class="button button-primary" type="button" data-i18n="forensics.export">Export erstellen</button>
+            </div>
+          </div>
+
+          <div class="grid-3">
+            <article class="glass-panel panel-padded">
+              <span class="eyebrow" data-i18n="forensics.chain">INCIDENT-KETTE</span>
+              <strong id="incidentIntegrity" class="fs-lg text-bright mt-xs d-block">UNKNOWN</strong>
+              <small id="incidentDetail" class="text-muted fs-xs" data-i18n="forensics.initializing">Initialisierung</small>
+            </article>
+            <article class="glass-panel panel-padded">
+              <span class="eyebrow" data-i18n="forensics.incidents">INCIDENTS</span>
+              <strong id="incidentCount" class="fs-lg text-bright mt-xs d-block">0</strong>
+              <small class="text-muted fs-xs" data-i18n="forensics.records">authentifizierte Records</small>
+            </article>
+            <article class="glass-panel panel-padded">
+              <span class="eyebrow" data-i18n="forensics.responses">REAKTIONEN</span>
+              <strong id="actionCount" class="fs-lg text-cyan mt-xs d-block">0</strong>
+              <small class="text-muted fs-xs" data-i18n="forensics.broker">Broker-Entscheidungen</small>
+            </article>
+          </div>
+
+          <article class="glass-panel panel-padded mt-lg">
+            <div class="section-head flex-between">
+              <div>
+                <p class="eyebrow" data-i18n="forensics.vaultKicker">ENCRYPTED RESPONSE VAULT</p>
+                <h3 id="quarantineHeading" class="m-0" data-i18n="quarantine.heading">Dateiquarantäne</h3>
+              </div>
+              <span id="quarantineHealth" class="status-pill warn" data-i18n="dynamic.initializing">INITIALIZING</span>
+            </div>
+            <p class="fs-xs text-muted mt-xs" data-i18n="quarantine.description">Dateien werden vor der Mutation gegen ihre unveränderliche Identität geprüft, atomar erfasst und verschlüsselt gespeichert.</p>
+            <form id="quarantinePreviewForm" class="flex-row-wrap gap-md mt-md">
+              <label class="flex-1">
+                <span data-i18n="quarantine.path">Absoluter Dateipfad</span>
+                <input id="quarantinePath" class="mono" autocomplete="off" spellcheck="false" maxlength="2048" required>
+              </label>
+              <label class="flex-1">
+                <span data-i18n="quarantine.reason">Begründung</span>
+                <input id="quarantineReason" autocomplete="off" maxlength="240" required>
+              </label>
+              <button class="button button-danger items-end" type="submit" data-i18n="quarantine.preview">Identität prüfen</button>
+            </form>
+            <div class="table-wrap mt-md">
+              <table>
+                <thead><tr><th data-i18n="table.id">ID</th><th data-i18n="quarantine.path">Pfad</th><th>SHA-256</th><th data-i18n="table.size">Größe</th><th data-i18n="table.status">Status</th><th></th></tr></thead>
+                <tbody id="quarantineRows"></tbody>
+              </table>
+            </div>
+          </article>
+
+          <article class="glass-panel panel-padded mt-lg">
+            <div class="section-head flex-between">
+              <div>
+                <p class="eyebrow" data-i18n="forensics.investigationKicker">CORRELATED INVESTIGATION</p>
+                <h3 class="m-0" data-i18n="cases.heading">Security Cases</h3>
+              </div>
+              <span id="caseHealth" class="status-pill warn" data-i18n="dynamic.initializing">INITIALIZING</span>
+            </div>
+            <form id="caseStatusForm" class="flex-row-wrap gap-md mt-md">
+              <label class="flex-1">
+                <span data-i18n="cases.selected">Ausgewählter Fall</span>
+                <input id="selectedCaseID" class="mono" readonly required>
+              </label>
+              <label>
+                <span data-i18n="table.status">Status</span>
+                <select id="caseStatus">
+                  <option value="investigating" data-i18n="case.status.investigating">investigating</option>
+                  <option value="resolved" data-i18n="case.status.resolved">resolved</option>
+                  <option value="dismissed" data-i18n="case.status.dismissed">dismissed</option>
+                  <option value="open" data-i18n="case.status.open">open</option>
+                </select>
+              </label>
+              <label class="flex-1">
+                <span data-i18n="cases.resolution">Auflösung</span>
+                <input id="caseResolution" maxlength="512">
+              </label>
+              <button class="button button-primary items-end" type="submit" data-i18n="cases.commit">Status beweisbar speichern</button>
+            </form>
+            <div class="table-wrap mt-md">
+              <table>
+                <thead><tr><th data-i18n="table.id">ID</th><th data-i18n="table.summary">Titel</th><th data-i18n="table.severity">Severity</th><th data-i18n="cases.occurrences">Vorkommen</th><th data-i18n="table.status">Status</th><th data-i18n="table.time">Zeit</th><th></th></tr></thead>
+                <tbody id="caseRows"></tbody>
+              </table>
+            </div>
+          </article>
+
+          <article class="glass-panel panel-padded mt-lg">
+            <div id="forensicsRegister" class="section-head"><p class="eyebrow" data-i18n="forensics.registerKicker">EVIDENCE REGISTER</p><h3 class="m-0" data-i18n="forensics.history">Incident-Historie</h3></div>
+            <div class="table-wrap mt-md">
+              <table>
+                <thead><tr><th data-i18n="table.time">Zeit</th><th data-i18n="table.id">ID</th><th data-i18n="table.severity">Severity</th><th data-i18n="table.score">Score</th><th data-i18n="table.summary">Zusammenfassung</th><th data-i18n="table.action">Action</th><th data-i18n="table.status">Status</th></tr></thead>
+                <tbody id="forensicIncidents"></tbody>
+              </table>
+            </div>
+          </article>
+        </section>
+
+        <!-- 11. RELEASE VIEW -->
+        <section class="view" data-page="release" aria-labelledby="releaseHeading" hidden>
+          <div class="view-context-bar">
+            <div>
+              <p class="eyebrow m-0" data-i18n="release.kicker">PRODUCTION BETA SAFETY GATE</p>
+              <h2 id="releaseHeading" class="m-0 fs-xl" data-i18n="release.heading">Beta Release Control</h2>
+              <p class="view-context-desc" data-i18n="release.description">Aktive Reaktion wird ausschließlich stufenweise freigegeben.</p>
+            </div>
+            <div class="view-context-actions">
+              <span id="releasePhaseBadge" class="status-pill warn">OBSERVE</span>
+            </div>
+          </div>
+
+          <div class="grid-3">
+            <article class="glass-panel panel-padded">
+              <span class="eyebrow" data-i18n="release.phase">PHASE</span>
+              <strong id="releasePhase" class="fs-lg text-bright mt-xs d-block">OBSERVE</strong>
+              <small id="releaseSince" class="text-muted fs-xs" data-i18n="release.startPhase">Startphase</small>
+            </article>
+            <article class="glass-panel panel-padded">
+              <span class="eyebrow" data-i18n="release.readiness">READINESS</span>
+              <strong id="releaseReady" class="fs-lg text-bright mt-xs d-block">BLOCKED</strong>
+              <small id="releaseDetail" class="text-muted fs-xs" data-i18n="release.gateCheck">Gate-Prüfung</small>
+            </article>
+            <article class="glass-panel panel-padded">
+              <span class="eyebrow" data-i18n="release.heartbeat">CORE HEARTBEAT</span>
+              <strong id="releaseCoreMisses" class="fs-lg text-cyan mt-xs d-block">0</strong>
+              <small class="text-muted fs-xs" data-i18n="release.failures">aufeinanderfolgende Fehler</small>
+            </article>
+          </div>
+
+          <div class="glass-panel panel-padded mt-md">
+            <span class="eyebrow" data-i18n="release.kernelState">KERNEL FAIL-SAFE</span>
+            <strong id="releaseKernelState" class="fs-base text-bright d-block mt-xs">UNVERIFIED</strong>
+            <small id="releaseFailSafe" class="text-muted fs-xs d-block mt-xs" data-i18n="release.kernelStateDetail">XDP-Leerzustand muss bestätigt sein</small>
+          </div>
+
+          <div class="grid-2 mt-lg">
+            <article class="glass-panel panel-padded">
+              <div id="releasePromotion" class="section-head"><p class="eyebrow" data-i18n="release.promotionKicker">STAGED PROMOTION</p><h3 class="m-0" data-i18n="release.change">Phase wechseln</h3></div>
+              <form id="releaseForm" class="flex-col gap-md mt-md">
+                <label>
+                  <span data-i18n="release.target">Zielphase</span>
+                  <select id="releaseTarget">
+                    <option value="canary" data-i18n="release.canary">Canary / Contain</option>
+                    <option value="enforce" data-i18n="release.enforce">Enforce</option>
+                    <option value="observe" data-i18n="release.observe">Zurück zu Observe</option>
+                  </select>
+                </label>
+                <label>
+                  <span data-i18n="release.reason">Freigabegrund</span>
+                  <input id="releaseReason" maxlength="240" data-i18n-placeholder="release.reasonPlaceholder" placeholder="Canary nach Prüfung" required>
+                </label>
+                <label>
+                  <span data-i18n="release.confirmation">Explizite Bestätigung</span>
+                  <input id="releaseConfirmation" autocomplete="off" spellcheck="false" placeholder="PROMOTE:CANARY" required>
+                </label>
+                <button class="button button-primary" type="submit" data-i18n="release.submit">Gate prüfen und wechseln</button>
+              </form>
+            </article>
+
+            <article class="glass-panel panel-padded danger-zone">
+              <div id="releaseEmergencySection" class="section-head"><p class="eyebrow" data-i18n="release.failsafeKicker">FAIL-SAFE</p><h3 class="m-0" data-i18n="release.emergency">Emergency Stop</h3></div>
+              <p class="fs-xs text-muted mt-xs" data-i18n="release.emergencyDescription">Persistiert einen lokalen Stop-Anker und blockiert aktive Reaktion.</p>
+              <form id="emergencyForm" class="flex-col gap-md mt-md">
+                <label>
+                  <span data-i18n="network.reason">Begründung</span>
+                  <input id="emergencyReason" maxlength="240" data-i18n-placeholder="release.emergencyReasonPlaceholder" placeholder="Unerwartetes Verhalten" required>
+                </label>
+                <button class="button button-danger" type="submit" data-i18n="release.emergencySubmit">Aktive Reaktion sofort sperren</button>
+              </form>
+              <form id="emergencyClearForm" class="flex-col gap-md mt-lg">
+                <label>
+                  <span data-i18n="release.clearReason">Aufhebungsgrund</span>
+                  <input id="emergencyClearReason" maxlength="240" data-i18n-placeholder="release.clearReasonPlaceholder" placeholder="Ursache geprüft" required>
+                </label>
+                <label>
+                  <span data-i18n="release.confirmation">Explizite Bestätigung</span>
+                  <input id="emergencyClearConfirmation" autocomplete="off" spellcheck="false" placeholder="CLEAR:EMERGENCY-STOP" required>
+                </label>
+                <button class="button button-secondary" type="submit" data-i18n="release.clearSubmit">Emergency Stop aufheben</button>
+              </form>
+            </article>
+          </div>
+
+          <article class="glass-panel panel-padded mt-lg">
+            <div class="section-head"><p class="eyebrow" data-i18n="release.blockersKicker">CURRENT BLOCKERS</p><h3 class="m-0" data-i18n="release.conditions">Freigabebedingungen</h3></div>
+            <ul id="releaseBlockers" class="gate-list mt-md"></ul>
+          </article>
+        </section>
+
+        <!-- 12. SETTINGS VIEW -->
+        <section class="view" data-page="settings" aria-labelledby="settingsHeading" hidden>
+          <div class="view-context-bar">
+            <div>
+              <p class="eyebrow m-0" data-i18n="view.settings.eyebrow">RUNTIME DEFENSE CONTROL</p>
+              <h2 id="settingsHeading" class="m-0 fs-xl" data-i18n="settings.heading">Einstellungen</h2>
+              <p class="view-context-desc" data-i18n="settings.description">Module und Reaktionsschwellen werden live geändert und verschlüsselt persistiert.</p>
+            </div>
+            <div class="view-context-actions">
+              <span id="settingsRevision" class="status-pill muted">REVISION 0</span>
+            </div>
+          </div>
+
+          <section class="fabric-surface" aria-labelledby="fabricSurfaceHeading">
+            <div class="section-head flex-between gap-md">
+              <div>
+                <p class="eyebrow" data-i18n="fabric.surfaceKicker">SECURITY FABRIC CONTROL PLANE</p>
+                <h3 id="fabricSurfaceHeading" class="m-0" data-i18n="fabric.surfaceTitle">Fabric-Konfiguration</h3>
+                <p class="view-context-desc" data-i18n="fabric.surfaceDescription">Suche über alle administrierbaren Schlüssel, signierter Export, zweistufiger Import und Abweichungsprüfung zwischen gespeicherter Revision und wirksamer Engine-Konfiguration.</p>
+              </div>
+              <span id="fabricDriftPill" class="status-pill muted">CHECKING</span>
+            </div>
+
+            <div class="fabric-surface-grid">
+              <div class="fabric-surface-panel fabric-search-panel">
+                <label class="fabric-field-label" for="fabricSearchInput" data-i18n="fabric.searchLabel">Konfiguration durchsuchen</label>
+                <input id="fabricSearchInput" class="fabric-search-input" type="search" autocomplete="off"
+                       spellcheck="false" placeholder="TTL, Quarantäne, Rate-Limit …"
+                       data-i18n-placeholder="fabric.searchPlaceholder">
+                <div id="fabricSearchResults" class="fabric-search-results" role="list" aria-live="polite">
+                  <p class="empty-note" data-i18n="fabric.searchHint">Mindestens zwei Zeichen eingeben. Treffer führen direkt in die Einstellungen des Moduls.</p>
+                </div>
+              </div>
+
+              <div class="fabric-surface-panel">
+                <div class="section-head flex-between gap-sm">
+                  <h4 class="m-0" data-i18n="fabric.driftTitle">Konfigurationsabweichung</h4>
+                  <button id="fabricDriftRefresh" class="button button-quiet fs-xs" type="button" data-i18n="fabric.refreshBtn">Prüfen</button>
+                </div>
+                <div id="fabricDriftFindings" class="fabric-drift-list" aria-live="polite">
+                  <p class="empty-note" data-i18n="fabric.driftChecking">Abweichung wird geprüft.</p>
+                </div>
+
+                <div class="section-head flex-between gap-sm mt-md">
+                  <h4 class="m-0" data-i18n="fabric.historyTitle">Revisionshistorie</h4>
+                </div>
+                <div id="fabricSurfaceHistory" class="fabric-history-list" aria-live="polite">
+                  <p class="empty-note" data-i18n="fabric.historyLoading">Historie wird geladen.</p>
+                </div>
+              </div>
+
+              <div class="fabric-surface-panel">
+                <h4 class="m-0" data-i18n="fabric.transferTitle">Export und Import</h4>
+                <p class="fabric-panel-copy" data-i18n="fabric.transferDescription">Der Export enthält ausschließlich administrierbare Werte und wird mit dem Policy-Schlüssel signiert. Ein Import wird erst geprüft, dann als Diff gezeigt und niemals direkt übernommen.</p>
+                <div class="fabric-transfer-actions">
+                  <button id="fabricExportBtn" class="button button-quiet" type="button" data-i18n="fabric.exportBtn">Bundle exportieren</button>
+                  <label class="button button-quiet fabric-file-button" for="fabricImportInput">
+                    <span data-i18n="fabric.importBtn">Bundle prüfen</span>
+                    <input id="fabricImportInput" type="file" accept="application/json,.json" class="sr-only">
+                  </label>
+                </div>
+                <p id="fabricImportStatus" class="fabric-surface-status muted" role="status" aria-live="polite" data-i18n="fabric.importIdle">Kein Bundle geladen.</p>
+                <div id="fabricImportPreview" class="fabric-import-preview"></div>
+              </div>
+            </div>
+          </section>
+
+          <form id="settingsForm" class="grid-2">
+            <article class="glass-panel panel-padded">
+              <div class="section-head"><p class="eyebrow" data-i18n="settings.modulesKicker">SECURITY MODULES</p><h3 class="m-0" data-i18n="settings.components">Aktive Komponenten</h3></div>
+              <div class="toggle-list mt-md flex-col gap-sm">
+                <label class="toggle-row"><span><b data-i18n="settings.xdr">XDR Sensor</b><small class="text-muted d-block" data-i18n="settings.xdrDetail">Prozesse, Integrität und Reaktionspipeline</small></span><input id="settingXdr" type="checkbox"><i></i></label>
+                <label class="toggle-row"><span><b data-i18n="settings.network">Netzwerk-Korrelation</b><small class="text-muted d-block" data-i18n="settings.networkDetail">Externe Flows den Prozessen zuordnen</small></span><input id="settingNetwork" type="checkbox"><i></i></label>
+                <label class="toggle-row"><span><b data-i18n="settings.behavior">Behavior Learning</b><small class="text-muted d-block" data-i18n="settings.behaviorDetail">Adaptive, MAC-geschützte Prozessprofile</small></span><input id="settingBehavior" type="checkbox"><i></i></label>
+                <label class="toggle-row"><span><b data-i18n="settings.feeds">Threat Feeds</b><small class="text-muted d-block" data-i18n="settings.feedsDetail">Öffentliche Präfixe lokal zur Korrelation stagen</small></span><input id="settingFeeds" type="checkbox"><i></i></label>
+                <label class="toggle-row"><span><b data-i18n="settings.autoFeeds">Automatischer Feed-Sync</b><small class="text-muted d-block" data-i18n="settings.autoFeedsDetail">Synchronisierung im konfigurierten Intervall</small></span><input id="settingAutoFeeds" type="checkbox"><i></i></label>
+                <label class="toggle-row"><span><b data-i18n="settings.autoDegrade">Auto-Degrade</b><small class="text-muted d-block" data-i18n="settings.autoDegradeDetail">Bei Fehlern auf Observe zurückfallen</small></span><input id="settingAutoDegrade" type="checkbox"><i></i></label>
+              </div>
+            </article>
+
+            <article class="glass-panel panel-padded">
+              <div class="section-head"><p class="eyebrow" data-i18n="settings.tuningKicker">CORRELATION TUNING</p><h3 class="m-0" data-i18n="settings.tuning">Intervalle und Schwellen</h3></div>
+              <div class="settings-fields flex-col gap-md mt-md">
+                <label><span data-i18n="settings.processScan">Prozess-Scan (ms)</span><input id="settingScan" type="number" min="100" max="60000" step="50" required></label>
+                <label><span data-i18n="settings.networkScan">Netzwerk-Scan (s)</span><input id="settingNetworkInterval" type="number" min="1" max="300" required></label>
+                <label><span data-i18n="settings.alert">Alert Score</span><input id="settingAlert" type="number" min="1" max="248" required></label>
+                <label><span data-i18n="settings.contain">Contain Score</span><input id="settingContain" type="number" min="2" max="249" required></label>
+                <label><span data-i18n="settings.kill">Kill Score</span><input id="settingKill" type="number" min="3" max="250" required></label>
+              </div>
+              <button class="button button-primary mt-md w-full" type="submit" data-i18n="settings.save">Einstellungen verschlüsselt speichern</button>
+              <p id="settingsMessage" class="fs-xs text-muted mt-sm" role="status"></p>
+            </article>
+
+            <article class="glass-panel panel-padded col-span-2">
+              <div class="section-head flex-between">
+                <div>
+                  <p class="eyebrow" data-i18n="settings.signalFabricKicker">EXPERIMENTAL SIGNAL FABRIC</p>
+                  <h3 class="m-0" data-i18n="settings.ruleModules">Regelmodule verschalten</h3>
+                </div>
+                <span class="fs-xs text-muted" data-i18n="settings.observeOnly">Nur in Observe/Degraded änderbar</span>
+              </div>
+              <div class="grid-3 mt-md">
+                <label class="toggle-row"><span><b data-i18n="settings.moduleLabel.command">Command</b><small class="text-muted d-block" data-i18n="settings.moduleCommand">RE2-Kommandoerkennung</small></span><input id="moduleCommand" type="checkbox"><i></i></label>
+                <label class="toggle-row"><span><b data-i18n="settings.moduleLabel.origin">Origin</b><small class="text-muted d-block" data-i18n="settings.moduleOrigin">memfd &amp; temporäre Binaries</small></span><input id="moduleOrigin" type="checkbox"><i></i></label>
+                <label class="toggle-row"><span><b data-i18n="settings.moduleLabel.lineage">Lineage</b><small class="text-muted d-block" data-i18n="settings.moduleLineage">Eltern-Kind-Prozessbaum</small></span><input id="moduleLineage" type="checkbox"><i></i></label>
+                <label class="toggle-row"><span><b data-i18n="settings.moduleLabel.masquerading">Masquerading</b><small class="text-muted d-block" data-i18n="settings.moduleMasquerading">Name vs Executable-Pfad</small></span><input id="moduleMasquerading" type="checkbox"><i></i></label>
+                <label class="toggle-row"><span><b data-i18n="settings.moduleLabel.threatIntel">Threat Intel</b><small class="text-muted d-block" data-i18n="settings.moduleThreat">IP gegen Präfixe</small></span><input id="moduleThreatIntel" type="checkbox"><i></i></label>
+                <label class="toggle-row"><span><b data-i18n="settings.moduleLabel.baseline">Baseline</b><small class="text-muted d-block" data-i18n="settings.moduleBaseline">Prozess- &amp; Netzbaseline</small></span><input id="moduleBaseline" type="checkbox"><i></i></label>
+              </div>
+            </article>
+          </form>
+
+          <article class="glass-panel panel-padded mt-lg">
+            <div class="section-head flex-between">
+              <div>
+                <p class="eyebrow" data-i18n="settings.rulesKicker">OPERATOR RULE WORKSPACE</p>
+                <h3 class="m-0" data-i18n="settings.customRules">Eigene RE2-Regeln</h3>
+              </div>
+              <span class="fs-xs text-muted" data-i18n="settings.alertOnly">Nur Signal/Score, niemals direkte Kill-Autorisierung</span>
+            </div>
+            <form id="customRuleForm" class="grid-3 mt-md">
+              <label><span data-i18n="settings.ruleId">Regel-ID</span><input id="customRuleId" autocomplete="off" spellcheck="false" placeholder="CUSTOM.MY-RULE" maxlength="64" required></label>
+              <label><span data-i18n="settings.category">Kategorie</span><input id="customRuleCategory" autocomplete="off" spellcheck="false" placeholder="operator" maxlength="32" required></label>
+              <label><span data-i18n="settings.score">Score</span><input id="customRuleScore" type="number" min="1" max="100" value="25" required></label>
+              <label class="col-span-2"><span data-i18n="settings.summary">Zusammenfassung</span><input id="customRuleSummary" autocomplete="off" maxlength="160" required></label>
+              <label class="col-span-full"><span data-i18n="settings.pattern">RE2-Pattern</span><input id="customRulePattern" class="mono" autocomplete="off" spellcheck="false" maxlength="512" placeholder="(?i)\btool-name\b" required></label>
+              <div class="col-span-full"><button class="button button-primary" type="submit" data-i18n="settings.addRule">Regel verschlüsselt speichern</button></div>
+            </form>
+            <div class="table-wrap mt-md">
+              <table>
+                <thead><tr><th data-i18n="settings.ruleId">Regel-ID</th><th data-i18n="settings.category">Kategorie</th><th data-i18n="settings.score">Score</th><th data-i18n="settings.pattern">RE2-Pattern</th><th data-i18n="table.status">Status</th><th></th></tr></thead>
+                <tbody id="customRuleRows"></tbody>
+              </table>
+            </div>
+          </article>
+
+          <article class="glass-panel panel-padded mt-lg">
+            <div class="section-head flex-between">
+              <div>
+                <p class="eyebrow" data-i18n="settings.managementKicker">MANAGEMENT SURVIVAL PATH</p>
+                <h3 id="settingsAllowlist" class="m-0" data-i18n="settings.allowlist">Management-Allowlist</h3>
+              </div>
+              <span class="fs-xs text-amber" data-i18n="settings.required">Pflicht vor Enforce</span>
+            </div>
+            <form id="allowlistForm" class="flex-row gap-md mt-md">
+              <label class="flex-1">
+                <span class="sr-only" data-i18n="settings.ipCidr">IP oder CIDR</span>
+                <input id="allowlistTarget" autocomplete="off" spellcheck="false" placeholder="203.0.113.10/32" required>
+              </label>
+              <button class="button button-primary" type="submit" data-i18n="settings.add">Hinzufügen</button>
+            </form>
+            <div class="table-wrap mt-md">
+              <table>
+                <thead><tr><th data-i18n="table.networkCidr">Netz/CIDR</th><th data-i18n="table.kernelProtection">Kernel-Schutz</th><th></th></tr></thead>
+                <tbody id="allowlistRows"></tbody>
+              </table>
+            </div>
+          </article>
+        </section>
+
+        <!-- 13. SYSTEM VIEW -->
+        <section class="view" data-page="system" aria-labelledby="systemHeading" hidden>
+          <div class="view-context-bar">
+            <div>
+              <p class="eyebrow m-0" data-i18n="view.system.eyebrow">NODE DIAGNOSTICS</p>
+              <h2 id="systemHeading" class="m-0 fs-xl" data-i18n="system.heading">System</h2>
+              <p class="view-context-desc" data-i18n="system.description">Gesundheit der privilegierten und unprivilegierten Sicherheitsdomänen.</p>
+            </div>
+            <div class="view-context-actions">
+              <span id="nodeModeBadge" class="status-pill good">NOMINAL</span>
+            </div>
+          </div>
+
+          <div class="grid-3">
+            <article class="glass-panel panel-padded">
+              <span class="eyebrow" data-i18n="system.node">NODE IDENTITÄT</span>
+              <strong id="systemNode" class="fs-lg text-cyan mt-xs d-block">---</strong>
+              <small class="text-muted fs-xs"><span data-i18n="system.uptimeLabel">Uptime</span>: <span id="systemUptime">00:00:00</span></small>
+            </article>
+
+            <article class="glass-panel panel-padded">
+              <span class="eyebrow" data-i18n="system.dataPlane">KERNEL CORE</span>
+              <strong id="systemCore" class="fs-lg text-bright mt-xs d-block">OFFLINE</strong>
+              <small id="systemCoreDetail" class="text-muted fs-xs" data-i18n="system.ipcDisconnected">IPC getrennt</small>
+            </article>
+
+            <article class="glass-panel panel-padded">
+              <span class="eyebrow" data-i18n="system.xdr">LINUX-XDR SENSOR</span>
+              <strong id="systemXdr" class="fs-lg text-bright mt-xs d-block" data-i18n="dynamic.initializing">INITIALISIERUNG</strong>
+              <small id="systemXdrDetail" class="text-muted fs-xs" data-i18n="system.workersReady">Workers bereit</small>
+            </article>
+
+            <article class="glass-panel panel-padded">
+              <span class="eyebrow" data-i18n="system.policy">POLICY VERIFIKATION</span>
+              <strong id="systemPolicy" class="fs-lg text-bright mt-xs d-block" data-i18n="dynamic.verified">VERIFIZIERT</strong>
+              <small id="systemPolicyDetail" class="text-muted fs-xs" data-i18n="system.signatureDetail">Ed25519 Signatur</small>
+            </article>
+
+            <article class="glass-panel panel-padded">
+              <span class="eyebrow" data-i18n="system.behavior">VERHALTENS-INTEGRITÄT</span>
+              <strong id="systemBehavior" class="fs-lg text-bright mt-xs d-block" data-i18n="dynamic.verified">VERIFIZIERT</strong>
+              <small id="systemBehaviorDetail" class="text-muted fs-xs" data-i18n="system.baselineMacOk">Baseline MAC OK</small>
+            </article>
+
+            <article class="glass-panel panel-padded">
+              <span class="eyebrow" data-i18n="system.feeds">THREAT FEEDS</span>
+              <strong id="systemFeeds" class="fs-lg text-bright mt-xs d-block">0</strong>
+              <small id="systemFeedTime" class="text-muted fs-xs" data-i18n="system.notSynced">Nicht synchronisiert</small>
+            </article>
+          </div>
+
+          <article class="glass-panel panel-padded mt-lg">
+            <div class="section-head flex-between">
+              <div>
+                <p class="eyebrow" data-i18n="system.gaiaKicker">GAIA ISOLATION FABRIC</p>
+                <h3 id="cellsHeading" class="m-0" data-i18n="cells.heading">Gaia Cells</h3>
+              </div>
+              <span id="cellsHealth" class="status-pill muted" data-i18n="dynamic.notAvailable">NOT AVAILABLE</span>
+            </div>
+            <p class="fs-xs text-muted mt-xs" data-i18n="cells.description">GeDefense bindet Aktionen an UUID, Lifecycle-Generation und Kernel-cgroup-ID. Labels werden ausschließlich als untrusted Anzeige behandelt.</p>
+            <label class="d-block mt-md">
+              <span class="fs-xs text-muted d-block mb-xs" data-i18n="cells.reason">Begründung für Isolation</span>
+              <input id="cellActionReason" maxlength="240" autocomplete="off" data-i18n-placeholder="cells.reasonPlaceholder" placeholder="Isolationseingriff">
+            </label>
+            <div class="table-wrap mt-md">
+              <table>
+                <thead><tr><th>UUID</th><th data-i18n="cells.label">Label</th><th data-i18n="cells.class">Klasse</th><th data-i18n="table.status">Status</th><th data-i18n="cells.network">Netzwerk</th><th data-i18n="cells.cgroupId">cgroup ID</th><th></th></tr></thead>
+                <tbody id="cellsRows"></tbody>
+              </table>
+            </div>
+          </article>
+          <!-- Control-plane lifecycle.
+               Several administrable values are RESTART-class: persisted, reported as
+               restart_required, and deliberately never activated behind the operator's
+               back. That rule is only complete if the restart itself is reachable, so it
+               is offered here rather than from a shell. The action is disruptive, so it
+               states its consequence, requires a justification for the audit log, and
+               reports the platform's answer instead of closing over it. -->
+          <article class="glass-panel panel-padded mt-lg">
+            <div class="section-head flex-between">
+              <div>
+                <p class="eyebrow" data-i18n="system.lifecycleKicker">CONTROL PLANE LIFECYCLE</p>
+                <h3 class="m-0" data-i18n="system.lifecycleTitle">Neustart</h3>
+              </div>
+              <span id="restartGateBadge" class="status-pill muted" data-i18n="dynamic.checking">WIRD GEPRÜFT</span>
+            </div>
+            <p class="fs-xs text-muted mt-xs" data-i18n="system.lifecycleDesc">RESTART-klassige Werte werden gespeichert, aber nie still aktiviert. Ein Neustart übernimmt die gespeicherte Revision. Die Verbindung bricht dabei kurz ab; das Dashboard verbindet sich selbst neu.</p>
+            <div class="restart-surface mt-md">
+              <label class="flex-1">
+                <span class="fs-xs text-muted d-block mb-xs" data-i18n="system.restartReason">Begründung für das Audit-Log</span>
+                <input id="restartReason" autocomplete="off" minlength="8" maxlength="240" placeholder="Gespeicherte L7-Transportänderung übernehmen">
+              </label>
+              <button id="btnRestartControl" class="button button-danger" type="button" data-i18n="system.restartAction">Control Plane neu starten</button>
+            </div>
+            <p id="restartState" class="restart-state mt-sm" role="status" aria-live="polite"></p>
+          </article>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <!-- L7 FINDING DETAIL DRAWER & BACKDROP -->
+  <div id="l7DrawerBackdrop" class="drawer-backdrop" hidden></div>
+  <aside id="l7FindingDrawer" class="l7-detail-drawer" hidden>
+    <div class="drawer-header flex-between">
+      <h3 class="m-0 fs-base" data-i18n="l7.drawer.title">L7 Bedrohungs-Details</h3>
+      <button id="btnCloseL7Drawer" class="button button-quiet" type="button" data-i18n-aria="dialog.close" aria-label="Schließen">&times;</button>
+    </div>
+    <div class="drawer-body flex-col gap-md">
+      <div class="diag-card">
+        <span class="diag-label" data-i18n="l7.drawer.ruleSummary">REGEL &amp; ZUSAMMENFASSUNG</span>
+        <div class="diag-val"><strong id="drawerFindingRule" class="text-cyan">L7</strong> · <span id="drawerFindingSeverity" class="severity-badge info">INFO</span></div>
+        <p id="drawerFindingSummary" class="fs-xs text-bright mt-xs">---</p>
+      </div>
+      <div class="diag-card">
+        <span class="diag-label" data-i18n="l7.drawer.scoreConfidence">SCORE &amp; KONFIDENZ</span>
+        <div class="diag-val fs-sm"><span data-i18n="table.score">Score</span>: <strong id="drawerFindingScore" class="text-amber">0</strong> · <span data-i18n="l7.drawer.confidence">Konfidenz</span>: <span id="drawerFindingConfidence">0%</span></div>
+      </div>
+      <div class="diag-card">
+        <span class="diag-label" data-i18n="l7.drawer.meta">REQUEST DETAILS</span>
+        <div class="diag-val fs-sm"><b id="drawerReqMethod">GET</b> <span id="drawerReqHost" class="font-mono">---</span><span id="drawerReqPath" class="font-mono text-break">/</span></div>
+        <small class="diag-sub"><span data-i18n="l7.drawer.client">Client</span>: <span id="drawerReqRemote" class="font-mono">---</span></small>
+        <small class="diag-sub d-block mt-xs"><span data-i18n="l7.drawer.requestId">Request-ID</span>: <code id="drawerReqID" class="font-mono fs-micro">---</code></small>
+        <small class="diag-sub d-block"><span data-i18n="l7.drawer.bodySha">Body-SHA</span>: <code id="drawerReqBodySHA" class="font-mono fs-micro">---</code></small>
+      </div>
+      <div class="diag-card">
+        <span class="diag-label" data-i18n="l7.drawer.decision">ENTSCHEIDUNG &amp; REAKTION</span>
+        <div class="diag-val fs-sm"><span data-i18n="table.decision">Entscheidung</span>: <span id="drawerDecision" class="text-bright font-mono">observed</span> · <span data-i18n="table.action">Aktion</span>: <span id="drawerAction" class="font-mono">none</span></div>
+        <p id="drawerOutcome" class="fs-xs text-muted mt-xs">---</p>
+      </div>
+      <div class="diag-card">
+        <span class="diag-label" data-i18n="l7.drawer.correlation">KORRELIERTE ATTACK STORY</span>
+        <div id="drawerAttackStoryList" class="mt-xs"></div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- MODALS -->
+  <dialog id="activateProtectionDialog" class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 class="modal-title"><span data-i18n="dialog.activate.title">Schutzstufe aktivieren</span>: <strong id="dialogTargetPhase" class="text-cyan">CANARY</strong></h3>
+        <p id="dialogTargetDesc" class="modal-subtitle">---</p>
+      </div>
+      <form id="activateProtectionForm" class="flex-col gap-md">
+        <div class="diag-card">
+          <span class="diag-label" data-i18n="dialog.activate.preflight">SICHERHEITSVORAUSSETZUNGEN (PREFLIGHT)</span>
+          <ul id="dialogPreflightList" class="preflight-list"></ul>
+        </div>
+        <label>
+          <span data-i18n="dialog.activate.reasonLabel">Begründung für Audit-Log (min. 8 Zeichen)</span>
+          <input id="activationReasonInput" required data-i18n-placeholder="dialog.activate.reasonPlaceholder" placeholder="z. B. Geplante Schutzaktivierung nach Audit">
+        </label>
+        <div class="modal-action-row">
+          <button class="button button-quiet" type="button" data-dialog-close data-i18n="dialog.cancel">Abbrechen</button>
+          <button id="btnConfirmActivation" class="button button-primary" type="submit" data-i18n="dialog.activate.confirm" disabled>Stufe aktivieren</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
+  <dialog id="emergencyStopDialog" class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 class="modal-title text-red" data-i18n="emergency.title">EMERGENCY STOP AUSLÖSEN</h3>
+        <p class="modal-subtitle" data-i18n="dialog.returnObserve.description">Versetzt alle Komponenten sofort in den reinen Beobachtungsmodus (Observe). Alle aktiven Eingriffe werden gestoppt.</p>
+      </div>
+      <form id="emergencyStopForm" class="flex-col gap-md">
+        <label>
+          <span data-i18n="emergency.reasonLabel">Begründung für Audit-Log (min. 8 Zeichen)</span>
+          <input id="emergencyStopReasonInput" required data-i18n-placeholder="emergency.reasonPlaceholder" placeholder="z. B. Verdacht auf False-Positive-Auswirkung">
+        </label>
+        <div class="modal-action-row">
+          <button class="button button-quiet" type="button" data-dialog-close data-i18n="dialog.cancel">Abbrechen</button>
+          <button class="button button-danger" type="submit" data-i18n="emergency.topBtn">EMERGENCY STOP</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
+  <dialog id="emergencyClearDialog" class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 class="modal-title" data-i18n="emergency.clearTitle">Emergency Stop aufheben</h3>
+        <p class="modal-subtitle" data-i18n="dialog.clearEmergency.description">Setzt den Notfall-Stopp zurück. Das System kehrt in den kontrollierten Observe-Modus zurück.</p>
+      </div>
+      <form id="emergencyClearFormModal" class="flex-col gap-md">
+        <label>
+          <span data-i18n="emergency.clearReasonLabel">Begründung für Audit-Log (min. 8 Zeichen)</span>
+          <input id="emergencyClearReasonInput" required data-i18n-placeholder="emergency.clearReasonPlaceholder" placeholder="z. B. Vorfall geprüft und behoben">
+        </label>
+        <div class="modal-action-row">
+          <button class="button button-quiet" type="button" data-dialog-close data-i18n="dialog.cancel">Abbrechen</button>
+          <button class="button button-primary" type="submit" data-i18n="emergency.clearBtn">Stop aufheben</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
+  <dialog id="xdrRecoveryDialog" class="modal-dialog">
+    <form id="xdrRecoveryForm" method="dialog" class="modal-card" autocomplete="off">
+      <div class="modal-head">
+        <div>
+          <p class="eyebrow m-0" data-i18n="xdr.recovery.kicker">FORENSIC FAIL-CLOSED RECOVERY</p>
+          <h3 class="modal-title" data-i18n="xdr.recovery.title">XDR-Incident-Kette sicher wiederherstellen</h3>
+          <p class="modal-subtitle" data-i18n="xdr.recovery.subtitle">Die beschädigte Kette wird unverändert archiviert und gehasht. Erst danach wird eine neue leere Kette erzeugt und erneut verifiziert.</p>
+        </div>
+      </div>
+      <div class="modal-body">
+        <div class="diag-card">
+          <span class="diag-label" data-i18n="xdr.recovery.guarantee">SICHERHEITSGARANTIE</span>
+          <p class="fs-sm text-muted mt-xs" data-i18n="xdr.recovery.guaranteeDetail">Keine beschädigte Evidenz wird gelöscht. Schlüssel werden weder rotiert noch ersetzt. Canary/Enforce bleiben eine separate Operator-Entscheidung.</p>
+        </div>
+        <label class="mt-md d-block">
+          <span data-i18n="xdr.recovery.reason">Begründung für das Audit-Log (min. 8 Zeichen)</span>
+          <input id="xdrRecoveryReason" name="reason" maxlength="240" minlength="8" required autocomplete="off" spellcheck="false" data-i18n-placeholder="xdr.recovery.reasonPlaceholder" placeholder="Incident-Ledger geprüft und Forensik exportiert">
+        </label>
+      </div>
+      <div class="modal-actions">
+        <button class="button button-quiet" type="button" data-dialog-close data-i18n="dialog.cancel">Abbrechen</button>
+        <button id="xdrRecoveryConfirm" class="button button-danger" type="submit" data-i18n="xdr.recovery.confirm">Archivieren und neu initialisieren</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="titanPolicyDialog" class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 class="modal-title" data-i18n="titan.policy.title">Titan Owner Policy</h3>
+        <p class="modal-subtitle" data-i18n="titan.policy.subtitle">Modus, Bewaffnung und Auto-Contain werden serverseitig validiert. Jede Änderung ist begründungspflichtig und wird im Audit-Log protokolliert.</p>
+      </div>
+      <form id="titanPolicyForm" class="flex-col gap-md">
+        <label>
+          <span data-i18n="titan.policy.modeLabel">Policy-Modus</span>
+          <select id="titanPolicyModeInput">
+            <option value="OBSERVE" data-i18n="titan.mode.OBSERVE">OBSERVE</option>
+            <option value="CONTAIN" data-i18n="titan.mode.CONTAIN">CONTAIN</option>
+            <option value="STRICT" data-i18n="titan.mode.STRICT">STRICT</option>
+          </select>
+          <small class="fs-xs text-muted" data-i18n="titan.policy.modeHint">OBSERVE beobachtet nur. CONTAIN reagiert gemäß Owner-Policy. STRICT verlangt für hochriskante Änderungen eine ausdrückliche Freigabe.</small>
+        </label>
+        <label class="titan-check-row">
+          <input id="titanPolicyArmedInput" type="checkbox">
+          <span><strong data-i18n="titan.policy.armedLabel">Bewaffnung aktiviert</strong><small data-i18n="titan.policy.armedHint">Ohne Bewaffnung werden keine aktiven Eingriffe ausgeführt.</small></span>
+        </label>
+        <label class="titan-check-row">
+          <input id="titanPolicyAutoContainInput" type="checkbox">
+          <span><strong data-i18n="titan.policy.autoContainLabel">Auto-Contain erlauben</strong><small data-i18n="titan.policy.autoContainHint">Nur gemäß Owner-Policy und nur wenn die Response Engine den Eingriff sicher ausführen kann.</small></span>
+        </label>
+        <label>
+          <span data-i18n="titan.policy.reasonLabel">Begründung (min. 8 Zeichen)</span>
+          <input id="titanPolicyReason" required minlength="8" maxlength="512" autocomplete="off" data-i18n-placeholder="titan.policy.reasonPlaceholder" placeholder="z. B. Wartungsfenster nach Owner-Freigabe">
+        </label>
+        <p id="titanPolicyError" class="titan-form-error" role="status" aria-live="polite" hidden></p>
+        <div class="modal-action-row">
+          <button class="button button-quiet" type="button" data-dialog-close data-i18n="dialog.cancel">Abbrechen</button>
+          <button id="titanPolicySubmit" class="button button-primary" type="submit" data-i18n="titan.policy.submit">Policy speichern</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
+  <dialog id="titanReviewDialog" class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 class="modal-title" data-i18n="titan.review.title">Titan-Ereignis prüfen</h3>
+        <p class="modal-subtitle" data-i18n="titan.review.subtitle">Die Entscheidung wird als Operatorprüfung dokumentiert. Sie ersetzt keine technische Beweisführung und keine kryptografische Evidenz.</p>
+      </div>
+      <form id="titanReviewForm" class="flex-col gap-md">
+        <div id="titanReviewSummary" class="diag-card mono fs-xs">---</div>
+        <label>
+          <span data-i18n="titan.review.decisionLabel">Entscheidung</span>
+          <select id="titanReviewDecision">
+            <option value="REVIEWED" data-i18n="titan.review.decision.REVIEWED">Geprüft</option>
+            <option value="TOLERATED" data-i18n="titan.review.decision.TOLERATED">Geduldet</option>
+            <option value="ESCALATED" data-i18n="titan.review.decision.ESCALATED">Eskaliert</option>
+          </select>
+        </label>
+        <label>
+          <span data-i18n="titan.review.reasonLabel">Begründung (min. 8 Zeichen)</span>
+          <input id="titanReviewReason" required minlength="8" maxlength="512" autocomplete="off" data-i18n-placeholder="titan.review.reasonPlaceholder" placeholder="z. B. Änderung mit Owner-Freigabe abgeglichen">
+        </label>
+        <p id="titanReviewError" class="titan-form-error" role="status" aria-live="polite" hidden></p>
+        <div class="modal-action-row">
+          <button class="button button-quiet" type="button" data-dialog-close data-i18n="dialog.cancel">Abbrechen</button>
+          <button id="titanReviewSubmit" class="button button-primary" type="submit" data-i18n="titan.review.submit">Prüfung dokumentieren</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
+  <dialog id="titanContainDialog" class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 class="modal-title" data-i18n="titan.contain.title">Titan-Ereignis eindämmen</h3>
+        <p class="modal-subtitle" data-i18n="titan.contain.subtitle">Die Control Plane prüft vor jedem Eingriff, ob eine sichere Eindämmung möglich ist. Beweise werden vor destruktiven Schritten gesichert; eine Ablehnung wird unverändert angezeigt.</p>
+      </div>
+      <form id="titanContainForm" class="flex-col gap-md">
+        <div id="titanContainSummary" class="diag-card mono fs-xs">---</div>
+        <div class="titan-contain-warning" data-i18n="titan.contain.warning">Eindämmung ist kein Beweis der Harmlosigkeit oder Schuld. Bei nicht verfügbarer oder unsicherer Durchsetzung muss die Control Plane den Eingriff ausdrücklich ablehnen.</div>
+        <label>
+          <span data-i18n="titan.contain.reasonLabel">Begründung (min. 8 Zeichen)</span>
+          <input id="titanContainReason" required minlength="8" maxlength="512" autocomplete="off" data-i18n-placeholder="titan.contain.reasonPlaceholder" placeholder="z. B. Unautorisierte Änderung an Schutzmechanismus">
+        </label>
+        <p id="titanContainError" class="titan-form-error" role="status" aria-live="polite" hidden></p>
+        <div class="modal-action-row">
+          <button class="button button-quiet" type="button" data-dialog-close data-i18n="dialog.cancel">Abbrechen</button>
+          <button id="titanContainSubmit" class="button button-danger" type="submit" data-i18n="titan.contain.submit">Eindämmung anfordern</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
+  <!-- F-22: protection-reducing removals require a target-derived typed phrase and a
+       reason, and the control plane answers with a short-lived server-side undo token.
+       The dialog only carries operator input; it never synthesizes success. -->
+  <dialog id="protectionRemovalDialog" class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 id="removalTitle" class="modal-title">Schutzmaßnahme entfernen</h3>
+        <p id="removalSubtitle" class="modal-subtitle">---</p>
+      </div>
+      <form id="protectionRemovalForm" class="flex-col gap-md" autocomplete="off" novalidate>
+        <div class="removal-target-block">
+          <span class="diag-label" data-i18n="removal.targetLabel">Betroffenes Ziel</span>
+          <code id="removalTarget" class="removal-target mono">---</code>
+        </div>
+        <div class="removal-warning" data-i18n="removal.warning">Das Entfernen reduziert den aktiven Schutz. Die Aktion wird begründet, serverseitig validiert und kann innerhalb des Rückgängig-Fensters wiederhergestellt werden.</div>
+        <label>
+          <span data-i18n="removal.confirmationLabel">Bestätigung (exakt eingeben)</span>
+          <span class="removal-expected-label" data-i18n="removal.expectedPhraseLabel">Erwartete Phrase</span>
+          <code id="removalExpectedPhrase" class="removal-phrase mono">---</code>
+          <input id="removalConfirmation" required autocomplete="off" spellcheck="false" maxlength="512">
+        </label>
+        <p class="fs-xs text-muted" data-i18n="removal.confirmationHint">Die Eingabe muss exakt der angezeigten Phrase entsprechen.</p>
+        <label>
+          <span data-i18n="removal.reasonLabel">Begründung (8–240 Zeichen)</span>
+          <input id="removalReason" required minlength="8" maxlength="240" autocomplete="off" data-i18n-placeholder="removal.reasonPlaceholder" placeholder="z. B. Fehlblockierung nach Betreiberprüfung">
+        </label>
+        <p id="removalError" class="fs-xs text-red" role="status" aria-live="polite" hidden></p>
+        <div class="modal-action-row">
+          <button class="button button-quiet" type="button" data-dialog-close data-i18n="dialog.cancel">Abbrechen</button>
+          <button id="removalSubmit" class="button button-danger" type="submit" data-i18n="removal.submit">Entfernen</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
+  <!-- Authentication boundary.
+       Composed as two planes rather than a centred card, because there are two
+       different jobs here: establishing which node is being trusted and over what
+       channel, and presenting the credential. The left plane carries facts this host
+       can actually attest before any token is presented - its own address, the
+       transport in use, where the key lives and what authorising it grants. The right
+       plane carries the single action. Both planes answer a question an operator
+       genuinely has at a trust boundary; nothing here is decorative. -->
+  <dialog id="authDialog" class="modal-dialog auth-dialog">
+    <div class="auth-plane">
+      <section class="auth-identity" aria-labelledby="authTitle">
+        <header class="auth-mark">
+          <img class="auth-sigil" src="/assets/gedefense-logo.png" alt="" aria-hidden="true">
+          <p class="auth-wordmark">GeDefense</p>
+          <p class="auth-descriptor" data-i18n="auth.product">Security Fabric Control Plane</p>
+        </header>
+        <dl class="auth-facts">
+          <div class="auth-fact">
+            <dt data-i18n="auth.node">Knoten</dt>
+            <dd id="authNode" class="font-mono">---</dd>
+          </div>
+          <div class="auth-fact">
+            <dt data-i18n="auth.channel">Kanal</dt>
+            <dd id="authChannel">---</dd>
+          </div>
+          <div class="auth-fact">
+            <dt data-i18n="auth.keySource">Schluesselquelle</dt>
+            <dd class="font-mono">/var/lib/vgt/gedefense/dashboard.token</dd>
+          </div>
+          <div class="auth-fact">
+            <dt data-i18n="auth.scope">Umfang</dt>
+            <dd data-i18n="auth.scopeValue">Steuerungshandlungen, Richtlinien und Enforcement</dd>
+          </div>
+        </dl>
+        <p class="auth-custody" data-i18n="auth.custody">Der Schluessel bleibt im fluechtigen Speicher dieses Tabs und wird beim Neuladen verworfen.</p>
+      </section>
+
+      <section class="auth-grant" aria-labelledby="authTitle">
+        <h3 id="authTitle" class="auth-title" data-i18n="auth.title">Dashboard-Key</h3>
+        <form id="authForm" class="auth-form" autocomplete="off">
+          <label class="auth-field">
+            <span class="auth-label" data-i18n="auth.token">Bearer Token</span>
+            <input id="tokenInput" name="operator_token" type="password" autocomplete="off" spellcheck="false" data-i18n-placeholder="auth.tokenPlaceholder" placeholder="Token aus /var/lib/vgt/gedefense/dashboard.token">
+          </label>
+          <!-- The state line is the only feedback the operator gets before the dialog
+               closes, so it is a real live region rather than a toast that appears
+               after the fact. -->
+          <p id="authState" class="auth-state" role="status" aria-live="polite"></p>
+          <div class="auth-actions">
+            <button id="saveToken" class="button button-primary auth-submit" type="submit" data-i18n="auth.save">Sitzung autorisieren</button>
+            <button class="auth-dismiss" type="button" data-dialog-close data-i18n="auth.dismiss">Ohne Sitzung fortfahren</button>
+          </div>
+        </form>
+      </section>
+    </div>
+  </dialog>
+
+  <dialog id="supportDialog" class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 class="modal-title" data-i18n="support.title">VisionGaiaTechnology unterstützen</h3>
+        <p class="modal-subtitle" data-i18n="support.description">Souveräne europäische Sicherheitsforschung und quelloffene Linux-Abwehr.</p>
+      </div>
+      <div class="flex-col gap-md">
+        <div class="support-crypto-item">
+          <div class="flex-between"><span data-i18n="support.paypal">PayPal</span><button class="button button-quiet copy-address" data-copy="https://paypal.me/dergoldenelotus" type="button" data-i18n="support.copy">Kopieren</button></div>
+          <code class="fs-xs font-mono text-break text-cyan">paypal.me/dergoldenelotus</code>
+        </div>
+        <div class="support-crypto-item">
+          <div class="flex-between"><span>Bitcoin (BTC)</span><button class="button button-quiet copy-address" data-copy="bc1q3ue5gq822tddmkdrek79adlkm36fatat3lz0dm" type="button" data-i18n="support.copy">Kopieren</button></div>
+          <code class="fs-xs font-mono text-break text-cyan">bc1q3ue5gq822tddmkdrek79adlkm36fatat3lz0dm</code>
+        </div>
+        <div class="support-crypto-item">
+          <div class="flex-between"><span>Ethereum / EVM (ETH, USDT, USDC)</span><button class="button button-quiet copy-address" data-copy="0xD37DEfb09e07bD775EaaE9ccDaFE3a5b2348Fe85" type="button" data-i18n="support.copy">Kopieren</button></div>
+          <code class="fs-xs font-mono text-break text-cyan">0xD37DEfb09e07bD775EaaE9ccDaFE3a5b2348Fe85</code>
+        </div>
+        <div class="modal-action-row">
+          <button class="button button-quiet" type="button" data-dialog-close data-i18n="dialog.close">Schließen</button>
+        </div>
+      </div>
+    </div>
+  </dialog>
+
+  <div id="operationOverlay" class="operation-overlay" role="status" aria-live="polite" aria-atomic="true" hidden>
+    <div id="operationPanel" class="operation-panel" data-state="running">
+      <div id="operationStateIcon" class="operation-state-icon" aria-label="Operation läuft">
+        <img src="/assets/gedefense-logo.png" alt="" aria-hidden="true">
+        <span class="operation-orbit" aria-hidden="true"></span>
+        <span class="operation-check" aria-hidden="true">✓</span>
+        <span class="operation-error-mark" aria-hidden="true">!</span>
+      </div>
+      <div class="operation-copy">
+        <p class="eyebrow" data-i18n="operation.kicker">GEDEFENSE SECURE OPERATION</p>
+        <h3 id="operationTitle" data-i18n="operation.default">Sicherheitsoperation wird ausgeführt</h3>
+        <p id="operationDetail" data-i18n="operation.working">GeDefense prüft, wendet an und verifiziert den Zielzustand.</p>
+      </div>
+      <div class="operation-progress" aria-hidden="true"><span></span></div>
+      <button id="operationClose" class="button button-quiet operation-close" type="button" hidden data-i18n="operation.close">Schließen</button>
+    </div>
+  </div>
+
+  <div id="toastRegion" class="toast-region" aria-live="polite"></div>
+</body>
+</html>

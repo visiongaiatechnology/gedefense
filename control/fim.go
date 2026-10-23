@@ -1,0 +1,684 @@
+// STATUS: DIAMANT VGT SUPREME
+package main
+
+import (
+	"bytes"
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"sync"
+	"time"
+)
+
+const (
+	fimBaselineSchema = "vgt-gedefense-fim-v1"
+	fimPurpose        = "fim-baseline"
+)
+
+type FIMRecord struct {
+	SHA256 string      `json:"sha256"`
+	Size   int64       `json:"size"`
+	Mode   os.FileMode `json:"mode"`
+}
+
+type FIMBaseline struct {
+	Schema     string               `json:"schema"`
+	Generation uint64               `json:"generation"`
+	CreatedAt  time.Time            `json:"created_at"`
+	Roots      []string             `json:"roots"`
+	Files      map[string]FIMRecord `json:"files"`
+}
+
+type FIMFinding struct {
+	Path    string `json:"path"`
+	Status  string `json:"status"`
+	Size    int64  `json:"size,omitempty"`
+	Mode    string `json:"mode,omitempty"`
+	Message string `json:"message,omitempty"`
+}
+
+type FIMScanSummary struct {
+	StartedAt  time.Time    `json:"started_at"`
+	FinishedAt time.Time    `json:"finished_at"`
+	Total      int          `json:"total"`
+	Verified   int          `json:"verified"`
+	Tampered   int          `json:"tampered"`
+	Missing    int          `json:"missing"`
+	New        int          `json:"new"`
+	Errors     int          `json:"errors"`
+	Findings   []FIMFinding `json:"findings"`
+}
+
+type FIMStatus struct {
+	Enabled       bool            `json:"enabled"`
+	Health        string          `json:"health"`
+	BaselineCount int             `json:"baseline_count"`
+	Generation    uint64          `json:"generation"`
+	Roots         []string        `json:"roots"`
+	LastScan      *FIMScanSummary `json:"last_scan,omitempty"`
+	Error         string          `json:"error,omitempty"`
+}
+
+type FIMEngine struct {
+	mu           sync.RWMutex
+	roots        []string
+	baselinePath string
+	storage      *StorageCipher
+	baseline     FIMBaseline
+	lastScan     *FIMScanSummary
+	integrityErr error
+	scanning     bool
+	policy       fimPolicy
+}
+
+func NewFIMEngine(paths []string, baselinePath string, storage *StorageCipher) (*FIMEngine, error) {
+	if storage == nil {
+		return nil, errors.New("FIM requires encrypted storage")
+	}
+	if !filepath.IsAbs(baselinePath) {
+		return nil, errors.New("FIM baseline path must be absolute")
+	}
+	roots, err := normalizeFIMRoots(paths)
+	if err != nil {
+		return nil, err
+	}
+	engine := &FIMEngine{
+		roots: roots, baselinePath: baselinePath, storage: storage,
+		baseline: FIMBaseline{Schema: fimBaselineSchema, Roots: roots, Files: make(map[string]FIMRecord)},
+		policy:   defaultIntegrityFabricSettings(Config{}).FIM.policy(),
+	}
+	if err := engine.load(); err != nil && !errors.Is(err, os.ErrNotExist) {
+		engine.integrityErr = err
+	}
+	return engine, nil
+}
+
+func normalizeFIMRoots(paths []string) ([]string, error) {
+	if len(paths) == 0 || len(paths) > 256 {
+		return nil, errors.New("FIM requires 1-256 protected roots")
+	}
+	unique := make(map[string]struct{}, len(paths))
+	for _, raw := range paths {
+		if strings.ContainsRune(raw, '\x00') || !filepath.IsAbs(raw) {
+			return nil, errors.New("FIM roots must be absolute paths without NUL")
+		}
+		cleaned := filepath.Clean(raw)
+		if cleaned == string(filepath.Separator) {
+			return nil, errors.New("FIM refuses an unbounded filesystem-root target")
+		}
+		unique[cleaned] = struct{}{}
+	}
+	roots := make([]string, 0, len(unique))
+	for root := range unique {
+		roots = append(roots, root)
+	}
+	sort.Strings(roots)
+	return roots, nil
+}
+
+func (e *FIMEngine) load() error {
+	policy := e.policySnapshot()
+	raw, err := readBoundedPrivateFile(e.baselinePath, policy.maxBaselineBytes)
+	if err != nil {
+		return err
+	}
+	plaintext, legacy, err := e.storage.Decrypt(e.baselinePath, fimPurpose, raw, nil)
+	if err != nil {
+		return fmt.Errorf("FIM baseline authentication failed: %w", err)
+	}
+	if legacy {
+		return errors.New("unencrypted FIM baseline is rejected")
+	}
+	baseline, err := decodeFIMBaseline(plaintext, policy)
+	if err != nil {
+		return err
+	}
+	if !equalStrings(baseline.Roots, e.roots) {
+		return errors.New("FIM baseline roots differ from configured protected roots")
+	}
+	e.baseline = baseline
+	return nil
+}
+
+func decodeFIMBaseline(raw []byte, policy fimPolicy) (FIMBaseline, error) {
+	var baseline FIMBaseline
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&baseline); err != nil {
+		return FIMBaseline{}, fmt.Errorf("FIM baseline decode: %w", err)
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		return FIMBaseline{}, errors.New("FIM baseline contains trailing data")
+	}
+	if baseline.Schema != fimBaselineSchema || baseline.Generation == 0 || baseline.CreatedAt.IsZero() {
+		return FIMBaseline{}, errors.New("FIM baseline metadata is invalid")
+	}
+	if len(baseline.Files) == 0 || len(baseline.Files) > policy.maxFiles {
+		return FIMBaseline{}, errors.New("FIM baseline file count is outside bounds")
+	}
+	roots, err := normalizeFIMRoots(baseline.Roots)
+	if err != nil || !equalStrings(roots, baseline.Roots) {
+		return FIMBaseline{}, errors.New("FIM baseline roots are not canonical")
+	}
+	for path, record := range baseline.Files {
+		if !filepath.IsAbs(path) || filepath.Clean(path) != path || len(record.SHA256) != 64 ||
+			record.Size < 0 || record.Size > policy.maxFileBytes {
+			return FIMBaseline{}, errors.New("FIM baseline contains an invalid record")
+		}
+		if _, err := hex.DecodeString(record.SHA256); err != nil {
+			return FIMBaseline{}, errors.New("FIM baseline contains an invalid digest")
+		}
+	}
+	return baseline, nil
+}
+
+func equalStrings(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
+}
+
+func (e *FIMEngine) CreateBaseline() (FIMStatus, error) {
+	policy := e.policySnapshot()
+	if !policy.enabled {
+		return FIMStatus{}, errors.New("file integrity monitoring is disabled by policy")
+	}
+	if err := e.beginScan(); err != nil {
+		return e.Status(), err
+	}
+	defer e.endScan()
+
+	files, err := e.collect()
+	if err != nil {
+		return e.setFault(err), err
+	}
+	records := make(map[string]FIMRecord, len(files))
+	for _, path := range files {
+		record, err := hashFIMFile(path, policy.maxFileBytes)
+		if err != nil {
+			fault := fmt.Errorf("FIM refused to trust %s: %w", path, err)
+			return e.setFault(fault), fault
+		}
+		records[path] = record
+	}
+	if len(records) == 0 {
+		err := errors.New("FIM baseline cannot be empty")
+		return e.setFault(err), err
+	}
+
+	e.mu.RLock()
+	generation := e.baseline.Generation + 1
+	e.mu.RUnlock()
+	baseline := FIMBaseline{
+		Schema: fimBaselineSchema, Generation: generation, CreatedAt: time.Now().UTC(),
+		Roots: append([]string(nil), e.roots...), Files: records,
+	}
+	plaintext, err := json.Marshal(baseline)
+	if err != nil {
+		return e.setFault(err), err
+	}
+	sealed, err := e.storage.Encrypt(e.baselinePath, fimPurpose, generation, plaintext)
+	if err != nil {
+		return e.setFault(err), err
+	}
+	if err := os.MkdirAll(filepath.Dir(e.baselinePath), 0o700); err != nil {
+		return e.setFault(err), err
+	}
+	if err := atomicWriteFile(e.baselinePath, sealed, 0o600); err != nil {
+		return e.setFault(err), err
+	}
+
+	e.mu.Lock()
+	e.baseline = baseline
+	e.integrityErr = nil
+	e.lastScan = nil
+	e.mu.Unlock()
+	return e.Status(), nil
+}
+
+func (e *FIMEngine) Scan() (FIMScanSummary, error) {
+	if err := e.beginScan(); err != nil {
+		return FIMScanSummary{}, err
+	}
+	defer e.endScan()
+
+	e.mu.RLock()
+	baseline := cloneFIMBaseline(e.baseline)
+	loadErr := e.integrityErr
+	e.mu.RUnlock()
+	if loadErr != nil {
+		return FIMScanSummary{}, loadErr
+	}
+	if baseline.Generation == 0 {
+		return FIMScanSummary{}, errors.New("FIM baseline has not been created")
+	}
+	policy := e.policySnapshot()
+	if !policy.enabled {
+		return FIMScanSummary{}, errors.New("file integrity monitoring is disabled by policy")
+	}
+	files, err := e.collect()
+	if err != nil {
+		e.setFault(err)
+		return FIMScanSummary{}, err
+	}
+
+	started := time.Now().UTC()
+	summary := FIMScanSummary{StartedAt: started, Findings: make([]FIMFinding, 0)}
+	seen := make(map[string]struct{}, len(files))
+	for _, path := range files {
+		seen[path] = struct{}{}
+		summary.Total++
+		current, hashErr := hashFIMFile(path, policy.maxFileBytes)
+		if hashErr != nil {
+			summary.Errors++
+			appendFIMFinding(&summary, FIMFinding{Path: path, Status: "ERROR", Message: "file could not be verified"}, policy.maxFindings)
+			continue
+		}
+		expected, exists := baseline.Files[path]
+		if !exists {
+			summary.New++
+			appendFIMFinding(&summary, FIMFinding{Path: path, Status: "NEW", Size: current.Size, Mode: current.Mode.String()}, policy.maxFindings)
+			continue
+		}
+		if current.SHA256 != expected.SHA256 || current.Size != expected.Size || current.Mode != expected.Mode {
+			summary.Tampered++
+			appendFIMFinding(&summary, FIMFinding{Path: path, Status: "TAMPERED", Size: current.Size, Mode: current.Mode.String()}, policy.maxFindings)
+			continue
+		}
+		summary.Verified++
+	}
+	for path := range baseline.Files {
+		if _, exists := seen[path]; exists {
+			continue
+		}
+		summary.Total++
+		summary.Missing++
+		appendFIMFinding(&summary, FIMFinding{Path: path, Status: "MISSING"}, policy.maxFindings)
+	}
+	sort.Slice(summary.Findings, func(i, j int) bool {
+		return summary.Findings[i].Path < summary.Findings[j].Path
+	})
+	summary.FinishedAt = time.Now().UTC()
+
+	e.mu.Lock()
+	e.lastScan = cloneFIMSummary(&summary)
+	e.mu.Unlock()
+	return summary, nil
+}
+
+func appendFIMFinding(summary *FIMScanSummary, finding FIMFinding, maxFindings int) {
+	if len(summary.Findings) < maxFindings {
+		summary.Findings = append(summary.Findings, finding)
+	}
+}
+
+func (e *FIMEngine) beginScan() error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.scanning {
+		return errors.New("FIM operation already in progress")
+	}
+	e.scanning = true
+	return nil
+}
+
+func (e *FIMEngine) endScan() {
+	e.mu.Lock()
+	e.scanning = false
+	e.mu.Unlock()
+}
+
+func (e *FIMEngine) collect() ([]string, error) {
+	policy := e.policySnapshot()
+	unique := make(map[string]struct{})
+	totalBytes := int64(0)
+	for _, root := range e.roots {
+		info, err := os.Lstat(root)
+		if err != nil {
+			return nil, fmt.Errorf("protected root unavailable: %s", root)
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return nil, fmt.Errorf("protected root is a symlink: %s", root)
+		}
+		if info.Mode().IsRegular() {
+			if err := addFIMCandidate(unique, root, info, &totalBytes, policy); err != nil {
+				return nil, err
+			}
+			continue
+		}
+		if !info.IsDir() {
+			return nil, fmt.Errorf("protected root has unsupported type: %s", root)
+		}
+		if err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				return walkErr
+			}
+			if entry.Type()&os.ModeSymlink != 0 {
+				if entry.IsDir() {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			if entry.IsDir() {
+				return nil
+			}
+			info, err := entry.Info()
+			if err != nil {
+				return err
+			}
+			if !info.Mode().IsRegular() {
+				return nil
+			}
+			return addFIMCandidate(unique, filepath.Clean(path), info, &totalBytes, policy)
+		}); err != nil {
+			return nil, fmt.Errorf("protected root traversal failed: %s", root)
+		}
+	}
+	files := make([]string, 0, len(unique))
+	for path := range unique {
+		files = append(files, path)
+	}
+	sort.Strings(files)
+	return files, nil
+}
+
+func addFIMCandidate(files map[string]struct{}, path string, info os.FileInfo, totalBytes *int64, policy fimPolicy) error {
+	if info.Size() < 0 || info.Size() > policy.maxFileBytes {
+		return fmt.Errorf("protected file exceeds size boundary: %s", path)
+	}
+	if _, exists := files[path]; exists {
+		return nil
+	}
+	if len(files) >= policy.maxFiles || *totalBytes > policy.maxTotalBytes-info.Size() {
+		return errors.New("FIM traversal budget exhausted")
+	}
+	files[path] = struct{}{}
+	*totalBytes += info.Size()
+	return nil
+}
+
+func hashFIMFile(path string, maxFileBytes int64) (FIMRecord, error) {
+	before, err := os.Lstat(path)
+	if err != nil {
+		return FIMRecord{}, err
+	}
+	if !before.Mode().IsRegular() || before.Mode()&os.ModeSymlink != 0 {
+		return FIMRecord{}, errors.New("file is not a regular non-symlink object")
+	}
+	if before.Size() < 0 || before.Size() > maxFileBytes {
+		return FIMRecord{}, errors.New("file exceeds size boundary")
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return FIMRecord{}, err
+	}
+	defer file.Close()
+	opened, err := file.Stat()
+	if err != nil || !os.SameFile(before, opened) {
+		return FIMRecord{}, errors.New("file identity changed before hashing")
+	}
+	digest := sha256.New()
+	written, err := io.Copy(digest, io.LimitReader(file, maxFileBytes+1))
+	if err != nil || written != before.Size() {
+		return FIMRecord{}, errors.New("file changed while hashing")
+	}
+	after, err := file.Stat()
+	if err != nil || !os.SameFile(before, after) || after.Size() != before.Size() || after.ModTime() != before.ModTime() {
+		return FIMRecord{}, errors.New("file identity changed while hashing")
+	}
+	return FIMRecord{
+		SHA256: hex.EncodeToString(digest.Sum(nil)), Size: after.Size(), Mode: after.Mode().Perm(),
+	}, nil
+}
+
+// TitanBaselineRecord exposes the approved baseline record for a path to the
+// Titan trust engine. It returns no record when the FIM baseline failed
+// authentication, so a damaged baseline can never authorize a change.
+func (e *FIMEngine) TitanBaselineRecord(path string) (FIMRecord, uint64, bool) {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	if e.integrityErr != nil {
+		return FIMRecord{}, e.baseline.Generation, false
+	}
+	record, exists := e.baseline.Files[filepath.Clean(path)]
+	return record, e.baseline.Generation, exists
+}
+
+func cloneFIMBaseline(source FIMBaseline) FIMBaseline {
+	clone := source
+	clone.Roots = append([]string(nil), source.Roots...)
+	clone.Files = make(map[string]FIMRecord, len(source.Files))
+	for path, record := range source.Files {
+		clone.Files[path] = record
+	}
+	return clone
+}
+
+func cloneFIMSummary(source *FIMScanSummary) *FIMScanSummary {
+	if source == nil {
+		return nil
+	}
+	clone := *source
+	clone.Findings = append([]FIMFinding(nil), source.Findings...)
+	return &clone
+}
+
+func (e *FIMEngine) setFault(err error) FIMStatus {
+	e.mu.Lock()
+	e.integrityErr = err
+	e.mu.Unlock()
+	return e.Status()
+}
+
+func (e *FIMEngine) Status() FIMStatus {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	status := FIMStatus{
+		Enabled: true, Health: "NO_BASELINE", BaselineCount: len(e.baseline.Files),
+		Generation: e.baseline.Generation, Roots: append([]string(nil), e.roots...),
+		LastScan: cloneFIMSummary(e.lastScan),
+	}
+	if e.integrityErr != nil {
+		status.Health = "QUARANTINED"
+		status.Error = "FIM baseline integrity unavailable"
+		return status
+	}
+	if e.baseline.Generation == 0 {
+		return status
+	}
+	status.Health = "PENDING"
+	if e.lastScan == nil {
+		return status
+	}
+	switch {
+	case e.lastScan.Errors > 0:
+		status.Health = "DEGRADED"
+	case e.lastScan.Tampered > 0 || e.lastScan.Missing > 0 || e.lastScan.New > 0:
+		status.Health = "TAMPERED"
+	default:
+		status.Health = "VERIFIED"
+	}
+	return status
+}
+
+// runFIM drives the periodic verification. The interval and the enablement flag
+// are re-read from the published Fabric revision on every cycle, so an operator
+// change takes effect on the next scheduling decision without a restart.
+func runFIM(ctx context.Context, state *State, engine *FIMEngine, settings *SettingsStore) {
+	lastOutcome := ""
+	scan := func() {
+		if engine.Status().Generation == 0 {
+			return
+		}
+		if !engine.Enabled() {
+			return
+		}
+		summary, err := engine.Scan()
+		outcome := fmt.Sprintf(
+			"verified=%d tampered=%d missing=%d new=%d errors=%d",
+			summary.Verified, summary.Tampered, summary.Missing, summary.New, summary.Errors,
+		)
+		if err != nil {
+			outcome = "scan-error"
+		}
+		if outcome == lastOutcome {
+			return
+		}
+		lastOutcome = outcome
+		switch {
+		case err != nil:
+			state.AddEvent(Event{
+				Severity: "critical", Kind: "fim.scan_failed", Source: "integrity",
+				Message: "Protected-path verification failed safely",
+			})
+		case summary.Tampered > 0 || summary.Missing > 0 || summary.New > 0 || summary.Errors > 0:
+			state.AddEvent(Event{
+				Severity: "critical", Kind: "fim.deviation", Source: "integrity",
+				Message: "Protected-path deviation detected: " + outcome,
+			})
+		default:
+			state.AddEvent(Event{
+				Severity: "info", Kind: "fim.verified", Source: "integrity",
+				Message: "Encrypted integrity baseline verified: " + outcome,
+			})
+		}
+	}
+	scan()
+	for {
+		interval := time.Duration(defaultIntegrityFabricSettings(Config{}).FIM.IntervalSeconds) * time.Second
+		if settings != nil {
+			configured := effectiveIntegritySettings(settings.Get()).FIM.IntervalSeconds
+			if configured >= 30 {
+				interval = time.Duration(configured) * time.Second
+			}
+		}
+		timer := time.NewTimer(interval)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return
+		case <-timer.C:
+			scan()
+		}
+	}
+}
+
+// runChronosTicker gates the XDR-owned Chronos cadence on the administrable
+// enablement flag. The cadence itself follows the shared integrity interval at
+// service start.
+func runPackageIntegrity(ctx context.Context, state *State, scanner *PackageIntegrityScanner, settings *SettingsStore) {
+	for {
+		interval := time.Duration(defaultIntegrityFabricSettings(Config{}).Packages.IntervalHours) * time.Hour
+		run := false
+		if settings != nil {
+			policy := effectiveIntegritySettings(settings.Get()).Packages
+			if policy.IntervalHours >= 1 {
+				interval = time.Duration(policy.IntervalHours) * time.Hour
+			}
+			run = policy.Enabled && policy.AutoScan
+		}
+		if run && scanner != nil && !scanner.Status().Running {
+			if err := scanner.Start(nil); err != nil && state != nil {
+				state.AddEvent(Event{Severity: "warning", Kind: "package_integrity.scan_failed", Source: "integrity",
+					Message: "Scheduled package integrity verification could not start"})
+			}
+		}
+		if !run {
+			// A disabled schedule still re-reads the policy regularly so
+			// re-enabling it does not require a restart.
+			interval = 60 * time.Second
+		}
+		timer := time.NewTimer(interval)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return
+		case <-timer.C:
+		}
+	}
+}
+
+// runEvidenceVerification extends the verified range of the signed ledger periodically so that
+// a tampering attempt is detected while the service is running, not only at the next operator
+// mutation.
+//
+// The pass is incremental on purpose. It used to walk the entire chain on this timer, and the
+// cost of that is proportional to the whole history: at 260 MB a single pass takes minutes, so
+// the timer could never keep up, the pass ran effectively without pause, and the host paid for
+// a full forensic re-verification forever. Each pass now covers the records written since the
+// authenticated watermark, which is milliseconds once it has caught up, and every record is
+// still verified exactly once.
+func runEvidenceVerification(ctx context.Context, state *State, settings *SettingsStore) {
+	// The first pass runs soon after startup rather than a full interval later. A watermark that
+	// is behind - because the ledger was written by a previous process, or because the service
+	// was upgraded into this scheme - has a backlog to drain, and one chunk per configured
+	// interval would leave the history uncovered for hours.
+	first := true
+	for {
+		interval := time.Duration(defaultIntegrityFabricSettings(Config{}).Evidence.VerifyIntervalSeconds) * time.Second
+		if settings != nil {
+			configured := effectiveIntegritySettings(settings.Get()).Evidence.VerifyIntervalSeconds
+			if configured >= 30 {
+				interval = time.Duration(configured) * time.Second
+			}
+		}
+		if first {
+			interval = 60 * time.Second
+			first = false
+		}
+		timer := time.NewTimer(interval)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return
+		case <-timer.C:
+		}
+		if state == nil {
+			continue
+		}
+		ledger := state.EvidenceLedger()
+		if ledger == nil {
+			continue
+		}
+		// Seal the chain before the budget is reached, not after. A full ledger stops recording
+		// and reports a capacity condition that degrades XDR, and that degradation pauses the
+		// automatic response - the retention limit of a log quietly disabling part of the
+		// protection, with only an operator able to clear it.
+		if status := ledger.Status(); status.MaxBytes > 0 && status.StoredBytes > 0 &&
+			status.StoredBytes*100 >= status.MaxBytes*evidenceRotationThresholdPercent {
+			result, rotateErr := ledger.Rotate(ctx, "retention budget reached; sealing the segment before recording stops")
+			if rotateErr != nil {
+				state.AddEvent(Event{Severity: "warning", Kind: "evidence.rotation_failed", Source: "integrity",
+					Message: "Evidence ledger rotation failed: " + rotateErr.Error()})
+			} else {
+				state.AddEvent(Event{Severity: "high", Kind: "evidence.rotated", Source: "integrity",
+					Message: fmt.Sprintf("Evidence ledger sealed %d records into %s and started a fresh chain", result.SealedRecords, result.ArchiveID)})
+			}
+			state.SetEvidenceStatus(ledger.Status())
+		}
+		previous := ledger.Healthy()
+		if err := ledger.VerifyIncremental(); err != nil {
+			if previous == nil {
+				state.AddEvent(Event{Severity: "critical", Kind: "evidence.verification_failed", Source: "integrity",
+					Message: "Signed evidence ledger failed incremental verification; operator mutations are refused until it is restored"})
+			}
+			continue
+		}
+		state.SetEvidenceStatus(ledger.Status())
+	}
+}

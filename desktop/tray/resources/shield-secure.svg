@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- GeDefense tray status: secure. Intact shield silhouette with a check. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" role="img">
+  <title>GeDefense: secure</title>
+  <rect x="0.5" y="0.5" width="23" height="23" rx="6" fill="#050912" stroke="#8f742e" stroke-width="1"/>
+  <path d="M12 3.2 L19.2 5.9 V11.4 C19.2 15.7 16.2 19.2 12 20.8 C7.8 19.2 4.8 15.7 4.8 11.4 V5.9 Z"
+        fill="#d9b84a" shape-rendering="geometricPrecision"/>
+  <path d="M8.7 11.7 L11.2 14.2 L15.7 9.2" fill="none" stroke="#050912" stroke-width="2.1"
+        stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

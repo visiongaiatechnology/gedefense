@@ -1,0 +1,50 @@
+[Unit]
+Description=VGT GeDefense Production Beta Control Plane
+After=gedefense-core.service
+Wants=gedefense-core.service
+StartLimitIntervalSec=120
+StartLimitBurst=4
+
+[Service]
+Type=notify
+NotifyAccess=main
+WatchdogSec=20s
+User=gedefense
+Group=gedefense
+SupplementaryGroups=gedefense-l7 gedefense-desktop
+ExecStartPre=/opt/vgt/gedefense/current/bin/gedefense-control --config=/etc/vgt/gedefense/gedefense.toml --preflight
+ExecStart=/opt/vgt/gedefense/current/bin/gedefense-control --config=/etc/vgt/gedefense/gedefense.toml
+# Restart=always, not on-failure: the internal restart is a clean self-exit, and a
+# successful exit code would leave the control plane stopped under on-failure. This is
+# what makes the restart action in the dashboard able to bring the persisted revision
+# live without shell access.
+Restart=always
+RestartSec=3s
+TimeoutStartSec=300s
+TimeoutStopSec=15s
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectClock=true
+ProtectHostname=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+ReadOnlyPaths=/opt/vgt/gedefense/current /etc/vgt/gedefense
+ReadWritePaths=/var/lib/vgt/gedefense /run/vgt-gedefense /run/vgt-gedefense-l7 /run/gedefense
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

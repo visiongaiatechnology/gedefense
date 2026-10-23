@@ -1,0 +1,40 @@
+# STATUS: DIAMANT VGT SUPREME
+[Unit]
+Description=AstraeaOS Local TPM2 Measured-Boot Attestation
+Wants=astraeaos-fsverity.service
+After=systemd-tmpfiles-setup.service astraeaos-fsverity.service
+Before=astraeaos-security-login-gate.service
+OnFailure=astraeaos-security-boot-failure.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/astraeaos/astraeaos-boot-attestation
+RemainAfterExit=yes
+TimeoutStartSec=20s
+User=root
+Group=root
+RuntimeDirectory=astraeaos
+RuntimeDirectoryMode=0750
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+ReadWritePaths=/run/astraeaos
+DeviceAllow=/dev/tpmrm0 rw
+DeviceAllow=/dev/tpm0 rw
+
+[Install]
+WantedBy=graphical.target

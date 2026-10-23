@@ -1,0 +1,471 @@
+// STATUS: DIAMANT VGT SUPREME
+package main
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
+	"net"
+	"net/netip"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
+)
+
+// Typed Styx Error Hierarchy (Section 1.5.A Compliance)
+type StyxException struct {
+	Message string
+	Err     error
+}
+
+func (e *StyxException) Error() string {
+	if e.Err != nil {
+		return fmt.Sprintf("%s: %v", e.Message, e.Err)
+	}
+	return e.Message
+}
+
+func (e *StyxException) Unwrap() error { return e.Err }
+
+type StyxValidationException struct{ StyxException }
+type StyxSecurityException struct{ StyxException }
+
+func NewStyxValidationException(msg string, err error) *StyxValidationException {
+	return &StyxValidationException{StyxException{Message: msg, Err: err}}
+}
+
+func NewStyxSecurityException(msg string, err error) *StyxSecurityException {
+	return &StyxSecurityException{StyxException{Message: msg, Err: err}}
+}
+
+type EgressPolicyMode string
+
+const (
+	EgressModeDefaultDeny   EgressPolicyMode = "DEFAULT_DENY"
+	EgressModeWhitelistOnly EgressPolicyMode = "WHITELIST_ONLY"
+	EgressModeMonitored     EgressPolicyMode = "MONITORED"
+)
+
+// EgressRule defines a cryptographically identifiable outbound network permission.
+type EgressRule struct {
+	ID          string `json:"id"`
+	ScopeType   string `json:"scope_type"` // CELL, CGROUP, SERVICE, GLOBAL
+	ScopeID     string `json:"scope_id"`   // Cell UUID, systemd slice/service, or "*"
+	Destination string `json:"destination"`
+	Port        uint16 `json:"port"`
+	Protocol    string `json:"protocol"` // TCP, UDP, ALL
+	Action      string `json:"action"`   // ALLOW, DROP
+	Description string `json:"description"`
+}
+
+// StyxEngine enforces kernel-level Zero-Trust Egress, SSRF shields and cell boundary networking.
+type StyxEngine struct {
+	mu              sync.RWMutex
+	mode            EgressPolicyMode
+	rules           map[string]EgressRule
+	scopeRules      map[string][]EgressRule
+	parsedCIDRs     map[string]*net.IPNet
+	threatIndex     *ThreatIndex
+	metadataBlocked atomic.Uint64
+	egressDrops     atomic.Uint64
+	correlator      *IncidentCorrelator
+	incidentSink    func(XDRIncident) error
+}
+
+// NewStyxEngine constructs the Go-side StyX egress engine.
+//
+// LIMITATION (G-DET-06, documented deliberately): the Go engine is constructed
+// as EgressModeMonitored by xdr.go. It is advisory telemetry/correlation, NOT a
+// default-deny enforcement point; kernel egress enforcement is owned by the
+// Rust core/eBPF layer. Do not count the Go StyX engine as an enforcement
+// control.
+func NewStyxEngine(
+	mode EgressPolicyMode,
+	correlator *IncidentCorrelator,
+	incidentSink func(XDRIncident) error,
+) *StyxEngine {
+	return &StyxEngine{
+		mode:         mode,
+		rules:        make(map[string]EgressRule),
+		scopeRules:   make(map[string][]EgressRule),
+		parsedCIDRs:  make(map[string]*net.IPNet),
+		correlator:   correlator,
+		incidentSink: incidentSink,
+	}
+}
+
+// SetThreatIndex injects the sovereign ThreatIndex for outbound C2/malicious IP dropping.
+func (s *StyxEngine) SetThreatIndex(index *ThreatIndex) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.threatIndex = index
+}
+
+// ThreatIndex returns the currently configured ThreatIndex or nil.
+func (s *StyxEngine) ThreatIndex() *ThreatIndex {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.threatIndex
+}
+
+// Shared egress destination classification (F-13, CHAIN-012).
+//
+// Every outbound target decision in the control plane (feed URL validation,
+// feed redirect validation, the feed dialer, Styx egress evaluation and the L7
+// SSRF detector) must use the same predicate. The historical code had three
+// different predicates: the feed path accepted cloud metadata addresses such
+// as 100.100.100.200 and 168.63.129.16 although Styx and the L7 detector
+// classified exactly those addresses as forbidden.
+//
+// metadataEgressPrefixes is the explicit cloud metadata surface (IMDS /
+// WireServer / wire endpoints). forbiddenEgressPrefixes is the complete
+// special-use set that is never a legitimate outbound Internet destination.
+var metadataEgressPrefixes = []netip.Prefix{
+	netip.MustParsePrefix("169.254.169.254/32"), // AWS/GCP/Azure/OCI/OpenStack IMDS
+	netip.MustParsePrefix("100.100.100.200/32"), // Alibaba Cloud IMDS
+	netip.MustParsePrefix("168.63.129.16/32"),   // Azure WireServer / host resolver
+	netip.MustParsePrefix("192.0.0.192/32"),     // Oracle Cloud instance metadata
+	netip.MustParsePrefix("fd00:ec2::254/128"),  // AWS IMDSv2 IPv6
+}
+
+var forbiddenEgressPrefixes = []netip.Prefix{
+	// IPv4 special-use / non-global-unicast space.
+	netip.MustParsePrefix("0.0.0.0/8"),
+	netip.MustParsePrefix("10.0.0.0/8"),
+	netip.MustParsePrefix("100.64.0.0/10"), // CGNAT
+	netip.MustParsePrefix("127.0.0.0/8"),
+	netip.MustParsePrefix("169.254.0.0/16"),
+	netip.MustParsePrefix("172.16.0.0/12"),
+	netip.MustParsePrefix("192.0.0.0/24"), // IETF protocol assignments incl. 192.0.0.192
+	netip.MustParsePrefix("192.0.2.0/24"),
+	netip.MustParsePrefix("192.168.0.0/16"),
+	netip.MustParsePrefix("198.18.0.0/15"),
+	netip.MustParsePrefix("198.51.100.0/24"),
+	netip.MustParsePrefix("203.0.113.0/24"),
+	netip.MustParsePrefix("224.0.0.0/4"),
+	netip.MustParsePrefix("240.0.0.0/4"),
+	// IPv6 special-use space.
+	netip.MustParsePrefix("::/128"),
+	netip.MustParsePrefix("::1/128"),
+	netip.MustParsePrefix("64:ff9b:1::/48"),
+	netip.MustParsePrefix("100::/64"),
+	netip.MustParsePrefix("2001:2::/48"),
+	netip.MustParsePrefix("2001:db8::/32"),
+	netip.MustParsePrefix("fc00::/7"),
+	netip.MustParsePrefix("fe80::/10"),
+	netip.MustParsePrefix("ff00::/8"),
+}
+
+// ClassifyEgressDestination reports whether an address may be dialled as an
+// outbound Internet target. The returned reason is safe for operator display and
+// never contains secrets.
+func ClassifyEgressDestination(ip net.IP) (bool, string) {
+	if ip == nil {
+		return false, "invalid destination address"
+	}
+	addr, ok := netip.AddrFromSlice(ip)
+	if !ok {
+		return false, "invalid destination address"
+	}
+	addr = addr.Unmap()
+	if !addr.IsValid() {
+		return false, "invalid destination address"
+	}
+	if !addr.IsGlobalUnicast() {
+		return false, "destination is not globally routable unicast"
+	}
+	for _, prefix := range metadataEgressPrefixes {
+		if prefix.Contains(addr) {
+			return false, "destination is a cloud metadata endpoint"
+		}
+	}
+	for _, prefix := range forbiddenEgressPrefixes {
+		if prefix.Contains(addr) {
+			return false, "destination is a special-use address"
+		}
+	}
+	return true, ""
+}
+
+// IsForbiddenEgressIP is the shared boolean form used by the feed transport,
+// redirect and dial paths.
+func IsForbiddenEgressIP(ip net.IP) bool {
+	allowed, _ := ClassifyEgressDestination(ip)
+	return !allowed
+}
+
+func isCloudMetadataAddr(addr netip.Addr) bool {
+	if !addr.IsValid() {
+		return false
+	}
+	addr = addr.Unmap()
+	for _, prefix := range metadataEgressPrefixes {
+		if prefix.Contains(addr) {
+			return true
+		}
+	}
+	return false
+}
+
+// IsCloudMetadataDestination preserves the historical public contract used by
+// the StyX egress engine: metadata endpoints and link-local addresses are
+// treated as forbidden SSRF destinations.
+func IsCloudMetadataDestination(ip net.IP) bool {
+	if ip == nil {
+		return false
+	}
+	addr, ok := netip.AddrFromSlice(ip)
+	if !ok {
+		return false
+	}
+	addr = addr.Unmap()
+	if isCloudMetadataAddr(addr) {
+		return true
+	}
+	return addr.IsLinkLocalUnicast() || addr.IsLinkLocalMulticast()
+}
+
+// AddRule registers an outbound egress permission with strict CIDR validation.
+func (s *StyxEngine) AddRule(rule EgressRule) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	rule.Destination = strings.TrimSpace(rule.Destination)
+	if rule.Destination == "" {
+		return NewStyxValidationException("egress rule destination cannot be empty", nil)
+	}
+
+	if rule.ID == "" {
+		hasher := sha256.New()
+		hasher.Write([]byte(fmt.Sprintf("%s|%s|%s|%d|%s", rule.ScopeType, rule.ScopeID, rule.Destination, rule.Port, rule.Protocol)))
+		rule.ID = "STYX-" + hex.EncodeToString(hasher.Sum(nil))[:16]
+	}
+
+	// Parse Destination IP / CIDR
+	if strings.Contains(rule.Destination, "/") {
+		_, ipNet, err := net.ParseCIDR(rule.Destination)
+		if err != nil {
+			return NewStyxValidationException("invalid destination CIDR format", err)
+		}
+		s.parsedCIDRs[rule.ID] = ipNet
+	} else if ip := net.ParseIP(rule.Destination); ip != nil {
+		mask := 32
+		if ip.To4() == nil {
+			mask = 128
+		}
+		_, ipNet, _ := net.ParseCIDR(fmt.Sprintf("%s/%d", ip.String(), mask))
+		s.parsedCIDRs[rule.ID] = ipNet
+	}
+
+	s.rules[rule.ID] = rule
+	scopeKey := fmt.Sprintf("%s:%s", rule.ScopeType, rule.ScopeID)
+	s.scopeRules[scopeKey] = append(s.scopeRules[scopeKey], rule)
+	return nil
+}
+
+// EvaluateEgress validates whether a process in a designated cell or scope is authorized to connect out.
+func (s *StyxEngine) EvaluateEgress(
+	ctx context.Context,
+	scopeType, scopeID string,
+	remoteIPStr string,
+	remotePort uint16,
+	proto string,
+	pid int,
+	comm string,
+) (bool, string, error) {
+	ip := net.ParseIP(strings.TrimSpace(remoteIPStr))
+	if ip == nil {
+		return false, "DROP_INVALID_IP", NewStyxValidationException("invalid remote IP", nil)
+	}
+
+	now := time.Now().UTC()
+
+	// 1. Morpheus Cloud-Metadata & SSRF Guard (Strict Invariant)
+	if IsCloudMetadataDestination(ip) {
+		s.metadataBlocked.Add(1)
+		s.egressDrops.Add(1)
+
+		incidentID := fmt.Sprintf("INC-SSRF-%d-%d", pid, now.UnixNano())
+		actorStr := fmt.Sprintf("PID:%d|%s", pid, comm)
+
+		storyNode := AttackStoryNode{
+			NodeID:     fmt.Sprintf("node-ssrf-%d", now.UnixNano()),
+			Timestamp:  now,
+			Sensor:     "MORPHEUS_RASP_SSRF",
+			Category:   "CREDENTIAL_ACCESS",
+			EventType:  "METADATA_ACCESS_ATTEMPT",
+			EntityID:   remoteIPStr,
+			Actor:      actorStr,
+			Severity:   "CRITICAL",
+			Confidence: 100,
+			CausalEdge: EdgeEgressAttempted,
+			EventUUID:  incidentID,
+			Metadata: map[string]string{
+				"target_ip": remoteIPStr,
+				"comm":      comm,
+				"scope":     fmt.Sprintf("%s:%s", scopeType, scopeID),
+			},
+		}
+
+		var storyNodes []AttackStoryNode
+		var recordHash string
+		if s.correlator != nil {
+			graph, _, err := s.correlator.IngestEvent(now, actorStr, "METADATA_SSRF", "EXFILTRATION", storyNode)
+			if err == nil && graph != nil {
+				storyNodes = graph.CloneNodes()
+				recordHash = graph.EvidenceRoot()
+			}
+		}
+		if len(storyNodes) == 0 {
+			storyNodes = []AttackStoryNode{storyNode}
+			recordHash = storyNode.ComputeNodeDigest()
+		}
+
+		if s.incidentSink != nil {
+			_ = s.incidentSink(XDRIncident{
+				ID:            incidentID,
+				Time:          now,
+				Severity:      "CRITICAL",
+				Score:         250,
+				ResponseScore: 250,
+				PID:           pid,
+				Process:       comm,
+				Remote:        remoteIPStr,
+				Summary:       fmt.Sprintf("Cloud metadata exfiltration attempt blocked: PID %d (%s) attempted connecting to %s", pid, comm, remoteIPStr),
+				RuleIDs:       []string{"STYX.EGRESS.METADATA_BLOCKED", "MORPHEUS.SSRF_IMDS"},
+				Categories:    []string{"exfiltration", "credential_access"},
+				Decision:      "drop",
+				Action:        "block-egress",
+				Outcome:       "dropped by kernel styx egress shield",
+				AttackStory:   storyNodes,
+				EvidenceRoot:  recordHash,
+			})
+		}
+
+		return false, "DROP_CLOUD_METADATA_SSRF", nil
+	}
+
+	// 2. Evaluate Whitelist & Allow Policies First (Invariant 3: Management allowlists take precedence)
+	s.mu.RLock()
+	scopeKey := fmt.Sprintf("%s:%s", scopeType, scopeID)
+	globalKey := "GLOBAL:*"
+	matchingRules := append([]EgressRule{}, s.scopeRules[scopeKey]...)
+	matchingRules = append(matchingRules, s.scopeRules[globalKey]...)
+
+	for _, rule := range matchingRules {
+		if rule.Port != 0 && rule.Port != remotePort {
+			continue
+		}
+		if rule.Protocol != "ALL" && !strings.EqualFold(rule.Protocol, proto) {
+			continue
+		}
+
+		if ipNet, exists := s.parsedCIDRs[rule.ID]; exists && ipNet.Contains(ip) {
+			s.mu.RUnlock()
+			if rule.Action == "ALLOW" {
+				return true, "PERMIT_WHITELIST", nil
+			}
+			return false, "DROP_EXPLICIT_POLICY", nil
+		}
+	}
+	s.mu.RUnlock()
+
+	// 3. Threat Intelligence C2 & Malicious Destination Shield (Strict Invariant for BLOCK feeds)
+	s.mu.RLock()
+	threatIdx := s.threatIndex
+	s.mu.RUnlock()
+	if threatIdx != nil && threatIdx.ContainsString(remoteIPStr) {
+		s.egressDrops.Add(1)
+
+		incidentID := fmt.Sprintf("INC-THREAT-INTEL-%d-%d", pid, now.UnixNano())
+		actorStr := fmt.Sprintf("PID:%d|%s", pid, comm)
+
+		storyNode := AttackStoryNode{
+			NodeID:     fmt.Sprintf("node-threat-intel-%d", now.UnixNano()),
+			Timestamp:  now,
+			Sensor:     "STYX_EGRESS_THREAT_INTEL",
+			Category:   "COMMAND_AND_CONTROL",
+			EventType:  "THREAT_INTEL_EGRESS_BLOCKED",
+			EntityID:   remoteIPStr,
+			Actor:      actorStr,
+			Severity:   "CRITICAL",
+			Confidence: 100,
+			CausalEdge: EdgeEgressAttempted,
+			EventUUID:  incidentID,
+			Metadata: map[string]string{
+				"target_ip": remoteIPStr,
+				"comm":      comm,
+				"scope":     fmt.Sprintf("%s:%s", scopeType, scopeID),
+			},
+		}
+
+		var storyNodes []AttackStoryNode
+		var recordHash string
+		if s.correlator != nil {
+			graph, _, err := s.correlator.IngestEvent(now, actorStr, "THREAT_INTEL_C2", "EXFILTRATION", storyNode)
+			if err == nil && graph != nil {
+				storyNodes = graph.CloneNodes()
+				recordHash = graph.EvidenceRoot()
+			}
+		}
+		if len(storyNodes) == 0 {
+			storyNodes = []AttackStoryNode{storyNode}
+			recordHash = storyNode.ComputeNodeDigest()
+		}
+
+		if s.incidentSink != nil {
+			_ = s.incidentSink(XDRIncident{
+				ID:            incidentID,
+				Time:          now,
+				Severity:      "CRITICAL",
+				Score:         240,
+				ResponseScore: 240,
+				PID:           pid,
+				Process:       comm,
+				Remote:        remoteIPStr,
+				Summary:       fmt.Sprintf("Outbound C2/Threat Intelligence connection blocked: PID %d (%s) attempted connecting to %s", pid, comm, remoteIPStr),
+				RuleIDs:       []string{"STYX.EGRESS.THREAT_INTEL"},
+				Categories:    []string{"command_and_control", "exfiltration"},
+				Decision:      "drop",
+				Action:        "block-egress",
+				Outcome:       "dropped by kernel styx threat intelligence shield",
+				AttackStory:   storyNodes,
+				EvidenceRoot:  recordHash,
+			})
+		}
+
+		return false, "DROP_THREAT_INTEL", nil
+	}
+
+	// 4. Monitored Mode -> always permit
+	s.mu.RLock()
+	mode := s.mode
+	s.mu.RUnlock()
+
+	if mode == EgressModeMonitored {
+		return true, "PERMIT_MONITORED", nil
+	}
+
+	// 5. Default-Deny Decision
+	s.egressDrops.Add(1)
+	return false, "DROP_DEFAULT_DENY", nil
+}
+
+// Rules returns an immutable copy of all installed egress policies.
+func (s *StyxEngine) Rules() []EgressRule {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	out := make([]EgressRule, 0, len(s.rules))
+	for _, r := range s.rules {
+		out = append(out, r)
+	}
+	return out
+}
+
+// Stats returns atomic counters for egress drops and metadata shields.
+func (s *StyxEngine) Stats() (uint64, uint64) {
+	return s.egressDrops.Load(), s.metadataBlocked.Load()
+}

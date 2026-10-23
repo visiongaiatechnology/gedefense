@@ -1,0 +1,517 @@
+#!/usr/bin/env bash
+# STATUS: DIAMANT VGT SUPREME
+#
+# First-boot provisioning for the packaged GeDefense stack (F-05 / CHAIN-005).
+#
+# The distribution package installs binaries, units, tmpfiles and sysusers, but
+# it cannot ship runtime secrets, TLS material or the gateway token. This
+# script is the single provisioning contract: it creates exactly the directories,
+# keys, token, TLS identity and initial password record that
+# packaging/systemd/gedefense-access.service.in and the core/control units
+# expect, with the ownership and modes asserted in the unit comments. It is
+# idempotent: an existing valid file is never regenerated.
+#
+# Usage:
+#   gedefense-provision            # create missing material (root required)
+#   gedefense-provision --check    # validate only, change nothing
+#
+# Test support (used by packaging/tests/install-smoke.sh):
+#   GEDEFENSE_PROVISION_ROOT=/tmp/stage   prefix every absolute path
+#   GEDEFENSE_SKIP_OWNER=1                chown not possible (unprivileged test)
+#   GEDEFENSE_ACCESS_BIN=/path            access binary under test
+#   GEDEFENSE_CONTROL_USER/GROUP, GEDEFENSE_ACCESS_USER/GROUP
+#
+# This helper never starts or enables a service and never contacts the network.
+
+set -Eeuo pipefail
+umask 0077
+
+readonly PROGRAM=gedefense-provision
+readonly ROOT="${GEDEFENSE_PROVISION_ROOT:-}"
+readonly RELEASE="${GEDEFENSE_RELEASE_DIR:-${ROOT}/opt/vgt/gedefense/current}"
+readonly ACCESS_BIN="${GEDEFENSE_ACCESS_BIN:-${RELEASE}/bin/gedefense-access}"
+readonly CONFIG_DIR="${ROOT}/etc/vgt/gedefense"
+readonly SECRETS_DIR="${CONFIG_DIR}/secrets"
+readonly TLS_DIR="${CONFIG_DIR}/tls"
+readonly ACCESS_CONFIG_DIR="${ROOT}/etc/vgt/gedefense-access"
+readonly STATE_DIR="${ROOT}/var/lib/vgt/gedefense"
+readonly ACCESS_STATE_PARENT="${ROOT}/var/lib/vgt/gedefense-access"
+readonly ACCESS_STATE_DIR="${ACCESS_STATE_PARENT}/state"
+readonly SCAN_RUN_DIR="${ROOT}/run/gedefense-scan"
+readonly PUBLIC_HOST="${GEDEFENSE_PUBLIC_HOST:-127.0.0.1:9843}"
+# Canonical absolute token path as written in gedefense.toml (not prefixed by a
+# staged test root, because the configuration file is not rewritten by tests).
+readonly CANONICAL_TOKEN_PATH="/var/lib/vgt/gedefense-access/dashboard.token"
+readonly CONTROL_USER="${GEDEFENSE_CONTROL_USER:-gedefense}"
+readonly CONTROL_GROUP="${GEDEFENSE_CONTROL_GROUP:-gedefense}"
+readonly ACCESS_USER="${GEDEFENSE_ACCESS_USER:-gedefense-access}"
+readonly ACCESS_GROUP="${GEDEFENSE_ACCESS_GROUP:-gedefense-access}"
+
+SKIP_OWNER="${GEDEFENSE_SKIP_OWNER:-0}"
+check_only=0
+if [[ "${1:-}" == "--check" ]]; then
+  check_only=1
+elif [[ $# -gt 0 ]]; then
+  printf '%s: unsupported argument %q\n' "$PROGRAM" "$1" >&2
+  exit 2
+fi
+
+problems=()
+changes=0
+
+fail() {
+  printf '%s: %s\n' "$PROGRAM" "$1" >&2
+  exit 1
+}
+
+problem() {
+  problems+=("$1")
+}
+
+note() {
+  printf '%s: %s\n' "$PROGRAM" "$1"
+}
+
+check_mode_file() {
+  local path=$1 mode=$2 label=$3
+  if [[ ! -f $path || -L $path ]]; then
+    problem "$label $path is missing or a symlink"
+    return
+  fi
+  if (( check_only )); then
+    local actual
+    actual=$(stat -c '%a' -- "$path")
+    if [[ $actual != "${mode#0}" ]]; then
+      problem "$label $path has mode $actual, expected $mode"
+    fi
+  fi
+}
+
+# Checks (or repairs) one directory. Ownership is compared only when root
+# permissions make chown meaningful.
+ensure_dir() {
+  local path=$1 mode=$2 owner=$3 group=$4
+  if [[ -d $path && ! -L $path ]]; then
+    local actual
+    actual=$(stat -c '%a' -- "$path")
+    if [[ $actual != "${mode#0}" ]]; then
+      if (( check_only )); then
+        problem "directory $path has mode $actual, expected $mode"
+      else
+        chmod "$mode" -- "$path"
+        changes=$((changes + 1))
+      fi
+    fi
+  else
+    if (( check_only )); then
+      problem "directory $path is missing"
+      return
+    fi
+    install -d -m "$mode" -- "$path"
+    changes=$((changes + 1))
+  fi
+  if [[ $SKIP_OWNER != 1 ]]; then
+    local actual_owner actual_group
+    actual_owner=$(stat -c '%U' -- "$path")
+    actual_group=$(stat -c '%G' -- "$path")
+    if [[ $actual_owner != "$owner" || $actual_group != "$group" ]]; then
+      if (( check_only )); then
+        problem "directory $path is $actual_owner:$actual_group, expected $owner:$group"
+      else
+        chown "$owner:$group" -- "$path"
+        changes=$((changes + 1))
+      fi
+    fi
+  fi
+}
+
+require_regular_or_absent() {
+  local path=$1
+  if [[ -L $path ]]; then
+    problem "symlink refused: $path"
+    return 1
+  fi
+  if [[ -e $path && ! -f $path ]]; then
+    problem "non-regular path refused: $path"
+    return 1
+  fi
+  return 0
+}
+
+ensure_raw_key() {
+  local path=$1 mode=$2 owner=$3 group=$4
+  require_regular_or_absent "$path" || return
+  if [[ -f $path ]]; then
+    if [[ $(stat -c %s -- "$path") -ne 32 ]]; then
+      if (( check_only )); then
+        problem "key $path does not contain exactly 32 bytes"
+        return
+      fi
+      local invalid="${path}.invalid.$(date +%s)"
+      mv -f -- "$path" "$invalid"
+      note "quarantined invalid key at $invalid"
+    else
+      check_mode_file "$path" "$mode" "key"
+      if (( ! check_only )); then
+        chmod "$mode" -- "$path"
+        if [[ $SKIP_OWNER != 1 ]]; then
+          chown "$owner:$group" -- "$path"
+        fi
+      fi
+      return
+    fi
+  fi
+  if (( check_only )); then
+    problem "key $path is missing"
+    return
+  fi
+  local temporary
+  temporary=$(mktemp -- "${path}.new.XXXXXXXX")
+  head -c 32 /dev/urandom >"$temporary"
+  chmod "$mode" -- "$temporary"
+  if [[ $SKIP_OWNER != 1 ]]; then
+    chown "$owner:$group" -- "$temporary"
+  fi
+  mv -T -- "$temporary" "$path"
+  changes=$((changes + 1))
+}
+
+valid_dashboard_token() {
+  local path=$1
+  [[ -f $path && ! -L $path ]] || return 1
+  local size
+  size=$(stat -c %s -- "$path")
+  [[ $size -ge 32 && $size -le 512 ]] || return 1
+  grep -Eq '^[A-Za-z0-9_-]{40,}$' -- "$path"
+}
+
+ensure_dashboard_token() {
+  local path=${ACCESS_STATE_PARENT}/dashboard.token
+  require_regular_or_absent "$path" || return
+  if valid_dashboard_token "$path"; then
+    check_mode_file "$path" 0600 "gateway source token"
+    if (( ! check_only )); then
+      chmod 0600 -- "$path"
+      if [[ $SKIP_OWNER != 1 ]]; then
+        chown "$CONTROL_USER:$ACCESS_GROUP" -- "$path"
+      fi
+    fi
+    return
+  fi
+  if (( check_only )); then
+    problem "gateway source token $path is missing or malformed"
+    return
+  fi
+  local temporary
+  temporary=$(mktemp -- "${path}.new.XXXXXXXX")
+  openssl rand -base64 32 | tr '+/' '-_' | tr -d '=\n' >"$temporary"
+  printf '\n' >>"$temporary"
+  chmod 0600 -- "$temporary"
+  if [[ $SKIP_OWNER != 1 ]]; then
+    chown "$CONTROL_USER:$ACCESS_GROUP" -- "$temporary"
+  fi
+  mv -T -- "$temporary" "$path"
+  changes=$((changes + 1))
+}
+
+valid_argon2_record() {
+  local path=$1
+  [[ -f $path && ! -L $path ]] || return 1
+  grep -Eq '^v2\$argon2id\$v=19\$m=[0-9]+,t=[0-9]+,p=[0-9]+\$[A-Za-z0-9+/]+\$[A-Za-z0-9+/]+$' -- "$path"
+}
+
+ensure_password_record() {
+  local record="${ACCESS_CONFIG_DIR}/access-password"
+  require_regular_or_absent "$record" || return
+  if valid_argon2_record "$record"; then
+    check_mode_file "$record" 0600 "operator password record"
+    if (( ! check_only )); then
+      chmod 0600 -- "$record"
+      if [[ $SKIP_OWNER != 1 ]]; then
+        chown "$ACCESS_USER:$ACCESS_GROUP" -- "$record"
+      fi
+    fi
+    return
+  fi
+  if (( check_only )); then
+    problem "operator password record $record is missing or malformed"
+    return
+  fi
+  [[ -x $ACCESS_BIN && ! -L $ACCESS_BIN ]] || fail "access binary unavailable: $ACCESS_BIN"
+  local plaintext record_tmp
+  plaintext=$(openssl rand -base64 24 | tr -d '\n')
+  record_tmp=$(mktemp -- "${record}.new.XXXXXXXX")
+  printf '%s\n' "$plaintext" | "$ACCESS_BIN" --hash-password-stdin >"$record_tmp"
+  chmod 0600 -- "$record_tmp"
+  if [[ $SKIP_OWNER != 1 ]]; then
+    chown "$ACCESS_USER:$ACCESS_GROUP" -- "$record_tmp"
+  fi
+  mv -T -- "$record_tmp" "$record"
+  printf '%s\n' "$plaintext" >"${STATE_DIR}/initial-access-password"
+  chmod 0600 -- "${STATE_DIR}/initial-access-password"
+  if [[ $SKIP_OWNER != 1 ]]; then
+    chown root:root "${STATE_DIR}/initial-access-password"
+  fi
+  : >"${ROOT}/var/lib/vgt/gedefense-password-setup-required"
+  chmod 0644 -- "${ROOT}/var/lib/vgt/gedefense-password-setup-required"
+  changes=$((changes + 1))
+  note "generated initial operator password at ${STATE_DIR}/initial-access-password (root-only); rotate it after first login"
+}
+
+tls_identity_valid() {
+  local cert=${TLS_DIR}/access.crt key=${TLS_DIR}/access.key
+  [[ -f $cert && ! -L $cert && -f $key && ! -L $key ]] || return 1
+  openssl x509 -in "$cert" -noout -checkend 86400 >/dev/null 2>&1 || return 1
+  local certificate_public key_public
+  certificate_public=$(openssl x509 -in "$cert" -pubkey -noout 2>/dev/null | sha256sum | cut -d' ' -f1) || return 1
+  key_public=$(openssl pkey -in "$key" -pubout 2>/dev/null | sha256sum | cut -d' ' -f1) || return 1
+  [[ -n $certificate_public && $certificate_public == "$key_public" ]]
+}
+
+# The gateway unit executes a root pre-step that copies the canonical
+# certificate into the gateway-owned directory. Provisioning installs the same
+# copy so the unit starts even if that ordering is ever changed.
+ensure_served_certificate() {
+  local certificate=${TLS_DIR}/access.crt
+  local served="${ACCESS_CONFIG_DIR}/access.crt"
+  if (( check_only )); then
+    check_mode_file "$served" 0644 "gateway served certificate"
+    if [[ -f $served && ! -L $served ]] &&
+      ! cmp --silent -- "$certificate" "$served"; then
+      problem "gateway served certificate $served differs from the canonical TLS certificate"
+    fi
+    return
+  fi
+  install -m 0644 -- "$certificate" "$served"
+  if [[ $SKIP_OWNER != 1 ]]; then
+    chown "$ACCESS_USER:$ACCESS_GROUP" -- "$served"
+  fi
+}
+
+ensure_tls_identity() {
+  local cert=${TLS_DIR}/access.crt key=${TLS_DIR}/access.key
+  require_regular_or_absent "$cert" || return
+  require_regular_or_absent "$key" || return
+  if ! tls_identity_valid; then
+    if (( check_only )); then
+      problem "gateway TLS identity $cert/$key is missing, expired or inconsistent"
+      return
+    fi
+    [[ -x $ACCESS_BIN && ! -L $ACCESS_BIN ]] || fail "access binary unavailable: $ACCESS_BIN"
+    rm -f -- "$cert" "$key"
+    "$ACCESS_BIN" --generate-self-signed --public-host="$PUBLIC_HOST" \
+      --tls-cert="$cert" --tls-key="$key"
+    changes=$((changes + 1))
+  fi
+  if (( check_only )); then
+    check_mode_file "$cert" 0644 "gateway TLS certificate"
+    check_mode_file "$key" 0600 "gateway TLS key"
+    ensure_served_certificate
+    return
+  fi
+  chmod 0644 -- "$cert"
+  chmod 0600 -- "$key"
+  if [[ $SKIP_OWNER != 1 ]]; then
+    chown "root:${CONTROL_GROUP}" -- "$cert"
+    chown root:root -- "$key"
+  fi
+  ensure_served_certificate
+}
+
+ensure_session_key() {
+  local path="${ACCESS_STATE_DIR}/access-session.key"
+  require_regular_or_absent "$path" || return
+  if [[ -f $path ]]; then
+    if [[ $(stat -c %s -- "$path") -ne 32 ]]; then
+      problem "session key $path does not contain exactly 32 bytes"
+    fi
+    check_mode_file "$path" 0600 "access session key"
+    if (( ! check_only )); then
+      chmod 0600 -- "$path"
+      if [[ $SKIP_OWNER != 1 ]]; then
+        chown "$ACCESS_USER:$ACCESS_GROUP" -- "$path"
+      fi
+    fi
+    return
+  fi
+  if (( check_only )); then
+    problem "access session key $path is missing"
+    return
+  fi
+  local temporary
+  temporary=$(mktemp -- "${path}.new.XXXXXXXX")
+  head -c 32 /dev/urandom >"$temporary"
+  chmod 0600 -- "$temporary"
+  if [[ $SKIP_OWNER != 1 ]]; then
+    chown "$ACCESS_USER:$ACCESS_GROUP" -- "$temporary"
+  fi
+  mv -T -- "$temporary" "$path"
+  changes=$((changes + 1))
+}
+
+ensure_config_ownership() {
+  local config="${CONFIG_DIR}/gedefense.toml"
+  check_mode_file "$config" 0640 "control configuration"
+  [[ -f $config && ! -L $config ]] || return
+  if (( ! check_only )); then
+    chmod 0640 -- "$config"
+    if [[ $SKIP_OWNER != 1 ]]; then
+      chown "root:${CONTROL_GROUP}" -- "$config"
+    fi
+  fi
+  if ! grep -Eq '^listen[[:space:]]*=[[:space:]]*"127\.0\.0\.1:9844"' -- "$config"; then
+    problem "control configuration $config does not listen on the internal backend port 127.0.0.1:9844"
+  fi
+  if ! grep -Eq "^token_file[[:space:]]*=[[:space:]]*\"${CANONICAL_TOKEN_PATH}\"[[:space:]]*$" -- "$config"; then
+    problem "control configuration $config does not point token_file at the gateway-owned token path"
+  fi
+}
+
+ensure_malware_hash_ownership() {
+  local hashes="${CONFIG_DIR}/malware-hashes.sha256"
+  if [[ ! -f $hashes || -L $hashes ]]; then
+    problem "malware signature file $hashes is missing or a symlink"
+  fi
+}
+
+xdr_baseline_valid() {
+  local path=$1
+  [[ -s $path && ! -L $path ]] || return 1
+  python3 - "$path" <<'PY'
+import json, sys
+doc = json.load(open(sys.argv[1], encoding="utf-8"))
+assert doc.get("version") == 1
+assert len(doc.get("profiles", [])) == 3
+for profile in doc["profiles"]:
+    assert len(profile["sha256"]) == 64
+PY
+}
+
+ensure_xdr_baseline() {
+  local destination="${CONFIG_DIR}/xdr-baseline.json"
+  require_regular_or_absent "$destination" || return
+  local control=${RELEASE}/bin/gedefense-control
+  local core=${RELEASE}/libexec/gedefense-core
+  local missing=0 file
+  for file in "$control" "$core" "$ACCESS_BIN"; do
+    [[ -f $file ]] || missing=1
+  done
+  if (( missing )); then
+    problem "release binaries for xdr-baseline.json are incomplete under $RELEASE"
+    return
+  fi
+  if xdr_baseline_valid "$destination"; then
+    check_mode_file "$destination" 0640 "xdr baseline"
+    if (( ! check_only )); then
+      chmod 0640 -- "$destination"
+      if [[ $SKIP_OWNER != 1 ]]; then
+        chown "root:${CONTROL_GROUP}" -- "$destination"
+      fi
+    fi
+    return
+  fi
+  if (( check_only )); then
+    problem "xdr baseline $destination is missing or malformed"
+    return
+  fi
+  if [[ -e $destination ]]; then
+    # A shipped example or a corrupt file is not a trusted operator baseline;
+    # quarantine it instead of silently trusting an unbound profile list.
+    local invalid="${destination}.invalid.$(date +%s)"
+    mv -f -- "$destination" "$invalid"
+    note "quarantined invalid xdr baseline at $invalid"
+  fi
+  local temporary
+  temporary=$(mktemp -- "${destination}.new.XXXXXXXX")
+  CONTROL="$control" CORE="$core" ACCESS="$ACCESS_BIN" python3 - "$temporary" <<'PY'
+import hashlib, json, os, sys
+
+def digest(path):
+    with open(path, "rb") as handle:
+        return hashlib.sha256(handle.read()).hexdigest()
+
+output = {
+    "version": 1,
+    "profiles": [
+        {"executable": "/opt/vgt/gedefense/current/bin/gedefense-control",
+         "sha256": digest(os.environ["CONTROL"]),
+         "allowed_parents": ["/usr/lib/systemd/systemd"],
+         "allow_external_network": True},
+        {"executable": "/opt/vgt/gedefense/current/libexec/gedefense-core",
+         "sha256": digest(os.environ["CORE"]),
+         "allowed_uids": [0],
+         "allowed_parents": ["/usr/lib/systemd/systemd"],
+         "allow_external_network": False},
+        {"executable": "/opt/vgt/gedefense/current/bin/gedefense-access",
+         "sha256": digest(os.environ["ACCESS"]),
+         "allowed_parents": ["/usr/lib/systemd/systemd"],
+         "allow_external_network": False},
+    ],
+}
+with open(sys.argv[1], "w", encoding="utf-8") as handle:
+    json.dump(output, handle, indent=2)
+    handle.write("\n")
+PY
+  chmod 0640 -- "$temporary"
+  if [[ $SKIP_OWNER != 1 ]]; then
+    chown "root:${CONTROL_GROUP}" -- "$temporary"
+  fi
+  mv -T -- "$temporary" "$destination"
+  changes=$((changes + 1))
+}
+
+if [[ -n $ROOT && $(id -u) -ne 0 ]]; then
+  SKIP_OWNER=1
+fi
+if (( ! check_only )) && [[ -z $ROOT && $(id -u) -ne 0 ]]; then
+  fail "root is required for provisioning"
+fi
+if [[ $SKIP_OWNER == 1 ]]; then
+  note "ownership changes/assertions are skipped (GEDEFENSE_SKIP_OWNER=1 or unprivileged staged root)"
+fi
+
+if [[ ! -x $ACCESS_BIN ]]; then
+  fail "GeDefense access binary is not installed: $ACCESS_BIN"
+fi
+
+for directory in \
+  "/etc/vgt/gedefense:0750:root:${CONTROL_GROUP}" \
+  "/etc/vgt/gedefense/secrets:0700:root:${CONTROL_GROUP}" \
+  "/etc/vgt/gedefense/tls:0750:root:${CONTROL_GROUP}" \
+  "/etc/vgt/gedefense-access:0750:${ACCESS_USER}:${ACCESS_GROUP}" \
+  "/var/lib/vgt:0755:root:root" \
+  "/var/lib/vgt/gedefense:1770:root:${CONTROL_GROUP}" \
+  "/var/lib/vgt/gedefense/quarantine:0700:root:${CONTROL_GROUP}" \
+  "/var/lib/vgt/gedefense/quarantine/objects:0700:root:${CONTROL_GROUP}" \
+  "/var/lib/vgt/gedefense-access:0750:${CONTROL_USER}:${ACCESS_GROUP}" \
+  "/var/lib/vgt/gedefense-access/state:0700:${ACCESS_USER}:${ACCESS_GROUP}" \
+  "/run/gedefense-scan:0750:root:${CONTROL_GROUP}"; do
+  IFS=: read -r relative mode owner group <<<"$directory"
+  ensure_dir "${ROOT}${relative}" "$mode" "$owner" "$group"
+done
+
+ensure_raw_key "${SECRETS_DIR}/core-ipc.key" 0640 root "${CONTROL_GROUP}"
+ensure_raw_key "${SECRETS_DIR}/storage-master.key" 0640 root "${CONTROL_GROUP}"
+ensure_raw_key "${SECRETS_DIR}/gaia-cells.key" 0640 root "${CONTROL_GROUP}"
+ensure_raw_key "${STATE_DIR}/xdr-log.key" 0600 "${CONTROL_USER}" "${CONTROL_GROUP}"
+ensure_raw_key "${STATE_DIR}/runtime-settings.key" 0600 "${CONTROL_USER}" "${CONTROL_GROUP}"
+ensure_session_key
+ensure_dashboard_token
+ensure_password_record
+ensure_tls_identity
+ensure_xdr_baseline
+ensure_config_ownership
+ensure_malware_hash_ownership
+
+if (( check_only )); then
+  if (( ${#problems[@]} > 0 )); then
+    printf '%s: CHECK FAILED (%d problem(s))\n' "$PROGRAM" "${#problems[@]}" >&2
+    printf '  - %s\n' "${problems[@]}" >&2
+    exit 1
+  fi
+  printf '%s: check passed (no changes made)\n' "$PROGRAM"
+  exit 0
+fi
+
+printf '%s: provisioning complete (%d change(s))\n' "$PROGRAM" "$changes"
+printf '%s: initial operator password (if freshly generated): %s\n' "$PROGRAM" "${STATE_DIR}/initial-access-password"

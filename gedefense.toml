@@ -1,0 +1,240 @@
+# VGT GeDefense Full-Stack Beta 1.0 — strict TOML subset. Unknown keys are rejected.
+[node]
+name = "VGT-Beta-Node"
+interface = "auto"
+mode = "standalone"
+
+[dashboard]
+# Internal control backend (G-RUST-06): loopback :9844. The public access
+# front end terminates TLS on :9843 and proxies to http://127.0.0.1:9844.
+listen = "127.0.0.1:9844"
+allow_remote = false
+allowed_hosts = "127.0.0.1,localhost,::1"
+# The HTTPS gateway is internet-facing and runs under its own account (gedefense-access), so it can
+# reach neither the core IPC key nor the storage master key. It refuses any backend token that is not
+# 0600 and its own property, and the control plane's sandbox forbids handing the file over - therefore
+# the token lives in the gateway's own directory and the unit's root pre-step copies it aside.
+# The installer must create /var/lib/vgt/gedefense-access (owner gedefense-access, mode 0750) and
+# /var/lib/vgt/gedefense-access/state (owner gedefense-access, mode 0700) for this to work.
+token_file = "/var/lib/vgt/gedefense-access/dashboard.token"
+tls_cert_file = ""
+tls_key_file = ""
+rate_limit_per_minute = 240
+rate_limit_burst = 40
+max_sse_clients = 16
+
+[core]
+socket = "/run/vgt-gedefense/core.sock"
+auth_key_file = "/etc/vgt/gedefense/secrets/core-ipc.key"
+request_timeout_millis = 1500
+
+[defense]
+# Comma-separated management source IPs/CIDRs. Enforce promotion is blocked while empty.
+allowlist = ""
+# Begin in observe. Enforce only after the Rust core and XDP program pass tests on the target kernel/NIC.
+enforcement = "observe"
+default_ttl_seconds = 3600
+max_ttl_seconds = 604800
+max_block_entries = 250000
+strict_asn_drop = false
+dpi_enabled = true
+
+[l7]
+# Local application-layer inspection over a bounded Unix-socket protocol.
+enabled = true
+# observe = record findings only; block = deny only after the global release gate reaches Enforce.
+mode = "observe"
+socket = "/run/vgt-gedefense-l7/inspect.sock"
+socket_group = "gedefense-l7"
+request_timeout_millis = 750
+max_concurrent = 16
+max_envelope_bytes = 3145728
+max_body_bytes = 2097152
+max_uri_bytes = 16384
+max_header_bytes = 65536
+max_headers = 128
+max_value_bytes = 16384
+max_inspection_bytes = 4194304
+max_decoded_values = 4096
+# Decode expansion budget: every decoded layer is inspected and fed back into the
+# decode pipeline until the fixpoint/budget is exhausted (F-10 / CHAIN-008).
+max_decode_depth = 8
+max_json_depth = 32
+max_form_fields = 512
+max_multipart_parts = 64
+max_upload_bytes = 2097152
+alert_score = 40
+block_score = 90
+# Optional comma-separated built-in rule IDs (or families such as L7.UPLOAD) that may authorise a
+# block in block mode. Empty keeps the historical behaviour: every rule that is not alert-only may
+# block. Findings outside the list are still recorded and still raise the alert score.
+enforce_rules = ""
+client_rate_per_minute = 600
+client_rate_burst = 100
+sensitive_rate_per_minute = 30
+sensitive_rate_burst = 10
+# Shared per-route budget catches distributed pressure that stays below each client budget.
+sensitive_global_rate_per_minute = 300
+sensitive_global_rate_burst = 50
+max_tracked_clients = 65536
+sensitive_paths = "/wp-login.php,/xmlrpc.php,/login,/signin,/api/login"
+# SO_PEERCRED enforcement is mandatory by default (F-06 / CHAIN-002). Provide an
+# explicit UID/GID allowlist for the proxy workers, or configure socket_group and
+# run the producers with that group as their primary GID. With neither, every L7
+# caller is rejected (fail closed).
+require_peer_credentials = true
+allowed_peer_uids = ""
+allowed_peer_gids = ""
+
+# Optional native inline path. No webserver plugin or external runtime is required.
+# Prefer a local application Unix socket; explicit loopback HTTP is also supported.
+# Whether an idle L7 engine degrades the platform.
+#   auto     = the traffic path becomes mandatory once something is actually attached
+#              (an inline listener, or a producer that has delivered a request).
+#              An enabled-but-unattached engine stays available and does not degrade.
+#   required = the traffic path is always mandatory; silence is always a fault.
+#   optional = never mandatory; coverage never degrades the platform.
+coverage_required = "auto"
+
+inline_enabled = false
+inline_socket = "/run/vgt-gedefense-l7/edge.sock"
+inline_upstream = "http://127.0.0.1:8080"
+inline_max_response_bytes = 65536
+
+# Native TLS ClientHello telemetry. A trusted local TLS terminator/proxy can submit
+# bounded ClientHello records over the same peer-authenticated Unix socket.
+tls_enabled = true
+# Comma-separated authoritative SNI names. Empty means observe SNI without foreign-domain enforcement.
+tls_allowed_domains = ""
+tls_flood_threshold = 15
+tls_anti_spoof = true
+tls_max_client_hello_bytes = 65536
+# Optional local JSON fingerprint set. No network lookup occurs at runtime.
+tls_ja3_file = ""
+
+[policy]
+state_file = "/var/lib/vgt/gedefense/policy.json"
+signing_key_file = "/var/lib/vgt/gedefense/policy.ed25519"
+public_key_file = "/var/lib/vgt/gedefense/policy.ed25519.pub"
+storage_key_file = "/etc/vgt/gedefense/secrets/storage-master.key"
+require_signed = true
+
+[xdr]
+enabled = true
+# observe = log only; contain = brokered SIGSTOP; enforce = broker-reviewed SIGKILL for objective evidence.
+mode = "observe"
+scan_interval_millis = 750
+network_interval_seconds = 3
+integrity_interval_seconds = 3
+alert_score = 40
+contain_score = 80
+kill_score = 120
+max_command_bytes = 8192
+command_preview_bytes = 320
+dedupe_seconds = 300
+max_incident_log_bytes = 67108864
+incident_log = "/var/lib/vgt/gedefense/incidents.jsonl"
+log_key_file = "/var/lib/vgt/gedefense/xdr-log.key"
+baseline_file = "/etc/vgt/gedefense/xdr-baseline.json"
+protected_paths = "/opt/vgt/gedefense/current/bin/gedefense-control,/opt/vgt/gedefense/current/bin/gedefense-access,/opt/vgt/gedefense/current/libexec/gedefense-core,/opt/vgt/gedefense/current/lib/gedefense/gedefense-ebpf,/etc/vgt/gedefense/gedefense.toml,/etc/vgt/gedefense/xdr-baseline.json"
+allow_processes = ""
+worker_count = 4
+queue_capacity = 2048
+max_evaluations_per_scan = 4096
+behavior_enabled = true
+behavior_warmup_samples = 24
+behavior_zscore_milli = 3500
+behavior_min_connections = 8
+behavior_max_profiles = 4096
+behavior_max_ports_per_profile = 256
+behavior_profile_file = "/var/lib/vgt/gedefense/behavior-profiles.json"
+storage_key_file = "/etc/vgt/gedefense/secrets/storage-master.key"
+
+[runtime]
+settings_file = "/var/lib/vgt/gedefense/runtime-settings.json"
+key_file = "/var/lib/vgt/gedefense/runtime-settings.key"
+storage_key_file = "/etc/vgt/gedefense/secrets/storage-master.key"
+
+[cells]
+enabled = false
+socket = "/run/gaia-cells/control.sock"
+auth_key_file = "/etc/vgt/gedefense/secrets/gaia-cells.key"
+request_timeout_millis = 1500
+
+[kinetic]
+# Native Auto-Punisher parity. Detection starts fail-safe and is reported ONLINE
+# only after the authenticated Rust Core ingress channel has been verified.
+enabled = true
+# observe = detect/evidence only; contain = userspace containment state; block = eligible rules may enter the XDP LPM drop map.
+enforcement_mode = "observe"
+ip_threshold = 35
+velocity_limit = 15
+range_threshold = 45
+ipv6_sub_threshold = 55
+wide_range_threshold = 77
+portscan_threshold = 5
+max_tracking_ips = 65536
+ban_ttl_seconds = 86400
+max_strikes_per_sec = 100
+# Optional local-only GeoIP/ASN enrichment for the Kinetic world map. No live cloud lookup is performed.
+geoip_csv = "/var/lib/vgt/gedefense/geoip.csv"
+# Optional Ed25519 public keys (comma separated) for the signed GeoIP update
+# gate. The runtime always verifies geoip.csv.sha256; when keys are pinned a
+# detached geoip.csv.sig is required as well and the dataset fails closed to
+# unavailable if either check fails.
+geoip_signing_keys = ""
+
+[release]
+channel = "beta"
+minimum_observe_seconds = 300
+minimum_canary_seconds = 900
+core_failure_threshold = 3
+max_evaluation_drop_permille = 5
+emergency_stop_file = "/var/lib/vgt/gedefense/EMERGENCY_STOP"
+auto_degrade = true
+
+[feeds]
+enabled = true
+# Kernel auto-apply stays off by default and requires the signed-manifest gate.
+auto_apply = false
+refresh_minutes = 60
+max_download_bytes = 8388608
+max_entries = 100000
+sources = "https://feodotracker.abuse.ch/downloads/ipblocklist.txt,https://www.spamhaus.org/drop/drop.txt"
+# Authenticity gate (F-03 / CHAIN-009). Every download must be covered by an
+# Ed25519-signed manifest provided by the release/update pipeline. With no
+# trusted_signing_keys provisioned the feeds fail closed: no download is
+# accepted and nothing reaches the kernel blocklist.
+require_signed_manifest = true
+manifest_path = "/var/lib/vgt/gedefense/threat-feed-manifest.json"
+manifest_max_age_minutes = 1440
+trusted_signing_keys = ""
+
+[advisories]
+# Kernel advisories are shipped with the release: a known class of kernel vulnerability, the fixed
+# build per release channel, the entry points it needs and the mitigations that close them.
+#
+#   report = measure, score and publish the exposure; never changes a release decision
+#   strict = additionally veto a promotion when the exposure score crosses max_exposure
+#
+# The default is report on purpose. A host whose distribution has not published a fixed kernel build
+# yet is still protected by everything else the release gate covers, and pausing automatic response
+# because the kernel is old would remove protection in the name of protection. Mitigations are never
+# applied automatically: each of them costs a real capability (rootless containers, VPNs, DNS for
+# confined workloads), so the operator applies them and the platform verifies the effect.
+enabled = true
+mode = "report"
+max_exposure = 80
+
+# Automatic mitigation closes a reachable entry point by itself (currently: the unprivileged
+# user-namespace door). It is off by default because the switch costs a real capability.
+#   auto_mitigate = true
+# The guard watches the host for a bounded probation window and reverts on a regression; the applied
+# value is re-asserted on every interval, so a value changed outside GeDefense is put back and recorded.
+# mitigation_watch_seconds = 120
+# mitigation_interval_seconds = 10
+# mitigation_failures = 2
+auto_mitigate = false
+mitigation_watch_seconds = 120
+mitigation_interval_seconds = 10
+mitigation_failures = 2

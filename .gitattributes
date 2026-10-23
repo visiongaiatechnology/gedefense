@@ -1,0 +1,26 @@
+# STATUS: DIAMANT VGT SUPREME
+# Enforce LF line endings across all platforms to prevent CRLF corruption on Linux targets
+* text=auto eol=lf
+
+*.sh text eol=lf
+*.py text eol=lf
+*.go text eol=lf
+*.rs text eol=lf
+*.toml text eol=lf
+*.json text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.md text eol=lf
+*.desktop text eol=lf
+*.policy text eol=lf
+*.rules text eol=lf
+*.service text eol=lf
+*.conf text eol=lf
+Makefile text eol=lf
+PKGBUILD text eol=lf
+
+*.run binary
+*.zip binary
+*.tar.gz binary
+*.bin binary
+*.o binary

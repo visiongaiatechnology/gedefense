@@ -1,0 +1,10 @@
+<!-- Compiled into the gedefense-tray binary. Local assets only: no icon font,
+     no CDN, no runtime file lookup. -->
+<RCC>
+  <qresource prefix="/gedefense-tray">
+    <file alias="icons/shield-secure.svg">shield-secure.svg</file>
+    <file alias="icons/shield-warning.svg">shield-warning.svg</file>
+    <file alias="icons/shield-alert.svg">shield-alert.svg</file>
+    <file alias="icons/shield-stopped.svg">shield-stopped.svg</file>
+  </qresource>
+</RCC>

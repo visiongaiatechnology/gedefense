@@ -1,0 +1,746 @@
+// STATUS: DIAMANT VGT SUPREME
+package main
+
+import (
+	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"log"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"time"
+)
+
+const incidentRecoveryManifestVersion = 1
+
+type IncidentIntegrityStatus struct {
+	Healthy         bool   `json:"healthy"`
+	Quarantined     bool   `json:"quarantined"`
+	ReasonCode      string `json:"reason_code,omitempty"`
+	FailureRecord   uint64 `json:"failure_record,omitempty"`
+	VerifiedRecords uint64 `json:"verified_records"`
+	Recoverable     bool   `json:"recoverable"`
+}
+
+type IncidentRecoveryResult struct {
+	ArchiveID      string                  `json:"archive_id"`
+	ManifestSHA256 string                  `json:"manifest_sha256"`
+	RecoveredAt    time.Time               `json:"recovered_at"`
+	Integrity      IncidentIntegrityStatus `json:"integrity"`
+}
+
+type incidentRecoveryFile struct {
+	Name    string `json:"name"`
+	Present bool   `json:"present"`
+	Size    int64  `json:"size"`
+	Mode    uint32 `json:"mode"`
+	SHA256  string `json:"sha256,omitempty"`
+}
+
+type incidentRecoveryManifest struct {
+	Version         int                     `json:"version"`
+	ArchiveID       string                  `json:"archive_id"`
+	CreatedAt       time.Time               `json:"created_at"`
+	SoftwareVersion string                  `json:"software_version"`
+	NodeName        string                  `json:"node_name"`
+	ReasonSHA256    string                  `json:"reason_sha256"`
+	Trigger         string                  `json:"trigger,omitempty"`
+	Failure         IncidentIntegrityStatus `json:"failure"`
+	IncidentLog     incidentRecoveryFile    `json:"incident_log"`
+	HeadCheckpoint  incidentRecoveryFile    `json:"head_checkpoint"`
+}
+
+// incidentArchiveTrigger records why a segment was sealed. The sealing mechanics are identical for
+// both paths - the precondition is the entire difference between them.
+const (
+	incidentArchiveTriggerRecovery  = "recovery"
+	incidentArchiveTriggerRetention = "retention"
+)
+
+var (
+	errIncidentRecoveryNotRequired = errors.New("incident ledger recovery is not required")
+	errIncidentRecoveryNotAllowed  = errors.New("incident ledger recovery is not allowed for the current integrity state")
+	// errIncidentArchiveEmpty refuses to seal a ledger that holds nothing: an empty archive would
+	// look like forensic evidence.
+	errIncidentArchiveEmpty = errors.New("incident ledger holds no records to seal")
+)
+
+func (l *IncidentLogger) IntegrityStatus() IncidentIntegrityStatus {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.integrityStatusLocked()
+}
+
+func (l *IncidentLogger) integrityStatusLocked() IncidentIntegrityStatus {
+	status := classifyIncidentIntegrityError(l.integrityErr)
+	status.Quarantined = l.integrityErr != nil
+	if l.integrityErr == nil {
+		last, count, _, err := verifyIncidentLogWithStorage(l.path, l.key, l.crypto)
+		if err == nil {
+			err = verifyHeadCheckpointWithStorage(l.headPath, last, l.crypto)
+		}
+		if err == nil {
+			if last != l.prevHash || count != l.sequence {
+				err = errors.New("incident log advanced outside the trusted logger")
+			} else if st, statErr := os.Stat(l.path); statErr == nil {
+				if st.Size() != l.expectedSize {
+					err = errors.New("incident log size changed outside the trusted logger")
+				}
+			} else if !errors.Is(statErr, os.ErrNotExist) || l.expectedSize != 0 {
+				err = statErr
+			}
+		}
+		if err == nil {
+			return IncidentIntegrityStatus{Healthy: true, VerifiedRecords: count}
+		}
+		status = classifyIncidentIntegrityError(err)
+		status.VerifiedRecords = verifiedPrefix(status.FailureRecord)
+	}
+	return status
+}
+
+func classifyIncidentIntegrityError(err error) IncidentIntegrityStatus {
+	if err == nil {
+		return IncidentIntegrityStatus{Healthy: true}
+	}
+	msg := strings.ToLower(err.Error())
+	line := extractIncidentLine(msg)
+	status := IncidentIntegrityStatus{
+		Healthy:         false,
+		FailureRecord:   line,
+		VerifiedRecords: verifiedPrefix(line),
+	}
+	switch {
+	case strings.Contains(msg, "authentication failed"):
+		status.ReasonCode, status.Recoverable = "AUTHENTICATION_FAILED", true
+	case strings.Contains(msg, "chain break"):
+		status.ReasonCode, status.Recoverable = "CHAIN_BREAK", true
+	case strings.Contains(msg, "head checkpoint is missing"):
+		status.ReasonCode, status.Recoverable = "HEAD_MISSING", true
+	case strings.Contains(msg, "head checkpoint does not match"):
+		status.ReasonCode, status.Recoverable = "HEAD_MISMATCH", true
+	case strings.Contains(msg, "malformed"):
+		status.ReasonCode, status.Recoverable = "MALFORMED_RECORD", true
+	case strings.Contains(msg, "unsupported version"):
+		status.ReasonCode, status.Recoverable = "UNSUPPORTED_RECORD", true
+	case strings.Contains(msg, "invalid hash length"):
+		status.ReasonCode, status.Recoverable = "INVALID_RECORD_HASH", true
+	case strings.Contains(msg, "mixes plaintext and encrypted records"):
+		status.ReasonCode, status.Recoverable = "MIXED_RECORD_FORMAT", true
+	case strings.Contains(msg, "advanced outside the trusted logger"):
+		status.ReasonCode, status.Recoverable = "UNTRUSTED_APPEND", true
+	case strings.Contains(msg, "size changed outside the trusted logger"):
+		status.ReasonCode, status.Recoverable = "UNTRUSTED_SIZE_CHANGE", true
+	case strings.Contains(msg, "must not be group/world accessible"):
+		status.ReasonCode, status.Recoverable = "INSECURE_PERMISSIONS", true
+	case strings.Contains(msg, "size budget"):
+		// A full log is not a corrupt log. The chain is intact and complete; it simply cannot
+		// grow, which is why every audit record written after this point is lost. Archiving the
+		// sealed segment and starting a fresh chain preserves the evidence and restores the
+		// audit trail, so this state must be recoverable.
+		//
+		// It was marked unrecoverable, and that turned a full forensic log into a terminal
+		// state: the release gate blocks promotion while XDR is degraded, so a platform whose
+		// incident log filled up could never be armed again - protection stayed off with no
+		// path back except manual filesystem surgery.
+		status.ReasonCode, status.Recoverable = "SIZE_BUDGET_EXHAUSTED", true
+	case strings.Contains(msg, "symbolic link"):
+		status.ReasonCode, status.Recoverable = "SYMLINK_REJECTED", false
+	default:
+		status.ReasonCode = "INTEGRITY_FAILURE"
+	}
+	return status
+}
+
+func extractIncidentLine(message string) uint64 {
+	idx := strings.LastIndex(message, "line ")
+	if idx < 0 {
+		return 0
+	}
+	rest := message[idx+len("line "):]
+	end := 0
+	for end < len(rest) && rest[end] >= '0' && rest[end] <= '9' {
+		end++
+	}
+	if end == 0 {
+		return 0
+	}
+	line, err := strconv.ParseUint(rest[:end], 10, 64)
+	if err != nil {
+		return 0
+	}
+	return line
+}
+
+func verifiedPrefix(failureRecord uint64) uint64 {
+	if failureRecord == 0 {
+		return 0
+	}
+	return failureRecord - 1
+}
+
+// Recover seals a ledger that can no longer be trusted and continues with a fresh chain. It is the
+// recovery path and keeps its precondition: an intact ledger does not need to be recovered.
+func (l *IncidentLogger) Recover(ctx context.Context, reasonSHA256 string) (IncidentRecoveryResult, error) {
+	return l.archiveIncidentSegments(ctx, reasonSHA256, incidentArchiveTriggerRecovery)
+}
+
+// archiveIncidentSegments is the shared sealing path: archive the segment with a manifest, prove the
+// source did not change underneath, replace it with a fresh chain and verify that the fresh chain
+// reads as empty.
+//
+// The logger's mutex is held for the whole operation. That is not incidental: the stability check
+// compares the archived bytes with the file on disk, so an append between archive and swap would
+// reject the rotation of any busy ledger - which is every ledger on a host under attack.
+func (l *IncidentLogger) archiveIncidentSegments(ctx context.Context, reasonSHA256, trigger string) (IncidentRecoveryResult, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	if err := ctx.Err(); err != nil {
+		return IncidentRecoveryResult{}, err
+	}
+	failure := l.integrityStatusLocked()
+	healthy := failure.Healthy && !failure.Quarantined
+	switch trigger {
+	case incidentArchiveTriggerRecovery:
+		if healthy {
+			return IncidentRecoveryResult{}, errIncidentRecoveryNotRequired
+		}
+		if !failure.Recoverable {
+			return IncidentRecoveryResult{}, errIncidentRecoveryNotAllowed
+		}
+	case incidentArchiveTriggerRetention:
+		if l.expectedSize == 0 {
+			return IncidentRecoveryResult{}, errIncidentArchiveEmpty
+		}
+		// A damaged segment is sealed here as well instead of waiting for the hard limit: the budget
+		// is reached either way, and the alternative is a ledger that stops recording.
+		if !healthy && !failure.Recoverable {
+			return IncidentRecoveryResult{}, errIncidentRecoveryNotAllowed
+		}
+	default:
+		return IncidentRecoveryResult{}, fmt.Errorf("unknown incident archive trigger %q", trigger)
+	}
+
+	parent := filepath.Clean(filepath.Dir(l.path))
+	if err := rejectSymlinkedDirectory(parent); err != nil {
+		return IncidentRecoveryResult{}, fmt.Errorf("incident recovery storage root: %w", err)
+	}
+	recoveryRoot := filepath.Join(parent, "xdr-recovery")
+	if err := ensurePrivateRecoveryDirectory(recoveryRoot); err != nil {
+		return IncidentRecoveryResult{}, err
+	}
+	archiveID, err := newRecoveryArchiveID()
+	if err != nil {
+		return IncidentRecoveryResult{}, err
+	}
+	archiveDir := filepath.Join(recoveryRoot, archiveID)
+	if err := os.Mkdir(archiveDir, 0o700); err != nil {
+		return IncidentRecoveryResult{}, err
+	}
+	if err := syncDirectory(recoveryRoot); err != nil {
+		return IncidentRecoveryResult{}, err
+	}
+
+	logMeta, err := archiveRecoveryFile(ctx, l.path, filepath.Join(archiveDir, "incident-log.bin"), l.maxBytes)
+	if err != nil {
+		return IncidentRecoveryResult{}, fmt.Errorf("archive incident log: %w", err)
+	}
+	headMeta, err := archiveRecoveryFile(ctx, l.headPath, filepath.Join(archiveDir, "incident-head.bin"), 64<<10)
+	if err != nil {
+		return IncidentRecoveryResult{}, fmt.Errorf("archive incident head: %w", err)
+	}
+
+	now := time.Now().UTC()
+	manifest := incidentRecoveryManifest{
+		Version: incidentRecoveryManifestVersion, ArchiveID: archiveID, CreatedAt: now,
+		SoftwareVersion: version, NodeName: l.nodeName, ReasonSHA256: reasonSHA256,
+		Trigger: trigger, Failure: failure, IncidentLog: logMeta, HeadCheckpoint: headMeta,
+	}
+	manifestBytes, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		return IncidentRecoveryResult{}, err
+	}
+	manifestBytes = append(manifestBytes, '\n')
+	manifestPath := filepath.Join(archiveDir, "manifest.json")
+	if err := atomicWriteFile(manifestPath, manifestBytes, 0o600); err != nil {
+		return IncidentRecoveryResult{}, fmt.Errorf("write recovery manifest: %w", err)
+	}
+	if err := syncDirectory(archiveDir); err != nil {
+		return IncidentRecoveryResult{}, err
+	}
+	// The incident ledger gets the same ceiling as the evidence ledger, so sealed history cannot fill
+	// the disk. It is skipped entirely while a marker file lies in the recovery root: a start-up that
+	// finds a marker without its archive refuses to run, and being conservative here costs a little
+	// disk while being wrong costs the operator their recovery path.
+	const incidentArchiveRetention = 24
+	if markers, markerErr := filepath.Glob(filepath.Join(recoveryRoot, "*.json")); markerErr == nil && len(markers) == 0 {
+		if removed, pruneErr := pruneCompleteArchives(recoveryRoot, "", incidentArchiveRetention, ""); pruneErr != nil {
+			log.Printf("incident archive retention: %v", pruneErr)
+		} else if removed > 0 {
+			log.Printf("incident archive retention: removed %d of %d sealed archives", removed, incidentArchiveRetention)
+		}
+	}
+	manifestDigest := sha256.Sum256(manifestBytes)
+	if err := verifyRecoverySourceStable(ctx, l.path, logMeta, l.maxBytes); err != nil {
+		return IncidentRecoveryResult{}, fmt.Errorf("incident log changed during recovery: %w", err)
+	}
+	if err := verifyRecoverySourceStable(ctx, l.headPath, headMeta, 64<<10); err != nil {
+		return IncidentRecoveryResult{}, fmt.Errorf("incident head changed during recovery: %w", err)
+	}
+
+	if err := replaceWithFreshIncidentChain(l); err != nil {
+		return IncidentRecoveryResult{}, err
+	}
+	last, count, _, err := verifyIncidentLogWithStorage(l.path, l.key, l.crypto)
+	if err == nil {
+		err = verifyHeadCheckpointWithStorage(l.headPath, last, l.crypto)
+	}
+	if err != nil || last != "" || count != 0 {
+		if err == nil {
+			err = errors.New("fresh incident chain did not verify as empty")
+		}
+		return IncidentRecoveryResult{}, fmt.Errorf("verify fresh incident chain: %w", err)
+	}
+	l.prevHash = ""
+	l.sequence = 0
+	l.expectedSize = 0
+	l.integrityErr = nil
+
+	return IncidentRecoveryResult{
+		ArchiveID:      archiveID,
+		ManifestSHA256: hex.EncodeToString(manifestDigest[:]),
+		RecoveredAt:    now,
+		Integrity:      IncidentIntegrityStatus{Healthy: true, VerifiedRecords: 0},
+	}, nil
+}
+
+func verifyRecoverySourceStable(ctx context.Context, source string, archived incidentRecoveryFile, maxBytes int64) error {
+	info, err := os.Lstat(source)
+	if errors.Is(err, os.ErrNotExist) {
+		if archived.Present {
+			return errors.New("source disappeared after archival")
+		}
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if !archived.Present {
+		return errors.New("source appeared after archival")
+	}
+	if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
+		return errors.New("source is no longer a regular non-symlink file")
+	}
+	if info.Size() != archived.Size || (maxBytes > 0 && info.Size() > maxBytes) {
+		return errors.New("source size changed after archival")
+	}
+	f, err := os.Open(source)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	opened, err := f.Stat()
+	if err != nil {
+		return err
+	}
+	if !os.SameFile(info, opened) || !opened.Mode().IsRegular() {
+		return errors.New("source identity changed while verifying archive")
+	}
+	h := sha256.New()
+	buf := make([]byte, 64<<10)
+	var read int64
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		n, readErr := f.Read(buf)
+		if n > 0 {
+			_, _ = h.Write(buf[:n])
+			read += int64(n)
+		}
+		if errors.Is(readErr, io.EOF) {
+			break
+		}
+		if readErr != nil {
+			return readErr
+		}
+	}
+	if read != archived.Size || hex.EncodeToString(h.Sum(nil)) != archived.SHA256 {
+		return errors.New("source digest no longer matches archived evidence")
+	}
+	return nil
+}
+
+func rejectSymlinkedDirectory(path string) error {
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return err
+	}
+	if filepath.Clean(resolved) != filepath.Clean(path) {
+		return errors.New("recovery directory ancestry contains a symbolic link")
+	}
+	info, err := os.Lstat(path)
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return errors.New("recovery storage root must be a real directory")
+	}
+	return nil
+}
+
+func ensurePrivateRecoveryDirectory(path string) error {
+	if err := rejectSymlink(path); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(path, 0o700); err != nil {
+		return err
+	}
+	info, err := os.Lstat(path)
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return errors.New("recovery path must be a real directory")
+	}
+	if info.Mode().Perm()&0o077 != 0 {
+		return errors.New("recovery directory must not be group/world accessible")
+	}
+	return nil
+}
+
+func newRecoveryArchiveID() (string, error) {
+	var entropy [8]byte
+	if _, err := rand.Read(entropy[:]); err != nil {
+		return "", err
+	}
+	return time.Now().UTC().Format("20060102T150405.000000000Z") + "-" + hex.EncodeToString(entropy[:]), nil
+}
+
+func archiveRecoveryFile(ctx context.Context, source, destination string, maxBytes int64) (incidentRecoveryFile, error) {
+	meta := incidentRecoveryFile{Name: filepath.Base(destination)}
+	info, err := os.Lstat(source)
+	if errors.Is(err, os.ErrNotExist) {
+		return meta, nil
+	}
+	if err != nil {
+		return meta, err
+	}
+	if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
+		return meta, errors.New("source evidence must be a regular non-symlink file")
+	}
+	if info.Size() < 0 || (maxBytes > 0 && info.Size() > maxBytes) {
+		return meta, errors.New("source evidence exceeds recovery archive bound")
+	}
+	in, err := os.Open(source)
+	if err != nil {
+		return meta, err
+	}
+	defer in.Close()
+	openedInfo, err := in.Stat()
+	if err != nil {
+		return meta, err
+	}
+	if !os.SameFile(info, openedInfo) || !openedInfo.Mode().IsRegular() {
+		return meta, errors.New("source evidence identity changed while opening")
+	}
+
+	out, err := os.OpenFile(destination, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		return meta, err
+	}
+	closed := false
+	defer func() {
+		if !closed {
+			_ = out.Close()
+		}
+	}()
+	hash := sha256.New()
+	buf := make([]byte, 64<<10)
+	var copied int64
+	for {
+		if err := ctx.Err(); err != nil {
+			return meta, err
+		}
+		n, readErr := in.Read(buf)
+		if n > 0 {
+			if maxBytes > 0 && copied+int64(n) > maxBytes {
+				return meta, errors.New("source evidence exceeded recovery archive bound while reading")
+			}
+			if _, err := out.Write(buf[:n]); err != nil {
+				return meta, err
+			}
+			_, _ = hash.Write(buf[:n])
+			copied += int64(n)
+		}
+		if errors.Is(readErr, io.EOF) {
+			break
+		}
+		if readErr != nil {
+			return meta, readErr
+		}
+	}
+	if copied != openedInfo.Size() {
+		return meta, errors.New("source evidence size changed while archiving")
+	}
+	if err := out.Sync(); err != nil {
+		return meta, err
+	}
+	if err := out.Close(); err != nil {
+		return meta, err
+	}
+	closed = true
+	if err := os.Chmod(destination, 0o600); err != nil {
+		return meta, err
+	}
+	meta.Present = true
+	meta.Size = copied
+	meta.Mode = uint32(info.Mode().Perm())
+	meta.SHA256 = hex.EncodeToString(hash.Sum(nil))
+	return meta, nil
+}
+
+func replaceWithFreshIncidentChain(l *IncidentLogger) error {
+	parent := filepath.Dir(l.path)
+	var entropy [8]byte
+	if _, err := rand.Read(entropy[:]); err != nil {
+		return err
+	}
+	suffix := ".recovery-new-" + hex.EncodeToString(entropy[:])
+	logTmp := l.path + suffix
+	headTmp := l.headPath + suffix
+	defer os.Remove(logTmp)
+	defer os.Remove(headTmp)
+
+	logFile, err := os.OpenFile(logTmp, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	if err := logFile.Sync(); err != nil {
+		_ = logFile.Close()
+		return err
+	}
+	if err := logFile.Close(); err != nil {
+		return err
+	}
+
+	headData := []byte("\n")
+	if l.crypto != nil {
+		sealed, err := l.crypto.Encrypt(l.headPath, "incident-head", 0, headData)
+		if err != nil {
+			return err
+		}
+		headData = append(sealed, '\n')
+	}
+	headFile, err := os.OpenFile(headTmp, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	if _, err := headFile.Write(headData); err == nil {
+		err = headFile.Sync()
+	}
+	closeErr := headFile.Close()
+	if err != nil {
+		return err
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+
+	// Head first is intentional. If the host crashes between the two renames,
+	// the old corrupt log and the fresh head still fail closed on the next boot.
+	if err := os.Rename(headTmp, l.headPath); err != nil {
+		return err
+	}
+	if err := syncDirectory(parent); err != nil {
+		return err
+	}
+	if err := os.Rename(logTmp, l.path); err != nil {
+		return err
+	}
+	return syncDirectory(parent)
+}
+
+func syncDirectory(path string) error {
+	dir, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	if err := dir.Sync(); err != nil {
+		_ = dir.Close()
+		return err
+	}
+	return dir.Close()
+}
+
+type XDRIntegrityReport struct {
+	Component       string                  `json:"component"`
+	Health          string                  `json:"health"`
+	XDRDegraded     bool                    `json:"xdr_degraded"`
+	DegradedReason  string                  `json:"degraded_reason,omitempty"`
+	RecoveryAllowed bool                    `json:"recovery_allowed"`
+	Ledger          IncidentIntegrityStatus `json:"ledger"`
+}
+
+func (e *XDREngine) IncidentIntegrityReport() XDRIntegrityReport {
+	if e == nil || e.logger == nil {
+		return XDRIntegrityReport{
+			Component: "xdr_incident_ledger", Health: "unavailable", XDRDegraded: true,
+			DegradedReason: "incident logger unavailable",
+			Ledger:         IncidentIntegrityStatus{Healthy: false, ReasonCode: "LOGGER_UNAVAILABLE"},
+		}
+	}
+	status := e.logger.IntegrityStatus()
+	degraded, reason := e.degradedState()
+	health := "healthy"
+	if !status.Healthy || degraded {
+		health = "degraded"
+	}
+	return XDRIntegrityReport{
+		Component: "xdr_incident_ledger", Health: health, XDRDegraded: degraded,
+		DegradedReason: reason, RecoveryAllowed: e.incidentRecoveryAllowed() && status.Recoverable,
+		Ledger: status,
+	}
+}
+
+func (e *XDREngine) VerifyIncidentIntegrity(ctx context.Context) (XDRIntegrityReport, error) {
+	if e == nil || e.logger == nil {
+		return e.IncidentIntegrityReport(), errors.New("incident logger unavailable")
+	}
+	if err := ctx.Err(); err != nil {
+		return e.IncidentIntegrityReport(), err
+	}
+	if err := e.logger.Verify(); err != nil {
+		e.markDegradedCause("incident_log", "incident log verification failed: "+err.Error())
+		return e.IncidentIntegrityReport(), err
+	}
+	return e.IncidentIntegrityReport(), nil
+}
+
+// Rotate seals the segment because the retention budget is reached and continues with a fresh chain.
+//
+// A full forensic log must not hold the protection hostage: reaching the budget stops the recording,
+// degrades XDR, and that degradation pauses the automatic response and blocks every promotion until
+// somebody archives the segment by hand - which happened twice on the production host in a single
+// day. Rotation is therefore automatic at the budget, and it reuses the audited sealing path.
+//
+// It must not reuse the recovery precondition. The rotation fires at ninety percent of the budget,
+// while the ledger is still healthy, and the recovery path refuses an intact ledger by design
+// ("incident ledger recovery is not required"). That refusal was reported as a rotation failure,
+// degraded XDR, and left the log recording until it hit its hard limit - where the very same call
+// suddenly succeeded and reported a recovery. The mechanics are shared; the precondition is not.
+func (l *IncidentLogger) Rotate(ctx context.Context, reason string) (IncidentRecoveryResult, error) {
+	digest := sha256.Sum256([]byte(reason))
+	return l.archiveIncidentSegments(ctx, hex.EncodeToString(digest[:]), incidentArchiveTriggerRetention)
+}
+
+// StoredBytes reports the sealed size and the budget it is measured against.
+func (l *IncidentLogger) StoredBytes() (int64, int64) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.expectedSize, l.maxBytes
+}
+
+func (e *XDREngine) RecoverIncidentLedger(ctx context.Context, reason string) (IncidentRecoveryResult, error) {
+	if e == nil || e.logger == nil {
+		return IncidentRecoveryResult{}, errors.New("incident logger unavailable")
+	}
+	select {
+	case <-ctx.Done():
+		return IncidentRecoveryResult{}, ctx.Err()
+	case <-e.recoveryGate:
+	}
+	defer func() { e.recoveryGate <- struct{}{} }()
+
+	// Recovery used to require observe enforcement. That guard was written when an automatic
+	// fall-back emptied the kernel policy, so a recovering operator was already unarmed; under
+	// fail-closed retention the platform keeps enforcing while it is degraded, and the guard
+	// turned into a deadlock: the incident ledger could only be recovered by first giving up the
+	// protection that the recovery exists to preserve, and the degradation that pauses automatic
+	// response could never be cleared. What actually matters for auditability is that the
+	// archived segment is sealed with a manifest and that the recovery itself is written to the
+	// evidence ledger - both of which happen below, whatever the enforcement mode is.
+
+	if !e.incidentRecoveryAllowed() {
+		return IncidentRecoveryResult{}, errors.New("XDR has additional degraded causes or no recoverable incident-ledger degradation")
+	}
+	status := e.logger.IntegrityStatus()
+	if status.Healthy && !status.Quarantined {
+		return IncidentRecoveryResult{}, errIncidentRecoveryNotRequired
+	}
+	if !status.Recoverable {
+		return IncidentRecoveryResult{}, errIncidentRecoveryNotAllowed
+	}
+	if e.state == nil || e.state.EvidenceLedger() == nil {
+		return IncidentRecoveryResult{}, errors.New("mandatory evidence ledger unavailable")
+	}
+
+	reasonDigest := sha256.Sum256([]byte(reason))
+	reasonSHA := hex.EncodeToString(reasonDigest[:])
+	started := EvidenceRecord{
+		Severity: "high", Kind: "xdr.recovery_started", Source: "operator",
+		Message: "Operator-authorized XDR incident-ledger recovery started",
+		Target:  "reason_sha256:" + reasonSHA,
+	}
+	if err := e.state.RecordEvidence(started); err != nil {
+		e.markDegradedCause("evidence", "mandatory evidence ledger unavailable during XDR recovery")
+		return IncidentRecoveryResult{}, err
+	}
+
+	result, err := e.logger.Recover(ctx, reasonSHA)
+	if err != nil {
+		_ = e.state.RecordEvidence(EvidenceRecord{
+			Severity: "critical", Kind: "xdr.recovery_failed", Source: "xdr",
+			Message: "XDR incident-ledger recovery failed; fail-closed state retained",
+			Target:  "reason_sha256:" + reasonSHA,
+		})
+		return IncidentRecoveryResult{}, err
+	}
+
+	if err := e.state.RecordEvidence(EvidenceRecord{
+		Severity: "high", Kind: "xdr.corrupt_chain_archived", Source: "xdr",
+		Message: "Corrupt XDR incident chain archived before reinitialization",
+		Target:  "archive:" + result.ArchiveID + " manifest_sha256:" + result.ManifestSHA256,
+	}); err != nil {
+		e.markDegradedCause("evidence", "mandatory evidence ledger unavailable during XDR recovery")
+		return IncidentRecoveryResult{}, err
+	}
+	if err := e.logger.Verify(); err != nil {
+		e.markDegradedCause("incident_log", "fresh incident log verification failed: "+err.Error())
+		return IncidentRecoveryResult{}, err
+	}
+	if e.behavior != nil {
+		if summary := e.behavior.Summary(); e.cfg.XDR.BehaviorEnabled && !summary.IntegrityOK {
+			e.markDegradedCause("behavior", "behavior profile integrity failure: "+summary.Error)
+			return IncidentRecoveryResult{}, errors.New("behavior profile integrity is not healthy")
+		}
+	}
+	if err := e.state.RecordEvidence(EvidenceRecord{
+		Severity: "info", Kind: "xdr.new_chain_verified", Source: "xdr",
+		Message: "Fresh XDR incident chain verified after forensic recovery",
+		Target:  "archive:" + result.ArchiveID,
+	}); err != nil {
+		e.markDegradedCause("evidence", "mandatory evidence ledger unavailable during XDR recovery")
+		return IncidentRecoveryResult{}, err
+	}
+	if err := e.state.RecordEvidence(EvidenceRecord{
+		Severity: "info", Kind: "xdr.recovery_completed", Source: "xdr",
+		Message: "XDR incident-ledger recovery completed; protection promotion remains operator-controlled",
+		Target:  "archive:" + result.ArchiveID,
+	}); err != nil {
+		e.markDegradedCause("evidence", "mandatory evidence ledger unavailable during XDR recovery")
+		return IncidentRecoveryResult{}, err
+	}
+
+	e.clearDegradedCause("incident_log")
+	result.Integrity = e.logger.IntegrityStatus()
+	return result, nil
+}

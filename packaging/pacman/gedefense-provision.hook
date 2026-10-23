@@ -1,0 +1,17 @@
+# STATUS: DIAMANT VGT SUPREME
+# F-05 / CHAIN-005: after installing or upgrading the packaged stack, enable the
+# units that make up the GeDefense contract. The actual secret/TLS/token
+# material is created by gedefense-provision.service before those units start;
+# this hook only runs the account/directory database updates and enables the
+# service set. It never starts a service and never deletes operator state.
+[Trigger]
+Operation = Install
+Operation = Upgrade
+Type = Package
+Target = gedefense
+
+[Action]
+Description=Enable the VGT GeDefense service contract
+When=PostTransaction
+Exec=/usr/bin/systemctl daemon-reload
+Exec=/usr/bin/systemctl enable gedefense-provision.service gedefense-bpffs.service gedefense-core.service gedefense-control.service gedefense-access.service

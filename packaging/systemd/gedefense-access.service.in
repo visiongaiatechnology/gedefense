@@ -1,0 +1,54 @@
+[Unit]
+Description=VGT GeDefense HTTPS Password Gateway
+After=gedefense-control.service
+Requires=gedefense-control.service
+StartLimitIntervalSec=120
+StartLimitBurst=4
+
+[Service]
+Type=exec
+# The gateway runs under its own account so that it can reach neither the core IPC key nor the storage
+# master key. That separation only holds if it never joins the control plane's group.
+User=gedefense-access
+Group=gedefense-access
+LoadCredential=tls-key:/etc/vgt/gedefense/tls/access.key
+# The gateway refuses any backend token that is not 0600 and its own property. The control plane cannot
+# hand the file over (its sandbox forbids chown), so a root pre-step copies it into the gateway's own
+# directory with the required ownership. order note: systemd ignores directive order within a section.
+ExecStartPre=+/usr/bin/install -o gedefense-access -g gedefense-access -m 0600 /var/lib/vgt/gedefense-access/dashboard.token /var/lib/vgt/gedefense-access/state/backend-token
+# The key is served from the canonical TLS directory as a systemd credential, because /etc/vgt/gedefense
+# is mode 0750 and therefore not traversable for this account. The certificate must come from that same
+# directory: two independently written copies drift apart and the gateway then dies with
+# "tls: private key does not match public key". This root pre-step pins both halves to one source.
+ExecStartPre=+/usr/bin/install -o gedefense-access -g gedefense-access -m 0644 /etc/vgt/gedefense/tls/access.crt /etc/vgt/gedefense-access/access.crt
+ExecStart=@RELEASE@/bin/gedefense-access --listen=0.0.0.0:@PUBLIC_PORT@ --backend=http://127.0.0.1:9844 --public-host=@PUBLIC_HOST@ --password-file=/etc/vgt/gedefense-access/access-password --session-key-file=/var/lib/vgt/gedefense-access/state/access-session.key --backend-token-file=/var/lib/vgt/gedefense-access/state/backend-token --tls-cert=/etc/vgt/gedefense-access/access.crt --tls-key=%d/tls-key
+Restart=on-failure
+RestartSec=3s
+TimeoutStartSec=30s
+TimeoutStopSec=15s
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectClock=true
+ProtectHostname=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+ReadOnlyPaths=@RELEASE@ /etc/vgt/gedefense-access
+ReadWritePaths=/var/lib/vgt/gedefense-access
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

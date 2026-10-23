@@ -1,0 +1,46 @@
+# STATUS: DIAMANT VGT SUPREME
+[Unit]
+Description=AstraeaOS Fail-Closed GeDefense Login Gate
+Requires=astraeaos-boot-attestation.service
+Wants=gedefense-astraeaos-provision.service
+Wants=gedefense-bpffs.service
+Wants=gedefense-core.service
+Wants=gedefense-control.service
+Wants=gedefense-access.service
+After=astraeaos-boot-attestation.service
+After=gedefense-astraeaos-provision.service
+After=gedefense-bpffs.service
+After=gedefense-core.service
+After=gedefense-control.service
+After=gedefense-access.service
+Before=display-manager.service sddm.service
+OnFailure=astraeaos-security-boot-failure.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/astraeaos/astraeaos-security-login-gate
+RemainAfterExit=yes
+TimeoutStartSec=70s
+User=root
+Group=root
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectHome=true
+ProtectSystem=strict
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+[Install]
+WantedBy=graphical.target

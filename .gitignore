@@ -1,0 +1,86 @@
+# Build outputs
+/dist/
+/GitHub Upload/
+/V4 Update/
+**/target/
+*.exe
+*.run
+*.zip
+/control/control
+/control/gedefense-control
+/gateway/gateway
+/gateway/gedefense-access
+
+# Language caches
+__pycache__/
+*.pyc
+*.pyo
+*.test
+*.out
+
+# Local packaging worktrees
+**/pkg/
+*.pkg.tar.*
+*.pkg.tar.*.sig
+
+# Tooling / IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+*~
+*.swp
+
+# Secrets and local state (never commit)
+*.pem
+*.key
+.env
+.env.*
+.local-state/
+
+# Agent / editor debris
+.manifest-regen-status.txt
+.agents/
+.codex/
+
+# Verification infrastructure and internal working documents (never commit)
+wsl-verify.sh
+wsl-qa.sh
+wsl-vuln.sh
+wsl-probe.sh
+extract.sh
+qa-server.py
+qa/
+GEDEFENSE_4.2_TESTBEFUNDE.md
+GEDEFENSE_4.2_CHANGELOG_KONSOLIDIERT.md
+GEDEFENSE_4.2_FIX_VERIFICATION.md
+GEDEFENSE_4.2.1_CHANGELOG_KONSOLIDIERT.md
+GEDEFENSE_4.2.1_ACCESS_LOGIN_CSRF_FIX.md
+GEDEFENSE_4.2.1_XDR_SELFTAMPER_UND_EVIDENCE_BUDGET.md
+OPENAI_REWORK_PROGRESS.md
+GeDefense_4.2_SECURITY_FABRIC_CONTROL_PLANE_PLAN.md
+emergency_stop.sh
+
+# Lokale Verifikationswerkzeuge mit echten Betriebsdaten (Management-Allowlist, beobachtete
+# Angreifer-IPs, Prozess-Kommandozeilen). Sie gehoeren nicht in die Veroeffentlichung.
+/control/webtools/
+
+# Interne Arbeits-, Audit- und Release-Dokumente (gehoeren nicht ins Quellcode-Repo)
+/Next.md
+/SECURITY-AUDIT-*.md
+/VGT-AUDIT-*.md
+/VGT-SECURITY-*.md
+/F-06-*.md
+/GITHUB-UPLOAD-*.md
+/audit_matrix.json
+/SOURCE-MANIFEST.sha256
+/docs/release/
+/ERWEITERUNGSPLAN_*.md
+/OPENAI_*.md
+/GEDEFENSE_4*.md
+/GeDefense_4.*.md
+/wsl-*.sh
+/add-stale.py
+/bump-version*.py
+/qa-server.py
+/extract.sh\n/logs/\n

@@ -1,0 +1,45 @@
+name: GeDefense privileged Linux host qualification
+
+on:
+  workflow_dispatch:
+    inputs:
+      interface:
+        description: Network interface carrying the installed GeDefense XDP program (e.g. eth0)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gedefense-privileged-host-qualification
+  cancel-in-progress: false
+
+jobs:
+  qualify-installed-host:
+    # Hardening (G-SC-10): privileged self-hosted kernel tests only run for the
+    # trusted default branch of the canonical repository and only through a
+    # protected environment (manual reviewer approval). Inputs are validated as
+    # data, never interpolated into a shell.
+    if: github.ref == 'refs/heads/main' && github.repository == 'visiongaiatechnology/gedefense'
+    runs-on: [self-hosted, linux, x64, gedefense-kernel-test]
+    environment: privileged-linux-host
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.4
+        with:
+          persist-credentials: false
+      - name: Validate interface input and run concrete-host qualification
+        env:
+          GEDEFENSE_TEST_INTERFACE: ${{ inputs.interface }}
+        run: |
+          set -Eeuo pipefail
+          if [[ ! $GEDEFENSE_TEST_INTERFACE =~ ^[A-Za-z0-9_.:-]{1,32}$ ]]; then
+            echo "invalid interface name" >&2
+            exit 1
+          fi
+          if [[ ! -d /sys/class/net/$GEDEFENSE_TEST_INTERFACE ]]; then
+            echo "interface does not exist on the target host" >&2
+            exit 1
+          fi
+          sudo bash ./scripts/validate-installed-linux-host.sh "$GEDEFENSE_TEST_INTERFACE"

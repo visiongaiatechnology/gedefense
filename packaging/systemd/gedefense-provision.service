@@ -1,0 +1,45 @@
+# STATUS: DIAMANT VGT SUPREME
+[Unit]
+Description=Provision VGT GeDefense runtime directories, keys, token and TLS identity
+Documentation=file:/usr/share/gedefense/README.md
+# F-05 / CHAIN-005: this unit is the package provisioning contract. It runs
+# before every GeDefense service so a plain distribution package install starts
+# the access unit with the token, TLS identity and state directories it needs.
+DefaultDependencies=no
+After=local-fs.target
+RequiresMountsFor=/etc /var/lib
+Before=gedefense-bpffs.service gedefense-core.service gedefense-control.service gedefense-access.service
+ConditionPathExists=/opt/vgt/gedefense/current/bin/gedefense-access
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/gedefense/gedefense-provision
+RemainAfterExit=yes
+User=root
+Group=root
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectHome=true
+ProtectSystem=strict
+ProtectClock=true
+ProtectHostname=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+ReadWritePaths=/etc/vgt /var/lib/vgt /run/gedefense-scan
+TimeoutStartSec=60s
+
+[Install]
+WantedBy=multi-user.target

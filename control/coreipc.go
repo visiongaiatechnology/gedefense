@@ -1,0 +1,1106 @@
+// STATUS: DIAMANT VGT SUPREME
+package main
+
+import (
+	"bufio"
+	"crypto/hmac"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"io"
+	"net"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"sync/atomic"
+	"syscall"
+	"time"
+	"unicode/utf8"
+)
+
+const (
+	coreProtocol                          = "VGT3"
+	maxCoreResponseBytes                  = 4096
+	maxCoreIngressEventsPerResponse       = 12
+	cellLSMDenyNonUnixSocket        uint8 = 1
+)
+
+type CoreClient struct {
+	socket string
+	// timeoutNanos is read on every command, so it is held in an atomic rather
+	// than behind a mutex on the IPC hot path. The administrable System namespace
+	// can retune it without a restart.
+	timeoutNanos atomic.Int64
+	key          []byte
+}
+
+type CoreExecEvent struct {
+	PID  int
+	UID  uint32
+	GID  uint32
+	Comm string
+}
+
+type CoreIngressEvent struct {
+	Family       uint8
+	Protocol     uint8
+	TCPFlags     uint8
+	AttemptCount uint8
+	SrcPort      uint16
+	DstPort      uint16
+	Packets      uint32
+	Bytes        uint32
+	SYNCount     uint32
+	ACKCount     uint32
+	WindowEpoch  uint64
+	Source       net.IP
+	Destination  net.IP
+}
+
+type CoreIngressHealth struct {
+	EventsEmitted       uint64
+	RingDrops           uint64
+	TrackInsertFailures uint64
+	// Mode names the hook that is actually enforcing ingress: "native" for XDP in the
+	// driver path, "generic" for XDP in the generic path, and "tc-ingress" when neither
+	// was available and the kernel enforces at the traffic-control layer instead. The
+	// core decides this at attach time and it is the only honest answer to whether this
+	// host's hardware is doing the work.
+	//
+	// Empty means the core is older than the field, which is reported as unknown rather
+	// than assumed to be native.
+	Mode string
+}
+
+type CoreEgressDropEvent struct {
+	PID         int
+	UID         uint32
+	Family      uint8
+	Protocol    uint8
+	Destination net.IP
+	Comm        string
+}
+
+type CoreCellLSMDenyEvent struct {
+	CgroupID uint64
+	PID      int
+	UID      uint32
+	Family   int32
+}
+
+type CoreMalwareEvent struct {
+	PID            int
+	UID            uint32
+	Path           string
+	State          string
+	Reason         string
+	SHA256         string
+	Size           uint64
+	Classification string
+}
+
+type CoreMalwareEventBatch struct {
+	Dropped uint64
+	Events  []CoreMalwareEvent
+}
+
+func NewCoreClient(socket, keyPath string, timeout time.Duration) (*CoreClient, error) {
+	key, err := loadCoreIPCKey(keyPath)
+	if err != nil {
+		return nil, fmt.Errorf("core IPC key: %w", err)
+	}
+	client := &CoreClient{socket: socket, key: key}
+	client.timeoutNanos.Store(int64(timeout))
+	return client, nil
+}
+
+func loadCoreIPCKey(path string) ([]byte, error) {
+	if !filepath.IsAbs(path) {
+		return nil, errors.New("core IPC key path must be absolute")
+	}
+	if err := rejectSymlink(path); err != nil {
+		return nil, err
+	}
+	fd, err := syscall.Open(path, syscall.O_RDONLY|syscall.O_CLOEXEC|syscall.O_NOFOLLOW, 0)
+	if errors.Is(err, os.ErrNotExist) {
+		// Development and unit-test path. Production installers create the key
+		// beforehand with the strict root:gedefense 0640 shared-secret profile.
+		return loadOrCreateBinaryKey(path)
+	}
+	if err != nil {
+		return nil, err
+	}
+	f := os.NewFile(uintptr(fd), path)
+	if f == nil {
+		_ = syscall.Close(fd)
+		return nil, errors.New("core IPC key descriptor is invalid")
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok || !info.Mode().IsRegular() {
+		return nil, errors.New("core IPC key must be a regular file")
+	}
+	mode := info.Mode().Perm()
+	productionProfile := stat.Uid == 0 && mode == 0o640 && (stat.Gid == uint32(os.Getegid()) || os.Geteuid() == 0)
+	localProfile := stat.Uid == uint32(os.Geteuid()) && mode == 0o600
+	if !productionProfile && !localProfile {
+		return nil, fmt.Errorf("core IPC key ownership/mode invalid: uid=%d gid=%d mode=%#o", stat.Uid, stat.Gid, mode)
+	}
+	b, err := io.ReadAll(io.LimitReader(f, 33))
+	if err != nil {
+		return nil, err
+	}
+	if len(b) != 32 {
+		return nil, errors.New("core IPC key must contain exactly 32 bytes")
+	}
+	return append([]byte(nil), b...), nil
+}
+
+func protocolFieldValid(v string) bool {
+	return v != "" && len(v) <= 3072 && !strings.ContainsAny(v, " \t\r\n\x00\x1f")
+}
+
+func randomNonce() (string, error) {
+	var raw [16]byte
+	if _, err := rand.Read(raw[:]); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(raw[:]), nil
+}
+
+func coreMAC(key []byte, fields ...string) string {
+	mac := hmac.New(sha256.New, key)
+	for i, field := range fields {
+		if i > 0 {
+			_, _ = mac.Write([]byte{0x1f})
+		}
+		_, _ = mac.Write([]byte(field))
+	}
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
+// deadline returns the active command deadline.
+func (c *CoreClient) deadline() time.Duration {
+	value := time.Duration(c.timeoutNanos.Load())
+	if value <= 0 {
+		return 2 * time.Second
+	}
+	return value
+}
+
+func (c *CoreClient) command(parts ...string) (string, error) {
+	if len(parts) == 0 || len(parts) > 16 {
+		return "", errors.New("invalid core command arity")
+	}
+	for _, p := range parts {
+		if !protocolFieldValid(p) {
+			return "", errors.New("invalid core protocol field")
+		}
+	}
+	nonce, err := randomNonce()
+	if err != nil {
+		return "", err
+	}
+	stamp := strconv.FormatInt(time.Now().Unix(), 10)
+	requestFields := append([]string{coreProtocol, stamp, nonce}, parts...)
+	mac := coreMAC(c.key, requestFields...)
+
+	conn, err := net.DialTimeout("unix", c.socket, c.deadline())
+	if err != nil {
+		return "", err
+	}
+	defer conn.Close()
+	if err := conn.SetDeadline(time.Now().Add(c.deadline())); err != nil {
+		return "", fmt.Errorf("core IPC deadline configuration failed: %w", err)
+	}
+	line := strings.Join(append(requestFields, mac), " ") + "\n"
+	if len(line) > 4096 {
+		return "", errors.New("core request exceeds protocol limit")
+	}
+	if _, err = conn.Write([]byte(line)); err != nil {
+		return "", err
+	}
+	responseReader := bufio.NewReaderSize(io.LimitReader(conn, maxCoreResponseBytes+1), maxCoreResponseBytes+1)
+	response, err := responseReader.ReadString('\n')
+	if err != nil {
+		return "", err
+	}
+	return parseCoreResponse(response, nonce, c.key)
+}
+
+func parseCoreResponse(response, nonce string, key []byte) (string, error) {
+	if len(response) > maxCoreResponseBytes || !strings.HasSuffix(response, "\n") {
+		return "", errors.New("core response exceeds protocol limit or is unterminated")
+	}
+	response = strings.TrimSpace(response)
+	fields := strings.Fields(response)
+	if len(fields) != 5 || fields[0] != coreProtocol+"R" || fields[1] != nonce {
+		return "", errors.New("invalid authenticated core response")
+	}
+	status, encoded, gotMAC := fields[2], fields[3], fields[4]
+	wantMAC := coreMAC(key, fields[0], fields[1], status, encoded)
+	gotBytes, err1 := hex.DecodeString(gotMAC)
+	wantBytes, err2 := hex.DecodeString(wantMAC)
+	if err1 != nil || err2 != nil || !hmac.Equal(gotBytes, wantBytes) {
+		return "", errors.New("core response authentication failed")
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(encoded)
+	if err != nil || len(payload) > 2048 {
+		return "", errors.New("invalid core response payload")
+	}
+	message := string(payload)
+	if status != "OK" {
+		if message == "" {
+			message = "request rejected"
+		}
+		return "", fmt.Errorf("core rejected command: %s", message)
+	}
+	return message, nil
+}
+
+func syncCoreAllowlist(core *CoreClient, targets []string) error {
+	if core == nil {
+		return errors.New("core client is unavailable")
+	}
+	if len(targets) == 0 {
+		return errors.New("management allowlist is empty")
+	}
+	for _, target := range targets {
+		if err := core.AllowAdd(target); err != nil {
+			return fmt.Errorf("allowlist synchronization failed for %s: %w", target, err)
+		}
+	}
+	return nil
+}
+
+func (c *CoreClient) AllowAdd(target string) error {
+	_, err := c.command("ALLOW_ADD", target)
+	return err
+}
+func (c *CoreClient) AllowDelete(target string) error {
+	_, err := c.command("ALLOW_DEL", target)
+	return err
+}
+
+func (c *CoreClient) Ping() (string, error)      { return c.command("PING") }
+func (c *CoreClient) Add(target string) error    { _, err := c.command("ADD", target); return err }
+func (c *CoreClient) Delete(target string) error { _, err := c.command("DEL", target); return err }
+func (c *CoreClient) ClearBlocklist() error {
+	state, err := c.command("CLEAR_BLOCKLIST")
+	if err != nil {
+		return err
+	}
+	if state != "cleared" {
+		return fmt.Errorf("core returned unexpected blocklist clear state %q", state)
+	}
+	return nil
+}
+func (c *CoreClient) VerifyBlocklistEmpty() error {
+	state, err := c.command("VERIFY_EMPTY")
+	if err != nil {
+		return err
+	}
+	if state != "empty" {
+		return fmt.Errorf("core returned unexpected blocklist state %q", state)
+	}
+	return nil
+}
+func (c *CoreClient) Stop(pid int, startTicks uint64, rule string) error {
+	_, err := c.command("XDR_STOP", strconv.Itoa(pid), strconv.FormatUint(startTicks, 10), rule)
+	return err
+}
+func (c *CoreClient) Resume(pid int, startTicks uint64, rule string) error {
+	_, err := c.command("XDR_CONT", strconv.Itoa(pid), strconv.FormatUint(startTicks, 10), rule)
+	return err
+}
+func (c *CoreClient) Kill(pid int, startTicks uint64, rule string) error {
+	_, err := c.command("XDR_KILL", strconv.Itoa(pid), strconv.FormatUint(startTicks, 10), rule)
+	return err
+}
+
+// CoreActionDispatcher implementation
+func (c *CoreClient) BlockIP(ip string) error {
+	return c.Add(ip)
+}
+
+func (c *CoreClient) UnblockIP(ip string) error {
+	return c.Delete(ip)
+}
+
+func (c *CoreClient) FreezeProcess(pid int, startTicks uint64, reason string) error {
+	return c.Stop(pid, startTicks, reason)
+}
+
+func (c *CoreClient) UnfreezeProcess(pid int, startTicks uint64) error {
+	return c.Resume(pid, startTicks, "RESPONSE_TTL_ROLLBACK")
+}
+
+func (c *CoreClient) SetCellPolicy(cgroupID uint64, flags uint8) error {
+	return c.CellPolicySet(cgroupID, flags)
+}
+
+func (c *CoreClient) DeleteCellPolicy(cgroupID uint64) error {
+	return c.CellPolicyDelete(cgroupID)
+}
+
+func (c *CoreClient) ExecEvents() ([]CoreExecEvent, error) {
+	response, err := c.command("EXEC_EVENTS")
+	if err != nil {
+		return nil, err
+	}
+	return parseCoreExecEvents(response)
+}
+
+func parseCoreExecEvents(response string) ([]CoreExecEvent, error) {
+	if response == "empty" {
+		return nil, nil
+	}
+	records := strings.Split(response, ",")
+	if len(records) > 24 {
+		return nil, errors.New("core returned too many exec events")
+	}
+	events := make([]CoreExecEvent, 0, len(records))
+	for _, record := range records {
+		fields := strings.Split(record, ":")
+		if len(fields) != 4 {
+			return nil, errors.New("core returned malformed exec event")
+		}
+		pid64, pidErr := strconv.ParseInt(fields[0], 10, 32)
+		uid64, uidErr := strconv.ParseUint(fields[1], 10, 32)
+		gid64, gidErr := strconv.ParseUint(fields[2], 10, 32)
+		comm, commErr := hex.DecodeString(fields[3])
+		if pidErr != nil || uidErr != nil || gidErr != nil || commErr != nil ||
+			pid64 <= 0 || len(comm) > 16 || strings.ContainsRune(string(comm), '\x00') {
+			return nil, errors.New("core returned invalid exec event fields")
+		}
+		events = append(events, CoreExecEvent{
+			PID:  int(pid64),
+			UID:  uint32(uid64),
+			GID:  uint32(gid64),
+			Comm: string(comm),
+		})
+	}
+	return events, nil
+}
+
+func (c *CoreClient) IngressEvents() ([]CoreIngressEvent, error) {
+	response, err := c.command("INGRESS_EVENTS")
+	if err != nil {
+		return nil, err
+	}
+	return parseCoreIngressEvents(response)
+}
+
+func (c *CoreClient) IngressHealth() (CoreIngressHealth, error) {
+	response, err := c.command("INGRESS_HEALTH")
+	if err != nil {
+		return CoreIngressHealth{}, err
+	}
+	return parseCoreIngressHealth(response)
+}
+
+func parseCoreIngressHealth(response string) (CoreIngressHealth, error) {
+	fields := strings.Split(response, ":")
+	// Three fields before the enforcement mode was reported, four after. Both are
+	// accepted so a newer control plane can talk to an older core and the reverse: a
+	// version mismatch must not read as a broken kernel.
+	if len(fields) != 3 && len(fields) != 4 {
+		return CoreIngressHealth{}, errors.New("core returned malformed ingress health")
+	}
+	emitted, err1 := strconv.ParseUint(fields[0], 10, 64)
+	ringDrops, err2 := strconv.ParseUint(fields[1], 10, 64)
+	trackFailures, err3 := strconv.ParseUint(fields[2], 10, 64)
+	if err1 != nil || err2 != nil || err3 != nil {
+		return CoreIngressHealth{}, errors.New("core returned invalid ingress health counters")
+	}
+	mode := ""
+	if len(fields) == 4 {
+		mode = normalizeIngressMode(fields[3])
+	}
+	return CoreIngressHealth{
+		EventsEmitted: emitted, RingDrops: ringDrops, TrackInsertFailures: trackFailures,
+		Mode: mode,
+	}, nil
+}
+
+// normalizeIngressMode maps the core's own spelling onto the vocabulary the interface
+// uses. An unrecognised value is preserved verbatim rather than dropped: if a future core
+// reports a mode this build does not know, the operator should see it, not "unknown".
+func normalizeIngressMode(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "native":
+		return "NATIVE_XDP"
+	case "generic":
+		return "GENERIC_XDP"
+	case "tc-ingress", "tc":
+		return "TC_INGRESS"
+	case "":
+		return ""
+	default:
+		return strings.ToUpper(strings.TrimSpace(raw))
+	}
+}
+
+func parseCoreIngressEvents(response string) ([]CoreIngressEvent, error) {
+	if response == "empty" {
+		return nil, nil
+	}
+	records := strings.Split(response, ",")
+	if len(records) > maxCoreIngressEventsPerResponse {
+		return nil, errors.New("core returned too many ingress events")
+	}
+	events := make([]CoreIngressEvent, 0, len(records))
+	for _, record := range records {
+		fields := strings.Split(record, ":")
+		if len(fields) != 13 {
+			return nil, errors.New("core returned malformed ingress event")
+		}
+		family64, familyErr := strconv.ParseUint(fields[0], 10, 8)
+		protocol64, protocolErr := strconv.ParseUint(fields[1], 10, 8)
+		flags64, flagsErr := strconv.ParseUint(fields[2], 10, 8)
+		attempt64, attemptErr := strconv.ParseUint(fields[3], 10, 8)
+		srcPort64, srcPortErr := strconv.ParseUint(fields[4], 10, 16)
+		dstPort64, dstPortErr := strconv.ParseUint(fields[5], 10, 16)
+		packets64, packetsErr := strconv.ParseUint(fields[6], 10, 32)
+		bytes64, bytesErr := strconv.ParseUint(fields[7], 10, 32)
+		syn64, synErr := strconv.ParseUint(fields[8], 10, 32)
+		ack64, ackErr := strconv.ParseUint(fields[9], 10, 32)
+		windowEpoch, epochErr := strconv.ParseUint(fields[10], 10, 64)
+		source, sourceErr := hex.DecodeString(fields[11])
+		destination, destinationErr := hex.DecodeString(fields[12])
+		family := uint8(family64)
+		expectedAddressBytes := 16
+		if family == 4 {
+			expectedAddressBytes = 4
+		}
+		if familyErr != nil || protocolErr != nil || flagsErr != nil || attemptErr != nil || srcPortErr != nil ||
+			dstPortErr != nil || packetsErr != nil || bytesErr != nil || synErr != nil || ackErr != nil || epochErr != nil ||
+			sourceErr != nil || destinationErr != nil || (family != 4 && family != 6) ||
+			packets64 == 0 || syn64 > packets64 || ack64 > packets64 || attempt64 > packets64 ||
+			(protocol64 == 6 && attempt64 != syn64) || windowEpoch == 0 || len(source) != expectedAddressBytes ||
+			len(destination) != expectedAddressBytes {
+			return nil, errors.New("core returned invalid ingress event fields")
+		}
+		srcIP := make(net.IP, len(source))
+		dstIP := make(net.IP, len(destination))
+		copy(srcIP, source)
+		copy(dstIP, destination)
+		events = append(events, CoreIngressEvent{
+			Family: family, Protocol: uint8(protocol64), TCPFlags: uint8(flags64), AttemptCount: uint8(attempt64),
+			SrcPort: uint16(srcPort64), DstPort: uint16(dstPort64),
+			Packets: uint32(packets64), Bytes: uint32(bytes64), SYNCount: uint32(syn64), ACKCount: uint32(ack64),
+			WindowEpoch: windowEpoch, Source: srcIP, Destination: dstIP,
+		})
+	}
+	return events, nil
+}
+
+func (c *CoreClient) EgressEvents() ([]CoreEgressDropEvent, error) {
+	response, err := c.command("EGRESS_EVENTS")
+	if err != nil {
+		return nil, err
+	}
+	return parseCoreEgressDropEvents(response)
+}
+
+func parseCoreEgressDropEvents(response string) ([]CoreEgressDropEvent, error) {
+	if response == "empty" {
+		return nil, nil
+	}
+	records := strings.Split(response, ",")
+	if len(records) > 24 {
+		return nil, errors.New("core returned too many egress events")
+	}
+	events := make([]CoreEgressDropEvent, 0, len(records))
+	for _, record := range records {
+		fields := strings.Split(record, ":")
+		if len(fields) != 6 {
+			return nil, errors.New("core returned malformed egress event")
+		}
+		pid64, pidErr := strconv.ParseUint(fields[0], 10, 32)
+		uid64, uidErr := strconv.ParseUint(fields[1], 10, 32)
+		family64, familyErr := strconv.ParseUint(fields[2], 10, 8)
+		protocol64, protocolErr := strconv.ParseUint(fields[3], 10, 8)
+		address, addressErr := hex.DecodeString(fields[4])
+		comm, commErr := hex.DecodeString(fields[5])
+		family := uint8(family64)
+		expectedAddressBytes := 16
+		if family == 4 {
+			expectedAddressBytes = 4
+		}
+		if pidErr != nil || uidErr != nil || familyErr != nil || protocolErr != nil ||
+			addressErr != nil || commErr != nil || (family != 4 && family != 6) ||
+			len(address) != expectedAddressBytes || len(comm) > 16 ||
+			strings.ContainsRune(string(comm), '\x00') {
+			return nil, errors.New("core returned invalid egress event fields")
+		}
+		destination := make(net.IP, len(address))
+		copy(destination, address)
+		events = append(events, CoreEgressDropEvent{
+			PID:         int(pid64),
+			UID:         uint32(uid64),
+			Family:      family,
+			Protocol:    uint8(protocol64),
+			Destination: destination,
+			Comm:        string(comm),
+		})
+	}
+	return events, nil
+}
+
+func (c *CoreClient) CellPolicyEpoch() (string, error) {
+	response, err := c.command("CELL_POLICY_EPOCH")
+	if err != nil {
+		return "", err
+	}
+	decoded, decodeErr := hex.DecodeString(response)
+	if decodeErr != nil || len(decoded) != 16 || len(response) != 32 {
+		return "", errors.New("core returned an invalid Cell policy epoch")
+	}
+	return response, nil
+}
+
+func (c *CoreClient) CellPolicySet(cgroupID uint64, flags uint8) error {
+	if cgroupID == 0 || flags != cellLSMDenyNonUnixSocket {
+		return errors.New("Cell LSM policy identity or flags are invalid")
+	}
+	response, err := c.command("CELL_POLICY_SET", strconv.FormatUint(cgroupID, 10), strconv.FormatUint(uint64(flags), 10))
+	if err != nil {
+		return err
+	}
+	if response != "applied" {
+		return errors.New("core returned an invalid Cell policy state")
+	}
+	return nil
+}
+
+func (c *CoreClient) CellPolicyDelete(cgroupID uint64) error {
+	if cgroupID == 0 {
+		return errors.New("Cell LSM policy identity is invalid")
+	}
+	response, err := c.command("CELL_POLICY_DEL", strconv.FormatUint(cgroupID, 10))
+	if err != nil {
+		return err
+	}
+	if response != "deleted" {
+		return errors.New("core returned an invalid Cell policy deletion state")
+	}
+	return nil
+}
+
+func (c *CoreClient) CellLSMEvents() ([]CoreCellLSMDenyEvent, error) {
+	response, err := c.command("CELL_LSM_EVENTS")
+	if err != nil {
+		return nil, err
+	}
+	return parseCoreCellLSMDenyEvents(response)
+}
+
+func parseCoreCellLSMDenyEvents(response string) ([]CoreCellLSMDenyEvent, error) {
+	if response == "empty" {
+		return nil, nil
+	}
+	records := strings.Split(response, ",")
+	if len(records) > 24 {
+		return nil, errors.New("core returned too many Cell LSM events")
+	}
+	events := make([]CoreCellLSMDenyEvent, 0, len(records))
+	for _, record := range records {
+		fields := strings.Split(record, ":")
+		if len(fields) != 4 {
+			return nil, errors.New("core returned a malformed Cell LSM event")
+		}
+		cgroupID, cgroupErr := strconv.ParseUint(fields[0], 10, 64)
+		pid64, pidErr := strconv.ParseInt(fields[1], 10, 32)
+		uid64, uidErr := strconv.ParseUint(fields[2], 10, 32)
+		family64, familyErr := strconv.ParseInt(fields[3], 10, 32)
+		if cgroupErr != nil || pidErr != nil || uidErr != nil || familyErr != nil ||
+			cgroupID == 0 || pid64 <= 0 || family64 <= 0 || family64 > 255 || family64 == syscall.AF_UNIX {
+			return nil, errors.New("core returned invalid Cell LSM event fields")
+		}
+		events = append(events, CoreCellLSMDenyEvent{
+			CgroupID: cgroupID,
+			PID:      int(pid64),
+			UID:      uint32(uid64),
+			Family:   int32(family64),
+		})
+	}
+	return events, nil
+}
+
+func (c *CoreClient) MalwareEvents() (CoreMalwareEventBatch, error) {
+	response, err := c.command("MALWARE_EVENTS")
+	if err != nil {
+		return CoreMalwareEventBatch{}, err
+	}
+	return parseCoreMalwareEvents(response)
+}
+
+func parseCoreMalwareEvents(response string) (CoreMalwareEventBatch, error) {
+	if response == "empty" {
+		return CoreMalwareEventBatch{}, nil
+	}
+	droppedText, recordsText, ok := strings.Cut(response, "|")
+	if !ok {
+		return CoreMalwareEventBatch{}, errors.New("core returned malformed malware event batch")
+	}
+	dropped, err := strconv.ParseUint(droppedText, 10, 64)
+	if err != nil {
+		return CoreMalwareEventBatch{}, errors.New("core returned invalid malware event drop count")
+	}
+	batch := CoreMalwareEventBatch{Dropped: dropped}
+	if recordsText == "" {
+		return batch, nil
+	}
+	records := strings.Split(recordsText, ",")
+	if len(records) > 4 {
+		return CoreMalwareEventBatch{}, errors.New("core returned too many malware events")
+	}
+	batch.Events = make([]CoreMalwareEvent, 0, len(records))
+	for _, record := range records {
+		fields := strings.Split(record, ":")
+		if len(fields) != 8 {
+			return CoreMalwareEventBatch{}, errors.New("core returned malformed malware event")
+		}
+		pid64, pidErr := strconv.ParseInt(fields[0], 10, 32)
+		uid64, uidErr := strconv.ParseUint(fields[1], 10, 32)
+		size, sizeErr := strconv.ParseUint(fields[6], 10, 64)
+		digest, digestErr := hex.DecodeString(fields[5])
+		stateOK := fields[3] == "malicious" || fields[3] == "suspicious" || fields[3] == "blocked"
+		if pidErr != nil || uidErr != nil || sizeErr != nil || digestErr != nil || pid64 <= 0 ||
+			len(digest) != sha256.Size || size > 256<<20 || !stateOK ||
+			!validMalwareEventLabel(fields[4], 96) || !validMalwareEventLabel(fields[7], 32) {
+			return CoreMalwareEventBatch{}, errors.New("core returned invalid malware event fields")
+		}
+		path := "unknown"
+		if fields[2] != "-" {
+			decoded, decodeErr := base64.RawURLEncoding.DecodeString(fields[2])
+			if decodeErr != nil || len(decoded) == 0 || len(decoded) > 192 || !utf8.Valid(decoded) || !filepath.IsAbs(string(decoded)) ||
+				strings.IndexFunc(string(decoded), func(value rune) bool { return value < 0x20 || value == 0x7f }) >= 0 {
+				return CoreMalwareEventBatch{}, errors.New("core returned invalid malware event path")
+			}
+			path = string(decoded)
+		}
+		batch.Events = append(batch.Events, CoreMalwareEvent{
+			PID: int(pid64), UID: uint32(uid64), Path: path, State: fields[3], Reason: fields[4],
+			SHA256: fields[5], Size: size, Classification: fields[7],
+		})
+	}
+	return batch, nil
+}
+
+func validMalwareEventLabel(value string, maximum int) bool {
+	if value == "" || len(value) > maximum {
+		return false
+	}
+	for _, character := range value {
+		if (character < 'a' || character > 'z') && (character < 'A' || character > 'Z') &&
+			(character < '0' || character > '9') && character != '.' && character != '_' && character != '-' {
+			return false
+		}
+	}
+	return true
+}
+
+func validSysctlToken(value string) bool {
+	if value == "" || len(value) > 32 {
+		return false
+	}
+	for _, character := range value {
+		if (character < '0' || character > '9') && character != '-' {
+			return false
+		}
+	}
+	return true
+}
+
+func (c *CoreClient) SysctlGet(key string) (string, error) {
+	if !validSysctlKey(key) {
+		return "", errors.New("invalid sysctl key")
+	}
+	value, err := c.command("SYSCTL_GET", key)
+	if err != nil {
+		return "", err
+	}
+	if !validSysctlToken(value) {
+		return "", errors.New("core returned an invalid sysctl value")
+	}
+	return value, nil
+}
+
+func (c *CoreClient) SysctlCompareSet(key, expected, desired string) error {
+	if !validSysctlKey(key) || !validSysctlToken(expected) || !validSysctlToken(desired) {
+		return errors.New("invalid sysctl compare-set request")
+	}
+	state, err := c.command("SYSCTL_SET", key, expected, desired)
+	if err != nil {
+		return err
+	}
+	if state != desired {
+		return fmt.Errorf("core returned unexpected sysctl state %q", state)
+	}
+	return nil
+}
+
+func validHardeningState(value string) bool {
+	switch value {
+	case "absent", "linux-server-balanced", "astraeaos-workstation-strict":
+		return true
+	}
+	const prefix = "astraeaos-custom-"
+	if len(value) != len(prefix)+4 || !strings.HasPrefix(value, prefix) {
+		return false
+	}
+	decoded, err := strconv.ParseUint(strings.TrimPrefix(value, prefix), 16, 16)
+	return err == nil && decoded > 0 && decoded&^uint64(0x03ff) == 0
+}
+
+func (c *CoreClient) HardeningProfileState() (string, error) {
+	state, err := c.command("HARDENING_GET")
+	if err != nil {
+		return "", err
+	}
+	if !validHardeningState(state) {
+		return "", errors.New("core returned an invalid persistent hardening state")
+	}
+	return state, nil
+}
+
+func (c *CoreClient) HardeningProfileCompareSet(expected, desired string) error {
+	if !validHardeningState(expected) || !validHardeningState(desired) {
+		return errors.New("invalid persistent hardening compare-set request")
+	}
+	state, err := c.command("HARDENING_SET", expected, desired)
+	if err != nil {
+		return err
+	}
+	if state != desired {
+		return fmt.Errorf("core returned unexpected persistent hardening state %q", state)
+	}
+	return nil
+}
+
+func validSysctlKey(key string) bool {
+	if key == "" || len(key) > 96 || strings.HasPrefix(key, ".") || strings.HasSuffix(key, ".") {
+		return false
+	}
+	for _, character := range key {
+		if (character < 'a' || character > 'z') &&
+			(character < '0' || character > '9') &&
+			character != '_' && character != '.' {
+			return false
+		}
+	}
+	return true
+}
+
+type QuarantineIdentity struct {
+	Size          uint64 `json:"size"`
+	Mode          uint32 `json:"mode"`
+	UID           uint32 `json:"uid"`
+	GID           uint32 `json:"gid"`
+	Device        uint64 `json:"device"`
+	Inode         uint64 `json:"inode"`
+	ModifiedNanos int64  `json:"modified_nanos"`
+	SHA256        string `json:"sha256"`
+}
+
+func (identity QuarantineIdentity) protocolToken() (string, error) {
+	if err := validateQuarantineIdentity(identity); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf(
+		"v1:%d:%d:%d:%d:%d:%d:%d:%s",
+		identity.Size,
+		identity.Mode,
+		identity.UID,
+		identity.GID,
+		identity.Device,
+		identity.Inode,
+		identity.ModifiedNanos,
+		identity.SHA256,
+	), nil
+}
+
+func parseQuarantineIdentity(value string) (QuarantineIdentity, error) {
+	fields := strings.Split(value, ":")
+	if len(fields) != 9 || fields[0] != "v1" {
+		return QuarantineIdentity{}, errors.New("core returned an invalid quarantine identity")
+	}
+	parseUint := func(index, bits int) (uint64, error) {
+		return strconv.ParseUint(fields[index], 10, bits)
+	}
+	size, err := parseUint(1, 64)
+	if err != nil {
+		return QuarantineIdentity{}, errors.New("core returned an invalid quarantine size")
+	}
+	mode, err := parseUint(2, 32)
+	if err != nil {
+		return QuarantineIdentity{}, errors.New("core returned an invalid quarantine mode")
+	}
+	uid, err := parseUint(3, 32)
+	if err != nil {
+		return QuarantineIdentity{}, errors.New("core returned an invalid quarantine uid")
+	}
+	gid, err := parseUint(4, 32)
+	if err != nil {
+		return QuarantineIdentity{}, errors.New("core returned an invalid quarantine gid")
+	}
+	device, err := parseUint(5, 64)
+	if err != nil {
+		return QuarantineIdentity{}, errors.New("core returned an invalid quarantine device")
+	}
+	inode, err := parseUint(6, 64)
+	if err != nil {
+		return QuarantineIdentity{}, errors.New("core returned an invalid quarantine inode")
+	}
+	modifiedNanos, err := strconv.ParseInt(fields[7], 10, 64)
+	if err != nil {
+		return QuarantineIdentity{}, errors.New("core returned an invalid quarantine timestamp")
+	}
+	identity := QuarantineIdentity{
+		Size: size, Mode: uint32(mode), UID: uint32(uid), GID: uint32(gid),
+		Device: device, Inode: inode, ModifiedNanos: modifiedNanos,
+		SHA256: fields[8],
+	}
+	if err := validateQuarantineIdentity(identity); err != nil {
+		return QuarantineIdentity{}, err
+	}
+	return identity, nil
+}
+
+func validateQuarantineIdentity(identity QuarantineIdentity) error {
+	if identity.Size > 256<<20 || identity.Mode > 0o7777 ||
+		len(identity.SHA256) != sha256.Size*2 {
+		return errors.New("quarantine identity violates typed bounds")
+	}
+	digest, err := hex.DecodeString(identity.SHA256)
+	if err != nil || len(digest) != sha256.Size {
+		return errors.New("quarantine identity digest is invalid")
+	}
+	return nil
+}
+
+func validQuarantineObjectID(value string) bool {
+	if len(value) != 19 || !strings.HasPrefix(value, "QV-") {
+		return false
+	}
+	for _, character := range value[3:] {
+		if (character < '0' || character > '9') &&
+			(character < 'a' || character > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
+func quarantinePathToken(path string) (string, error) {
+	if !filepath.IsAbs(path) || filepath.Clean(path) != path ||
+		len(path) == 0 || len(path) > 2048 || strings.ContainsRune(path, '\x00') {
+		return "", errors.New("quarantine path is invalid")
+	}
+	token := base64.RawURLEncoding.EncodeToString([]byte(path))
+	if !protocolFieldValid(token) {
+		return "", errors.New("quarantine path token exceeds protocol bounds")
+	}
+	return token, nil
+}
+
+type MalwareScanResult struct {
+	State          string `json:"state"`
+	Reason         string `json:"reason"`
+	SHA256         string `json:"sha256"`
+	Size           uint64 `json:"size"`
+	Classification string `json:"classification"`
+}
+
+func parseMalwareScanResult(value string) (MalwareScanResult, error) {
+	fields := strings.Split(value, ":")
+	if len(fields) != 5 || (fields[0] != "clean" && fields[0] != "suspicious" && fields[0] != "malicious") ||
+		len(fields[1]) == 0 || len(fields[1]) > 96 || len(fields[2]) != sha256.Size*2 || len(fields[4]) == 0 || len(fields[4]) > 32 {
+		return MalwareScanResult{}, errors.New("core returned malformed malware scan result")
+	}
+	for _, value := range []string{fields[1], fields[4]} {
+		for _, character := range value {
+			if (character < 'a' || character > 'z') && (character < 'A' || character > 'Z') &&
+				(character < '0' || character > '9') && character != '.' && character != '_' && character != '-' {
+				return MalwareScanResult{}, errors.New("core returned unsafe malware scan fields")
+			}
+		}
+	}
+	digest, digestErr := hex.DecodeString(fields[2])
+	size, sizeErr := strconv.ParseUint(fields[3], 10, 64)
+	if digestErr != nil || len(digest) != sha256.Size || sizeErr != nil || size > 256<<20 {
+		return MalwareScanResult{}, errors.New("core returned invalid malware scan bounds")
+	}
+	return MalwareScanResult{State: fields[0], Reason: fields[1], SHA256: fields[2], Size: size, Classification: fields[4]}, nil
+}
+
+func UserMalwareScan(socketPath, path string, timeout time.Duration) (MalwareScanResult, error) {
+	if socketPath != "/run/gedefense-scan/scan.sock" || timeout < time.Second || timeout > time.Minute {
+		return MalwareScanResult{}, errors.New("user malware scan endpoint rejected")
+	}
+	if err := validateQuarantinePathBuiltin(path); err != nil {
+		return MalwareScanResult{}, errors.New("user malware scan path rejected")
+	}
+	token, err := quarantinePathToken(path)
+	if err != nil {
+		return MalwareScanResult{}, err
+	}
+	connection, err := net.DialTimeout("unix", socketPath, timeout)
+	if err != nil {
+		return MalwareScanResult{}, err
+	}
+	defer connection.Close()
+	if err := connection.SetDeadline(time.Now().Add(timeout)); err != nil {
+		return MalwareScanResult{}, err
+	}
+	if _, err := io.WriteString(connection, "VGTSCAN1 "+token+"\n"); err != nil {
+		return MalwareScanResult{}, err
+	}
+	if unixConnection, ok := connection.(*net.UnixConn); ok {
+		if err := unixConnection.CloseWrite(); err != nil {
+			return MalwareScanResult{}, err
+		}
+	}
+	reader := bufio.NewReaderSize(io.LimitReader(connection, maxCoreResponseBytes+1), maxCoreResponseBytes+1)
+	response, err := reader.ReadString('\n')
+	if err != nil || len(response) > maxCoreResponseBytes {
+		return MalwareScanResult{}, errors.New("user malware scan response rejected")
+	}
+	response = strings.TrimSpace(response)
+	encoded, ok := strings.CutPrefix(response, "OK ")
+	if !ok {
+		return MalwareScanResult{}, errors.New("user malware scan was rejected")
+	}
+	decoded, err := base64.RawURLEncoding.DecodeString(encoded)
+	if err != nil || len(decoded) > 2048 {
+		return MalwareScanResult{}, errors.New("user malware scan response encoding rejected")
+	}
+	return parseMalwareScanResult(string(decoded))
+}
+
+func (c *CoreClient) MalwareScan(path string) (MalwareScanResult, error) {
+	if err := validateQuarantinePathBuiltin(path); err != nil {
+		return MalwareScanResult{}, errors.New("malware scan path is outside the permitted boundary")
+	}
+	token, err := quarantinePathToken(path)
+	if err != nil {
+		return MalwareScanResult{}, err
+	}
+	value, err := c.command("MALWARE_SCAN", token)
+	if err != nil {
+		return MalwareScanResult{}, err
+	}
+	return parseMalwareScanResult(value)
+}
+
+func (c *CoreClient) QuarantineInspect(path string) (QuarantineIdentity, error) {
+	token, err := quarantinePathToken(path)
+	if err != nil {
+		return QuarantineIdentity{}, err
+	}
+	value, err := c.command("QUARANTINE_INSPECT", token)
+	if err != nil {
+		return QuarantineIdentity{}, err
+	}
+	return parseQuarantineIdentity(value)
+}
+
+func (c *CoreClient) QuarantineApply(
+	path, objectID string,
+	identity QuarantineIdentity,
+) error {
+	token, err := quarantinePathToken(path)
+	if err != nil {
+		return err
+	}
+	if !validQuarantineObjectID(objectID) {
+		return errors.New("quarantine object ID is invalid")
+	}
+	identityToken, err := identity.protocolToken()
+	if err != nil {
+		return err
+	}
+	state, err := c.command("QUARANTINE_APPLY", token, objectID, identityToken)
+	if err != nil {
+		return err
+	}
+	return verifyQuarantineIdentityResponse(state, identity)
+}
+
+func (c *CoreClient) QuarantineVerify(
+	objectID string,
+	identity QuarantineIdentity,
+) error {
+	if !validQuarantineObjectID(objectID) {
+		return errors.New("quarantine object ID is invalid")
+	}
+	identityToken, err := identity.protocolToken()
+	if err != nil {
+		return err
+	}
+	state, err := c.command("QUARANTINE_VERIFY", objectID, identityToken)
+	if err != nil {
+		return err
+	}
+	if state != "verified" {
+		return errors.New("core returned an invalid quarantine verification state")
+	}
+	return nil
+}
+
+func (c *CoreClient) QuarantineRestore(
+	path, objectID string,
+	identity QuarantineIdentity,
+) error {
+	token, err := quarantinePathToken(path)
+	if err != nil {
+		return err
+	}
+	if !validQuarantineObjectID(objectID) {
+		return errors.New("quarantine object ID is invalid")
+	}
+	identityToken, err := identity.protocolToken()
+	if err != nil {
+		return err
+	}
+	state, err := c.command("QUARANTINE_RESTORE", token, objectID, identityToken)
+	if err != nil {
+		return err
+	}
+	if state != "restored" {
+		return errors.New("core returned an invalid quarantine restore state")
+	}
+	return nil
+}
+
+func verifyQuarantineIdentityResponse(
+	value string,
+	expected QuarantineIdentity,
+) error {
+	actual, err := parseQuarantineIdentity(value)
+	if err != nil {
+		return err
+	}
+	expectedToken, err := expected.protocolToken()
+	if err != nil {
+		return err
+	}
+	actualToken, err := actual.protocolToken()
+	if err != nil {
+		return err
+	}
+	if !hmac.Equal([]byte(actualToken), []byte(expectedToken)) {
+		return errors.New("core returned a mismatched quarantine identity")
+	}
+	return nil
+}

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- GeDefense tray status: stopped. Deliberately not a shield - an octagonal
+     halt sign: the daemon did not answer. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" role="img">
+  <title>GeDefense: no connection</title>
+  <rect x="0.5" y="0.5" width="23" height="23" rx="6" fill="#050912" stroke="#8f742e" stroke-width="1"/>
+  <path d="M8.0 2.8 L16.0 2.8 L21.2 8.0 L21.2 16.0 L16.0 21.2 L8.0 21.2 L2.8 16.0 L2.8 8.0 Z"
+        fill="#7c8797" shape-rendering="geometricPrecision"/>
+  <rect x="6.8" y="10.4" width="10.4" height="3.2" rx="0.8" fill="#050912"/>
+</svg>

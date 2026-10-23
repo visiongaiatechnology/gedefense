@@ -1,0 +1,306 @@
+package main
+
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"path/filepath"
+	"regexp"
+	"sort"
+	"strings"
+	"sync"
+)
+
+type commandRule struct {
+	id, category, summary string
+	score                 int
+	killEligible          bool
+	re                    *regexp.Regexp
+}
+
+type XDRRuleEngine struct {
+	mu           sync.RWMutex
+	commandRules []commandRule
+	redactors    []*regexp.Regexp
+	revision     uint64
+	modules      map[string]bool
+	customRules  []commandRule
+	overrides    map[string]XDRRuleOverride
+}
+
+var supportedXDRRuleOverrides = map[string]struct{}{
+	"KD.LINUX.PIPE_SHELL": {}, "KD.LINUX.ENCODED_EXEC": {}, "KD.LINUX.REVERSE_SHELL": {},
+	"KD.LINUX.LD_PRELOAD": {}, "KD.LINUX.CREDENTIAL_ACCESS": {}, "KD.LINUX.DESTRUCTIVE": {},
+	"KD.LINUX.PERSISTENCE": {}, "KD.LINUX.BPF_LOAD": {},
+	"KD.LINUX.LOG_TAMPER": {}, "KD.LINUX.CREDENTIAL_PATH_PROBE": {},
+	"KD.LINUX.TUNNEL_BINARY": {}, "KD.LINUX.PERSISTENCE_DROPIN": {},
+	"XDR.EXE_DELETED": {}, "XDR.MEMFD_EXEC": {}, "XDR.TEMP_EXEC": {}, "XDR.WEB_SHELL_LINEAGE": {},
+	"XDR.NAME_PATH_MISMATCH": {}, "XDR.THREAT_INTEL_C2": {},
+	"XDR.ANOMALY.EXEC_BURST": {}, "XDR.ANOMALY.CONNECTION_FANOUT": {},
+	"XDR.ANOMALY.REMOTE_DIVERSITY": {}, "XDR.ANOMALY.PORT_DIVERSITY": {},
+	"BASELINE.HASH_MISMATCH": {}, "BASELINE.NETWORK_DEVIATION": {}, "BASELINE.NETWORK_FORBIDDEN": {},
+	"BASELINE.PARENT_MISMATCH": {}, "BASELINE.UID_MISMATCH": {}, "L7.CORRELATED_REMOTE": {},
+}
+
+func xdrRuleOverrideIDAllowed(id string) bool {
+	_, ok := supportedXDRRuleOverrides[id]
+	return ok
+}
+
+func NewXDRRuleEngine() *XDRRuleEngine {
+	// Go's standard regexp engine uses RE2 semantics and linear-time matching.
+	defs := []struct {
+		id, category, summary, pattern string
+		score                          int
+		killEligible                   bool
+	}{
+		{"KD.LINUX.PIPE_SHELL", "execution", "Download or generated content piped into a shell", `(?i)\b(?:curl|wget|fetch)\b[^\n|]{0,900}\|\s*(?:sudo\s+)?(?:ba|da|z|k)?sh\b`, 85, true},
+		{"KD.LINUX.ENCODED_EXEC", "execution", "Encoded payload decoded into an interpreter", `(?i)(?:base64\s+(?:-d|--decode)|openssl\s+enc\s+-d|b64decode\s*\(|frombase64string\s*\().{0,900}(?:\|\s*(?:ba|da|z|k)?sh\b|\beval\b|\bexec\s*\()`, 75, true},
+		{"KD.LINUX.REVERSE_SHELL", "network", "Reverse-shell construction detected", `(?i)(?:/dev/(?:tcp|udp)/|\bnc(?:at)?\b[^\n]{0,500}(?:-e|--exec)\b|\bsocat\b[^\n]{0,500}\bexec:|\b(?:bash|sh)\s+-i\b)`, 105, true},
+		{"KD.LINUX.LD_PRELOAD", "injection", "Dynamic-loader injection variable used", `(?i)\b(?:LD_PRELOAD|LD_AUDIT)\s*=`, 70, true},
+		{"KD.LINUX.CREDENTIAL_ACCESS", "credential", "Direct access to sensitive credential material", `(?i)(?:\bcat\s+/(?:etc/shadow|root/\.ssh/)|\b(?:grep|strings)\b[^\n]{0,300}/proc/[0-9*]+/(?:environ|mem)|\bssh-keygen\b[^\n]{0,300}-y\s+-f\s+/root/)`, 65, true},
+		{"KD.LINUX.DESTRUCTIVE", "impact", "Destructive system command detected", `(?i)(?:\brm\s+-rf\s+/(?:\s|$)|\bmkfs\.[a-z0-9]+\s+/dev/|\bdd\s+[^\n]{0,300}\bof=/dev/(?:sd|nvme|vd)|:\(\)\s*\{\s*:\|:&\s*;\s*\}\s*;)`, 140, true},
+		{"KD.LINUX.PERSISTENCE", "persistence", "Persistence-oriented command sequence", `(?i)(?:\bcrontab\b[^\n]{0,400}(?:-e|-)|/etc/(?:cron\.|systemd/system)|\bsystemctl\s+enable\b|\bchattr\s+\+i\b)`, 35, false},
+		{"KD.LINUX.BPF_LOAD", "kernel", "Unexpected BPF program loading command", `(?i)\bbpftool\s+prog\s+(?:load|loadall)|\b(?:bpf|libbpf)\b[^\n]{0,300}\bprog_load\b`, 45, false},
+		// The chain after a foreign exploit. All four report only: emptying a log, copying a
+		// credential store, starting a tunnelling tool and writing a persistence entry all have
+		// legitimate twins, and an alert must never end a process on a guess.
+		{"KD.LINUX.LOG_TAMPER", "defense-evasion", "Forensic log deleted, truncated or history wiped", `(?i)(?:\brm\s+(?:-[a-z]+\s+)*/var/log/|>\s*/var/log/(?:wtmp|btmp|lastlog|auth\.log|syslog|messages|secure)\b|\btruncate\s+(?:-[a-z]+\s+)*0\b[^\n]{0,200}/var/log/|\bshred\b[^\n]{0,200}/var/log/|\bjournalctl\b[^\n]{0,120}--vacuum|\bHISTFILE=/dev/null|\bunset\s+HISTFILE|\brm\s+(?:-[a-z]+\s+)*/root/\.bash_history)`, 120, false},
+		{"KD.LINUX.CREDENTIAL_PATH_PROBE", "credential", "Credential store read, copied or encoded in bulk", `(?i)\b(?:cp|tar|rsync|scp|dd|base64|openssl|zip|gzip|cat|less|more|strings|awk|sed|python3?|perl)\b[^\n]{0,500}(?:/etc/shadow|/etc/gshadow|/etc/security/opasswd|/root/\.ssh/|/etc/vgt/gedefense/secrets/|\.kdbx|credentials\.json|/opt/beyondtrust/)`, 100, false},
+		{"KD.LINUX.TUNNEL_BINARY", "network", "Tunnelling or proxy tool executed", `(?i)(?:^|[/\s])(?:chisel|frpc|frps|ngrok|ligolo|gost|rathole|cloudflared|iodine|dnscat2?|socat)\b`, 110, false},
+		{"KD.LINUX.PERSISTENCE_DROPIN", "persistence", "Persistence entry written outside package management", `(?i)(?:\bcrontab\b[^\n]{0,200}(?:-e\b|-r\b|/tmp/|/var/tmp/|/dev/shm/|\s-\s*$)|\btee\b[^\n]{0,200}/etc/(?:cron\.|systemd/system)|\bcp\b[^\n]{0,200}/etc/(?:cron\.|systemd/system)|>\s*/etc/(?:cron\.|systemd/system)|\bauthorized_keys\b|\bsystemd-run\b[^\n]{0,200}--unit\b)`, 90, false},
+	}
+	out := &XDRRuleEngine{}
+	for _, d := range defs {
+		out.commandRules = append(out.commandRules, commandRule{d.id, d.category, d.summary, d.score, d.killEligible, regexp.MustCompile(d.pattern)})
+	}
+	out.redactors = []*regexp.Regexp{
+		regexp.MustCompile(`(?i)(--?(?:password|passwd|token|secret|api[-_]?key|authorization)(?:=|\s+))([^\s]+)`),
+		regexp.MustCompile(`(?i)(https?://[^:/\s]+:)([^@/\s]+)(@)`),
+		regexp.MustCompile(`(?i)(Bearer\s+)([A-Za-z0-9._~+/=-]{8,})`),
+	}
+	return out
+}
+
+func (e *XDRRuleEngine) Configure(settings RuntimeSettings) error {
+	e.mu.RLock()
+	if e.revision == settings.Revision {
+		e.mu.RUnlock()
+		return nil
+	}
+	e.mu.RUnlock()
+
+	custom := make([]commandRule, 0, len(settings.CustomRules))
+	for _, rule := range settings.CustomRules {
+		if !rule.Enabled {
+			continue
+		}
+		compiled, err := regexp.Compile(rule.Pattern)
+		if err != nil {
+			return err
+		}
+		// Operator rules are deliberately alert-only evidence. They may add
+		// score, but never create an independent kill-authorizing category.
+		custom = append(custom, commandRule{
+			id: rule.ID, category: rule.Category, summary: rule.Summary,
+			score: rule.Score, killEligible: false, re: compiled,
+		})
+	}
+	overrides := make(map[string]XDRRuleOverride, len(settings.XDRFabric.RuleOverrides))
+	for _, override := range settings.XDRFabric.RuleOverrides {
+		if !xdrRuleOverrideIDAllowed(override.ID) {
+			continue
+		}
+		overrides[override.ID] = override
+	}
+	e.mu.Lock()
+	e.revision = settings.Revision
+	e.modules = effectiveRuleModules(settings)
+	e.customRules = custom
+	e.overrides = overrides
+	e.mu.Unlock()
+	return nil
+}
+
+func (e *XDRRuleEngine) RedactCommand(s string, max int) string {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	for _, re := range e.redactors {
+		if re.NumSubexp() == 3 {
+			s = re.ReplaceAllString(s, `${1}[REDACTED]${3}`)
+		} else {
+			s = re.ReplaceAllString(s, `${1}[REDACTED]`)
+		}
+	}
+	if max > 0 && len(s) > max {
+		s = s[:max] + "…"
+	}
+	return s
+}
+
+func commandDigest(s string) string {
+	h := sha256.Sum256([]byte(s))
+	return hex.EncodeToString(h[:])
+}
+
+func (e *XDRRuleEngine) EvaluateProcess(p ProcessSample, connections []NetConnection, feeds *ThreatIndex, baseline *XDRBaseline, extra ...RuleMatch) XDRDecision {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	matches := make([]RuleMatch, 0, 8+len(extra))
+	matches = append(matches, extra...)
+	cmd := p.Cmdline
+	if e.moduleEnabled("command") {
+		for _, r := range e.commandRules {
+			if r.re.MatchString(cmd) {
+				matches = append(matches, RuleMatch{ID: r.id, Category: r.category, Score: r.score, Summary: r.summary, KillEligible: r.killEligible})
+			}
+		}
+	}
+	for _, r := range e.customRules {
+		if r.re.MatchString(cmd) {
+			matches = append(matches, RuleMatch{ID: r.id, Category: r.category, Score: r.score, Summary: r.summary, OperatorDefined: true})
+		}
+	}
+	cleanExe := strings.TrimSuffix(p.Exe, " (deleted)")
+	if e.moduleEnabled("origin") {
+		if strings.Contains(p.Exe, " (deleted)") {
+			matches = append(matches, RuleMatch{ID: "XDR.EXE_DELETED", Category: "integrity", Score: 65, Summary: "Running executable was deleted from disk", KillEligible: true})
+		}
+		if strings.Contains(cleanExe, "/memfd:") || strings.HasPrefix(cleanExe, "memfd:") {
+			matches = append(matches, RuleMatch{ID: "XDR.MEMFD_EXEC", Category: "origin", Score: 110, Summary: "Process executes from anonymous memfd storage", KillEligible: true})
+		}
+		if pathUnderTemp(cleanExe) {
+			matches = append(matches, RuleMatch{ID: "XDR.TEMP_EXEC", Category: "origin", Score: 55, Summary: "Executable launched from a temporary writable path", KillEligible: true})
+		}
+	}
+	if e.moduleEnabled("lineage") && suspiciousLineage(p.ParentExe, cleanExe) {
+		matches = append(matches, RuleMatch{ID: "XDR.WEB_SHELL_LINEAGE", Category: "lineage", Score: 95, Summary: "Network-facing service spawned a shell or interpreter", KillEligible: true})
+	}
+	if e.moduleEnabled("masquerading") && p.Comm != "" && cleanExe != "" {
+		base := strings.TrimSuffix(filepath.Base(cleanExe), " (deleted)")
+		if !commMatchesExecutable(p.Comm, base) && !strings.HasPrefix(p.Comm, "(") {
+			matches = append(matches, RuleMatch{ID: "XDR.NAME_PATH_MISMATCH", Category: "masquerading", Score: 15, Summary: "Process name differs from executable name"})
+		}
+	}
+	if e.moduleEnabled("threat-intel") {
+		for _, c := range connections {
+			if feeds != nil && feeds.ContainsString(c.RemoteIP) {
+				matches = append(matches, RuleMatch{ID: "XDR.THREAT_INTEL_C2", Category: "c2", Score: 100, Summary: "Process connected to a staged threat-intelligence prefix", KillEligible: true, Remote: c.RemoteIP})
+			}
+		}
+	}
+	if e.moduleEnabled("baseline") && baseline != nil {
+		matches = append(matches, baseline.Evaluate(p, connections)...)
+	}
+	matches = e.applyOverridesLocked(matches)
+	return combineMatches(matches)
+}
+
+func (e *XDRRuleEngine) applyOverridesLocked(matches []RuleMatch) []RuleMatch {
+	if len(e.overrides) == 0 || len(matches) == 0 {
+		return matches
+	}
+	out := make([]RuleMatch, 0, len(matches))
+	for _, match := range matches {
+		override, ok := e.overrides[match.ID]
+		if ok {
+			if !override.Enabled {
+				continue
+			}
+			match.Score = override.Score
+		}
+		out = append(out, match)
+	}
+	return out
+}
+
+func commMatchesExecutable(comm, executableBase string) bool {
+	if strings.EqualFold(comm, executableBase) {
+		return true
+	}
+	// Linux TASK_COMM_LEN is 16 bytes including the terminating NUL. A
+	// 15-byte comm that is an exact executable prefix is truncation evidence,
+	// not masquerading evidence.
+	return len(comm) == 15 && len(executableBase) > len(comm) &&
+		strings.EqualFold(comm, executableBase[:len(comm)])
+}
+
+func (e *XDRRuleEngine) moduleEnabled(name string) bool {
+	return e.modules == nil || e.modules[name]
+}
+
+func pathUnderTemp(path string) bool {
+	path = filepath.Clean(path)
+	return path == "/tmp" || strings.HasPrefix(path, "/tmp/") || path == "/var/tmp" || strings.HasPrefix(path, "/var/tmp/") || path == "/dev/shm" || strings.HasPrefix(path, "/dev/shm/")
+}
+
+func suspiciousLineage(parent, exe string) bool {
+	p := strings.ToLower(filepath.Base(strings.TrimSuffix(parent, " (deleted)")))
+	c := strings.ToLower(filepath.Base(strings.TrimSuffix(exe, " (deleted)")))
+	// Network-facing *services* that never spawn a shell in normal operation. Deliberately absent:
+	// java, node and python - those spawn interpreters legitimately (builds, scripts), and this rule
+	// is kill-eligible, so a wider net here would end honest work.
+	parents := map[string]bool{
+		"nginx": true, "apache2": true, "httpd": true, "caddy": true, "lighttpd": true,
+		"openresty": true, "haproxy": true, "traefik": true, "varnishd": true,
+		"php-fpm": true, "php-fpm8.1": true, "php-fpm8.2": true, "php-fpm8.3": true, "php-fpm8.4": true,
+		"tomcat": true, "uwsgi": true, "gunicorn": true,
+	}
+	children := map[string]bool{"sh": true, "bash": true, "dash": true, "zsh": true, "python": true, "python3": true, "perl": true, "ruby": true, "node": true, "nc": true, "ncat": true, "socat": true}
+	return parents[p] && children[c]
+}
+
+func combineMatches(matches []RuleMatch) XDRDecision {
+	if len(matches) == 0 {
+		return XDRDecision{Decision: "none"}
+	}
+	ids := make([]string, 0, len(matches))
+	catsSet := make(map[string]struct{})
+	summaries := make([]string, 0, len(matches))
+	score := 0
+	responseScore := 0
+	killCategories := make(map[string]struct{})
+	remote := ""
+	seen := make(map[string]struct{})
+	for _, m := range matches {
+		if _, ok := seen[m.ID]; ok {
+			continue
+		}
+		seen[m.ID] = struct{}{}
+		ids = append(ids, m.ID)
+		catsSet[m.Category] = struct{}{}
+		score += m.Score
+		if !m.OperatorDefined && !m.AlertOnly {
+			responseScore += m.Score
+		}
+		summaries = append(summaries, m.Summary)
+		if m.KillEligible {
+			killCategories[m.Category] = struct{}{}
+		}
+		if remote == "" {
+			remote = m.Remote
+		}
+	}
+	if score > 250 {
+		score = 250
+	}
+	if responseScore > 250 {
+		responseScore = 250
+	}
+	cats := make([]string, 0, len(catsSet))
+	for c := range catsSet {
+		cats = append(cats, c)
+	}
+	sort.Strings(ids)
+	sort.Strings(cats)
+	decision := "alert"
+	if responseScore >= 120 && len(killCategories) >= 2 {
+		decision = "kill"
+	} else if responseScore >= 80 {
+		decision = "contain"
+	}
+	return XDRDecision{
+		Score: score, ResponseScore: responseScore, RuleIDs: ids, Categories: cats,
+		Summary: strings.Join(summaries, "; "), Decision: decision,
+		KillSignals: len(killCategories), Remote: remote,
+	}
+}

@@ -1,0 +1,268 @@
+'use strict';
+
+import { t } from './i18n.js';
+
+// Direct loopback operation may use a bearer token, but it remains only in
+// this module's volatile memory. Public gateway sessions never expose the
+// backend token to the browser, and a reload intentionally clears manual keys.
+let volatileToken = '';
+
+export function getToken() {
+  return volatileToken;
+}
+
+export function setToken(value) {
+  volatileToken = String(value || '').trim();
+}
+
+function requestID() {
+  if (globalThis.crypto && typeof globalThis.crypto.randomUUID === 'function') {
+    return globalThis.crypto.randomUUID();
+  }
+  const bytes = new Uint8Array(16);
+  globalThis.crypto.getRandomValues(bytes);
+  return Array.from(bytes, value => value.toString(16).padStart(2, '0')).join('');
+}
+
+export class APIError extends Error {
+  constructor(message, status, errorID = '') {
+    super(message);
+    this.name = 'APIError';
+    this.status = status;
+    this.errorID = errorID;
+  }
+}
+
+function emitOperation(name, detail) {
+  if (typeof document === 'undefined' || typeof CustomEvent !== 'function') return;
+  document.dispatchEvent(new CustomEvent(name, { detail }));
+}
+
+export async function api(path, options = {}) {
+  const method = String(options.method || 'GET').toUpperCase();
+  const mutating = method !== 'GET' && method !== 'HEAD';
+  const tracked = mutating || options.feedback === true;
+  const operationID = tracked ? requestID() : '';
+  const headers = new Headers(options.headers || {});
+  const token = getToken();
+  if (token) headers.set('Authorization', `Bearer ${token}`);
+  if (mutating) headers.set('X-VGT-Request-ID', operationID);
+  let body;
+  if (Object.prototype.hasOwnProperty.call(options, 'json')) {
+    headers.set('Content-Type', 'application/json');
+    body = JSON.stringify(options.json);
+  }
+
+  if (tracked) emitOperation('gedefense:operation-start', { id: operationID, method, path });
+
+  try {
+    const response = await fetch(path, {
+      method,
+      headers,
+      body,
+      credentials: 'same-origin',
+      cache: 'no-store',
+      signal: options.signal
+    });
+    const contentType = response.headers.get('content-type') || '';
+    let payload = null;
+    if (contentType.includes('application/json')) {
+      payload = await response.json();
+    } else {
+      payload = await response.text();
+    }
+    if (!response.ok) {
+      const message = payload && typeof payload === 'object' ? payload.error : String(payload || `HTTP ${response.status}`);
+      const errorID = payload && typeof payload === 'object' ? payload.error_id || '' : '';
+      throw new APIError(message, response.status, errorID);
+    }
+    if (tracked) emitOperation('gedefense:operation-end', { id: operationID, method, path });
+    return payload;
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') throw error;
+    const normalized = error instanceof APIError
+      ? error
+      : new APIError(t('api.controlUnavailable'), 0, '');
+    if (tracked) {
+      emitOperation('gedefense:operation-error', {
+        id: operationID,
+        method,
+        path,
+        message: normalized.message,
+        status: normalized.status,
+        errorID: normalized.errorID
+      });
+    }
+    throw normalized;
+  }
+}
+
+
+export async function streamSnapshots({ onSnapshot, onEvent, signal }) {
+  const headers = new Headers({ Accept: 'text/event-stream' });
+  const token = getToken();
+  if (token) headers.set('Authorization', `Bearer ${token}`);
+  const response = await fetch('/api/v1/stream', {
+    headers,
+    credentials: 'same-origin',
+    cache: 'no-store',
+    signal
+  });
+  if (!response.ok || !response.body) {
+    throw new APIError(response.status === 401 ? t('api.authorizationRequired') : t('api.streamUnavailable'), response.status);
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let eventName = 'message';
+  let dataLines = [];
+  const dispatch = () => {
+    if (!dataLines.length) return;
+    const raw = dataLines.join('\n');
+    dataLines = [];
+    try {
+      const payload = JSON.parse(raw);
+      if (eventName === 'snapshot') onSnapshot(payload);
+      else if (eventName === 'event') onEvent(payload);
+    } finally {
+      eventName = 'message';
+    }
+  };
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let newline;
+    while ((newline = buffer.indexOf('\n')) >= 0) {
+      const line = buffer.slice(0, newline).replace(/\r$/, '');
+      buffer = buffer.slice(newline + 1);
+      if (line === '') dispatch();
+      else if (line.startsWith('event:')) eventName = line.slice(6).trim();
+      else if (line.startsWith('data:')) dataLines.push(line.slice(5).trimStart());
+    }
+  }
+  dispatch();
+}
+export const getStatus = signal => api('/api/v1/status', { signal });
+export const getHardeningPosture = () => api('/api/v1/hardening/posture', { feedback: true });
+export const getBootTrust = () => api('/api/v1/boot-trust', { feedback: true });
+export const getFIM = () => api('/api/v1/fim');
+export const scanFIM = () => api('/api/v1/fim/scan', { method: 'POST', json: {} });
+export const createFIMBaseline = () => api('/api/v1/fim/baseline', { method: 'POST', json: {} });
+export const getPackageIntegrity = () => api('/api/v1/package-integrity');
+export const scanPackageIntegrity = () => api('/api/v1/package-integrity/scan', { method: 'POST', json: {} });
+export const scanMalware = path => api('/api/v1/malware/scan', { method: 'POST', json: { path } });
+export const getEvidence = () => api('/api/v1/evidence?limit=100');
+export const verifyEvidence = () => api('/api/v1/evidence/verify', { feedback: true });
+export const getPolicy = () => api('/api/v1/policy');
+export const getProfiles = () => api('/api/v1/xdr/profiles', { feedback: true });
+export const getXDRIntegrity = () => api('/api/v1/xdr/integrity');
+export const verifyXDRIntegrity = () => api('/api/v1/xdr/integrity/verify', { method: 'POST', json: {} });
+export const recoverXDRIntegrity = reason => api('/api/v1/xdr/recovery', {
+  method: 'POST',
+  json: {
+    action: 'archive_and_reinitialize',
+    confirmation: 'ARCHIVE_AND_REINITIALIZE_XDR',
+    reason
+  }
+});
+export const exportForensics = () => api('/api/v1/forensics/export', { feedback: true });
+export const addBlock = input => api('/api/v1/blocks', { method: 'POST', json: input });
+// F-22: removing a block or allowlist entry is a protection-reducing action. The
+// control plane requires the target-derived typed phrase and an operator reason,
+// and answers with a short-lived server-side undo token.
+export const deleteBlock = (id, confirmation, reason) => api(`/api/v1/blocks/${encodeURIComponent(id)}`, {
+  method: 'DELETE',
+  json: { confirmation, reason }
+});
+export const undoBlock = token => api('/api/v1/blocks/undo', { method: 'POST', json: { token } });
+export const syncFeeds = () => api('/api/v1/feeds/sync', { method: 'POST', json: {} });
+export const acknowledgeIncident = id => api(`/api/v1/xdr/incidents/${encodeURIComponent(id)}/ack`, { method: 'POST', json: {} });
+
+export const getRelease = () => api('/api/v1/release');
+export const getReleaseReadiness = target => api(`/api/v1/release/readiness${target ? `?target=${encodeURIComponent(target)}` : ''}`);
+export const getL7Findings = (limit = 50) => api(`/api/v1/l7/findings?limit=${encodeURIComponent(limit)}`);
+// The self-test has an effect on the inspection counters, so it is a POST. It is rate
+// limited server-side and reports every outcome, including NOT_ATTACHED, in a 200 body.
+// restartSystem asks the control plane to restart itself so the persisted revision
+// becomes active. The acknowledgement arrives before the process exits, so the caller can
+// show a pending state instead of a failure reported against a closing socket.
+export const restartSystem = reason =>
+  api('/api/v1/system/restart', { method: 'POST', json: { reason: String(reason || '') } });
+
+export const runL7SelfTest = () => api('/api/v1/l7/selftest', { method: 'POST', json: {} });
+export const getL7Integration = () => api('/api/v1/l7/integration', { feedback: true });
+export const transitionRelease = input => api('/api/v1/release/transition', { method: 'POST', json: input });
+export const emergencyStop = reason => api('/api/v1/release/emergency-stop', { method: 'POST', json: { reason } });
+export const getSettings = () => api('/api/v1/settings');
+export const updateSettings = input => api('/api/v1/settings', { method: 'PUT', json: input });
+export const addAllowlist = target => api('/api/v1/allowlist', { method: 'POST', json: { target } });
+export const removeAllowlist = (target, confirmation, reason) => api('/api/v1/allowlist/remove', {
+  method: 'POST',
+  json: { target, confirmation, reason }
+});
+export const undoAllowlist = token => api('/api/v1/allowlist/undo', { method: 'POST', json: { token } });
+export const clearEmergencyStop = (confirmation, reason) => api('/api/v1/release/emergency-stop/clear', { method: 'POST', json: { confirmation, reason } });
+export const getTransactions = () => api('/api/v1/transactions?limit=100');
+export const previewTransaction = input => api('/api/v1/transactions/preview', { method: 'POST', json: input });
+export const applyTransaction = (id, confirmation) => api(`/api/v1/transactions/${encodeURIComponent(id)}/apply`, { method: 'POST', json: { confirmation } });
+export const reverseTransaction = (id, confirmation) => api(`/api/v1/transactions/${encodeURIComponent(id)}/reverse`, { method: 'POST', json: { confirmation } });
+export const getQuarantine = () => api('/api/v1/quarantine');
+export const previewQuarantine = input => api('/api/v1/quarantine/preview', { method: 'POST', json: input });
+export const getCases = () => api('/api/v1/cases?limit=100');
+export const setCaseStatus = (id, status, resolution) => api(`/api/v1/cases/${encodeURIComponent(id)}/status`, { method: 'POST', json: { status, resolution } });
+export const getCells = () => api('/api/v1/cells');
+export const previewCellAction = input => api('/api/v1/cells/preview', { method: 'POST', json: input });
+export const confineIncident = (id, action, reason) => api(`/api/v1/xdr/incidents/${encodeURIComponent(id)}/confine`, { method: 'POST', json: { action, reason } });
+export const getCellConfinement = () => api('/api/v1/cells/confinement');
+export const getKernelMitigation = () => api('/api/v1/kernel/mitigation');
+export const getKernelExposure = () => api('/api/v1/kernel/exposure');
+export const applyKernelMitigation = (reason, confirm) => api('/api/v1/kernel/mitigation/apply', { method: 'POST', json: { reason, confirm } });
+export const rollbackKernelMitigation = (reason, confirm) => api('/api/v1/kernel/mitigation/rollback', { method: 'POST', json: { reason, confirm } });
+export const planKernelMitigation = () => api('/api/v1/kernel/mitigation/plan');
+export const getKineticStatus = () => api('/api/v1/kinetic/status');
+export const getKineticLive = (window = 'live', limit = 100, state = 'all') => api(`/api/v1/kinetic/live?window=${encodeURIComponent(window)}&limit=${encodeURIComponent(limit)}&state=${encodeURIComponent(state)}`);
+export const getKineticEvents = () => api('/api/v1/kinetic/events');
+export const getKineticSources = (limit = 100) => api(`/api/v1/kinetic/sources?limit=${encodeURIComponent(limit)}`);
+export const getKineticMap = () => api('/api/v1/kinetic/map');
+// The overview map reads every detection path at once instead of the packet path alone.
+export const getOverviewThreatMap = (limit = 250, events = 120, signal) => api(`/api/v1/overview/threat-map?limit=${encodeURIComponent(limit)}&events=${encodeURIComponent(events)}`, { signal });
+export const reconcileKinetic = () => api('/api/v1/kinetic/reconcile', { method: 'POST', json: {} });
+export const getThreatIntelStatus = () => api('/api/v1/feeds/status');
+export const applyFeeds = () => api('/api/v1/feeds/apply', { method: 'POST', json: {} });
+export const getFabricSettingsSchema = () => api('/api/v1/settings/schema');
+
+// Fabric control-plane surface.
+export const searchFabricSettings = query => api(`/api/v1/settings/search?q=${encodeURIComponent(query)}`);
+export const getFabricDrift = () => api('/api/v1/settings/drift');
+export const exportFabricSettings = () => api('/api/v1/settings/export', { method: 'POST', json: {} });
+export const previewFabricImport = bundle => api('/api/v1/settings/import/preview', {
+  method: 'POST',
+  body: JSON.stringify(bundle),
+  headers: { 'Content-Type': 'application/json' }
+});
+export const applyFabricImport = (token, expectedRevision) => api('/api/v1/settings/import/apply', {
+  method: 'POST',
+  json: { token, expected_revision: expectedRevision }
+});
+export const getFabricSettings = module => api(`/api/v1/settings/${encodeURIComponent(module)}`);
+export const previewFabricSettings = (module, expected_revision, settings) => api(`/api/v1/settings/${encodeURIComponent(module)}/preview`, { method: 'POST', json: { expected_revision, settings } });
+export const updateFabricSettings = (module, expected_revision, settings) => api(`/api/v1/settings/${encodeURIComponent(module)}`, { method: 'PUT', json: { expected_revision, settings } });
+export const getFabricSettingsHistory = () => api('/api/v1/settings/history');
+export const rollbackFabricSettings = revision => api('/api/v1/settings/rollback', { method: 'POST', json: { revision } });
+
+// ------------------------------------------------------------------ GeDefense Titan
+// Sovereign endpoint integrity, ingress defense and forensic evidence.
+// Reads use the normal authenticated control-plane session. Every write is
+// reason-bound and validated server-side; the UI renders refusals and
+// unavailability verbatim instead of assuming success.
+export const getTitanStatus = () => api('/api/v1/titan/status');
+export const getTitanEvents = (limit = 20, before = '') => {
+  const capped = Math.max(1, Math.min(50, Number(limit) || 20));
+  const cursor = String(before || '');
+  return api(`/api/v1/titan/events?limit=${encodeURIComponent(capped)}${cursor ? `&before=${encodeURIComponent(cursor)}` : ''}`);
+};
+export const setTitanPolicy = input => api('/api/v1/titan/policy', { method: 'POST', json: input });
+export const reviewTitanEvent = (id, input) => api(`/api/v1/titan/events/${encodeURIComponent(id)}/review`, { method: 'POST', json: input });
+export const getTitanQuarantine = () => api('/api/v1/titan/quarantine');
+export const containTitanEvent = input => api('/api/v1/titan/contain', { method: 'POST', json: input });

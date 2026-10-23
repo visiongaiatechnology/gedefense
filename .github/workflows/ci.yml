@@ -1,0 +1,226 @@
+name: GeDefense V5 CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gedefense-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # The product version is always derived from the checked-out VERSION file;
+  # there is no second hardcoded version label that can drift (G-SC-11).
+  GEDEFENSE_DERIVE_VERSION: "1"
+
+jobs:
+  go-frontend-security:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.4
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version: '1.27.3'
+          cache-dependency-path: |
+            control/go.mod
+            gateway/go.mod
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22.16.0'
+      - name: Install native dependencies
+        run: sudo apt-get update && sudo apt-get install -y libargon2-1 libargon2-dev python3
+      - name: Verify pinned release toolchains
+        run: bash scripts/verify-release-toolchains.sh
+      - name: Unit, vet, frontend and static security gates
+        run: make test
+      - name: Race detector
+        run: make test-race
+      - name: Security parser fuzz smoke
+        run: make fuzz-smoke
+      - name: Deterministic Go builds and version contract (from VERSION)
+        run: |
+          VERSION=$(tr -d '\r\n' < VERSION)
+          make go gateway
+          test "$(./dist/gedefense-control --version)" = "$VERSION"
+          test "$(./dist/gedefense-access --version)" = "${VERSION}-access"
+
+  supply-chain-gate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version: '1.27.3'
+          cache-dependency-path: |
+            control/go.mod
+            gateway/go.mod
+      - name: Install gate dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libargon2-1 libargon2-dev python3 openssl jq
+          go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+      - name: Installer header syntax gate
+        run: bash scripts/tests/check_installer_templates.sh
+      - name: Release-security unit and negative tests
+        run: python3 -m unittest discover -s scripts/tests -p 'test_*.py' -v
+      - name: Local release-security rehearsal (sign/verify/tamper/downgrade/determinism)
+        run: bash scripts/tests/run_release_tests.sh
+      - name: Key rotation and revocation rehearsal
+        run: bash scripts/tests/key_rotation_rehearsal.sh
+      - name: Signed release tag rehearsal (Ed25519 SSH)
+        run: bash scripts/tests/tag_signing_rehearsal.sh
+      - name: Go/Python/OpenSSL manifest interoperability
+        run: |
+          make go
+          bash scripts/tests/go_manifest_crosscheck.sh --control-binary "$(pwd)/dist/gedefense-control"
+      - name: SCA gate (govulncheck + cargo audit; advisory DB requires network)
+        run: |
+          if ! command -v cargo >/dev/null 2>&1; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+            . "$HOME/.cargo/env"
+          fi
+          if ! command -v cargo-audit >/dev/null 2>&1; then
+            cargo install cargo-audit --locked --version 0.21.2
+          fi
+          bash scripts/sca-gate.sh --strict --report "$RUNNER_TEMP/sca-report.json"
+      - name: Release toolchain security floor (blocks vulnerable Go pins)
+        run: bash scripts/verify-release-toolchains.sh --require-security-floor
+      - name: Release contract validation (workflow pins, least privilege, no v4 drift)
+        run: python3 scripts/validate-github-release.py
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: supply-chain-evidence
+          path: ${{ runner.temp }}/sca-report.json
+          if-no-files-found: warn
+
+  rust-ebpf-release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.4
+      - name: Install native and pinned Rust dependencies
+        run: sudo apt-get update && sudo apt-get install -y clang llvm libelf-dev zlib1g-dev
+      - name: Install pinned Rust toolchains
+        run: |
+          rustup toolchain install 1.97.1 --profile minimal
+          rustup toolchain install nightly-2026-07-16 --profile minimal --component rust-src
+          cargo +1.97.1 install bpf-linker --version 0.10.3 --locked
+      - name: Test and build Rust response core
+        run: |
+          cargo +1.97.1 test --locked --manifest-path rust/Cargo.toml -p gedefense-common -p gedefense-core
+          cargo +1.97.1 build --locked --release --manifest-path rust/Cargo.toml -p gedefense-core
+      - name: Build and inspect release eBPF object
+        run: |
+          cargo +nightly-2026-07-16 build --locked --release --manifest-path rust/Cargo.toml -p gedefense-ebpf --target bpfel-unknown-none -Z build-std=core
+          llvm-objdump -h rust/target/bpfel-unknown-none/release/gedefense-ebpf
+          llvm-objdump -t rust/target/bpfel-unknown-none/release/gedefense-ebpf | grep -E 'gedefense_(xdp|egress|exec)'
+      - name: Stage Rust release artifacts for the signed pipeline
+        run: |
+          mkdir -p dist
+          install -m 0755 rust/target/release/gedefense-core dist/gedefense-core
+          install -m 0644 rust/target/bpfel-unknown-none/release/gedefense-ebpf dist/gedefense-ebpf
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: rust-release-artifacts
+          path: |
+            dist/gedefense-core
+            dist/gedefense-ebpf
+          if-no-files-found: error
+
+  distribution-contracts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: ubuntu
+            image: ubuntu@sha256:1e0a86e57d247923571b75e0aaf48a1449cf8c543d51fb3e07a4a7d7bfa79316
+            bootstrap: apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y bash python3 ca-certificates curl openssl policykit-1 desktop-file-utils
+          - name: fedora
+            image: fedora@sha256:7c63468daf71fdc5bda3699cd483b169bb995b5137265d5ffe8f04e2ce87fbb8
+            bootstrap: dnf install -y bash python3 ca-certificates curl openssl polkit desktop-file-utils
+          - name: arch
+            image: archlinux/archlinux@sha256:be98153cc5dfcde238e9caf66b6abce37abeee7202624c3ca66edc883b3b508c
+            bootstrap: pacman -Sy --needed --noconfirm bash python ca-certificates curl openssl polkit desktop-file-utils
+          - name: opensuse
+            image: opensuse/tumbleweed@sha256:d833ad1f857a057030cdc83b5ca77fdfdce9ae109e8891bf5b47e5f591725c66
+            bootstrap: zypper --non-interactive refresh && zypper --non-interactive install bash python3 ca-certificates curl openssl polkit pkexec desktop-file-utils
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.4
+      - name: Validate ${{ matrix.name }} integration contract
+        env:
+          IMAGE: ${{ matrix.image }}
+          BOOTSTRAP: ${{ matrix.bootstrap }}
+        run: |
+          docker run --rm \
+            -e EXPECTED_DISTRO="${{ matrix.name }}" \
+            -v "$GITHUB_WORKSPACE:/src:ro" \
+            "$IMAGE" bash -lc "$BOOTSTRAP && bash /src/scripts/validate-distro-integration.sh /src"
+
+  release-artifacts:
+    runs-on: ubuntu-24.04
+    needs: [go-frontend-security, rust-ebpf-release, distribution-contracts]
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version: '1.27.3'
+          cache-dependency-path: |
+            control/go.mod
+            gateway/go.mod
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22.16.0'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: rust-release-artifacts
+          path: dist
+      - name: Install release dependencies
+        run: sudo apt-get update && sudo apt-get install -y libargon2-1 libargon2-dev clang llvm libelf-dev zlib1g-dev python3
+      - name: Release toolchain security floor
+        run: bash scripts/verify-release-toolchains.sh --require-security-floor
+      - name: Build and cryptographically verify release artifacts (ephemeral CI rehearsal key)
+        run: |
+          # The real release Ed25519 key is offline and MUST NOT be stored in CI.
+          # This job proves the signed pipeline end-to-end with a throwaway key;
+          # the produced artifacts are explicitly test-signed and not publishable.
+          KEYDIR="$RUNNER_TEMP/ci-rehearsal-key"
+          python3 scripts/release-tool.py keygen --out "$KEYDIR" >/dev/null
+          export RELEASE_SIGNING_PRIVATE_KEY="$KEYDIR/release-private.key"
+          export RELEASE_SIGNING_PUBLIC_KEY="$KEYDIR/release-public.key"
+          bash ./scripts/package-artifacts.sh "$RUNNER_TEMP/release"
+          cat "$RUNNER_TEMP/release/RELEASE-MANIFEST.txt"
+      - name: Verify signed release directory offline
+        run: |
+          VERSION=$(tr -d '\r\n' < VERSION)
+          python3 scripts/release-tool.py verify-release --dir "$RUNNER_TEMP/release" \
+            --pubkey "$RUNNER_TEMP/ci-rehearsal-key/release-public.key" \
+            --expected-version "$VERSION" --require-manifest --check-manifests-artifacts
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: gedefense-v5-test-signed-release-candidate
+          path: |
+            $RUNNER_TEMP/release/VGT_GeDefense_Beta_v5_*_OneClick.run
+            $RUNNER_TEMP/release/VGT_GeDefense_Beta_v5_*_OneClick.run.sha256
+            $RUNNER_TEMP/release/VGT_GeDefense_Beta_v5_*_Source.zip
+            $RUNNER_TEMP/release/VGT_GeDefense_Beta_v5_*_Source.zip.sha256
+            $RUNNER_TEMP/release/release-index.signed.json
+            $RUNNER_TEMP/release/release-manifest.signed.json
+            $RUNNER_TEMP/release/sbom.spdx.json
+            $RUNNER_TEMP/release/build-provenance.json
+            $RUNNER_TEMP/release/SHA256SUMS
+          if-no-files-found: error

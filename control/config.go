@@ -1,0 +1,1839 @@
+package main
+
+import (
+	"bufio"
+	"crypto/ed25519"
+	"encoding/base64"
+	"errors"
+	"fmt"
+	"net"
+	"net/url"
+	"os"
+	"path/filepath"
+	"slices"
+	"strconv"
+	"strings"
+)
+
+// Canonical shipped port topology (G-RUST-06 / CHAIN-005):
+//   - public access listener: 0.0.0.0:9843 (gedefense-access in packaging/ and
+//     the AstraeaOS drop-in bind 127.0.0.1:9843),
+//   - internal control backend: loopback 9844, reached by the access unit.
+//
+// The control-plane default must be the internal 9844 address; 9843 belongs to
+// the public access front end.
+const (
+	canonicalDashboardInternalListen = "127.0.0.1:9844"
+	canonicalAccessPublicPort        = "9843"
+	canonicalAccessBackendTarget     = "http://127.0.0.1:9844"
+)
+
+type Config struct {
+	Node       NodeConfig
+	Dashboard  DashboardConfig
+	Core       CoreConfig
+	Defense    DefenseConfig
+	Policy     PolicyConfig
+	Feeds      FeedConfig
+	XDR        XDRConfig
+	L7         L7Config
+	Release    ReleaseConfig
+	Runtime    RuntimeConfig
+	Cells      CellsConfig
+	Kinetic    KineticConfig
+	Desktop    DesktopConfig
+	Startup    StartupSupervisorConfig
+	Advisories AdvisoryConfig
+	Titan      TitanConfig
+}
+
+type NodeConfig struct {
+	Name      string
+	Interface string
+	Mode      string
+}
+
+type DashboardConfig struct {
+	// TokenOwner names the account the dashboard token belongs to. Empty by default, so nothing changes
+	// until an operator deliberately separates the gateway's account from the control plane's. When set,
+	// the token becomes the property of that account with mode 0600 - the gateway refuses anything less
+	// restrictive - while the control plane keeps reading and rotating it through cap_dac_override and
+	// cap_chown. The core IPC key and the storage master key stay unreachable for the internet-facing
+	// service either way.
+	//
+	// Configured, never detected: deriving it from the presence of an account would make both the
+	// runtime behaviour and the test suite depend on the user table of the machine.
+	TokenOwner         string
+	Listen             string
+	AllowRemote        bool
+	AllowedHosts       []string
+	TokenFile          string
+	TLSCertFile        string
+	TLSKeyFile         string
+	RateLimitPerMinute int
+	RateLimitBurst     int
+	MaxSSEClients      int
+}
+
+type CoreConfig struct {
+	Socket               string
+	AuthKeyFile          string
+	RequestTimeoutMillis int
+}
+
+type DefenseConfig struct {
+	Allowlist         []string
+	Enforcement       string
+	DefaultTTLSeconds int
+	MaxTTLSeconds     int
+	MaxBlockEntries   int
+	StrictASNDrop     bool
+	DPIEnabled        bool
+}
+
+type PolicyConfig struct {
+	StateFile      string
+	SigningKeyFile string
+	PublicKeyFile  string
+	StorageKeyFile string
+	RequireSigned  bool
+}
+
+type L7Config struct {
+	Enabled bool
+	Mode    string
+	// CoverageRequired decides whether an idle L7 engine degrades the platform:
+	// "auto" requires the traffic path only once something is attached, "required"
+	// always does, "optional" never does.
+	CoverageRequired     string
+	Socket               string
+	SocketGroup          string
+	RequestTimeoutMillis int
+	MaxConcurrent        int
+	MaxEnvelopeBytes     int
+	MaxBodyBytes         int
+	MaxURIBytes          int
+	MaxHeaderBytes       int
+	MaxHeaders           int
+	MaxValueBytes        int
+	MaxInspectionBytes   int
+	MaxDecodedValues     int
+	MaxDecodeDepth       int
+	MaxJSONDepth         int
+	MaxFormFields        int
+	MaxMultipartParts    int
+	MaxUploadBytes       int
+	AlertScore           int
+	BlockScore           int
+	// EnforceRules optionally limits which findings may authorise a block. Empty keeps the
+	// historical behaviour: every finding that is not alert-only may block. Findings outside the
+	// list are still recorded and still raise the alert score; only the block decision is scoped.
+	EnforceRules                 []string
+	ClientRatePerMinute          int
+	ClientRateBurst              int
+	SensitiveRatePerMinute       int
+	SensitiveRateBurst           int
+	SensitiveGlobalRatePerMinute int
+	SensitiveGlobalRateBurst     int
+	MaxTrackedClients            int
+	SensitivePaths               []string
+	RequirePeerCredentials       bool
+	AllowedPeerUIDs              []uint32
+	AllowedPeerGIDs              []uint32
+	InlineEnabled                bool
+	InlineSocket                 string
+	InlineUpstream               string
+	InlineMaxResponseBytes       int
+	TLSEnabled                   bool
+	TLSAllowedDomains            []string
+	TLSFloodThreshold            int
+	TLSSNIStrikeThreshold        int
+	TLSAntiSpoof                 bool
+	TLSMaxClientHelloBytes       int
+	TLSJA3File                   string
+}
+
+type XDRConfig struct {
+	Enabled                  bool
+	Mode                     string
+	ScanIntervalMillis       int
+	NetworkIntervalSeconds   int
+	IntegrityIntervalSeconds int
+	AlertScore               int
+	ContainScore             int
+	KillScore                int
+	MaxCommandBytes          int
+	CommandPreviewBytes      int
+	DedupeSeconds            int
+	MaxIncidentLogBytes      int64
+	IncidentLog              string
+	LogKeyFile               string
+	BaselineFile             string
+	ProtectedPaths           []string
+	AllowProcesses           []string
+	// ProtectedSecurityRoots adds the security-relevant directories that exist on this host (web
+	// roots, persistence locations, log directories) to the protected roots. See security_roots.go
+	// for why the scope of the file-integrity monitor had to grow beyond the platform's own files.
+	ProtectedSecurityRoots bool
+	WorkerCount            int
+	QueueCapacity          int
+	MaxEvaluationsPerScan  int
+	BehaviorEnabled        bool
+	BehaviorWarmupSamples  int
+	BehaviorZScoreMilli    int
+	BehaviorMinConnections int
+	BehaviorMaxProfiles    int
+	BehaviorMaxPorts       int
+	BehaviorProfileFile    string
+	StorageKeyFile         string
+}
+
+type ReleaseConfig struct {
+	Channel                   string
+	MinimumObserveSeconds     int
+	MinimumCanarySeconds      int
+	CoreFailureThreshold      int
+	MaxEvaluationDropPermille int
+	EmergencyStopFile         string
+	AutoDegrade               bool
+}
+
+type RuntimeConfig struct {
+	SettingsFile   string
+	KeyFile        string
+	StorageKeyFile string
+}
+
+type CellsConfig struct {
+	Enabled              bool
+	Socket               string
+	AuthKeyFile          string
+	RequestTimeoutMillis int
+	// Automatic isolation: when an incident scores at or above AutoConfineScore and its workload is
+	// bound to a Gaia Cell, the cell is isolated through the transaction engine. Off by default - it
+	// takes a capability away from a running workload and that is an operator decision.
+	AutoConfine                bool
+	AutoConfineAction          string
+	AutoConfineScore           int
+	AutoConfineIntervalSeconds int
+	AutoConfineCooldownSeconds int
+}
+
+type KineticConfig struct {
+	Enabled               bool
+	EnforcementMode       string
+	IPThreshold           int
+	VelocityLimit         int
+	RangeThreshold        int
+	IPv6SubThreshold      int
+	WideRangeThreshold    int
+	PortscanThreshold     int
+	SYNThreshold          int
+	SYNAckRatio           int
+	LowSlowMinSeconds     int
+	SubnetMinSources      int
+	IPv6SubnetMinSources  int
+	WideMinSources        int
+	AutoContainSingleIP   bool
+	AutoContainIPv4Subnet bool
+	AutoContainIPv6Subnet bool
+	MaxTrackingIPs        int
+	BanTTLSeconds         int
+	MaxStrikesPerSec      int
+	ServicePortsWeb       []uint16
+	ServicePortsMail      []uint16
+	ServicePortsAdmin     []uint16
+	GeoIPCSV              string
+	// GeoIPSigningKeys pins Ed25519 keys for the signed GeoIP update gate
+	// (F-24). When configured, a detached geoip.csv.sig over the SHA-256 sidecar
+	// must verify or the dataset is unavailable.
+	GeoIPSigningKeys []string
+}
+
+type TitanConfig struct {
+	Enabled     bool
+	Mode        string
+	Armed       bool
+	AutoContain bool
+	Roots       []string
+	Allowlist   []string
+	// DevelopmentRoots are tolerated, never authorized: a development path is a
+	// known working area, not an owner approval.
+	DevelopmentRoots []string
+	ProtectedPaths   []string
+	PolicyFile       string
+	JournalFile      string
+	MaxFileBytes     int64
+	MaxEvents        int
+	JournalMaxBytes  int64
+}
+
+func defaultTitanConfig() TitanConfig {
+	return TitanConfig{
+		Enabled: true, Mode: "observe", Armed: false, AutoContain: false,
+		PolicyFile: "/var/lib/vgt/gedefense/titan-policy.json", JournalFile: "/var/lib/vgt/gedefense/titan-journal.json",
+		MaxFileBytes: 16 << 20, MaxEvents: 500, JournalMaxBytes: 4 << 20,
+	}
+}
+
+func assignTitanConfig(cfg *Config, key, raw string) error {
+	str := func() (string, error) { return parseString(raw) }
+	switch key {
+	case "enabled":
+		v, e := parseBool(raw)
+		cfg.Titan.Enabled = v
+		return e
+	case "mode":
+		v, e := str()
+		cfg.Titan.Mode = v
+		return e
+	case "armed":
+		v, e := parseBool(raw)
+		cfg.Titan.Armed = v
+		return e
+	case "auto_contain":
+		v, e := parseBool(raw)
+		cfg.Titan.AutoContain = v
+		return e
+	case "roots":
+		v, e := str()
+		if e == nil {
+			cfg.Titan.Roots = splitCSV(v)
+		}
+		return e
+	case "allowlist":
+		v, e := str()
+		if e == nil {
+			cfg.Titan.Allowlist = splitCSV(v)
+		}
+		return e
+	case "development_roots":
+		v, e := str()
+		if e == nil {
+			cfg.Titan.DevelopmentRoots = splitCSV(v)
+		}
+		return e
+	case "protected_paths":
+		v, e := str()
+		if e == nil {
+			cfg.Titan.ProtectedPaths = splitCSV(v)
+		}
+		return e
+	case "policy_file":
+		v, e := str()
+		cfg.Titan.PolicyFile = v
+		return e
+	case "journal_file":
+		v, e := str()
+		cfg.Titan.JournalFile = v
+		return e
+	case "max_file_bytes":
+		v, e := parseInt(raw, 1<<10, 64<<20)
+		cfg.Titan.MaxFileBytes = int64(v)
+		return e
+	case "max_events":
+		v, e := parseInt(raw, titanMinJournalEvents, titanMaxJournalEvents)
+		cfg.Titan.MaxEvents = v
+		return e
+	case "journal_max_bytes":
+		v, e := parseInt(raw, titanMinJournalBytes, titanMaxJournalBytes)
+		cfg.Titan.JournalMaxBytes = int64(v)
+		return e
+	default:
+		return fmt.Errorf("unknown key titan.%s", key)
+	}
+}
+
+func validateTitanConfig(cfg *TitanConfig) error {
+	mode := TitanMode(strings.ToUpper(strings.TrimSpace(cfg.Mode)))
+	if mode == "" {
+		mode = TitanModeObserve
+	}
+	if !validTitanMode(mode) {
+		return errors.New("titan.mode must be OBSERVE, CONTAIN or STRICT")
+	}
+	cfg.Mode = string(mode)
+	for label, values := range map[string][]string{
+		"titan.roots":             cfg.Roots,
+		"titan.allowlist":         cfg.Allowlist,
+		"titan.development_roots": cfg.DevelopmentRoots,
+		"titan.protected_paths":   cfg.ProtectedPaths,
+	} {
+		if _, err := normalizeTitanPaths(values, titanMaxRoots*2); err != nil {
+			return fmt.Errorf("%s: %w", label, err)
+		}
+	}
+	if cfg.MaxFileBytes == 0 {
+		cfg.MaxFileBytes = 16 << 20
+	}
+	if cfg.MaxFileBytes < titanMinFileBytes || cfg.MaxFileBytes > titanMaxFileBytes {
+		return errors.New("titan.max_file_bytes is outside safe bounds")
+	}
+	if cfg.MaxEvents == 0 {
+		cfg.MaxEvents = 500
+	}
+	if cfg.MaxEvents < titanMinJournalEvents || cfg.MaxEvents > titanMaxJournalEvents {
+		return errors.New("titan.max_events is outside safe bounds")
+	}
+	if cfg.JournalMaxBytes == 0 {
+		cfg.JournalMaxBytes = 4 << 20
+	}
+	if cfg.JournalMaxBytes < titanMinJournalBytes || cfg.JournalMaxBytes > titanMaxJournalBytes {
+		return errors.New("titan.journal_max_bytes is outside safe bounds")
+	}
+	if cfg.PolicyFile != "" {
+		if err := validateAbsolutePath("titan.policy_file", cfg.PolicyFile, false); err != nil {
+			return err
+		}
+	}
+	if cfg.JournalFile != "" {
+		if err := validateAbsolutePath("titan.journal_file", cfg.JournalFile, false); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+type FeedConfig struct {
+	Enabled          bool
+	AutoApply        bool
+	RefreshMinutes   int
+	MaxDownloadBytes int64
+	MaxEntries       int
+	Sources          []string
+
+	// Signed feed manifests (F-03 / CHAIN-009). When RequireSignedManifest is
+	// true (the shipped default) a download is only accepted when a detached
+	// Ed25519 manifest signed by one of TrustedSigningKeys binds its exact raw
+	// bytes, its canonical indicator digest, a monotonic version and a hard
+	// validity window. Without a provisioned trust anchor feeds fail closed and
+	// never reach the kernel blocklist.
+	RequireSignedManifest bool
+	TrustedSigningKeys    []string
+	ManifestPath          string
+	ManifestMaxAgeMinutes int
+}
+
+func defaultConfig() Config {
+	return Config{
+		Node:       NodeConfig{Name: "VGT-Beta-Node", Interface: "auto", Mode: "standalone"},
+		Desktop:    defaultDesktopConfig(),
+		Startup:    defaultStartupSupervisorConfig(),
+		Advisories: defaultAdvisoryConfig(),
+		Titan:      defaultTitanConfig(),
+		Dashboard: DashboardConfig{
+			// G-RUST-06: canonical topology is public access on 9843 and the
+			// internal control plane on loopback 9844. This matches the packaged
+			// access unit (backend http://127.0.0.1:9844) and the AstraeaOS
+			// profile; it was historically 9843 here, which collided with the
+			// public listener on package installs.
+			Listen: canonicalDashboardInternalListen, TokenFile: "/var/lib/vgt/gedefense/dashboard.token",
+			AllowedHosts:       []string{"127.0.0.1", "localhost", "[::1]"},
+			RateLimitPerMinute: 240, RateLimitBurst: 40, MaxSSEClients: 16,
+		},
+		Core: CoreConfig{
+			Socket: "/run/vgt-gedefense/core.sock", AuthKeyFile: "/etc/vgt/gedefense/secrets/core-ipc.key",
+			RequestTimeoutMillis: 1500,
+		},
+		Defense: DefenseConfig{
+			Allowlist: nil, Enforcement: "observe", DefaultTTLSeconds: 3600, MaxTTLSeconds: 604800,
+			MaxBlockEntries: 250000, StrictASNDrop: false, DPIEnabled: false,
+		},
+		Policy: PolicyConfig{
+			StateFile: "/var/lib/vgt/gedefense/policy.json", SigningKeyFile: "/var/lib/vgt/gedefense/policy.ed25519",
+			PublicKeyFile: "/var/lib/vgt/gedefense/policy.ed25519.pub", StorageKeyFile: "/etc/vgt/gedefense/secrets/storage-master.key", RequireSigned: true,
+		},
+		L7: L7Config{
+			// Peer credentials are mandatory by default (F-06 / CHAIN-002). The
+			// shipped profile authorises the L7 socket group through
+			// SO_PEERCRED; explicit UID/GID allowlists are preferred and required
+			// when no socket group is configured.
+			RequirePeerCredentials: true,
+			Enabled:                false, Mode: "observe", Socket: "/run/vgt-gedefense-l7/inspect.sock", SocketGroup: "gedefense-l7", RequestTimeoutMillis: 750,
+			MaxConcurrent: 16, MaxEnvelopeBytes: 3 << 20, MaxBodyBytes: 2 << 20, MaxURIBytes: 16 << 10,
+			MaxHeaderBytes: 64 << 10, MaxHeaders: 128, MaxValueBytes: 16 << 10, MaxInspectionBytes: 4 << 20, MaxDecodedValues: 4096,
+			MaxDecodeDepth: 8, MaxJSONDepth: 32, MaxFormFields: 512, MaxMultipartParts: 64, MaxUploadBytes: 2 << 20,
+			AlertScore: 40, BlockScore: 90, ClientRatePerMinute: 600, ClientRateBurst: 100,
+			SensitiveRatePerMinute: 30, SensitiveRateBurst: 10, SensitiveGlobalRatePerMinute: 300, SensitiveGlobalRateBurst: 50, MaxTrackedClients: 65536,
+			SensitivePaths: []string{"/wp-login.php", "/xmlrpc.php", "/login", "/signin", "/api/login"},
+			InlineEnabled:  false, InlineSocket: "/run/vgt-gedefense-l7/edge.sock", InlineUpstream: "http://127.0.0.1:8080",
+			InlineMaxResponseBytes: 64 << 10,
+			// auto: the traffic path is required once something is actually wired in.
+			// An engine that is enabled but has nothing attached is deliberately idle,
+			// not broken, and must not degrade the platform.
+			CoverageRequired: "auto",
+			TLSEnabled:       true, TLSAllowedDomains: nil, TLSFloodThreshold: 15, TLSSNIStrikeThreshold: 10, TLSAntiSpoof: true,
+			TLSMaxClientHelloBytes: 64 << 10, TLSJA3File: "",
+		},
+		XDR: XDRConfig{
+			Enabled: true, Mode: "observe", ScanIntervalMillis: 750, NetworkIntervalSeconds: 3,
+			IntegrityIntervalSeconds: 3, AlertScore: 40, ContainScore: 80, KillScore: 120,
+			MaxCommandBytes: 8192, CommandPreviewBytes: 320, DedupeSeconds: 300,
+			MaxIncidentLogBytes:    64 << 20,
+			IncidentLog:            "/var/lib/vgt/gedefense/incidents.jsonl",
+			LogKeyFile:             "/var/lib/vgt/gedefense/xdr-log.key",
+			BaselineFile:           "/etc/vgt/gedefense/xdr-baseline.json",
+			ProtectedPaths:         []string{"/opt/vgt/gedefense/current/bin/gedefense-control", "/opt/vgt/gedefense/current/libexec/gedefense-core", "/opt/vgt/gedefense/current/lib/gedefense/gedefense-ebpf"},
+			ProtectedSecurityRoots: true,
+			WorkerCount:            4, QueueCapacity: 2048, MaxEvaluationsPerScan: 4096,
+			BehaviorEnabled: true, BehaviorWarmupSamples: 24, BehaviorZScoreMilli: 3500,
+			BehaviorMinConnections: 8, BehaviorMaxProfiles: 4096, BehaviorMaxPorts: 256, BehaviorProfileFile: "/var/lib/vgt/gedefense/behavior-profiles.json",
+			StorageKeyFile: "/etc/vgt/gedefense/secrets/storage-master.key",
+		},
+		Runtime: RuntimeConfig{SettingsFile: "/var/lib/vgt/gedefense/runtime-settings.json", KeyFile: "/var/lib/vgt/gedefense/runtime-settings.key", StorageKeyFile: "/etc/vgt/gedefense/secrets/storage-master.key"},
+		Cells: CellsConfig{
+			Enabled: false, Socket: "/run/gaia-cells/control.sock",
+			AutoConfine: false, AutoConfineAction: cellActionRevokeNetwork, AutoConfineScore: 80,
+			AutoConfineIntervalSeconds: 15, AutoConfineCooldownSeconds: 300,
+			AuthKeyFile:          "/etc/vgt/gedefense/secrets/gaia-cells.key",
+			RequestTimeoutMillis: 1500,
+		},
+		Release: ReleaseConfig{
+			Channel: "beta", MinimumObserveSeconds: 300, MinimumCanarySeconds: 900,
+			CoreFailureThreshold: 3, MaxEvaluationDropPermille: 5,
+			EmergencyStopFile: "/var/lib/vgt/gedefense/EMERGENCY_STOP", AutoDegrade: true,
+		},
+		Feeds: FeedConfig{
+			Enabled:          false,
+			AutoApply:        false,
+			RefreshMinutes:   720,
+			MaxDownloadBytes: 16 << 20,
+			MaxEntries:       250000,
+			Sources:          append([]string(nil), DefaultThreatFeeds...),
+			// Fail closed: unsigned feeds never reach the kernel unless the
+			// operator explicitly disables the manifest gate (and then
+			// auto_apply is refused by validation).
+			RequireSignedManifest: true,
+			TrustedSigningKeys:    nil,
+			ManifestPath:          "/var/lib/vgt/gedefense/threat-feed-manifest.json",
+			ManifestMaxAgeMinutes: 1440,
+		},
+		Kinetic: KineticConfig{
+			Enabled:            true,
+			EnforcementMode:    "observe",
+			IPThreshold:        35,
+			VelocityLimit:      15,
+			RangeThreshold:     45,
+			IPv6SubThreshold:   55,
+			WideRangeThreshold: 77,
+			PortscanThreshold:  5,
+			SYNThreshold:       25, SYNAckRatio: 4, LowSlowMinSeconds: 60,
+			SubnetMinSources: 2, IPv6SubnetMinSources: 2, WideMinSources: 4,
+			AutoContainSingleIP: true, AutoContainIPv4Subnet: true, AutoContainIPv6Subnet: true,
+			MaxTrackingIPs:    65536,
+			BanTTLSeconds:     86400,
+			MaxStrikesPerSec:  100,
+			ServicePortsWeb:   []uint16{80, 443, 8443},
+			ServicePortsMail:  []uint16{25, 465, 587, 110, 995, 143, 993},
+			ServicePortsAdmin: []uint16{22, 2222, 888, 3306, 5432},
+			GeoIPCSV:          "/var/lib/vgt/gedefense/geoip.csv",
+		},
+	}
+}
+
+func loadConfig(path string) (Config, error) {
+	cfg := defaultConfig()
+	f, err := os.Open(path)
+	if err != nil {
+		return cfg, err
+	}
+	defer f.Close()
+
+	section := ""
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 4096), 64*1024)
+	lineNo := 0
+	for scanner.Scan() {
+		lineNo++
+		line := strings.TrimSpace(stripComment(scanner.Text()))
+		if line == "" {
+			continue
+		}
+		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
+			section = strings.TrimSpace(line[1 : len(line)-1])
+			switch section {
+			case "node", "dashboard", "core", "defense", "policy", "feeds", "xdr", "l7", "release", "runtime", "cells", "kinetic", "advisories", "titan":
+			default:
+				return cfg, fmt.Errorf("line %d: unknown section %q", lineNo, section)
+			}
+			continue
+		}
+		key, raw, ok := strings.Cut(line, "=")
+		if !ok || section == "" {
+			return cfg, fmt.Errorf("line %d: expected section key = value", lineNo)
+		}
+		key, raw = strings.TrimSpace(key), strings.TrimSpace(raw)
+		if err := assignConfig(&cfg, section, key, raw); err != nil {
+			return cfg, fmt.Errorf("line %d: %w", lineNo, err)
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return cfg, err
+	}
+	if cfg.Defense.DPIEnabled {
+		cfg.L7.Enabled = true
+	}
+	cfg.Defense.DPIEnabled = cfg.L7.Enabled
+	if err := validateConfig(&cfg); err != nil {
+		return cfg, err
+	}
+	return cfg, nil
+}
+
+func stripComment(line string) string {
+	quoted, escaped := false, false
+	for i, r := range line {
+		if escaped {
+			escaped = false
+			continue
+		}
+		if r == '\\' && quoted {
+			escaped = true
+			continue
+		}
+		if r == '"' {
+			quoted = !quoted
+			continue
+		}
+		if r == '#' && !quoted {
+			return line[:i]
+		}
+	}
+	return line
+}
+
+func parseString(raw string) (string, error) {
+	if len(raw) < 2 || raw[0] != '"' || raw[len(raw)-1] != '"' {
+		return "", errors.New("string values must be double quoted")
+	}
+	v, err := strconv.Unquote(raw)
+	if err != nil {
+		return "", fmt.Errorf("invalid string: %w", err)
+	}
+	if strings.ContainsRune(v, '\x00') {
+		return "", errors.New("NUL is not allowed")
+	}
+	return v, nil
+}
+
+func parseBool(raw string) (bool, error) {
+	switch raw {
+	case "true":
+		return true, nil
+	case "false":
+		return false, nil
+	default:
+		return false, fmt.Errorf("expected true or false, got %q", raw)
+	}
+}
+
+func parseInt(raw string, min, max int) (int, error) {
+	n, err := strconv.Atoi(raw)
+	if err != nil || n < min || n > max {
+		return 0, fmt.Errorf("integer must be between %d and %d", min, max)
+	}
+	return n, nil
+}
+
+func assignConfig(cfg *Config, section, key, raw string) error {
+	str := func() (string, error) { return parseString(raw) }
+	switch section + "." + key {
+	case "node.name":
+		v, e := str()
+		cfg.Node.Name = v
+		return e
+	case "node.interface":
+		v, e := str()
+		cfg.Node.Interface = v
+		return e
+	case "node.mode":
+		v, e := str()
+		cfg.Node.Mode = v
+		return e
+	case "startup.enabled":
+		v, e := parseBool(raw)
+		cfg.Startup.Enabled = v
+		return e
+	case "startup.rounds":
+		v, e := parseInt(raw, 1, 240)
+		cfg.Startup.Rounds = v
+		return e
+	case "startup.round_gap_seconds":
+		v, e := parseInt(raw, 1, 300)
+		cfg.Startup.RoundGapSeconds = v
+		return e
+	case "startup.arm_interval_seconds":
+		v, e := parseInt(raw, 30, 86400)
+		cfg.Startup.ArmIntervalSec = v
+		return e
+	case "startup.heal_attempts":
+		v, e := parseInt(raw, 1, 20)
+		cfg.Startup.HealAttempts = v
+		return e
+	case "startup.qualification_file":
+		v, e := str()
+		cfg.Startup.QualificationFile = v
+		return e
+	case "advisories.enabled":
+		v, e := parseBool(raw)
+		cfg.Advisories.Enabled = v
+		return e
+	case "advisories.mode":
+		v, e := str()
+		cfg.Advisories.Mode = v
+		return e
+	case "advisories.max_exposure":
+		v, e := parseInt(raw, 1, 100)
+		cfg.Advisories.MaxExposure = v
+		return e
+	case "advisories.auto_mitigate":
+		v, e := parseBool(raw)
+		cfg.Advisories.AutoMitigate = v
+		return e
+	case "advisories.mitigation_watch_seconds":
+		v, e := parseInt(raw, 30, 3600)
+		cfg.Advisories.MitigationWatchSeconds = v
+		return e
+	case "advisories.mitigation_interval_seconds":
+		v, e := parseInt(raw, 5, 300)
+		cfg.Advisories.MitigationIntervalSeconds = v
+		return e
+	case "advisories.mitigation_failures":
+		v, e := parseInt(raw, 1, 10)
+		cfg.Advisories.MitigationFailures = v
+		return e
+	case "dashboard.token_owner":
+		v, e := str()
+		cfg.Dashboard.TokenOwner = v
+		return e
+	case "desktop.enabled":
+		v, e := parseBool(raw)
+		cfg.Desktop.Enabled = v
+		return e
+	case "desktop.socket":
+		v, e := str()
+		cfg.Desktop.SocketPath = v
+		return e
+	case "desktop.socket_mode":
+		v, e := str()
+		cfg.Desktop.SocketMode = v
+		return e
+	case "desktop.socket_group":
+		v, e := str()
+		cfg.Desktop.SocketGroup = v
+		return e
+	case "desktop.alert_window_seconds":
+		v, e := parseInt(raw, 60, 86400)
+		cfg.Desktop.AlertWindowSeconds = v
+		return e
+	case "desktop.max_connections_per_user":
+		v, e := parseInt(raw, 1, 32)
+		cfg.Desktop.MaxConnectionsPerUser = v
+		return e
+	case "desktop.rate_limit_per_minute":
+		v, e := parseInt(raw, 1, 100000)
+		cfg.Desktop.RateLimitPerMinute = v
+		return e
+	case "desktop.rate_limit_burst":
+		v, e := parseInt(raw, 1, 10000)
+		cfg.Desktop.RateLimitBurst = v
+		return e
+	case "dashboard.listen":
+		v, e := str()
+		cfg.Dashboard.Listen = v
+		return e
+	case "dashboard.allow_remote":
+		v, e := parseBool(raw)
+		cfg.Dashboard.AllowRemote = v
+		return e
+	case "dashboard.allowed_hosts":
+		v, e := str()
+		if e == nil {
+			cfg.Dashboard.AllowedHosts = splitCSV(v)
+		}
+		return e
+	case "dashboard.token_file":
+		v, e := str()
+		cfg.Dashboard.TokenFile = v
+		return e
+	case "dashboard.tls_cert_file":
+		v, e := str()
+		cfg.Dashboard.TLSCertFile = v
+		return e
+	case "dashboard.tls_key_file":
+		v, e := str()
+		cfg.Dashboard.TLSKeyFile = v
+		return e
+	case "dashboard.rate_limit_per_minute":
+		v, e := parseInt(raw, 30, 100000)
+		cfg.Dashboard.RateLimitPerMinute = v
+		return e
+	case "dashboard.rate_limit_burst":
+		v, e := parseInt(raw, 1, 10000)
+		cfg.Dashboard.RateLimitBurst = v
+		return e
+	case "dashboard.max_sse_clients":
+		v, e := parseInt(raw, 1, 1024)
+		cfg.Dashboard.MaxSSEClients = v
+		return e
+	case "core.socket":
+		v, e := str()
+		cfg.Core.Socket = v
+		return e
+	case "core.auth_key_file":
+		v, e := str()
+		cfg.Core.AuthKeyFile = v
+		return e
+	case "core.request_timeout_millis":
+		v, e := parseInt(raw, 100, 10000)
+		cfg.Core.RequestTimeoutMillis = v
+		return e
+	case "defense.allowlist":
+		v, e := str()
+		if e == nil {
+			cfg.Defense.Allowlist = splitCSV(v)
+		}
+		return e
+	case "defense.enforcement":
+		v, e := str()
+		cfg.Defense.Enforcement = v
+		return e
+	case "defense.default_ttl_seconds":
+		v, e := parseInt(raw, 60, 604800)
+		cfg.Defense.DefaultTTLSeconds = v
+		return e
+	case "defense.max_ttl_seconds":
+		v, e := parseInt(raw, 60, 2592000)
+		cfg.Defense.MaxTTLSeconds = v
+		return e
+	case "defense.max_block_entries":
+		v, e := parseInt(raw, 1, 1000000)
+		cfg.Defense.MaxBlockEntries = v
+		return e
+	case "defense.strict_asn_drop":
+		v, e := parseBool(raw)
+		cfg.Defense.StrictASNDrop = v
+		return e
+	case "defense.dpi_enabled":
+		v, e := parseBool(raw)
+		cfg.Defense.DPIEnabled = v
+		return e
+	case "policy.state_file":
+		v, e := str()
+		cfg.Policy.StateFile = v
+		return e
+	case "policy.signing_key_file":
+		v, e := str()
+		cfg.Policy.SigningKeyFile = v
+		return e
+	case "policy.public_key_file":
+		v, e := str()
+		cfg.Policy.PublicKeyFile = v
+		return e
+	case "policy.storage_key_file":
+		v, e := str()
+		cfg.Policy.StorageKeyFile = v
+		return e
+	case "policy.require_signed":
+		v, e := parseBool(raw)
+		cfg.Policy.RequireSigned = v
+		return e
+	case "l7.enabled":
+		v, e := parseBool(raw)
+		cfg.L7.Enabled = v
+		return e
+	case "l7.mode":
+		v, e := str()
+		cfg.L7.Mode = v
+		return e
+	case "l7.socket":
+		v, e := str()
+		cfg.L7.Socket = v
+		return e
+	case "l7.socket_group":
+		v, e := str()
+		cfg.L7.SocketGroup = v
+		return e
+	case "l7.request_timeout_millis":
+		v, e := parseInt(raw, 50, 10000)
+		cfg.L7.RequestTimeoutMillis = v
+		return e
+	case "l7.max_concurrent":
+		v, e := parseInt(raw, 1, 512)
+		cfg.L7.MaxConcurrent = v
+		return e
+	case "l7.max_envelope_bytes":
+		v, e := parseInt(raw, 65536, 32<<20)
+		cfg.L7.MaxEnvelopeBytes = v
+		return e
+	case "l7.max_body_bytes":
+		v, e := parseInt(raw, 1024, 16<<20)
+		cfg.L7.MaxBodyBytes = v
+		return e
+	case "l7.max_uri_bytes":
+		v, e := parseInt(raw, 1024, 1<<20)
+		cfg.L7.MaxURIBytes = v
+		return e
+	case "l7.max_header_bytes":
+		v, e := parseInt(raw, 4096, 1<<20)
+		cfg.L7.MaxHeaderBytes = v
+		return e
+	case "l7.max_headers":
+		v, e := parseInt(raw, 8, 1024)
+		cfg.L7.MaxHeaders = v
+		return e
+	case "l7.max_value_bytes":
+		v, e := parseInt(raw, 1024, 1<<20)
+		cfg.L7.MaxValueBytes = v
+		return e
+	case "l7.max_inspection_bytes":
+		v, e := parseInt(raw, 64<<10, 64<<20)
+		cfg.L7.MaxInspectionBytes = v
+		return e
+	case "l7.max_decoded_values":
+		v, e := parseInt(raw, 16, 8192)
+		cfg.L7.MaxDecodedValues = v
+		return e
+	case "l7.max_decode_depth":
+		v, e := parseInt(raw, 1, 8)
+		cfg.L7.MaxDecodeDepth = v
+		return e
+	case "l7.max_json_depth":
+		v, e := parseInt(raw, 4, 128)
+		cfg.L7.MaxJSONDepth = v
+		return e
+	case "l7.max_form_fields":
+		v, e := parseInt(raw, 16, 8192)
+		cfg.L7.MaxFormFields = v
+		return e
+	case "l7.max_multipart_parts":
+		v, e := parseInt(raw, 1, 1024)
+		cfg.L7.MaxMultipartParts = v
+		return e
+	case "l7.max_upload_bytes":
+		v, e := parseInt(raw, 1024, 16<<20)
+		cfg.L7.MaxUploadBytes = v
+		return e
+	case "l7.alert_score":
+		v, e := parseInt(raw, 1, 249)
+		cfg.L7.AlertScore = v
+		return e
+	case "l7.block_score":
+		v, e := parseInt(raw, 2, 250)
+		cfg.L7.BlockScore = v
+		return e
+	case "l7.enforce_rules":
+		v, e := str()
+		if e == nil {
+			cfg.L7.EnforceRules = splitCSV(v)
+		}
+		return e
+	case "l7.client_rate_per_minute":
+		v, e := parseInt(raw, 1, 1000000)
+		cfg.L7.ClientRatePerMinute = v
+		return e
+	case "l7.client_rate_burst":
+		v, e := parseInt(raw, 1, 100000)
+		cfg.L7.ClientRateBurst = v
+		return e
+	case "l7.sensitive_rate_per_minute":
+		v, e := parseInt(raw, 1, 100000)
+		cfg.L7.SensitiveRatePerMinute = v
+		return e
+	case "l7.sensitive_rate_burst":
+		v, e := parseInt(raw, 1, 10000)
+		cfg.L7.SensitiveRateBurst = v
+		return e
+	case "l7.sensitive_global_rate_per_minute":
+		v, e := parseInt(raw, 1, 1000000)
+		cfg.L7.SensitiveGlobalRatePerMinute = v
+		return e
+	case "l7.sensitive_global_rate_burst":
+		v, e := parseInt(raw, 1, 100000)
+		cfg.L7.SensitiveGlobalRateBurst = v
+		return e
+	case "l7.max_tracked_clients":
+		v, e := parseInt(raw, 1024, 1000000)
+		cfg.L7.MaxTrackedClients = v
+		return e
+	case "l7.sensitive_paths":
+		v, e := str()
+		if e == nil {
+			cfg.L7.SensitivePaths = splitCSV(v)
+		}
+		return e
+	case "l7.require_peer_credentials":
+		v, e := parseBool(raw)
+		cfg.L7.RequirePeerCredentials = v
+		return e
+	case "l7.allowed_peer_uids":
+		v, e := str()
+		if e != nil {
+			return e
+		}
+		ids, e := parseUint32CSV(v)
+		cfg.L7.AllowedPeerUIDs = ids
+		return e
+	case "l7.allowed_peer_gids":
+		v, e := str()
+		if e != nil {
+			return e
+		}
+		ids, e := parseUint32CSV(v)
+		cfg.L7.AllowedPeerGIDs = ids
+		return e
+	case "l7.coverage_required":
+		v, e := str()
+		if e != nil {
+			return e
+		}
+		switch v {
+		case "auto", "required", "optional":
+			cfg.L7.CoverageRequired = v
+			return nil
+		default:
+			return fmt.Errorf("l7.coverage_required must be auto, required or optional")
+		}
+	case "l7.inline_enabled":
+		v, e := parseBool(raw)
+		cfg.L7.InlineEnabled = v
+		return e
+	case "l7.inline_socket":
+		v, e := str()
+		cfg.L7.InlineSocket = v
+		return e
+	case "l7.inline_upstream":
+		v, e := str()
+		cfg.L7.InlineUpstream = v
+		return e
+	case "l7.inline_max_response_bytes":
+		v, e := parseInt(raw, 4096, 1<<20)
+		cfg.L7.InlineMaxResponseBytes = v
+		return e
+	case "l7.tls_enabled":
+		v, e := parseBool(raw)
+		cfg.L7.TLSEnabled = v
+		return e
+	case "l7.tls_allowed_domains":
+		v, e := str()
+		if e == nil {
+			cfg.L7.TLSAllowedDomains = splitCSV(v)
+		}
+		return e
+	case "l7.tls_flood_threshold":
+		v, e := parseInt(raw, 2, 100000)
+		cfg.L7.TLSFloodThreshold = v
+		return e
+	case "l7.tls_sni_strike_threshold":
+		v, e := parseInt(raw, 2, 1000)
+		cfg.L7.TLSSNIStrikeThreshold = v
+		return e
+	case "l7.tls_anti_spoof":
+		v, e := parseBool(raw)
+		cfg.L7.TLSAntiSpoof = v
+		return e
+	case "l7.tls_max_client_hello_bytes":
+		v, e := parseInt(raw, 1024, 1<<20)
+		cfg.L7.TLSMaxClientHelloBytes = v
+		return e
+	case "l7.tls_ja3_file":
+		v, e := str()
+		cfg.L7.TLSJA3File = v
+		return e
+	case "xdr.enabled":
+		v, e := parseBool(raw)
+		cfg.XDR.Enabled = v
+		return e
+	case "xdr.mode":
+		v, e := str()
+		cfg.XDR.Mode = v
+		return e
+	case "xdr.scan_interval_millis":
+		v, e := parseInt(raw, 100, 60000)
+		cfg.XDR.ScanIntervalMillis = v
+		return e
+	case "xdr.network_interval_seconds":
+		v, e := parseInt(raw, 1, 300)
+		cfg.XDR.NetworkIntervalSeconds = v
+		return e
+	case "xdr.integrity_interval_seconds":
+		v, e := parseInt(raw, 1, 300)
+		cfg.XDR.IntegrityIntervalSeconds = v
+		return e
+	case "xdr.alert_score":
+		v, e := parseInt(raw, 1, 250)
+		cfg.XDR.AlertScore = v
+		return e
+	case "xdr.contain_score":
+		v, e := parseInt(raw, 1, 250)
+		cfg.XDR.ContainScore = v
+		return e
+	case "xdr.kill_score":
+		v, e := parseInt(raw, 1, 250)
+		cfg.XDR.KillScore = v
+		return e
+	case "xdr.max_command_bytes":
+		v, e := parseInt(raw, 256, 65536)
+		cfg.XDR.MaxCommandBytes = v
+		return e
+	case "xdr.command_preview_bytes":
+		v, e := parseInt(raw, 64, 2048)
+		cfg.XDR.CommandPreviewBytes = v
+		return e
+	case "xdr.protected_security_roots":
+		v, e := parseBool(raw)
+		cfg.XDR.ProtectedSecurityRoots = v
+		return e
+	case "xdr.dedupe_seconds":
+		v, e := parseInt(raw, 10, 86400)
+		cfg.XDR.DedupeSeconds = v
+		return e
+	case "xdr.max_incident_log_bytes":
+		v, e := parseInt(raw, 1<<20, 1<<30)
+		cfg.XDR.MaxIncidentLogBytes = int64(v)
+		return e
+	case "xdr.incident_log":
+		v, e := str()
+		cfg.XDR.IncidentLog = v
+		return e
+	case "xdr.log_key_file":
+		v, e := str()
+		cfg.XDR.LogKeyFile = v
+		return e
+	case "xdr.baseline_file":
+		v, e := str()
+		cfg.XDR.BaselineFile = v
+		return e
+	case "xdr.protected_paths":
+		v, e := str()
+		if e == nil {
+			cfg.XDR.ProtectedPaths = splitCSV(v)
+		}
+		return e
+	case "xdr.allow_processes":
+		v, e := str()
+		if e == nil {
+			cfg.XDR.AllowProcesses = splitCSV(v)
+		}
+		return e
+	case "xdr.worker_count":
+		v, e := parseInt(raw, 1, 64)
+		cfg.XDR.WorkerCount = v
+		return e
+	case "xdr.queue_capacity":
+		v, e := parseInt(raw, 64, 65536)
+		cfg.XDR.QueueCapacity = v
+		return e
+	case "xdr.max_evaluations_per_scan":
+		v, e := parseInt(raw, 64, 100000)
+		cfg.XDR.MaxEvaluationsPerScan = v
+		return e
+	case "xdr.behavior_enabled":
+		v, e := parseBool(raw)
+		cfg.XDR.BehaviorEnabled = v
+		return e
+	case "xdr.behavior_warmup_samples":
+		v, e := parseInt(raw, 5, 10000)
+		cfg.XDR.BehaviorWarmupSamples = v
+		return e
+	case "xdr.behavior_zscore_milli":
+		v, e := parseInt(raw, 1500, 10000)
+		cfg.XDR.BehaviorZScoreMilli = v
+		return e
+	case "xdr.behavior_min_connections":
+		v, e := parseInt(raw, 2, 100000)
+		cfg.XDR.BehaviorMinConnections = v
+		return e
+	case "xdr.behavior_max_profiles":
+		v, e := parseInt(raw, 64, 65536)
+		cfg.XDR.BehaviorMaxProfiles = v
+		return e
+	case "xdr.behavior_max_ports_per_profile":
+		v, e := parseInt(raw, 16, 65536)
+		cfg.XDR.BehaviorMaxPorts = v
+		return e
+	case "xdr.behavior_profile_file":
+		v, e := str()
+		cfg.XDR.BehaviorProfileFile = v
+		return e
+	case "xdr.storage_key_file":
+		v, e := str()
+		cfg.XDR.StorageKeyFile = v
+		return e
+
+	case "release.channel":
+		v, e := str()
+		cfg.Release.Channel = v
+		return e
+	case "release.minimum_observe_seconds":
+		v, e := parseInt(raw, 0, 86400)
+		cfg.Release.MinimumObserveSeconds = v
+		return e
+	case "release.minimum_canary_seconds":
+		v, e := parseInt(raw, 0, 604800)
+		cfg.Release.MinimumCanarySeconds = v
+		return e
+	case "release.core_failure_threshold":
+		v, e := parseInt(raw, 1, 100)
+		cfg.Release.CoreFailureThreshold = v
+		return e
+	case "release.max_evaluation_drop_permille":
+		v, e := parseInt(raw, 0, 1000)
+		cfg.Release.MaxEvaluationDropPermille = v
+		return e
+	case "release.emergency_stop_file":
+		v, e := str()
+		cfg.Release.EmergencyStopFile = v
+		return e
+	case "release.auto_degrade":
+		v, e := parseBool(raw)
+		cfg.Release.AutoDegrade = v
+		return e
+	case "runtime.settings_file":
+		v, e := str()
+		cfg.Runtime.SettingsFile = v
+		return e
+	case "runtime.key_file":
+		v, e := str()
+		cfg.Runtime.KeyFile = v
+		return e
+	case "runtime.storage_key_file":
+		v, e := str()
+		cfg.Runtime.StorageKeyFile = v
+		return e
+	case "cells.enabled":
+		v, e := parseBool(raw)
+		cfg.Cells.Enabled = v
+		return e
+	case "cells.socket":
+		v, e := str()
+		cfg.Cells.Socket = v
+		return e
+	case "cells.auth_key_file":
+		v, e := str()
+		cfg.Cells.AuthKeyFile = v
+		return e
+	case "cells.auto_confine":
+		v, e := parseBool(raw)
+		cfg.Cells.AutoConfine = v
+		return e
+	case "cells.auto_confine_action":
+		v, e := str()
+		cfg.Cells.AutoConfineAction = v
+		return e
+	case "cells.auto_confine_score":
+		v, e := parseInt(raw, 1, 249)
+		cfg.Cells.AutoConfineScore = v
+		return e
+	case "cells.auto_confine_interval_seconds":
+		v, e := parseInt(raw, 5, 3600)
+		cfg.Cells.AutoConfineIntervalSeconds = v
+		return e
+	case "cells.auto_confine_cooldown_seconds":
+		v, e := parseInt(raw, 30, 86400)
+		cfg.Cells.AutoConfineCooldownSeconds = v
+		return e
+	case "cells.request_timeout_millis":
+		v, e := parseInt(raw, 100, 10000)
+		cfg.Cells.RequestTimeoutMillis = v
+		return e
+	case "feeds.enabled":
+		v, e := parseBool(raw)
+		cfg.Feeds.Enabled = v
+		return e
+	case "feeds.auto_apply":
+		v, e := parseBool(raw)
+		cfg.Feeds.AutoApply = v
+		return e
+	case "feeds.refresh_minutes":
+		v, e := parseInt(raw, 5, 1440)
+		cfg.Feeds.RefreshMinutes = v
+		return e
+	case "feeds.max_download_bytes":
+		v, e := parseInt(raw, 1024, 64<<20)
+		cfg.Feeds.MaxDownloadBytes = int64(v)
+		return e
+	case "feeds.max_entries":
+		v, e := parseInt(raw, 1, 500000)
+		cfg.Feeds.MaxEntries = v
+		return e
+	case "feeds.sources":
+		v, e := str()
+		if e == nil {
+			cfg.Feeds.Sources = splitCSV(v)
+		}
+		return e
+	case "feeds.require_signed_manifest":
+		v, e := parseBool(raw)
+		cfg.Feeds.RequireSignedManifest = v
+		return e
+	case "feeds.trusted_signing_keys":
+		v, e := str()
+		if e != nil {
+			return e
+		}
+		cfg.Feeds.TrustedSigningKeys = splitCSV(v)
+		return e
+	case "feeds.manifest_path":
+		v, e := str()
+		cfg.Feeds.ManifestPath = v
+		return e
+	case "feeds.manifest_max_age_minutes":
+		v, e := parseInt(raw, 5, 10080)
+		cfg.Feeds.ManifestMaxAgeMinutes = v
+		return e
+	case "kinetic.enabled":
+		v, e := parseBool(raw)
+		cfg.Kinetic.Enabled = v
+		return e
+	case "kinetic.enforcement_mode":
+		v, e := str()
+		cfg.Kinetic.EnforcementMode = v
+		return e
+	case "kinetic.ip_threshold":
+		v, e := parseInt(raw, 1, 100000)
+		cfg.Kinetic.IPThreshold = v
+		return e
+	case "kinetic.velocity_limit":
+		v, e := parseInt(raw, 1, 50000)
+		cfg.Kinetic.VelocityLimit = v
+		return e
+	case "kinetic.range_threshold":
+		v, e := parseInt(raw, 1, 100000)
+		cfg.Kinetic.RangeThreshold = v
+		return e
+	case "kinetic.ipv6_sub_threshold":
+		v, e := parseInt(raw, 1, 100000)
+		cfg.Kinetic.IPv6SubThreshold = v
+		return e
+	case "kinetic.wide_range_threshold":
+		v, e := parseInt(raw, 1, 100000)
+		cfg.Kinetic.WideRangeThreshold = v
+		return e
+	case "kinetic.portscan_threshold":
+		v, e := parseInt(raw, 1, 1000)
+		cfg.Kinetic.PortscanThreshold = v
+		return e
+	case "kinetic.syn_threshold":
+		v, e := parseInt(raw, 1, 100000)
+		cfg.Kinetic.SYNThreshold = v
+		return e
+	case "kinetic.syn_ack_ratio":
+		v, e := parseInt(raw, 1, 100)
+		cfg.Kinetic.SYNAckRatio = v
+		return e
+	case "kinetic.low_slow_min_seconds":
+		v, e := parseInt(raw, 10, 86400)
+		cfg.Kinetic.LowSlowMinSeconds = v
+		return e
+	case "kinetic.subnet_min_sources":
+		v, e := parseInt(raw, 2, 1024)
+		cfg.Kinetic.SubnetMinSources = v
+		return e
+	case "kinetic.ipv6_subnet_min_sources":
+		v, e := parseInt(raw, 2, 1024)
+		cfg.Kinetic.IPv6SubnetMinSources = v
+		return e
+	case "kinetic.wide_min_sources":
+		v, e := parseInt(raw, 2, 4096)
+		cfg.Kinetic.WideMinSources = v
+		return e
+	case "kinetic.auto_contain_single_ip":
+		v, e := parseBool(raw)
+		cfg.Kinetic.AutoContainSingleIP = v
+		return e
+	case "kinetic.auto_contain_ipv4_subnet":
+		v, e := parseBool(raw)
+		cfg.Kinetic.AutoContainIPv4Subnet = v
+		return e
+	case "kinetic.auto_contain_ipv6_subnet":
+		v, e := parseBool(raw)
+		cfg.Kinetic.AutoContainIPv6Subnet = v
+		return e
+	case "kinetic.max_tracking_ips":
+		v, e := parseInt(raw, 100, 500000)
+		cfg.Kinetic.MaxTrackingIPs = v
+		return e
+	case "kinetic.ban_ttl_seconds":
+		v, e := parseInt(raw, 60, 2592000)
+		cfg.Kinetic.BanTTLSeconds = v
+		return e
+	case "kinetic.max_strikes_per_sec":
+		v, e := parseInt(raw, 1, 10000)
+		cfg.Kinetic.MaxStrikesPerSec = v
+		return e
+	case "kinetic.service_ports_web":
+		v, e := str()
+		if e != nil {
+			return e
+		}
+		ports, e := parsePortCSV(v)
+		if e == nil {
+			cfg.Kinetic.ServicePortsWeb = ports
+		}
+		return e
+	case "kinetic.service_ports_mail":
+		v, e := str()
+		if e != nil {
+			return e
+		}
+		ports, e := parsePortCSV(v)
+		if e == nil {
+			cfg.Kinetic.ServicePortsMail = ports
+		}
+		return e
+	case "kinetic.service_ports_admin":
+		v, e := str()
+		if e != nil {
+			return e
+		}
+		ports, e := parsePortCSV(v)
+		if e == nil {
+			cfg.Kinetic.ServicePortsAdmin = ports
+		}
+		return e
+	case "kinetic.geoip_csv":
+		v, e := str()
+		cfg.Kinetic.GeoIPCSV = v
+		return e
+	case "kinetic.geoip_signing_keys":
+		v, e := str()
+		if e != nil {
+			return e
+		}
+		cfg.Kinetic.GeoIPSigningKeys = splitCSV(v)
+		return e
+	default:
+		if section == "titan" {
+			return assignTitanConfig(cfg, key, raw)
+		}
+		return fmt.Errorf("unknown key %s.%s", section, key)
+	}
+}
+
+func parsePortCSV(v string) ([]uint16, error) {
+	parts := splitCSV(v)
+	if len(parts) == 0 {
+		return nil, errors.New("port list must not be empty")
+	}
+	out := make([]uint16, 0, len(parts))
+	seen := make(map[uint16]struct{}, len(parts))
+	for _, part := range parts {
+		n, err := strconv.ParseUint(strings.TrimSpace(part), 10, 16)
+		if err != nil || n == 0 {
+			return nil, fmt.Errorf("invalid port %q", part)
+		}
+		port := uint16(n)
+		if _, exists := seen[port]; exists {
+			continue
+		}
+		seen[port] = struct{}{}
+		out = append(out, port)
+	}
+	slices.Sort(out)
+	return out, nil
+}
+
+func parseUint32CSV(v string) ([]uint32, error) {
+	parts := splitCSV(v)
+	out := make([]uint32, 0, len(parts))
+	seen := make(map[uint32]struct{}, len(parts))
+	for _, part := range parts {
+		n, err := strconv.ParseUint(part, 10, 32)
+		if err != nil {
+			return nil, fmt.Errorf("invalid numeric identity %q", part)
+		}
+		id := uint32(n)
+		if _, exists := seen[id]; exists {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	return out, nil
+}
+
+func splitCSV(v string) []string {
+	var out []string
+	for _, part := range strings.Split(v, ",") {
+		if s := strings.TrimSpace(part); s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+func validateAbsolutePath(label, path string, allowEmpty bool) error {
+	if path == "" && allowEmpty {
+		return nil
+	}
+	if path == "" || !filepath.IsAbs(path) || strings.ContainsRune(path, '\x00') {
+		return fmt.Errorf("%s must be an absolute path", label)
+	}
+	return nil
+}
+
+func isSafeUnixIdentityName(value string) bool {
+	if len(value) < 1 || len(value) > 32 {
+		return false
+	}
+	for i := 0; i < len(value); i++ {
+		b := value[i]
+		if (b >= 'a' && b <= 'z') || (i > 0 && b >= '0' && b <= '9') || (i > 0 && (b == '_' || b == '-')) {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func validateL7InlineUpstream(raw string) error {
+	_, _, _, err := parseL7InlineUpstream(raw)
+	return err
+}
+
+func parseL7InlineUpstream(raw string) (*url.URL, string, string, error) {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return nil, "", "", errors.New("l7.inline_upstream must not be empty")
+	}
+	u, err := url.Parse(value)
+	if err != nil || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+		return nil, "", "", errors.New("l7.inline_upstream is malformed")
+	}
+	if u.Scheme == "unix" {
+		if u.Host != "" || u.Path == "" || !filepath.IsAbs(u.Path) || filepath.Clean(u.Path) != u.Path || len(u.Path) > 100 {
+			return nil, "", "", errors.New("l7.inline_upstream unix socket must be a clean absolute path of at most 100 bytes")
+		}
+		target, parseErr := url.Parse("http://gedefense-inline-upstream")
+		if parseErr != nil {
+			return nil, "", "", fmt.Errorf("construct l7 inline unix target: %w", parseErr)
+		}
+		return target, "unix", u.Path, nil
+	}
+	if u.Scheme != "http" || u.Hostname() == "" || (u.Path != "" && u.Path != "/") {
+		return nil, "", "", errors.New("l7.inline_upstream must be unix:///path.sock or a static loopback http URL")
+	}
+	host := u.Hostname()
+	ip := net.ParseIP(host)
+	if ip == nil || !ip.IsLoopback() {
+		return nil, "", "", errors.New("l7.inline_upstream TCP target must be an explicit loopback IP literal")
+	}
+	port := u.Port()
+	if port == "" {
+		return nil, "", "", errors.New("l7.inline_upstream TCP target requires an explicit port")
+	}
+	parsedPort, err := strconv.Atoi(port)
+	if err != nil || parsedPort < 1 || parsedPort > 65535 {
+		return nil, "", "", errors.New("l7.inline_upstream has an invalid port")
+	}
+	return u, "tcp", net.JoinHostPort(host, port), nil
+}
+
+func validateConfig(cfg *Config) error {
+	// Storage encryption is not an optional mode. An empty key path used to disable the cipher
+	// silently, which left the policy signing key, the evidence signing key and the evidence and
+	// incident records in plaintext on disk. A missing key is therefore a configuration error that
+	// stops the start - not a quieter way to run.
+	if err := validateAbsolutePath("policy.storage_key_file", cfg.Policy.StorageKeyFile, false); err != nil {
+		return err
+	}
+	if err := validateAbsolutePath("xdr.storage_key_file", cfg.XDR.StorageKeyFile, false); err != nil {
+		return err
+	}
+	if len(cfg.Node.Name) < 1 || len(cfg.Node.Name) > 64 {
+		return errors.New("node.name must contain 1-64 characters")
+	}
+	if cfg.Node.Mode != "standalone" {
+		return errors.New("node.mode must be standalone in this beta; Swarm/Mesh is deliberately deferred")
+	}
+	if cfg.Defense.Enforcement != "observe" && cfg.Defense.Enforcement != "enforce" {
+		return errors.New("defense.enforcement must be observe or enforce")
+	}
+	if cfg.Advisories.Mode != advisoryModeReport && cfg.Advisories.Mode != advisoryModeStrict {
+		return errors.New("advisories.mode must be report or strict")
+	}
+	if cfg.XDR.Mode != "observe" && cfg.XDR.Mode != "contain" && cfg.XDR.Mode != "enforce" {
+		return errors.New("xdr.mode must be observe, contain, or enforce")
+	}
+	if cfg.L7.Mode != "observe" && cfg.L7.Mode != "block" {
+		return errors.New("l7.mode must be observe or block")
+	}
+	if cfg.L7.AlertScore >= cfg.L7.BlockScore {
+		return errors.New("l7 scores must satisfy alert < block")
+	}
+	if len(cfg.L7.EnforceRules) > l7RuleOverrideLimit {
+		return fmt.Errorf("l7.enforce_rules exceeds %d entries", l7RuleOverrideLimit)
+	}
+	seenEnforceRules := make(map[string]struct{}, len(cfg.L7.EnforceRules))
+	normalizedEnforceRules := make([]string, 0, len(cfg.L7.EnforceRules))
+	for _, raw := range cfg.L7.EnforceRules {
+		id := strings.ToUpper(strings.TrimSpace(raw))
+		if id == "" {
+			continue
+		}
+		if !l7RuleOverrideIDAllowed(id) && !isL7RuleFamily(id) {
+			return fmt.Errorf("l7.enforce_rules entry %q is not a supported built-in rule or family", raw)
+		}
+		if _, duplicate := seenEnforceRules[id]; duplicate {
+			continue
+		}
+		seenEnforceRules[id] = struct{}{}
+		normalizedEnforceRules = append(normalizedEnforceRules, id)
+	}
+	cfg.L7.EnforceRules = normalizedEnforceRules
+	if cfg.L7.MaxUploadBytes > cfg.L7.MaxBodyBytes {
+		return errors.New("l7.max_upload_bytes must not exceed l7.max_body_bytes")
+	}
+	requiredInspection := cfg.L7.MaxBodyBytes + cfg.L7.MaxHeaderBytes + (2 * cfg.L7.MaxURIBytes) + (64 << 10)
+	if cfg.L7.MaxInspectionBytes < requiredInspection {
+		return fmt.Errorf("l7.max_inspection_bytes must be at least %d for the configured body/header/URI budgets", requiredInspection)
+	}
+	requiredEnvelope := ((cfg.L7.MaxBodyBytes + 2) / 3 * 4) + cfg.L7.MaxHeaderBytes + (64 << 10)
+	if cfg.L7.MaxEnvelopeBytes < requiredEnvelope {
+		return fmt.Errorf("l7.max_envelope_bytes must be at least %d for the configured body/header budgets", requiredEnvelope)
+	}
+	if int64(cfg.L7.MaxEnvelopeBytes)*int64(cfg.L7.MaxConcurrent) > 256<<20 {
+		return errors.New("l7 concurrent envelope memory budget exceeds 256 MiB")
+	}
+	if int64(cfg.L7.MaxInspectionBytes)*int64(cfg.L7.MaxConcurrent) > 256<<20 {
+		return errors.New("l7 concurrent inspection memory budget exceeds 256 MiB")
+	}
+	perInspectionBudget := int64(cfg.L7.MaxEnvelopeBytes) + int64(cfg.L7.MaxBodyBytes) + int64(cfg.L7.MaxInspectionBytes) + int64(cfg.L7.InlineMaxResponseBytes)
+	if perInspectionBudget*int64(cfg.L7.MaxConcurrent) > 384<<20 {
+		return errors.New("l7 aggregate concurrent memory budget exceeds 384 MiB")
+	}
+	if cfg.L7.RequirePeerCredentials && (cfg.L7.Enabled || cfg.L7.InlineEnabled) &&
+		len(cfg.L7.AllowedPeerUIDs) == 0 && len(cfg.L7.AllowedPeerGIDs) == 0 && strings.TrimSpace(cfg.L7.SocketGroup) == "" {
+		return errors.New("l7 peer credential enforcement requires an allowed UID/GID list or a socket_group whose primary GID is attested via SO_PEERCRED")
+	}
+	if cfg.L7.SocketGroup != "" && !isSafeUnixIdentityName(cfg.L7.SocketGroup) {
+		return errors.New("l7.socket_group contains unsupported characters")
+	}
+	if cfg.L7.TLSEnabled {
+		if cfg.L7.TLSFloodThreshold < 2 {
+			return errors.New("l7.tls_flood_threshold must be at least 2")
+		}
+		if cfg.L7.TLSSNIStrikeThreshold < 2 || cfg.L7.TLSSNIStrikeThreshold > 1000 {
+			return errors.New("l7.tls_sni_strike_threshold must be between 2 and 1000")
+		}
+		if cfg.L7.TLSMaxClientHelloBytes < 1024 || cfg.L7.TLSMaxClientHelloBytes > 1<<20 {
+			return errors.New("l7.tls_max_client_hello_bytes must be between 1024 and 1048576")
+		}
+	}
+	seenTLSDomains := make(map[string]struct{}, len(cfg.L7.TLSAllowedDomains))
+	normalizedTLSDomains := make([]string, 0, len(cfg.L7.TLSAllowedDomains))
+	for _, domain := range cfg.L7.TLSAllowedDomains {
+		normalized, err := normalizeTLSAllowedPattern(domain)
+		if err != nil {
+			return fmt.Errorf("invalid l7 TLS allowed domain %q: %w", domain, err)
+		}
+		if _, exists := seenTLSDomains[normalized]; exists {
+			continue
+		}
+		seenTLSDomains[normalized] = struct{}{}
+		normalizedTLSDomains = append(normalizedTLSDomains, normalized)
+	}
+	cfg.L7.TLSAllowedDomains = normalizedTLSDomains
+	if cfg.L7.TLSJA3File != "" && (!filepath.IsAbs(cfg.L7.TLSJA3File) || filepath.Clean(cfg.L7.TLSJA3File) != cfg.L7.TLSJA3File) {
+		return errors.New("l7.tls_ja3_file must be a clean absolute path when configured")
+	}
+	if cfg.L7.InlineEnabled {
+		if !cfg.L7.Enabled {
+			return errors.New("l7.inline_enabled requires l7.enabled")
+		}
+		if cfg.L7.InlineSocket == cfg.L7.Socket {
+			return errors.New("l7.inline_socket must differ from l7.socket")
+		}
+		if err := validateL7InlineUpstream(cfg.L7.InlineUpstream); err != nil {
+			return err
+		}
+	}
+	seenSensitivePaths := make(map[string]struct{}, len(cfg.L7.SensitivePaths))
+	normalizedSensitivePaths := make([]string, 0, len(cfg.L7.SensitivePaths))
+	for _, path := range cfg.L7.SensitivePaths {
+		if path == "" || path[0] != '/' || strings.ContainsAny(path, "?#\x00") || len(path) > cfg.L7.MaxURIBytes {
+			return fmt.Errorf("invalid l7 sensitive path %q", path)
+		}
+		if _, exists := seenSensitivePaths[path]; exists {
+			continue
+		}
+		seenSensitivePaths[path] = struct{}{}
+		normalizedSensitivePaths = append(normalizedSensitivePaths, path)
+	}
+	cfg.L7.SensitivePaths = normalizedSensitivePaths
+	if !(cfg.XDR.AlertScore < cfg.XDR.ContainScore && cfg.XDR.ContainScore < cfg.XDR.KillScore) {
+		return errors.New("xdr scores must satisfy alert < contain < kill")
+	}
+	if cfg.Defense.DefaultTTLSeconds > cfg.Defense.MaxTTLSeconds {
+		return errors.New("default TTL exceeds maximum TTL")
+	}
+	if len(cfg.Defense.Allowlist) > 1024 {
+		return errors.New("defense.allowlist exceeds 1024 entries")
+	}
+	normalizedAllowlist := make([]string, 0, len(cfg.Defense.Allowlist))
+	seenAllowlist := make(map[string]struct{}, len(cfg.Defense.Allowlist))
+	for _, target := range cfg.Defense.Allowlist {
+		normalized, err := normalizeTarget(target)
+		if err != nil {
+			return fmt.Errorf("defense.allowlist entry %q: %w", target, err)
+		}
+		if _, exists := seenAllowlist[normalized]; exists {
+			continue
+		}
+		seenAllowlist[normalized] = struct{}{}
+		normalizedAllowlist = append(normalizedAllowlist, normalized)
+	}
+	cfg.Defense.Allowlist = normalizedAllowlist
+	host, _, err := net.SplitHostPort(cfg.Dashboard.Listen)
+	if err != nil {
+		return fmt.Errorf("dashboard.listen: %w", err)
+	}
+	ip := net.ParseIP(strings.Trim(host, "[]"))
+	loopback := host == "localhost" || (ip != nil && ip.IsLoopback())
+	if !cfg.Dashboard.AllowRemote && !loopback {
+		return errors.New("dashboard.listen must be loopback unless allow_remote=true")
+	}
+	if cfg.Dashboard.AllowRemote && (cfg.Dashboard.TLSCertFile == "" || cfg.Dashboard.TLSKeyFile == "") {
+		return errors.New("remote dashboard access requires TLS certificate and key")
+	}
+	if len(cfg.Dashboard.AllowedHosts) == 0 {
+		return errors.New("dashboard.allowed_hosts must not be empty")
+	}
+	if cfg.Release.Channel != "beta" {
+		return errors.New("release.channel must be beta")
+	}
+	if cfg.Defense.Enforcement != "observe" || cfg.XDR.Mode != "observe" {
+		return errors.New("beta startup configuration must begin in observe mode; promotion is runtime-gated")
+	}
+	if cfg.Kinetic.EnforcementMode != "observe" && cfg.Kinetic.EnforcementMode != "contain" && cfg.Kinetic.EnforcementMode != "block" {
+		return errors.New("kinetic.enforcement_mode must be observe, contain, or block")
+	}
+	if cfg.Kinetic.IPThreshold < 1 || cfg.Kinetic.IPThreshold > 100000 {
+		return errors.New("kinetic.ip_threshold must be between 1 and 100000")
+	}
+	if cfg.Kinetic.VelocityLimit < 1 || cfg.Kinetic.VelocityLimit > 50000 {
+		return errors.New("kinetic.velocity_limit must be between 1 and 50000")
+	}
+	if cfg.Kinetic.RangeThreshold < 1 || cfg.Kinetic.RangeThreshold > 100000 {
+		return errors.New("kinetic.range_threshold must be between 1 and 100000")
+	}
+	if cfg.Kinetic.IPv6SubThreshold < 1 || cfg.Kinetic.IPv6SubThreshold > 100000 {
+		return errors.New("kinetic.ipv6_sub_threshold must be between 1 and 100000")
+	}
+	if cfg.Kinetic.WideRangeThreshold < 1 || cfg.Kinetic.WideRangeThreshold > 100000 {
+		return errors.New("kinetic.wide_range_threshold must be between 1 and 100000")
+	}
+	if cfg.Kinetic.PortscanThreshold < 2 || cfg.Kinetic.PortscanThreshold > 65535 {
+		return errors.New("kinetic.portscan_threshold must be between 2 and 65535")
+	}
+	if cfg.Kinetic.SYNThreshold < 1 || cfg.Kinetic.SYNThreshold > 100000 || cfg.Kinetic.SYNAckRatio < 1 || cfg.Kinetic.SYNAckRatio > 100 {
+		return errors.New("kinetic SYN flood settings are outside safe bounds")
+	}
+	if cfg.Kinetic.LowSlowMinSeconds < 10 || cfg.Kinetic.LowSlowMinSeconds > 86400 {
+		return errors.New("kinetic.low_slow_min_seconds must be between 10 and 86400")
+	}
+	if cfg.Kinetic.SubnetMinSources < 2 || cfg.Kinetic.SubnetMinSources > 1024 || cfg.Kinetic.IPv6SubnetMinSources < 2 || cfg.Kinetic.IPv6SubnetMinSources > 1024 || cfg.Kinetic.WideMinSources < 2 || cfg.Kinetic.WideMinSources > 4096 {
+		return errors.New("kinetic subnet source gates are outside safe bounds")
+	}
+	if cfg.Kinetic.MaxTrackingIPs < 100 || cfg.Kinetic.MaxTrackingIPs > 500000 {
+		return errors.New("kinetic.max_tracking_ips must be between 100 and 500000")
+	}
+	if err := validatePortList("kinetic web service ports", cfg.Kinetic.ServicePortsWeb); err != nil {
+		return err
+	}
+	if err := validatePortList("kinetic mail service ports", cfg.Kinetic.ServicePortsMail); err != nil {
+		return err
+	}
+	if err := validatePortList("kinetic admin service ports", cfg.Kinetic.ServicePortsAdmin); err != nil {
+		return err
+	}
+	if cfg.Kinetic.GeoIPCSV != "" && !filepath.IsAbs(cfg.Kinetic.GeoIPCSV) {
+		return errors.New("kinetic.geoip_csv must be an absolute path when configured")
+	}
+	if len(cfg.Kinetic.GeoIPSigningKeys) > 8 {
+		return errors.New("kinetic.geoip_signing_keys exceeds 8 pinned keys")
+	}
+	for _, rawKey := range cfg.Kinetic.GeoIPSigningKeys {
+		decoded, decodeErr := base64.StdEncoding.DecodeString(strings.TrimSpace(rawKey))
+		if decodeErr != nil {
+			decoded, decodeErr = base64.RawStdEncoding.DecodeString(strings.TrimSpace(rawKey))
+		}
+		if decodeErr != nil || len(decoded) != ed25519.PublicKeySize {
+			return errors.New("kinetic.geoip_signing_keys contains an invalid Ed25519 public key")
+		}
+	}
+	if len(cfg.Kinetic.GeoIPSigningKeys) > 0 && cfg.Kinetic.GeoIPCSV == "" {
+		return errors.New("kinetic.geoip_signing_keys requires kinetic.geoip_csv")
+	}
+	for label, path := range map[string]string{
+		"dashboard.token_file":        cfg.Dashboard.TokenFile,
+		"core.socket":                 cfg.Core.Socket,
+		"core.auth_key_file":          cfg.Core.AuthKeyFile,
+		"l7.socket":                   cfg.L7.Socket,
+		"l7.inline_socket":            cfg.L7.InlineSocket,
+		"policy.state_file":           cfg.Policy.StateFile,
+		"policy.signing_key_file":     cfg.Policy.SigningKeyFile,
+		"policy.public_key_file":      cfg.Policy.PublicKeyFile,
+		"policy.storage_key_file":     cfg.Policy.StorageKeyFile,
+		"xdr.incident_log":            cfg.XDR.IncidentLog,
+		"xdr.log_key_file":            cfg.XDR.LogKeyFile,
+		"xdr.baseline_file":           cfg.XDR.BaselineFile,
+		"xdr.behavior_profile_file":   cfg.XDR.BehaviorProfileFile,
+		"xdr.storage_key_file":        cfg.XDR.StorageKeyFile,
+		"release.emergency_stop_file": cfg.Release.EmergencyStopFile,
+		"runtime.settings_file":       cfg.Runtime.SettingsFile,
+		"runtime.key_file":            cfg.Runtime.KeyFile,
+		"runtime.storage_key_file":    cfg.Runtime.StorageKeyFile,
+		"cells.socket":                cfg.Cells.Socket,
+		"cells.auth_key_file":         cfg.Cells.AuthKeyFile,
+	} {
+		if err := validateAbsolutePath(label, path, false); err != nil {
+			return err
+		}
+	}
+	if (cfg.Dashboard.TLSCertFile == "") != (cfg.Dashboard.TLSKeyFile == "") {
+		return errors.New("TLS certificate and key must be configured together")
+	}
+	if err := validateAbsolutePath("dashboard.tls_cert_file", cfg.Dashboard.TLSCertFile, true); err != nil {
+		return err
+	}
+	if err := validateAbsolutePath("dashboard.tls_key_file", cfg.Dashboard.TLSKeyFile, true); err != nil {
+		return err
+	}
+	for _, u := range cfg.Feeds.Sources {
+		if !strings.HasPrefix(u, "https://") || len(u) > 2048 {
+			return fmt.Errorf("feed source must use HTTPS: %q", u)
+		}
+	}
+	if cfg.Feeds.ManifestMaxAgeMinutes < 5 || cfg.Feeds.ManifestMaxAgeMinutes > 10080 {
+		return errors.New("feeds.manifest_max_age_minutes must be between 5 and 10080")
+	}
+	if cfg.Feeds.ManifestPath != "" {
+		if err := validateAbsolutePath("feeds.manifest_path", cfg.Feeds.ManifestPath, true); err != nil {
+			return err
+		}
+	}
+	if len(cfg.Feeds.TrustedSigningKeys) > 8 {
+		return errors.New("feeds.trusted_signing_keys exceeds 8 pinned keys")
+	}
+	for _, rawKey := range cfg.Feeds.TrustedSigningKeys {
+		decoded, decodeErr := base64.StdEncoding.DecodeString(strings.TrimSpace(rawKey))
+		if decodeErr != nil {
+			decoded, decodeErr = base64.RawStdEncoding.DecodeString(strings.TrimSpace(rawKey))
+		}
+		if decodeErr != nil || len(decoded) != ed25519.PublicKeySize {
+			return errors.New("feeds.trusted_signing_keys contains an invalid Ed25519 public key")
+		}
+	}
+	if cfg.Feeds.Enabled && cfg.Feeds.AutoApply && !cfg.Feeds.RequireSignedManifest {
+		return errors.New("feeds.auto_apply requires feeds.require_signed_manifest: unsigned feeds must never reach the kernel blocklist")
+	}
+	if cfg.Feeds.AutoApply && len(cfg.Feeds.TrustedSigningKeys) == 0 {
+		return errors.New("feeds.auto_apply requires at least one pinned feed signing key")
+	}
+	if err := validateTitanConfig(&cfg.Titan); err != nil {
+		return err
+	}
+	return nil
+}

@@ -1,0 +1,18 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=GeDefense Status
+Name[de]=GeDefense Statusanzeige
+Name[ru]=GeDefense: индикатор состояния
+Name[zh]=GeDefense 状态指示器
+Comment=Starts the GeDefense status indicator with the desktop session
+Comment[de]=Startet die GeDefense-Statusanzeige mit der Sitzung
+Comment[ru]=Запускает индикатор состояния GeDefense вместе с сеансом
+Comment[zh]=随桌面会话启动 GeDefense 状态指示器
+Exec=gedefense-tray
+Icon=gedefense-tray
+Terminal=false
+NoDisplay=true
+Hidden=false
+X-GNOME-Autostart-enabled=true
+X-GNOME-Autostart-Delay=3

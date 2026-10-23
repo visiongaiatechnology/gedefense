@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# STATUS: DIAMANT VGT SUPREME
+set -Eeuo pipefail
+umask 0077
+
+readonly runtime_dir=/run/astraeaos
+readonly report="$runtime_dir/security-boot-failure.log"
+readonly -a units=(
+  astraeaos-boot-attestation.service
+  gedefense-astraeaos-provision.service
+  gedefense-bpffs.service
+  gedefense-core.service
+  gedefense-control.service
+  gedefense-access.service
+  astraeaos-security-login-gate.service
+)
+
+mkdir -p "$runtime_dir"
+if command -v plymouth >/dev/null 2>&1; then
+  plymouth quit 2>/dev/null || true
+fi
+
+{
+  printf 'AstraeaOS security boot failure\n'
+  printf 'Generated: %s\n\n' "$(date --iso-8601=seconds)"
+  systemctl --no-pager --full status "${units[@]}" || true
+  printf '\nJournal:\n'
+  journalctl --boot --no-pager -n 160 \
+    -u astraeaos-boot-attestation.service \
+    -u gedefense-astraeaos-provision.service \
+    -u gedefense-bpffs.service \
+    -u gedefense-core.service \
+    -u gedefense-control.service \
+    -u gedefense-access.service \
+    -u astraeaos-security-login-gate.service || true
+} >"$report" 2>&1
+chmod 0600 "$report"
+
+printf '\033c'
+printf '\033[1;38;2;232;197;71mASTRAEAOS SECURE BOOT\033[0m\n\n'
+printf '\033[1;31mLOGIN BLOCKIERT\033[0m\n'
+printf 'GeDefense hat den lokalen Schutzstatus nicht innerhalb des sicheren Zeitfensters bestaetigt.\n'
+printf 'AstraeaOS hat deshalb weder die grafische Anmeldung noch eine Konsole freigegeben.\n\n'
+printf 'Komponentenstatus:\n'
+for unit in "${units[@]}"; do
+  active=$(systemctl show "$unit" --property=ActiveState --value 2>/dev/null || printf unknown)
+  sub=$(systemctl show "$unit" --property=SubState --value 2>/dev/null || printf unknown)
+  result=$(systemctl show "$unit" --property=Result --value 2>/dev/null || printf unknown)
+  printf '  %-48s active=%-10s sub=%-12s result=%s\n' "$unit" "$active" "$sub" "$result"
+done
+printf '\nKonkrete Fehlerdetails (letzte Journalmeldungen):\n'
+journalctl --boot --no-pager --output=cat -n 24 \
+  -u astraeaos-boot-attestation.service \
+  -u gedefense-core.service 2>/dev/null || true
+printf '\nDiagnosebericht: %s\n' "$report"
+printf 'Das System bleibt fail-closed. Neustart nach Korrektur der fehlerhaften Komponente.\n'
+
+while :; do
+  sleep 3600
+done

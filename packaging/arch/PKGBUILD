@@ -1,0 +1,157 @@
+# STATUS: DIAMANT VGT SUPREME
+# Maintainer: VisionGaia Technology
+
+pkgname=gedefense
+pkgver=5.0.0beta.1
+_release=5.0.0-beta.1
+pkgrel=1
+pkgdesc='GeDefense Linux security platform: XDP, XDR, evidence and response plane'
+arch=('x86_64')
+url='https://github.com/VisionGaiaTechnology'
+license=('AGPL-3.0-only')
+depends=('glibc' 'argon2' 'libelf' 'openssl')
+makedepends=('go>=1.23' 'rustup' 'clang' 'llvm' 'make' 'pkgconf' 'nodejs' 'python')
+provides=('linux-security-control-plane')
+conflicts=('gaiasentinel')
+options=('!debug' '!strip')
+backup=('etc/vgt/gedefense/gedefense.toml')
+source=()
+sha256sums=()
+
+_source_root="${GEDEFENSE_SOURCE_ROOT:-$(realpath "${startdir}/../..")}"
+
+prepare() {
+  local required
+  for required in \
+    VERSION \
+    Makefile \
+    control/go.mod \
+    gateway/go.mod \
+    rust/Cargo.lock \
+    malware-hashes.sha256 \
+    packaging/systemd/gedefense-control.service \
+    packaging/systemd/gedefense-provision.service \
+    packaging/scripts/gedefense-provision \
+    packaging/tests/install-smoke.sh; do
+    [[ -f "${_source_root}/${required}" ]] || {
+      printf 'Missing local GeDefense source: %s\n' "${required}" >&2
+      return 1
+    }
+  done
+
+  [[ "$(<"${_source_root}/VERSION")" == "${_release}" ]] || {
+    printf 'VERSION does not match package release %s\n' "${_release}" >&2
+    return 1
+  }
+}
+
+build() {
+  make -C "${_source_root}" full
+}
+
+check() {
+  local ebpf_sections ebpf_symbols
+
+  make -C "${_source_root}" test
+  grep -aFq -- 'using TC ingress kernel enforcement' \
+    "${_source_root}/dist/gedefense-core"
+  grep -aFq -- 'AstraeaOS eBPF compatibility: using legacy perf-event attach' \
+    "${_source_root}/dist/gedefense-core"
+  grep -aFq -- 'AstraeaOS eBPF compatibility: using legacy cgroup attach' \
+    "${_source_root}/dist/gedefense-core"
+
+  ebpf_sections="$(llvm-objdump -h "${_source_root}/dist/gedefense-ebpf")"
+  grep -Eq '[[:space:]]classifier[[:space:]]' <<<"${ebpf_sections}"
+  grep -Eq '[[:space:]]lsm/socket_create[[:space:]]' <<<"${ebpf_sections}"
+
+  ebpf_symbols="$(llvm-objdump -t "${_source_root}/dist/gedefense-ebpf")"
+  for symbol in gedefense_cell_socket_create CELL_LSM_POLICIES CELL_LSM_EVENTS; do
+    grep -Fq -- "${symbol}" <<<"${ebpf_symbols}"
+  done
+
+  # F-05 / CHAIN-005 install smoke test: validates the package contract and
+  # exercises the first-boot provisioning script against the real access binary.
+  bash "${_source_root}/packaging/tests/install-smoke.sh" \
+    --source-root "${_source_root}"
+}
+
+package() {
+  local release_root="${pkgdir}/opt/vgt/gedefense/releases/${_release}"
+
+  install -Dm755 "${_source_root}/dist/gedefense-control" \
+    "${release_root}/bin/gedefense-control"
+  install -Dm755 "${_source_root}/dist/gedefense-access" \
+    "${release_root}/bin/gedefense-access"
+  install -Dm755 "${_source_root}/dist/gedefense-core" \
+    "${release_root}/libexec/gedefense-core"
+  install -Dm644 "${_source_root}/dist/gedefense-ebpf" \
+    "${release_root}/lib/gedefense/gedefense-ebpf"
+
+  install -Dm644 "${_source_root}/README.md" \
+    "${release_root}/share/README.md"
+  install -Dm644 "${_source_root}/SECURITY.md" \
+    "${release_root}/share/SECURITY.md"
+  install -Dm644 "${_source_root}/TOOLCHAINS.lock" \
+    "${release_root}/share/TOOLCHAINS.lock"
+
+  install -Dm644 "${_source_root}/integration/nginx/gedefense-l7.conf.example" \
+    "${release_root}/share/integration/nginx/gedefense-l7.conf.example"
+  install -Dm644 "${_source_root}/integration/nginx/README.md" \
+    "${release_root}/share/integration/nginx/README.md"
+
+  install -d "${pkgdir}/opt/vgt/gedefense"
+  ln -s "releases/${_release}" "${pkgdir}/opt/vgt/gedefense/current"
+
+  # F-05: the control plane runs as User=gedefense and must be able to read its
+  # configuration (the previous 0640 root:root install made the packaged stack
+  # unable to start). The dashboard listener stays on the internal backend port
+  # 9844; the public TLS gateway listens on 9843 in front of it. CR characters
+  # are stripped so a CRLF working tree cannot inject them into the TOML values.
+  sed -e 's/\r$//' -e 's#^listen = "127.0.0.1:9843"#listen = "127.0.0.1:9844"#' \
+    "${_source_root}/gedefense.toml" \
+    > "${srcdir}/gedefense.packaged.toml"
+  install -Dm640 -o root -g gedefense "${srcdir}/gedefense.packaged.toml" \
+    "${pkgdir}/etc/vgt/gedefense/gedefense.toml"
+  install -Dm640 "${_source_root}/gedefense.toml" \
+    "${pkgdir}/usr/share/gedefense/profiles/generic.toml"
+  # The example is documentation, not a trusted baseline: the provisioned
+  # xdr-baseline.json is generated with the installed binary hashes.
+  install -Dm644 "${_source_root}/xdr-baseline.example.json" \
+    "${pkgdir}/usr/share/gedefense/xdr-baseline.example.json"
+  install -Dm600 "${_source_root}/malware-hashes.sha256" \
+    "${pkgdir}/etc/vgt/gedefense/malware-hashes.sha256"
+
+  # First-boot provisioning contract (secrets, token, TLS identity, state dirs).
+  install -Dm755 "${_source_root}/packaging/scripts/gedefense-provision" \
+    "${pkgdir}/usr/libexec/gedefense/gedefense-provision"
+  install -Dm644 \
+    "${_source_root}/packaging/systemd/gedefense-provision.service" \
+    "${pkgdir}/usr/lib/systemd/system/gedefense-provision.service"
+  install -Dm644 \
+    "${_source_root}/packaging/pacman/gedefense-provision.hook" \
+    "${pkgdir}/usr/share/libalpm/hooks/gedefense-provision.hook"
+
+  install -Dm644 \
+    "${_source_root}/packaging/systemd/gedefense-bpffs.service" \
+    "${pkgdir}/usr/lib/systemd/system/gedefense-bpffs.service"
+  install -Dm644 \
+    "${_source_root}/packaging/systemd/gedefense-core.service" \
+    "${pkgdir}/usr/lib/systemd/system/gedefense-core.service"
+  install -Dm644 \
+    "${_source_root}/packaging/systemd/gedefense-control.service" \
+    "${pkgdir}/usr/lib/systemd/system/gedefense-control.service"
+
+  sed \
+    -e 's#@RELEASE@#/opt/vgt/gedefense/current#g' \
+    -e 's#@PUBLIC_PORT@#9843#g' \
+    -e 's#@PUBLIC_HOST@#127.0.0.1:9843#g' \
+    "${_source_root}/packaging/systemd/gedefense-access.service.in" \
+    > "${srcdir}/gedefense-access.service"
+  install -Dm644 "${srcdir}/gedefense-access.service" \
+    "${pkgdir}/usr/lib/systemd/system/gedefense-access.service"
+
+  install -Dm644 "${_source_root}/packaging/tmpfiles/vgt-gedefense.conf" \
+    "${pkgdir}/usr/lib/tmpfiles.d/vgt-gedefense.conf"
+  install -Dm644 "${_source_root}/packaging/sysusers/vgt-gedefense.conf" \
+    "${pkgdir}/usr/lib/sysusers.d/vgt-gedefense.conf"
+}

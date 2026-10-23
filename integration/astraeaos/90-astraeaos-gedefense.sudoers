@@ -1,0 +1,10 @@
+# STATUS: DIAMANT VGT SUPREME
+# F-14 / CHAIN-016: fixed-argument privilege rules for the two AstraeaOS
+# desktop helpers. Only the exact argument-less invocations are permitted; an
+# attacker-controlled path (for example /etc/shadow via the path argument form) is not
+# expressible through sudo because it is not covered by any rule here. The
+# path argument form is reachable only through the polkit action, where the
+# helper itself validates caller identity and file ownership on an open fd.
+# Keep the empty "" argument-marker: sudo matches it against "no arguments".
+%wheel ALL=(root) NOPASSWD: /usr/lib/astraeaos/gedefense-set-password ""
+%wheel ALL=(root) NOPASSWD: /usr/lib/astraeaos/gedefense-ensure-ready ""

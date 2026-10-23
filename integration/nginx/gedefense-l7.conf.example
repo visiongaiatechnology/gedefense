@@ -1,0 +1,25 @@
+# GeDefense native inline L7 path for nginx.
+# Uses only nginx's standard reverse-proxy/upstream functionality.
+# GeDefense performs inspection and enforcement on its own Unix socket.
+
+upstream gedefense_l7_edge {
+    server unix:/run/vgt-gedefense-l7/edge.sock;
+    keepalive 16;
+}
+
+server {
+    listen 443 ssl;
+    server_name example.test;
+
+    # Existing TLS certificate directives stay here.
+
+    location / {
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Gedefense-Client-Ip $remote_addr;
+        proxy_set_header X-Gedefense-Original-Scheme $scheme;
+        proxy_set_header Connection "";
+
+        proxy_pass http://gedefense_l7_edge;
+    }
+}
