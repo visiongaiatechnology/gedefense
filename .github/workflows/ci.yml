@@ -216,7 +216,7 @@ jobs:
           export RELEASE_SIGNING_PRIVATE_KEY="$KEYDIR/release-private.key"
           export RELEASE_SIGNING_PUBLIC_KEY="$KEYDIR/release-public.key"
           bash ./scripts/package-artifacts.sh "$RUNNER_TEMP/release"
-          cat "$RUNNER_TEMP/release/RELEASE-MANIFEST.txt"
+          cat "${{ runner.temp }}/release/RELEASE-MANIFEST.txt"
       - name: Verify signed release directory offline
         run: |
           VERSION=$(tr -d '\r\n' < VERSION)
@@ -227,13 +227,13 @@ jobs:
         with:
           name: gedefense-v5-test-signed-release-candidate
           path: |
-            $RUNNER_TEMP/release/VGT_GeDefense_Beta_v5_*_OneClick.run
-            $RUNNER_TEMP/release/VGT_GeDefense_Beta_v5_*_OneClick.run.sha256
-            $RUNNER_TEMP/release/VGT_GeDefense_Beta_v5_*_Source.zip
-            $RUNNER_TEMP/release/VGT_GeDefense_Beta_v5_*_Source.zip.sha256
-            $RUNNER_TEMP/release/release-index.signed.json
-            $RUNNER_TEMP/release/release-manifest.signed.json
-            $RUNNER_TEMP/release/sbom.spdx.json
-            $RUNNER_TEMP/release/build-provenance.json
-            $RUNNER_TEMP/release/SHA256SUMS
+            ${{ runner.temp }}/release/VGT_GeDefense_Beta_v5_*_OneClick.run
+            ${{ runner.temp }}/release/VGT_GeDefense_Beta_v5_*_OneClick.run.sha256
+            ${{ runner.temp }}/release/VGT_GeDefense_Beta_v5_*_Source.zip
+            ${{ runner.temp }}/release/VGT_GeDefense_Beta_v5_*_Source.zip.sha256
+            ${{ runner.temp }}/release/release-index.signed.json
+            ${{ runner.temp }}/release/release-manifest.signed.json
+            ${{ runner.temp }}/release/sbom.spdx.json
+            ${{ runner.temp }}/release/build-provenance.json
+            ${{ runner.temp }}/release/SHA256SUMS
           if-no-files-found: error
