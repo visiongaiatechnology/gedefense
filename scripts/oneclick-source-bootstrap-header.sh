@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env bash
+#!/usr/bin/env bash
 # VGT GeDefense 5.0.0-beta.2 source-self-contained one-click bootstrap installer
 set -Eeuo pipefail
 umask 0077

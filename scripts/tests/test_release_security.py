@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 # STATUS: DIAMANT VGT SUPREME
 """Unit and negative tests for scripts/vgt_release_security.py.
 

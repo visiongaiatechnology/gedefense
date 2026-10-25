@@ -39,7 +39,7 @@ def render(
     access_sha256: str = "",
     source_payload_sha256: str = "",
 ) -> None:
-    text = template.read_text(encoding="utf-8")
+    text = template.read_text(encoding="utf-8-sig")
     values = {
         "public_key_hex": public_key_hex,
         "index_b64": index_b64,
