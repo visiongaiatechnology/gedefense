@@ -3,6 +3,15 @@
 All notable public changes to GeDefense Linux. The project is a beta; entries
 describe verified source changes, not a production certification.
 
+## 5.0.0-beta.2-hotfix1 - 2026-10-25 - Version labels and UI branding
+
+- Corrected the README version/status badges from `5.0.0-beta.1` to
+  `5.0.0-beta.2` in English, German, Russian and Simplified Chinese.
+- Corrected the control-plane dashboard sidebar label from `LINUX DEFENSE // V4`
+  to `LINUX DEFENSE // V5` in the shell and in all four UI catalogues.
+- Rebuilt the signed OneClick installer from this corrective tag. No runtime
+  protection logic changed relative to 5.0.0-beta.2.
+
 ## 5.0.0-beta.2 - 2026-10-25 - Hotfixes 1–9 consolidated
 
 ### Added

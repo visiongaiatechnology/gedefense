@@ -1,3 +1,13 @@
+# VGT GeDefense 5.0.0-beta.2-hotfix1 — Version-label and branding correction
+
+This release corrects the public surface labels of the 5.0.0-beta.2 source tree:
+README version/status badges now state 5.0.0-beta.2, the dashboard sidebar
+branding states V5 instead of V4, and the installer asset referenced by the
+READMEs is rebuilt from this corrected tag. No runtime protection logic changed
+relative to 5.0.0-beta.2; the security fixes, signed feeds, deception sensor,
+L7 inline producer, truthful protection status and all validation results of
+5.0.0-beta.2 remain in force.
+
 # VGT GeDefense 5.0.0-beta.2 — Hotfixes 1–9 Consolidated
 
 This release consolidates nine security and functional hotfixes into the public
