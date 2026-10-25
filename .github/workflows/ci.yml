@@ -166,10 +166,20 @@ jobs:
           IMAGE: ${{ matrix.image }}
           BOOTSTRAP: ${{ matrix.bootstrap }}
         run: |
-          docker run --rm \
-            -e EXPECTED_DISTRO="${{ matrix.name }}" \
-            -v "$GITHUB_WORKSPACE:/src:ro" \
-            "$IMAGE" bash -lc "$BOOTSTRAP && bash /src/scripts/validate-distro-integration.sh /src"
+          # Distribution repositories are external services. A transient mirror
+          # or metadata refresh failure must not make the release gate flaky;
+          # the contract itself is retried up to three times, then still fails.
+          for attempt in 1 2 3; do
+            if docker run --rm \
+              -e EXPECTED_DISTRO="${{ matrix.name }}" \
+              -v "$GITHUB_WORKSPACE:/src:ro" \
+              "$IMAGE" bash -lc "$BOOTSTRAP && bash /src/scripts/validate-distro-integration.sh /src"; then
+              exit 0
+            fi
+            echo "distribution contract attempt ${attempt} failed; retrying" >&2
+            sleep 15
+          done
+          exit 1
 
   release-artifacts:
     runs-on: ubuntu-24.04
