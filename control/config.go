@@ -412,6 +412,18 @@ type FeedConfig struct {
 	TrustedSigningKeys    []string
 	ManifestPath          string
 	ManifestMaxAgeMinutes int
+
+	// Local operator signing (F-03 provisioning). When LocalSigning is true the
+	// sync pipeline downloads every enabled source, persists the exact raw bytes
+	// below SnapshotDir, signs the detached manifest for exactly those bytes with
+	// the operator key in SigningKeyFile and publishes it to ManifestPath. The
+	// fetch path then reads the snapshot instead of the network, so the bytes
+	// that were signed and the bytes that are parsed can never diverge. The
+	// operator key must be pinned in TrustedSigningKeys; otherwise feeds and
+	// kernel apply fail closed.
+	LocalSigning   bool
+	SigningKeyFile string
+	SnapshotDir    string
 }
 
 func defaultConfig() Config {
@@ -507,6 +519,14 @@ func defaultConfig() Config {
 			TrustedSigningKeys:    nil,
 			ManifestPath:          "/var/lib/vgt/gedefense/threat-feed-manifest.json",
 			ManifestMaxAgeMinutes: 1440,
+			// Local signing is an explicit operator opt-in: the key must be
+			// generated with --init-feed-signing, pinned in
+			// feeds.trusted_signing_keys and provisioned by the installer. The
+			// default stays off so an unprovisioned host fails closed instead of
+			// half-enabling a pipeline without a key.
+			LocalSigning:   false,
+			SigningKeyFile: "",
+			SnapshotDir:    "/var/lib/vgt/gedefense/feed-snapshots",
 		},
 		Kinetic: KineticConfig{
 			Enabled:            true,
@@ -1282,6 +1302,18 @@ func assignConfig(cfg *Config, section, key, raw string) error {
 		v, e := parseInt(raw, 5, 10080)
 		cfg.Feeds.ManifestMaxAgeMinutes = v
 		return e
+	case "feeds.local_signing":
+		v, e := parseBool(raw)
+		cfg.Feeds.LocalSigning = v
+		return e
+	case "feeds.signing_key_file":
+		v, e := str()
+		cfg.Feeds.SigningKeyFile = v
+		return e
+	case "feeds.snapshot_dir":
+		v, e := str()
+		cfg.Feeds.SnapshotDir = v
+		return e
 	case "kinetic.enabled":
 		v, e := parseBool(raw)
 		cfg.Kinetic.Enabled = v
@@ -1831,6 +1863,34 @@ func validateConfig(cfg *Config) error {
 	}
 	if cfg.Feeds.AutoApply && len(cfg.Feeds.TrustedSigningKeys) == 0 {
 		return errors.New("feeds.auto_apply requires at least one pinned feed signing key")
+	}
+	// Local operator signing (F-03 provisioning). The pipeline only makes sense
+	// with the authenticity gate enabled and an absolute, owner-only key path;
+	// a half-configured pipeline would silently produce nothing that the manager
+	// accepts, so it is rejected at load time instead.
+	if cfg.Feeds.LocalSigning {
+		if !cfg.Feeds.RequireSignedManifest {
+			return errors.New("feeds.local_signing requires feeds.require_signed_manifest=true")
+		}
+		if strings.TrimSpace(cfg.Feeds.SigningKeyFile) == "" {
+			return errors.New("feeds.local_signing requires feeds.signing_key_file")
+		}
+		if err := validateAbsolutePath("feeds.signing_key_file", cfg.Feeds.SigningKeyFile, false); err != nil {
+			return err
+		}
+		if strings.TrimSpace(cfg.Feeds.SnapshotDir) == "" {
+			return errors.New("feeds.local_signing requires feeds.snapshot_dir")
+		}
+	}
+	if strings.TrimSpace(cfg.Feeds.SigningKeyFile) != "" {
+		if err := validateAbsolutePath("feeds.signing_key_file", cfg.Feeds.SigningKeyFile, false); err != nil {
+			return err
+		}
+	}
+	if strings.TrimSpace(cfg.Feeds.SnapshotDir) != "" {
+		if err := validateAbsolutePath("feeds.snapshot_dir", cfg.Feeds.SnapshotDir, false); err != nil {
+			return err
+		}
 	}
 	if err := validateTitanConfig(&cfg.Titan); err != nil {
 		return err

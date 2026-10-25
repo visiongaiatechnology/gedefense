@@ -223,7 +223,9 @@ function renderL7KPIs(snapshot) {
   // sum of the two. Showing only the request counter made the panel report "0 geprüfte
   // Requests" directly beneath its own "TRAFFIC AKTIV" badge while the inline path had in
   // fact inspected 174 requests, which reads as a contradiction of the panel by itself.
-  const inspected = Number(l7.requests_total || 0) + Number(l7.inline_requests_total || 0);
+  // requests_total already aggregates socket and inline inspection (server-side
+  // publishStatus); adding the inline counter again would double-count.
+  const inspected = Number(l7.requests_total || 0);
 
   text('l7KpiInspected', inspected.toLocaleString(locale()));
   text('l7KpiFindings', Number(l7.findings_total || 0).toLocaleString(locale()));

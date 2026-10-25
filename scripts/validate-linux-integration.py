@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 import sys
 import xml.etree.ElementTree as ET
@@ -26,7 +27,7 @@ if missing:
     fail(f"missing files: {', '.join(missing)}")
 
 version = (root / "VERSION").read_text(encoding="utf-8").strip()
-if version != "5.0.0-beta.1":
+if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?", version):
     fail(f"unexpected version: {version}")
 
 contract = json.loads((root / "integration" / "astraeaos" / "contract.json").read_text(encoding="utf-8"))

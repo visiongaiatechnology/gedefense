@@ -1,6 +1,6 @@
 # Security Policy
 
-GeDefense 5.0.0-beta.1 is a security-sensitive universal Linux **public beta**.
+GeDefense 5.0.0-beta.2 is a security-sensitive universal Linux **public beta**.
 It starts in Observe and requires explicit, gated operator action before Canary
 or Enforce. It is not production-ready until the external trust-anchor and
 release-qualification items documented in [CHANGELOG.md](CHANGELOG.md) are

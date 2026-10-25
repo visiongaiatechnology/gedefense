@@ -221,6 +221,7 @@ func NewAPIServer(cfg Config, state *State, core *CoreClient, feeds *FeedManager
 	// (G-WEB-05 / F-23).
 	mux.HandleFunc("GET /assets/{name...}", s.asset)
 	mux.HandleFunc("GET /api/v1/status", s.auth(s.status))
+	mux.HandleFunc("GET /api/v1/startup", s.auth(s.startupStatus))
 	mux.HandleFunc("GET /api/v1/boot-trust", s.auth(s.bootTrustStatus))
 	mux.HandleFunc("GET /api/v1/hardening/posture", s.auth(s.hardeningPosture))
 	mux.HandleFunc("GET /api/v1/kernel/exposure", s.auth(s.kernelExposureStatus))
@@ -1454,6 +1455,13 @@ func (s *APIServer) clientSnapshot() Snapshot {
 	for index := range snapshot.Incidents {
 		snapshot.Incidents[index].AttackStory = nil
 	}
+	// The startup self-check answers "why is protection not armed yet". It is a
+	// bounded projection (startup_supervisor.go) and carries no secrets; a
+	// supervisor that has not published yet leaves the field absent instead of
+	// inventing a healthy default.
+	if startup, ok := CurrentStartupStatus(); ok {
+		snapshot.Startup = &startup
+	}
 	if s.release == nil {
 		return snapshot
 	}
@@ -2354,25 +2362,109 @@ func (s *APIServer) fimScan(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, summary)
 }
 
-func (s *APIServer) fimBaseline(w http.ResponseWriter, _ *http.Request) {
+// startupStatus serves GET /api/v1/startup. Before the supervisor publishes its
+// first report the endpoint answers 503: there is no honest status to serve yet,
+// and a fabricated "all green" is exactly what the self-check exists to prevent.
+func (s *APIServer) startupStatus(w http.ResponseWriter, _ *http.Request) {
+	status, ok := CurrentStartupStatus()
+	if !ok {
+		apiError(w, http.StatusServiceUnavailable, "startup self-check has not published a report yet", nil)
+		return
+	}
+	writeJSON(w, http.StatusOK, status)
+}
+
+// fimBaseline creates a new approved baseline.
+//
+// Two modes share the route because the dashboard and the post-update script are
+// the same operator action at different scopes:
+//
+//   - no request body: the historical full baseline (every protected path). Kept
+//     for compatibility with the existing console button.
+//   - {"scope":"release","reason":"...","confirm":"REBASELINE RELEASE"}: the
+//     authorized release rebaseline (fim_rebaseline.go). It only accepts files
+//     below /opt/vgt/gedefense/current plus the deployed configuration file, and
+//     only while the release gate is verified (enforce, fail-safe verified,
+//     kernel policy verified, no emergency stop). Afterwards the Titan findings
+//     covered by the new baseline are accepted (titan_rebaseline.go).
+func (s *APIServer) fimBaseline(w http.ResponseWriter, r *http.Request) {
 	engine := s.state.FIM()
 	if engine == nil {
 		apiError(w, http.StatusServiceUnavailable, "file integrity monitoring unavailable", nil)
 		return
 	}
-	status, err := engine.CreateBaseline()
-	if err != nil {
-		apiError(w, http.StatusConflict, "file integrity baseline rejected", err)
+	if r.ContentLength == 0 {
+		status, err := engine.CreateBaseline()
+		if err != nil {
+			apiError(w, http.StatusConflict, "file integrity baseline rejected", err)
+			return
+		}
+		s.state.AddEvent(Event{
+			Severity: "high", Kind: "fim.baseline_created", Source: "operator",
+			Message: fmt.Sprintf(
+				"Encrypted FIM baseline generation %d committed for %d protected files",
+				status.Generation, status.BaselineCount,
+			),
+		})
+		writeJSON(w, http.StatusOK, status)
 		return
 	}
+	var request struct {
+		Scope   string `json:"scope"`
+		Reason  string `json:"reason"`
+		Confirm string `json:"confirm"`
+	}
+	if err := decodeStrictJSON(w, r, 8<<10, &request); err != nil {
+		apiError(w, http.StatusBadRequest, "invalid file integrity baseline request", err)
+		return
+	}
+	if strings.TrimSpace(request.Scope) != fimRebaselineScopeRelease {
+		writePublicError(w, http.StatusBadRequest, "unsupported file integrity baseline scope")
+		return
+	}
+	if strings.TrimSpace(request.Confirm) != fimRebaselineConfirmPhrase {
+		writePublicError(w, http.StatusBadRequest, "confirmation required: "+fimRebaselineConfirmPhrase)
+		return
+	}
+	if s.release == nil {
+		apiError(w, http.StatusServiceUnavailable, "release controller unavailable", nil)
+		return
+	}
+	release := s.release.Status()
+	authorization := FIMRebaselineAuthorization{
+		Phase:             release.Phase,
+		FailSafeVerified:  release.FailSafeVerified,
+		KernelPolicyState: release.KernelPolicyState,
+		EmergencyStop:     release.EmergencyStop,
+		ReleaseVersion:    s.state.Snapshot().Version,
+	}
+	result, err := engine.RebaselineRelease(authorization, request.Reason)
+	if err != nil {
+		apiError(w, http.StatusConflict, "file integrity release rebaseline rejected", err)
+		return
+	}
+	acceptance := TitanRebaselineAcceptance{}
+	if titan := s.state.Titan(); titan != nil && len(result.TitanCandidatePaths) > 0 {
+		accepted, acceptErr := titan.AcceptRebaselinedPaths(result.TitanCandidatePaths, request.Reason)
+		if acceptErr != nil {
+			// The FIM baseline is already committed and verified; Titan keeps its
+			// findings open rather than closing them without evidence. The
+			// operator sees the reason in the response and the journal.
+			log.Printf("titan baseline acceptance after FIM rebaseline: %v", acceptErr)
+		} else {
+			acceptance = accepted
+		}
+	}
 	s.state.AddEvent(Event{
-		Severity: "high", Kind: "fim.baseline_created", Source: "operator",
-		Message: fmt.Sprintf(
-			"Encrypted FIM baseline generation %d committed for %d protected files",
-			status.Generation, status.BaselineCount,
-		),
+		Severity: "high", Kind: "fim.rebaseline.release", Source: "operator",
+		Message: fmt.Sprintf("Authorized release rebaseline: %s; titan accepted=%d closed=%d deferred_compromised=%d",
+			result.AuditSummary(), acceptance.ApprovedPaths, acceptance.ClosedFindings, acceptance.CompromisedDeferred),
 	})
-	writeJSON(w, http.StatusOK, status)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status": "rebaselined",
+		"fim":    result,
+		"titan":  acceptance,
+	})
 }
 
 func (s *APIServer) packageIntegrityStatus(w http.ResponseWriter, _ *http.Request) {
@@ -2932,7 +3024,10 @@ func (s *APIServer) metrics(w http.ResponseWriter, r *http.Request) {
 		inlineHealthy = 1
 	}
 	fmt.Fprintf(w, "# TYPE gedefense_l7_inline_healthy gauge\ngedefense_l7_inline_healthy %d\n", inlineHealthy)
-	fmt.Fprintf(w, "# TYPE gedefense_l7_inline_requests_total counter\ngedefense_l7_inline_requests_total %d\n", snap.L7.InlineRequestsTotal)
+	// The inline counter is a subset of gedefense_l7_requests_total, which now
+	// aggregates socket and inline inspection. Kept as a separate series for
+	// dashboards that track the inline producer specifically.
+	fmt.Fprintf(w, "# HELP gedefense_l7_inline_requests_total Inline-edge subset of gedefense_l7_requests_total counter\n# TYPE gedefense_l7_inline_requests_total counter\ngedefense_l7_inline_requests_total %d\n", snap.L7.InlineRequestsTotal)
 	fmt.Fprintf(w, "# TYPE gedefense_l7_inline_blocked_total counter\ngedefense_l7_inline_blocked_total %d\n", snap.L7.InlineBlockedTotal)
 	fmt.Fprintf(w, "# TYPE gedefense_l7_inline_upstream_errors_total counter\ngedefense_l7_inline_upstream_errors_total %d\n", snap.L7.InlineUpstreamErrorsTotal)
 	fmt.Fprintf(w, "# TYPE gedefense_l7_responses_inspected_total counter\ngedefense_l7_responses_inspected_total %d\n", snap.L7.ResponsesInspectedTotal)

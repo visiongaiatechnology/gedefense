@@ -146,24 +146,59 @@ impl QuarantineBroker {
         let path = decode_path(encoded_path)?;
         let (parent, basename) = open_parent_and_name(&path)?;
         let staging_name = staging_name(object_id)?;
-        rename_noreplace(
+        match rename_noreplace(
             parent.as_raw_fd(),
             &basename,
             parent.as_raw_fd(),
             &staging_name,
-        )?;
-        sync_fd(parent.as_raw_fd())?;
+        ) {
+            Ok(()) => {
+                sync_fd(parent.as_raw_fd())?;
+                self.finish_staged_quarantine(
+                    parent.as_raw_fd(),
+                    &basename,
+                    &staging_name,
+                    object_id,
+                    expected,
+                )
+            }
+            Err(error) => {
+                // F-HOTFIX-2: the service runs with ProtectSystem=strict, so an
+                // in-place rename under /etc, /usr, /home or /var fails with EROFS
+                // even though the source is readable - quarantine was therefore
+                // unusable exactly where it matters most. Fall back to a verified
+                // copy into the writable vault. The source is removed when the
+                // sandbox permits it and reported as copy-only otherwise.
+                if error
+                    .raw_os_error()
+                    .map(is_read_only_backing_errno)
+                    .unwrap_or(false)
+                {
+                    return self.copy_quarantine(parent.as_raw_fd(), &basename, object_id, expected);
+                }
+                Err(error.into())
+            }
+        }
+    }
 
+    fn finish_staged_quarantine(
+        &self,
+        parent_fd: RawFd,
+        basename: &CStr,
+        staging_name: &CStr,
+        object_id: &str,
+        expected: &FileIdentity,
+    ) -> Result<String, BoxError> {
         let mut object_committed = false;
         let result = (|| {
-            let staged = inspect_at(parent.as_raw_fd(), &staging_name)?;
+            let staged = inspect_at(parent_fd, staging_name)?;
             if &staged != expected {
                 return Err("quarantine source identity changed after atomic capture".into());
             }
-            self.encrypt_staged(parent.as_raw_fd(), &staging_name, object_id, expected)?;
+            self.encrypt_staged(parent_fd, staging_name, object_id, expected)?;
             object_committed = true;
-            unlink_at(parent.as_raw_fd(), &staging_name)?;
-            sync_fd(parent.as_raw_fd())?;
+            unlink_at(parent_fd, staging_name)?;
+            sync_fd(parent_fd)?;
             Ok(expected.encode())
         })();
 
@@ -171,15 +206,67 @@ impl QuarantineBroker {
             if object_committed {
                 let _ = self.remove_object(object_id);
             }
-            if path_exists_at(parent.as_raw_fd(), &staging_name)? {
-                let _ = rename_noreplace(
-                    parent.as_raw_fd(),
-                    &staging_name,
-                    parent.as_raw_fd(),
-                    &basename,
-                );
-                let _ = sync_fd(parent.as_raw_fd());
+            if path_exists_at(parent_fd, staging_name)? {
+                let _ = rename_noreplace(parent_fd, staging_name, parent_fd, basename);
+                let _ = sync_fd(parent_fd);
             }
+        }
+        result
+    }
+
+    fn copy_quarantine(
+        &self,
+        parent_fd: RawFd,
+        basename: &CStr,
+        object_id: &str,
+        expected: &FileIdentity,
+    ) -> Result<String, BoxError> {
+        let source_fd = open_regular_at(parent_fd, basename)?;
+        let mut source = File::from(source_fd);
+        let object_dir = File::open(&self.object_dir)?;
+        let temporary_name = CString::new(format!(".{object_id}.copy.tmp"))?;
+        let mut output = create_restore_file_at(object_dir.as_raw_fd(), &temporary_name)?;
+        let result = (|| {
+            let mut digest = Sha256::new();
+            let mut remaining = expected.size;
+            let mut buffer = vec![0u8; 64 * 1024];
+            while remaining > 0 {
+                let wanted = usize::try_from(remaining.min(buffer.len() as u64))?;
+                let count = source.read(&mut buffer[..wanted])?;
+                if count == 0 {
+                    return Err("quarantine source ended before the captured size".into());
+                }
+                digest.update(&buffer[..count]);
+                output.write_all(&buffer[..count])?;
+                remaining -= count as u64;
+            }
+            let mut trailing = [0u8; 1];
+            if source.read(&mut trailing)? != 0 {
+                return Err("quarantine source grew during copy".into());
+            }
+            if digest.finalize().as_slice() != expected.sha256 {
+                return Err("quarantine source changed during copy".into());
+            }
+            output.sync_all()?;
+            drop(output);
+            self.encrypt_staged(object_dir.as_raw_fd(), &temporary_name, object_id, expected)?;
+            let _ = unlink_at(object_dir.as_raw_fd(), &temporary_name);
+            let _ = sync_directory(&self.object_dir);
+            match unlink_at(parent_fd, basename) {
+                Ok(()) => {
+                    let _ = sync_fd(parent_fd);
+                }
+                Err(error) => {
+                    eprintln!(
+                        "GeDefense quarantine stored a verified vault copy; source stays in place because its backing store is read-only (sandbox): {error}"
+                    );
+                }
+            }
+            Ok(expected.encode())
+        })();
+        if result.is_err() {
+            let _ = unlink_at(object_dir.as_raw_fd(), &temporary_name);
+            let _ = self.remove_object_if_present(object_id);
         }
         result
     }
@@ -525,7 +612,18 @@ fn open_parent_and_name(path: &Path) -> Result<(OwnedFd, CString), BoxError> {
         )
     } as i32;
     if descriptor < 0 {
-        return Err(std::io::Error::last_os_error().into());
+        let error = std::io::Error::last_os_error();
+        // F-HOTFIX-4: under systemd's RestrictSUIDSGID=yes the kernel returns
+        // ENOSYS for openat2 in this sandbox. Fall back to a component-wise
+        // O_NOFOLLOW walk instead of failing the whole quarantine response.
+        if matches!(error.raw_os_error(), Some(libc::ENOSYS) | Some(libc::EINVAL)) {
+            let parent = crate::open_componentwise(
+                parent,
+                libc::O_RDONLY | libc::O_DIRECTORY,
+            )?;
+            return Ok((OwnedFd::from(parent), CString::new(basename)?));
+        }
+        return Err(error.into());
     }
     let parent_fd = unsafe { OwnedFd::from_raw_fd(descriptor) };
     Ok((parent_fd, CString::new(basename)?))
@@ -628,7 +726,12 @@ fn path_exists_at(parent_fd: RawFd, name: &CStr) -> Result<bool, BoxError> {
     Err(error.into())
 }
 
-fn rename_noreplace(from_fd: RawFd, from: &CStr, to_fd: RawFd, to: &CStr) -> Result<(), BoxError> {
+fn rename_noreplace(
+    from_fd: RawFd,
+    from: &CStr,
+    to_fd: RawFd,
+    to: &CStr,
+) -> std::io::Result<()> {
     let result = unsafe {
         libc::syscall(
             libc::SYS_renameat2,
@@ -640,7 +743,7 @@ fn rename_noreplace(from_fd: RawFd, from: &CStr, to_fd: RawFd, to: &CStr) -> Res
         )
     };
     if result != 0 {
-        return Err(std::io::Error::last_os_error().into());
+        return Err(std::io::Error::last_os_error());
     }
     Ok(())
 }
@@ -665,6 +768,21 @@ fn sync_directory(path: &Path) -> Result<(), BoxError> {
     let directory = File::open(path)?;
     directory.sync_all()?;
     Ok(())
+}
+
+fn is_read_only_backing_errno(errno: i32) -> bool {
+    matches!(
+        errno,
+        libc::EROFS | libc::EXDEV | libc::EACCES | libc::EPERM | libc::ENOSYS | libc::EINVAL
+    )
+}
+
+#[cfg(test)]
+fn is_read_only_backing_error(error: &std::io::Error) -> bool {
+    error
+        .raw_os_error()
+        .map(is_read_only_backing_errno)
+        .unwrap_or(false)
 }
 
 fn validate_object_id(object_id: &str) -> Result<(), BoxError> {
@@ -789,6 +907,58 @@ mod tests {
             .split(':')
             .collect();
         FileIdentity::parse(&fields).expect("identity")
+    }
+
+    #[test]
+    fn read_only_backing_errors_are_recoverable() {
+        for errno in [
+            libc::EROFS,
+            libc::EXDEV,
+            libc::EACCES,
+            libc::EPERM,
+            libc::ENOSYS,
+            libc::EINVAL,
+        ] {
+            let error = std::io::Error::from_raw_os_error(errno);
+            assert!(is_read_only_backing_error(&error), "errno {errno}");
+        }
+        for errno in [libc::ENOENT, libc::ENOTDIR, libc::EBADF] {
+            let error = std::io::Error::from_raw_os_error(errno);
+            assert!(!is_read_only_backing_error(&error), "errno {errno}");
+        }
+    }
+
+    #[test]
+    fn copy_quarantine_stores_a_verifiable_object() {
+        let root = test_root("copy-fallback");
+        let source_dir = root.join("source");
+        let object_dir = root.join("vault");
+        fs::create_dir_all(&source_dir).expect("source directory");
+        fs::create_dir_all(&object_dir).expect("vault directory");
+        let source = source_dir.join("threat.bin");
+        fs::write(&source, b"copy-fallback-quarantine-payload").expect("source file");
+        let broker = QuarantineBroker::new(
+            object_dir.to_str().expect("utf8 vault"),
+            &[3u8; 32],
+        )
+        .expect("broker");
+        let (parent, basename) = open_parent_and_name(&source).expect("parent descriptor");
+        let identity = inspect_at(parent.as_raw_fd(), &basename).expect("identity");
+        let object_id = "QV-0123456789abcdef";
+        broker
+            .copy_quarantine(parent.as_raw_fd(), &basename, object_id, &identity)
+            .expect("copy quarantine");
+        assert!(
+            !source.exists(),
+            "source must be removed when the directory is writable"
+        );
+        assert!(
+            object_dir.join(format!("{object_id}.qv")).exists(),
+            "vault object missing"
+        );
+        broker
+            .verify_object(object_id, &identity)
+            .expect("object verifies");
     }
 
     #[test]

@@ -51,13 +51,23 @@ type GaiaCell struct {
 }
 
 type GaiaCellsStatus struct {
-	Enabled      bool       `json:"enabled"`
-	Healthy      bool       `json:"healthy"`
-	Availability string     `json:"availability"`
-	Socket       string     `json:"socket"`
-	GeneratedAt  time.Time  `json:"generated_at"`
-	Cells        []GaiaCell `json:"cells"`
-	Error        string     `json:"error,omitempty"`
+	Enabled      bool   `json:"enabled"`
+	Healthy      bool   `json:"healthy"`
+	Availability string `json:"availability"`
+	// Mode distinguishes the two sanctioned substrates: "external" is the Gaia
+	// Cells runtime, "local" is the bounded cgroup-v2 registry this control plane
+	// can operate without AstraeaOS. "disabled" is an operator decision.
+	Mode string `json:"mode,omitempty"`
+	// PlatformSupported reports whether this host offers any cell substrate at
+	// all. False is a platform fact, not a failure: the module is not red on a
+	// host without the runtime, it simply has nothing to manage.
+	PlatformSupported bool       `json:"platform_supported"`
+	Fallback          string     `json:"fallback,omitempty"`
+	Reason            string     `json:"reason,omitempty"`
+	Socket            string     `json:"socket"`
+	GeneratedAt       time.Time  `json:"generated_at"`
+	Cells             []GaiaCell `json:"cells"`
+	Error             string     `json:"error,omitempty"`
 }
 
 type cellWireRequest struct {
@@ -85,6 +95,7 @@ type GaiaCellsAdapter struct {
 	now        func() time.Time
 	dial       func(string, time.Duration) (net.Conn, error)
 	verifyPeer func(net.Conn) error
+	local      localCellRegistry
 	last       GaiaCellsStatus
 	expires    time.Time
 }
@@ -96,6 +107,7 @@ func NewGaiaCellsAdapter(cfg CellsConfig) *GaiaCellsAdapter {
 			return net.DialTimeout("unix", path, timeout)
 		},
 		verifyPeer: verifyGaiaCellsPeer,
+		local:      newLocalCellRegistry(defaultLocalCellsRoot),
 	}
 	if cfg.Enabled {
 		adapter.key, adapter.keyErr = loadGaiaCellsKey(cfg.AuthKeyFile)
@@ -147,28 +159,64 @@ func (a *GaiaCellsAdapter) Status(force bool) GaiaCellsStatus {
 		return cloneGaiaCellsStatus(a.last)
 	}
 	status := GaiaCellsStatus{
-		Enabled: a.cfg.Enabled, Socket: a.cfg.Socket, GeneratedAt: now,
-		Cells: []GaiaCell{},
+		Enabled: a.cfg.Enabled, Mode: "external", Socket: a.cfg.Socket, GeneratedAt: now,
+		Cells: []GaiaCell{}, PlatformSupported: a.local.available(),
+	}
+	if a.local.available() {
+		status.Fallback = "local-cgroup-v2"
 	}
 	switch {
 	case !a.cfg.Enabled:
+		status.Mode = "disabled"
 		status.Availability = "disabled"
-	case a.keyErr != nil:
-		status.Availability = "authentication_unavailable"
-		status.Error = "Gaia Cells authentication is unavailable"
+		status.Reason = "Gaia Cells integration is disabled by configuration"
+		if a.local.available() {
+			status.Reason += "; a local cgroup v2 cell registry is available and can be managed by enabling cells"
+		}
 	default:
-		cells, err := a.listLocked()
+		var cells []GaiaCell
+		var err error
+		if a.keyErr != nil {
+			err = a.keyErr
+		} else {
+			cells, err = a.listLocked()
+		}
 		if err == nil {
 			status.Healthy = true
 			status.Availability = "online"
 			status.Cells = cells
-		} else if errors.Is(err, os.ErrNotExist) ||
-			errors.Is(err, syscall.ECONNREFUSED) {
-			status.Availability = "runtime_not_installed"
-		} else {
-			status.Availability = "runtime_unavailable"
-			status.Error = "Gaia Cells runtime verification failed"
+			break
 		}
+		if a.local.available() && (errors.Is(err, os.ErrNotExist) || errors.Is(err, syscall.ECONNREFUSED) || a.keyErr != nil) {
+			localCells, localErr := a.local.list()
+			if localErr == nil {
+				status.Healthy = true
+				status.Availability = "local_registry"
+				status.Mode = "local"
+				status.PlatformSupported = true
+				status.Cells = localCells
+				status.Reason = "the Gaia Cells runtime is not installed on this host; the local cgroup v2 cell registry is active"
+				break
+			}
+			status.Availability = "runtime_unavailable"
+			status.Error = "local Gaia Cells registry verification failed"
+			status.Reason = boundedCellsReason(localErr.Error())
+			break
+		}
+		if a.keyErr != nil && localSocketPresent(a.cfg.Socket) {
+			status.Availability = "authentication_unavailable"
+			status.Error = "Gaia Cells authentication is unavailable"
+			status.Reason = "the runtime control socket exists but its authentication key is missing or invalid"
+			break
+		}
+		if a.keyErr != nil || errors.Is(err, os.ErrNotExist) || errors.Is(err, syscall.ECONNREFUSED) {
+			status.Availability = "platform_unsupported"
+			status.Reason = "no Gaia Cells runtime control socket and no local cgroup v2 cell registry exist on this host"
+			break
+		}
+		status.Availability = "runtime_unavailable"
+		status.Error = "Gaia Cells runtime verification failed"
+		status.Reason = "the Gaia Cells runtime answered incorrectly or failed authentication"
 	}
 	a.last = cloneGaiaCellsStatus(status)
 	a.expires = now.Add(5 * time.Second)
@@ -181,10 +229,22 @@ func (a *GaiaCellsAdapter) List() ([]GaiaCell, error) {
 	if !a.cfg.Enabled {
 		return nil, errors.New("Gaia Cells integration is disabled")
 	}
+	if a.keyErr == nil {
+		cells, err := a.listLocked()
+		if err == nil {
+			return cells, nil
+		}
+		if !(errors.Is(err, os.ErrNotExist) || errors.Is(err, syscall.ECONNREFUSED)) {
+			return nil, err
+		}
+	}
+	if a.local.available() {
+		return a.local.list()
+	}
 	if a.keyErr != nil {
 		return nil, a.keyErr
 	}
-	return a.listLocked()
+	return nil, os.ErrNotExist
 }
 
 func (a *GaiaCellsAdapter) listLocked() ([]GaiaCell, error) {
@@ -258,8 +318,8 @@ func (a *GaiaCellsAdapter) Action(
 ) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if !a.cfg.Enabled || a.keyErr != nil {
-		return errors.New("Gaia Cells runtime is unavailable")
+	if !a.cfg.Enabled {
+		return errors.New("Gaia Cells integration is disabled")
 	}
 	if !validCellUUID(uuid) || generation == 0 || cgroupID == 0 {
 		return errors.New("Gaia Cell action identity is invalid")
@@ -268,6 +328,18 @@ func (a *GaiaCellsAdapter) Action(
 	case "FREEZE", "UNFREEZE", "REVOKE_NETWORK", "RESTORE_NETWORK", "SNAPSHOT_EVIDENCE":
 	default:
 		return errors.New("Gaia Cell action is not allowlisted")
+	}
+	// A cell from the local cgroup v2 registry is operated locally; the runtime
+	// cannot see it and the local registry does not need the runtime key.
+	if a.local.available() && a.local.owns(uuid) {
+		if err := a.local.action(command, uuid, generation, cgroupID); err != nil {
+			return err
+		}
+		a.expires = time.Time{}
+		return nil
+	}
+	if a.keyErr != nil {
+		return errors.New("Gaia Cells runtime is unavailable")
 	}
 	payload := struct {
 		UUID       string `json:"uuid"`

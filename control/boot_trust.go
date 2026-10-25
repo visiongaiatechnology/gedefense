@@ -56,15 +56,23 @@ type BootTrustEvidence struct {
 }
 
 type BootTrustReport struct {
-	GeneratedAt time.Time           `json:"generated_at"`
-	ClaimLevel  string              `json:"claim_level"`
-	Platform    string              `json:"platform"`
-	DistroID    string              `json:"distro_id,omitempty"`
-	DistroName  string              `json:"distro_name,omitempty"`
-	VersionID   string              `json:"version_id,omitempty"`
-	AstraeaOS   bool                `json:"astraeaos"`
-	Summary     string              `json:"summary"`
-	Items       []BootTrustEvidence `json:"items"`
+	GeneratedAt time.Time `json:"generated_at"`
+	ClaimLevel  string    `json:"claim_level"`
+	// Status is the honest verdict for the UI: VERIFIED when a verifiable boot
+	// chain exists (platform attestation or an operator-signed local baseline),
+	// OBSERVE when only evidence was collected, NOT_SUPPORTED when the host has
+	// no hardware root of trust to verify at all. NOT_SUPPORTED is a platform
+	// fact, not a failure and not a red alert.
+	Status              string              `json:"status"`
+	HardwareRootOfTrust bool                `json:"hardware_root_of_trust"`
+	NotSupportedReasons []string            `json:"not_supported_reasons,omitempty"`
+	Platform            string              `json:"platform"`
+	DistroID            string              `json:"distro_id,omitempty"`
+	DistroName          string              `json:"distro_name,omitempty"`
+	VersionID           string              `json:"version_id,omitempty"`
+	AstraeaOS           bool                `json:"astraeaos"`
+	Summary             string              `json:"summary"`
+	Items               []BootTrustEvidence `json:"items"`
 }
 
 type bootTrustProbe struct {
@@ -126,6 +134,7 @@ func (c *BootTrustCollector) Collect() BootTrustReport {
 func cloneBootTrustReport(in BootTrustReport) BootTrustReport {
 	out := in
 	out.Items = append([]BootTrustEvidence(nil), in.Items...)
+	out.NotSupportedReasons = append([]string(nil), in.NotSupportedReasons...)
 	return out
 }
 
@@ -143,6 +152,8 @@ func (p bootTrustProbe) collect(now time.Time) BootTrustReport {
 			Source:  "runtime",
 		})
 		report.Summary = "Boot evidence unavailable"
+		report.Status = bootTrustStatusNotSupported
+		report.NotSupportedReasons = []string{"non-linux-platform"}
 		return report
 	}
 	report.Platform = "linux"
@@ -159,12 +170,12 @@ func (p bootTrustProbe) collect(now time.Time) BootTrustReport {
 	report.Items = append(report.Items, p.tpmEvidence())
 	attestation := p.attestationEvidence()
 	report.Items = append(report.Items, attestation)
-	if attestation.State == bootStateEnabled {
-		report.ClaimLevel = "local-attestation"
-	}
 	report.Items = append(report.Items, p.cgroupEvidence())
 	report.Items = append(report.Items, p.gaiaCellsEvidence())
 	report.Items = append(report.Items, p.kernelImageEvidence())
+	localBaseline := p.localBootBaselineEvidence(report.Items)
+	report.Items = append(report.Items, localBaseline)
+	finishBootTrustReport(&report, attestation, localBaseline)
 	report.Summary = summarizeBootEvidence(report.Items)
 	return report
 }
@@ -474,7 +485,13 @@ func (p bootTrustProbe) kernelImageEvidence() BootTrustEvidence {
 	release := strings.TrimSpace(string(releaseData))
 	candidates := []string{"/boot/vmlinuz-linux-hardened", "/boot/vmlinuz-linux"}
 	if release != "" && !strings.ContainsAny(release, `/\`+"\x00") {
-		candidates = append(candidates, "/usr/lib/modules/"+release+"/vmlinuz")
+		// Ubuntu/Debian keep the running image under the versioned name, not
+		// behind /boot/vmlinuz (which is a symlink the probe deliberately
+		// refuses). Without this candidate a standard Ubuntu host could never
+		// produce kernel-image evidence for the operator-signed baseline.
+		candidates = append(candidates,
+			"/boot/vmlinuz-"+release,
+			"/usr/lib/modules/"+release+"/vmlinuz")
 	}
 	for _, candidate := range candidates {
 		digest, size, err := p.hashRegular(candidate, p.policy.effective().maxKernelImageBytes)

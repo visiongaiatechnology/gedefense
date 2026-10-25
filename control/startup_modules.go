@@ -240,7 +240,7 @@ func newStartupModules(deps StartupDeps) []startupModule {
 				if !fim.Enabled || strings.EqualFold(strings.TrimSpace(fim.Health), "verified") {
 					return nil
 				}
-				return fmt.Errorf("FIM reports %s; accepting a new baseline is an operator decision", fim.Health)
+				return fmt.Errorf("FIM reports %s; after a verified release update run `post-update-rebaseline.sh --reason ...` (authorized release rebaseline), otherwise review the deviation - accepting a new baseline is an operator decision", fim.Health)
 			},
 		})
 		if deps.Titan != nil && deps.Titan.Enabled() {

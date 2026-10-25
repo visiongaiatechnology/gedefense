@@ -17,9 +17,11 @@ use gedefense_common::{
 };
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
+mod canary;
 mod malware;
 mod process_control;
 mod quarantine;
+use canary::{collect_canary_roots, CanaryBroker};
 use malware::{handle_user_scan, MalwareScanner};
 #[cfg(test)]
 use process_control::valid_rule_token;
@@ -1448,10 +1450,63 @@ fn write_response(
     Ok(())
 }
 
+// F-HOTFIX-4: systemd's RestrictSUIDSGID=yes makes the kernel return ENOSYS
+// for openat2 on this sandbox (observed on Ubuntu 24.04/systemd 255 with
+// RestrictSUIDSGID enabled), which broke quarantine and user-scan path
+// resolution even though openat() is fully permitted. Resolve a path
+// component-wise with openat(O_NOFOLLOW) as a safe fallback: every component
+// is opened relative to the already validated parent descriptor and symbolic
+// links are refused at every step.
+fn open_componentwise(path: &std::path::Path, final_flags: i32) -> Result<std::fs::File, BoxError> {
+    use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
+    let mut components = path.components();
+    let mut current: OwnedFd = match components.next() {
+        Some(std::path::Component::RootDir) => {
+            let fd = unsafe {
+                libc::open(
+                    c"/".as_ptr(),
+                    libc::O_RDONLY | libc::O_DIRECTORY | libc::O_CLOEXEC,
+                )
+            };
+            if fd < 0 {
+                return Err(std::io::Error::last_os_error().into());
+            }
+            unsafe { OwnedFd::from_raw_fd(fd) }
+        }
+        _ => return Err("component-wise open requires an absolute path".into()),
+    };
+    let remaining: Vec<_> = components.collect();
+    if remaining.is_empty() {
+        return Err("component-wise open requires a file component".into());
+    }
+    for (index, component) in remaining.iter().enumerate() {
+        match component {
+            std::path::Component::Normal(name) => {
+                let name_c = std::ffi::CString::new(name.as_encoded_bytes())?;
+                let is_last = index + 1 == remaining.len();
+                let flags = if is_last {
+                    final_flags | libc::O_CLOEXEC | libc::O_NOFOLLOW
+                } else {
+                    libc::O_RDONLY | libc::O_DIRECTORY | libc::O_CLOEXEC | libc::O_NOFOLLOW
+                };
+                let fd = unsafe { libc::openat(current.as_raw_fd(), name_c.as_ptr(), flags) };
+                if fd < 0 {
+                    return Err(std::io::Error::last_os_error().into());
+                }
+                current = unsafe { OwnedFd::from_raw_fd(fd) };
+            }
+            std::path::Component::CurDir => continue,
+            _ => return Err("component-wise open rejects parent or root components".into()),
+        }
+    }
+    Ok(std::fs::File::from(current))
+}
+
 fn process_command(
     core: &mut KernelCore,
     quarantine: &QuarantineBroker,
     scanner: &MalwareScanner,
+    canary: &CanaryBroker,
     parts: &[&str],
 ) -> Result<String, BoxError> {
     match parts {
@@ -1504,6 +1559,12 @@ fn process_command(
             let start = start.parse::<u64>()?;
             pidfd_signal(pid, start, libc::SIGKILL, rule).map(|_| "killed".into())
         }
+        ["CANARY_DEPLOY", path, canary_type, mode, content] => {
+            canary.deploy_token(path, canary_type, mode, content)
+        }
+        ["CANARY_REMOVE", path] => canary.remove_token(path),
+        ["CANARY_EVENTS"] => canary.take_events(),
+        ["CANARY_STATUS"] => Ok(canary.status()),
         _ => Err("unknown command".into()),
     }
 }
@@ -1513,6 +1574,7 @@ fn handle_connection(
     core: &mut KernelCore,
     quarantine: &QuarantineBroker,
     scanner: &MalwareScanner,
+    canary: &CanaryBroker,
     control_uid: u32,
     auth_key: &[u8],
     replay: &mut ReplayGuard,
@@ -1596,7 +1658,7 @@ fn handle_connection(
     }
 
     let command = &fields[3..fields.len() - 1];
-    match process_command(core, quarantine, scanner, command) {
+    match process_command(core, quarantine, scanner, canary, command) {
         Ok(message) => {
             if let Err(error) = write_response(&mut stream, auth_key, nonce, "OK", &message) {
                 eprintln!("IPC response failed: {error}");
@@ -1614,6 +1676,14 @@ fn arg(name: &str, default: &str) -> String {
     env::args()
         .find_map(|value| value.strip_prefix(&prefix).map(str::to_owned))
         .unwrap_or_else(|| default.to_owned())
+}
+
+// Repeatable flag, e.g. `--canary-root=/var/lib/vgt/gedefense/canaries`.
+fn multi_arg(name: &str) -> Vec<String> {
+    let prefix = format!("--{name}=");
+    env::args()
+        .filter_map(|value| value.strip_prefix(&prefix).map(str::to_owned))
+        .collect()
 }
 
 fn flag(name: &str) -> bool {
@@ -1728,6 +1798,18 @@ fn main() -> Result<(), BoxError> {
     scanner
         .start_on_access(&[Path::new("/home").to_path_buf()])
         .map_err(|error| std::io::Error::other(format!("on-access guard: {error}")))?;
+    eprintln!("GeDefense core startup phase=canary-broker");
+    // The unprivileged control plane cannot create decoys outside its sandbox
+    // (ProtectSystem=strict, PrivateTmp) and cannot observe host file accesses.
+    // The broker owns both: atomic deployment inside a validated canary root and
+    // a dedicated fanotify instance per registered decoy.
+    let canary_roots = collect_canary_roots(&multi_arg("canary-root"))
+        .map_err(|error| std::io::Error::other(format!("canary roots: {error}")))?;
+    let canary = CanaryBroker::new(&canary_roots)
+        .map_err(|error| std::io::Error::other(format!("canary broker: {error}")))?;
+    canary
+        .start_watch()
+        .map_err(|error| std::io::Error::other(format!("canary fanotify sensor: {error}")))?;
     eprintln!("GeDefense core startup phase=user-scan-socket");
     // F-04: self-healing fallback - the persisted hardening profile is applied
     // to the live kernel again here, after systemd-sysctl has run. Later-sorting
@@ -1769,8 +1851,11 @@ fn main() -> Result<(), BoxError> {
                         }
                     }
                     Err(error) => {
-                        eprintln!("GeDefense user scan IPC fatal: {error}");
-                        std::process::abort();
+                        // F-HOTFIX-1: an accept() error (EMFILE/ENFILE/ECONNABORTED)
+                        // must not abort the privileged core. Back off briefly and keep
+                        // the enforcement daemon and its IPC response channel online.
+                        eprintln!("GeDefense user scan IPC accept error (core stays online): {error}");
+                        std::thread::sleep(std::time::Duration::from_millis(200));
                     }
                 }
             }
@@ -1806,7 +1891,7 @@ fn main() -> Result<(), BoxError> {
     })?;
     let mut replay = ReplayGuard::new();
     eprintln!(
-        "GeDefense Rust core online: interface={iface} ingress={} cgroup_egress=attached cell_lsm={} on_access=fanotify-exec user_scan=peercred-jail authenticated_ipc=VGT3 socket={socket}",
+        "GeDefense Rust core online: interface={iface} ingress={} cgroup_egress=attached cell_lsm={} on_access=fanotify-exec user_scan=peercred-jail canary=fanotify-jail authenticated_ipc=VGT3 socket={socket}",
         core.mode,
         if core.cell_lsm_attached { "attached" } else { "optional-unavailable" }
     );
@@ -1817,6 +1902,7 @@ fn main() -> Result<(), BoxError> {
                 &mut core,
                 &quarantine,
                 &scanner,
+                &canary,
                 control_uid,
                 &auth_key,
                 &mut replay,

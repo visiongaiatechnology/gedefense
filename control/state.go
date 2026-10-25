@@ -45,6 +45,28 @@ type Telemetry struct {
 	Interface     string  `json:"interface"`
 }
 
+// ProtectionDomain is one layer whose enforcement the operator relies on when
+// the product claims "full protection".
+type ProtectionDomain struct {
+	Name   string `json:"name"`
+	Active bool   `json:"active"`
+	Mode   string `json:"mode"`
+	Detail string `json:"detail,omitempty"`
+}
+
+// ProtectionStatus is the single honest answer to "is full protection active?".
+//
+// It is derived from the effective enforcement state, never from a single release
+// phase flag: a release in enforce whose XDR layer is still in observe (or whose
+// core/censor/evidence layer is down) is restricted, and the gaps name exactly why.
+type ProtectionStatus struct {
+	Effective bool               `json:"effective"`
+	Level     string             `json:"level"`
+	Summary   string             `json:"summary"`
+	Domains   []ProtectionDomain `json:"domains"`
+	Gaps      []string           `json:"gaps"`
+}
+
 type Snapshot struct {
 	Version              string        `json:"version"`
 	NodeName             string        `json:"node_name"`
@@ -87,6 +109,11 @@ type Snapshot struct {
 	Coverage       SystemCoverage       `json:"coverage"`
 	Stream         StreamDiagnostics    `json:"stream"`
 	DetectionRules DetectionRulesCount  `json:"detection_rules"`
+	Protection     ProtectionStatus     `json:"protection"`
+	// Startup is the bounded startup self-check view published by
+	// StartupSupervisor.publish via startup_supervisor.go. Nil until the
+	// supervisor has produced its first report.
+	Startup *StartupStatus `json:"startup,omitempty"`
 }
 
 type DetectionRulesCount struct {
@@ -110,22 +137,27 @@ type StreamDiagnostics struct {
 type State struct {
 	mu                                       sync.RWMutex
 	version, nodeName, nodeMode, enforcement string
-	started                                  time.Time
-	coreConnected                            bool
-	coreMode                                 string
-	allowlistReady                           bool
-	feedVectors                              int
-	feedStatus                               string
-	lastFeedSync                             *time.Time
-	lastFeedAttempt                          *time.Time
-	lastFeedFullSync                         *time.Time
-	feedGeneration                           uint64
-	feedFingerprint                          string
-	feedBlockVectors                         int
-	feedCorrelateVectors                     int
-	feedAnnotateVectors                      int
-	telemetry                                Telemetry
-	blocks                                   map[string]BlockEntry
+	// releaseXDRMode is owned by the release controller (SetModes). The XDR
+	// engine publishes its own sensor status continuously; without a separate
+	// release-owned field that refresh overwrote the promotion state, so an
+	// enforced release silently kept reporting (and acting as) observe.
+	releaseXDRMode       string
+	started              time.Time
+	coreConnected        bool
+	coreMode             string
+	allowlistReady       bool
+	feedVectors          int
+	feedStatus           string
+	lastFeedSync         *time.Time
+	lastFeedAttempt      *time.Time
+	lastFeedFullSync     *time.Time
+	feedGeneration       uint64
+	feedFingerprint      string
+	feedBlockVectors     int
+	feedCorrelateVectors int
+	feedAnnotateVectors  int
+	telemetry            Telemetry
+	blocks               map[string]BlockEntry
 	// blockDeadlines keeps the monotonic TTL origin of in-memory block entries next to
 	// the serializable wall-clock ExpiresAt. A forward wall-clock step must not expire a
 	// security block early (F-26 / G-STATE-06); entries restored from disk fall back to
@@ -340,6 +372,7 @@ func (s *State) Expired(now time.Time) []BlockEntry {
 func (s *State) SetModes(enforcement, xdrMode string) {
 	s.mu.Lock()
 	s.enforcement = enforcement
+	s.releaseXDRMode = xdrMode
 	s.xdr.Mode = xdrMode
 	s.mu.Unlock()
 }
@@ -347,7 +380,11 @@ func (s *State) SetModes(enforcement, xdrMode string) {
 func (s *State) Modes() (string, string) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return s.enforcement, s.xdr.Mode
+	mode := s.releaseXDRMode
+	if mode == "" {
+		mode = s.xdr.Mode
+	}
+	return s.enforcement, mode
 }
 
 func (s *State) SetSettings(settings RuntimeSettings) {
@@ -1089,6 +1126,9 @@ func (s *State) Snapshot() Snapshot {
 	// into, so a stored copy records whichever of them wrote last. The derivation lives in
 	// one place because two callers need it: this snapshot and the telemetry accessor that
 	// answers /api/v1/kinetic/live, the endpoint the Kinetic page reads.
+	if s.releaseXDRMode != "" && snapshot.XDR.Enabled {
+		snapshot.XDR.Mode = s.releaseXDRMode
+	}
 	snapshot.L7, snapshot.Kinetic.Coverage = s.derivedCoverageLocked()
 
 	// The top-level coverage is the same verdict under a second name, and it was built
@@ -1125,6 +1165,7 @@ func (s *State) Snapshot() Snapshot {
 	if s.settings.FeedsEnabled {
 		threatFeeds = s.feedVectors
 	}
+	snapshot.Protection = deriveProtectionStatus(snapshot, s.releaseXDRMode)
 	snapshot.DetectionRules = DetectionRulesCount{
 		BuiltinXDR:  builtinXDR,
 		Custom:      customCount,
@@ -1147,6 +1188,100 @@ func (s *State) Snapshot() Snapshot {
 		snapshot.Titan = TitanStatus{Version: snapshot.Version, Mode: TitanModeObserve, Sensor: TitanSensorStatus{State: "disabled"}}
 	}
 	return snapshot
+}
+
+// deriveProtectionStatus answers whether every layer the "full protection" claim
+// depends on is actually enforcing. The release phase alone was not sufficient:
+// it said enforce while the XDR layer still reported observe, and the dashboard
+// printed "VOLLSCHUTZ AKTIV" over a paused active response.
+func deriveProtectionStatus(snap Snapshot, releaseXDRMode string) ProtectionStatus {
+	status := ProtectionStatus{Domains: make([]ProtectionDomain, 0, 6), Gaps: make([]string, 0, 8)}
+	phase := strings.ToLower(strings.TrimSpace(snap.Release.Phase))
+	emergency := snap.Release.EmergencyStop
+
+	kernelActive := snap.Enforcement == "enforce" && snap.Release.KernelPolicyState == "verified-enforce"
+	status.Domains = append(status.Domains, ProtectionDomain{Name: "kernel", Active: kernelActive, Mode: snap.Enforcement, Detail: snap.Release.KernelPolicyState})
+	if !kernelActive {
+		status.Gaps = append(status.Gaps, "kernel_not_enforcing")
+	}
+
+	xdrMode := strings.TrimSpace(releaseXDRMode)
+	if xdrMode == "" {
+		xdrMode = strings.TrimSpace(snap.XDR.Mode)
+	}
+	xdrActive := snap.XDR.Enabled && xdrMode == "enforce" && !snap.XDR.Degraded
+	status.Domains = append(status.Domains, ProtectionDomain{Name: "xdr", Active: xdrActive, Mode: xdrMode})
+	if !snap.XDR.Enabled {
+		status.Gaps = append(status.Gaps, "xdr_disabled")
+	} else if snap.XDR.Degraded {
+		status.Gaps = append(status.Gaps, "xdr_degraded")
+	} else if xdrMode != "enforce" {
+		switch xdrMode {
+		case "observe":
+			status.Gaps = append(status.Gaps, "xdr_observe")
+		case "contain":
+			status.Gaps = append(status.Gaps, "xdr_contain")
+		default:
+			status.Gaps = append(status.Gaps, "xdr_disabled")
+		}
+	}
+
+	coreActive := snap.CoreConnected
+	status.Domains = append(status.Domains, ProtectionDomain{Name: "core", Active: coreActive, Mode: snap.CoreMode})
+	if !coreActive {
+		status.Gaps = append(status.Gaps, "core_disconnected")
+	}
+
+	kineticMode := strings.TrimSpace(snap.Settings.Kinetic.EnforcementMode)
+	// Full protection is about the configured enforcement posture of the layer. A
+	// degraded auxiliary sensor is reported in the domain detail and the coverage
+	// panel, but it does not silently turn an enforcing Kinetic layer into "off".
+	kineticActive := snap.Settings.Kinetic.Enabled && kineticMode == "block"
+	status.Domains = append(status.Domains, ProtectionDomain{Name: "kinetic", Active: kineticActive, Mode: kineticMode, Detail: snap.Coverage.Summary})
+	if !snap.Settings.Kinetic.Enabled || kineticMode != "block" {
+		status.Gaps = append(status.Gaps, "kinetic_not_block")
+	}
+
+	l7Active := snap.L7.Enabled && snap.L7.Mode == "block"
+	status.Domains = append(status.Domains, ProtectionDomain{Name: "l7", Active: l7Active, Mode: snap.L7.Mode, Detail: snap.L7.CoverageReason})
+	if !l7Active {
+		status.Gaps = append(status.Gaps, "l7_not_block")
+	}
+
+	evidenceActive := snap.Evidence.Enabled && snap.Evidence.Healthy
+	status.Domains = append(status.Domains, ProtectionDomain{Name: "evidence", Active: evidenceActive, Mode: snap.Evidence.VerifyScope})
+	if !evidenceActive {
+		status.Gaps = append(status.Gaps, "evidence_unhealthy")
+	}
+
+	if emergency {
+		status.Gaps = append(status.Gaps, "emergency_stop")
+	}
+	if phase != "enforce" {
+		status.Gaps = append(status.Gaps, "release_not_enforce")
+	}
+
+	status.Effective = phase == "enforce" && !emergency && kernelActive && xdrActive && coreActive && kineticActive && l7Active && evidenceActive
+	switch {
+	case emergency:
+		status.Level = "emergency"
+	case status.Effective:
+		status.Level = "full"
+	case phase == "observe":
+		status.Level = "observe"
+	case phase == "canary":
+		status.Level = "canary"
+	case phase == "degraded":
+		status.Level = "degraded"
+	default:
+		status.Level = "restricted"
+	}
+	if status.Effective {
+		status.Summary = "every protection layer enforces"
+	} else if len(status.Gaps) > 0 {
+		status.Summary = strings.Join(status.Gaps, ",")
+	}
+	return status
 }
 
 func (s *State) RecordStreamConnect() {

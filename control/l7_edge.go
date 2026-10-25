@@ -41,10 +41,12 @@ type L7EdgeService struct {
 
 	requests                 atomic.Uint64
 	blocked                  atomic.Uint64
+	findings                 atomic.Uint64
 	upstreamErrors           atomic.Uint64
 	responsesInspected       atomic.Uint64
 	responseFindings         atomic.Uint64
 	responseInspectionErrors atomic.Uint64
+	lastRequestUnix          atomic.Int64
 	lastErrMu                sync.RWMutex
 	lastErr                  string
 }
@@ -88,10 +90,10 @@ func (s *L7EdgeService) newReverseProxy(upstream *url.URL, network, address stri
 			normalized, _ := request.In.Context().Value(l7EdgeRequestContextKey{}).(l7NormalizedRequest)
 			request.SetURL(upstream)
 			request.Out.Host = request.In.Host
-			for _, header := range []string{
+			for _, header := range append([]string{
 				l7EdgeClientIPHeader, l7EdgeSchemeHeader, "X-Gedefense-Request-Id",
 				"Forwarded", "X-Forwarded-For", "X-Forwarded-Proto", "X-Forwarded-Host", "X-Real-Ip",
-			} {
+			}, l7HopByHopHeaders(request.In.Header.Values("Connection"))...) {
 				request.Out.Header.Del(header)
 			}
 			if normalized.RemoteIP != "" {
@@ -186,6 +188,14 @@ func (s *L7EdgeService) handle(w http.ResponseWriter, r *http.Request) {
 		writeL7EdgeJSON(w, http.StatusForbidden, "request rejected")
 		return
 	}
+	// Enforce the configured header budget explicitly before touching the body or
+	// contacting the upstream. Go's default server limit is far larger; without
+	// this check an oversized header block reaches the engine (and would be
+	// reported as a body error) instead of being refused at the edge.
+	if max := s.runtimeConfig().MaxHeaderBytes; max > 0 && l7EdgeHeaderBytes(r) > max {
+		writeL7EdgeJSON(w, http.StatusRequestHeaderFieldsTooLarge, "request headers rejected")
+		return
+	}
 	admissionCtx, admissionCancel := context.WithTimeout(r.Context(), time.Duration(s.cfg.RequestTimeoutMillis)*time.Millisecond)
 	admissionErr := s.engine.acquireAdmission(admissionCtx)
 	admissionCancel()
@@ -228,6 +238,10 @@ func (s *L7EdgeService) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.requests.Add(1)
+	s.lastRequestUnix.Store(time.Now().UTC().UnixNano())
+	if len(response.Findings) > 0 {
+		s.findings.Add(uint64(len(response.Findings)))
+	}
 	if response.Enforced && response.Decision == "block" {
 		s.blocked.Add(1)
 		s.publishStatus(true)
@@ -241,6 +255,23 @@ func (s *L7EdgeService) handle(w http.ResponseWriter, r *http.Request) {
 	r = r.WithContext(context.WithValue(r.Context(), l7EdgeRequestContextKey{}, normalized))
 	s.publishStatus(true)
 	s.proxy.ServeHTTP(w, r)
+}
+
+// l7EdgeHeaderBytes bounds the request head (request line plus headers) before
+// the body is read. It is deliberately approximate but never underestimates the
+// bytes an upstream would receive.
+func l7EdgeHeaderBytes(r *http.Request) int {
+	if r == nil {
+		return 0
+	}
+	total := len(r.Method) + len(r.URL.RequestURI()) + len(r.Proto) + 4
+	for name, values := range r.Header {
+		total += len(name) + 2
+		for _, value := range values {
+			total += len(value) + 2
+		}
+	}
+	return total
 }
 
 func readL7EdgeBody(w http.ResponseWriter, r *http.Request, maxBytes int) ([]byte, error) {
@@ -468,21 +499,105 @@ func (s *L7EdgeService) lastError() string {
 	return s.lastErr
 }
 
+// l7HopByHopHeaders returns the headers that must never be forwarded to the upstream.
+// Connection-nominated names are included because a proxy must not forward fields the
+// client only asked its own hop to handle.
+func l7HopByHopHeaders(connectionValues []string) []string {
+	headers := []string{
+		"Connection", "Proxy-Connection", "Keep-Alive", "Proxy-Authenticate",
+		"Proxy-Authorization", "Te", "Trailer", "Transfer-Encoding", "Upgrade",
+	}
+	for _, value := range connectionValues {
+		for _, token := range strings.Split(value, ",") {
+			if token = strings.TrimSpace(token); token != "" {
+				headers = append(headers, token)
+			}
+		}
+	}
+	return headers
+}
+
+func (s *L7EdgeService) lastRequestAt() *time.Time {
+	raw := s.lastRequestUnix.Load()
+	if raw <= 0 {
+		return nil
+	}
+	observed := time.Unix(0, raw).UTC()
+	return &observed
+}
+
+func laterL7Time(current, candidate *time.Time) *time.Time {
+	if candidate == nil {
+		return current
+	}
+	if current == nil || candidate.After(*current) {
+		return candidate
+	}
+	return current
+}
+
+// publishStatus publishes the inline edge's observation into the shared L7 status.
+//
+// The inline edge is a first-class producer: its counters are folded into the
+// status-wide totals, and the attachment verdict is recomputed from observed counters
+// rather than from "the listener was enabled". A listener that is bound but has not
+// inspected a request is attached but not a producer; a listener that is enabled but
+// unhealthy is neither, even if it inspected requests before the failure.
 func (s *L7EdgeService) publishStatus(healthy bool) {
 	if s.state == nil {
 		return
 	}
 	s.state.UpdateL7Status(func(status *L7Status) {
+		// The shared status may already carry inline counters from a previous publish.
+		// Subtract them before adding the new values so aggregation is idempotent.
+		previousInlineRequests := status.InlineRequestsTotal
+		previousInlineBlocked := status.InlineBlockedTotal
+		previousInlineFindings := status.InlineFindingsTotal
+		previousResponseFindings := status.ResponseFindingsTotal
+
+		socketRequests := status.RequestsTotal
+		if socketRequests >= previousInlineRequests {
+			socketRequests -= previousInlineRequests
+		}
+		socketBlocked := status.BlockedTotal
+		if socketBlocked >= previousInlineBlocked {
+			socketBlocked -= previousInlineBlocked
+		}
+		socketFindings := status.FindingsTotal
+		inlineFindings := previousInlineFindings + previousResponseFindings
+		if socketFindings >= inlineFindings {
+			socketFindings -= inlineFindings
+		}
+
+		inlineRequests := s.requests.Load()
+		inlineBlocked := s.blocked.Load()
+		inlineFindingsNow := s.findings.Load()
+		responseFindingsNow := s.responseFindings.Load()
+
 		status.InlineEnabled = s.cfg.InlineEnabled
 		status.InlineHealthy = healthy
 		status.InlineSocket = s.cfg.InlineSocket
-		status.InlineRequestsTotal = s.requests.Load()
-		status.InlineBlockedTotal = s.blocked.Load()
+		status.InlineRequestsTotal = inlineRequests
+		status.InlineBlockedTotal = inlineBlocked
+		status.InlineFindingsTotal = inlineFindingsNow
 		status.InlineUpstreamErrorsTotal = s.upstreamErrors.Load()
 		status.InlineLastError = s.lastError()
+		status.InlineLastRequestAt = s.lastRequestAt()
 		status.ResponsesInspectedTotal = s.responsesInspected.Load()
-		status.ResponseFindingsTotal = s.responseFindings.Load()
+		status.ResponseFindingsTotal = responseFindingsNow
 		status.ResponseInspectionErrorsTotal = s.responseInspectionErrors.Load()
+
+		if observed := s.lastRequestAt(); observed != nil {
+			status.LastInspection = laterL7Time(status.LastInspection, observed)
+			status.LastRequestAt = status.LastInspection
+		}
+		status.RequestsTotal = socketRequests + inlineRequests
+		status.BlockedTotal = socketBlocked + inlineBlocked
+		status.FindingsTotal = socketFindings + inlineFindingsNow + responseFindingsNow
+		status.applyAttachmentSemantics()
+		if status.ProducerAttached && status.LastInspection != nil {
+			status.LastProducerSeen = status.LastInspection
+		}
 	})
 }
 

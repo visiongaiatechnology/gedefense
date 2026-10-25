@@ -32,8 +32,23 @@
 </div>
 
 ---
+## 🆕 Release 5.0.0-beta.2 — Hotfixes 1–9 (25.10.2026)
+
+Dieses Release überführt die Sicherheits- und Funktionsfixes der Hotfix-1–9-Linie in den öffentlichen Quellstand:
+
+- **Deception-Canaries sind echte Kernel-Sensoren:** Der privilegierte Core legt root-eigene Decoys in einem dedizierten Jail ab und überwacht sie per fanotify. Ein unautorisierter Zugriff erzeugt automatisch einen Incident und eine reversible, TTL-gebundene Containment-Aktion; der Core ignoriert die eigenen Deploy-/Verifikations-Öffnungen.
+- **Signierte Threat Feeds mit verifiziertem Kernel-Apply:** Eine operator-provisionierte Ed25519-Pipeline erstellt Snapshots der exakten Feed-Bytes, signiert das detached Manifest, verifiziert es gegen den gepinnten Key (inklusive TTL und Anti-Rollback) und wendet nur verifizierte BLOCK-Einträge im Kernel an. Feed-Blocks überleben Release-Reconciliation und Control-Plane-Neustarts.
+- **L7-Inline-Producer ist First-Class:** Die Inline-Unix-Socket-Edge akzeptiert einen echten lokalen Producer, blockt SQLi/XSS/LFI/Command-Injection-Payloads vor dem Upstream und meldet Producer-, Attachment- und Coverage-Zähler wahrheitsgemäß. Der vollständige eingebaute Enforcement-Scope ist aktiv.
+- **Wahrheitsgemäßer Schutzstatus:** Die Control Plane leitet `protection.effective` aus Kernel-, XDR-, Core-, Kinetic-, L7- und Evidenz-Enforcement ab. Das Dashboard zeigt „Vollschutz“ nur, wenn tatsächlich jede Ebene durchsetzt, und benennt andernfalls die exakten Lücken.
+- **Integrität und Release-Wartung:** FIM/Titan-Release-Rebaseline, Startup-Self-Check-Status-API, lokale cgroup-v2-Gaia-Cells-Registry als Fallback, eine operator-signierte lokale Boot-Trust-Baseline und ein Post-Update-Rebaseline-Skript.
+- **Validierung:** Go-Control-Suite grün, Rust 40/40 Tests grün, signierter Installer-Self-Test und Payload-Verifikation bestanden.
+
+**Bekannte Einschränkungen:** Öffentliche CA-/RFC3161-/CRL-/OCSP-Release-Authentizität und ein extern verankerter Anti-Rollback-Kanal bleiben außerhalb dieser Beta. Die Threat-Feed-Authentizität wird operator-provisioniert über einen lokalen Ed25519-Schlüssel bereitgestellt, nicht über eine öffentliche CA. Es bleibt eine öffentliche Beta für Test- und Qualifizierungshosts.
+
+---
+
 > [!WARNING]
-> **ÖFFENTLICHE BETA — KEIN PRODUKTIONSRELEASE (Version 5.0.0-beta.1).**  
+> **ÖFFENTLICHE BETA — KEIN PRODUKTIONSRELEASE (Version 5.0.0-beta.2).**  
 > GeDefense Titan und das Linux-Security-Fabric befinden sich in aktiver
 > Entwicklung. Diese Beta ist ausschließlich für Test- und Qualifizierungshosts
 > bestimmt. Die Kernarchitektur wird durch automatisierte Release-Gates geprüft,
@@ -106,9 +121,9 @@ Kein Drittanbieter unterstützt oder sponsert GeDefense. Das Dashboard lädt die
 Assets lokal; es gibt keinen Laufzeit-CDN- oder Cloud-Lookup.
 
 
-## 🚨 KRITISCHER SICHERHEITSHINWEIS & WARNUNG — RELEASE v5.0.0-beta.1
+## 🚨 KRITISCHER SICHERHEITSHINWEIS & WARNUNG — RELEASE v5.0.0-beta.2
 
-> **Betriebliches Sicherheitsupdate in 5.0.0-beta.1.** Die PHP-Upload-Progress-Mitigation (`session.upload_progress.enabled = Off`), die kritische L7-Regel `L7.PHP.SESSION_UPLOAD_PROGRESS` und regelbasiertes Inline-Enforcement (`l7.enforce_rules`, `mode = "block"`) sind aktiv. Der L7-Origin ist auf Loopback gebunden, damit direkter Origin-Zugriff die Inspektion nicht umgeht. Der historische 4.2.x-Hinweis unten bleibt Teil der Remediation-Historie.
+> **Betriebliches Sicherheitsupdate in 5.0.0-beta.2.** Die PHP-Upload-Progress-Mitigation (`session.upload_progress.enabled = Off`), die kritische L7-Regel `L7.PHP.SESSION_UPLOAD_PROGRESS` und regelbasiertes Inline-Enforcement (`l7.enforce_rules`, `mode = "block"`) sind aktiv. Der L7-Origin ist auf Loopback gebunden, damit direkter Origin-Zugriff die Inspektion nicht umgeht. Der historische 4.2.x-Hinweis unten bleibt Teil der Remediation-Historie.
 
 
 > [!CAUTION]
@@ -144,9 +159,9 @@ Assets lokal; es gibt keinen Laufzeit-CDN- oder Cloud-Lookup.
 
 ---
 
-## ⚠️ STABILITÄT & ZUSICHERUNG — RELEASE v5.0.0-beta.1 · UNIVERSELLE LINUX-PLATTFORM
+## ⚠️ STABILITÄT & ZUSICHERUNG — RELEASE v5.0.0-beta.2 · UNIVERSELLE LINUX-PLATTFORM
 
-VGT GeDefense 5.0.0-beta.1 ist das Flaggschiff des Linux-Sicherheitsgewebes — die gehärtete Verteidigungskette mit Kernel-Geschwindigkeit, kombiniert mit der neuen **Security Fabric Control Plane**, universeller Linux-Integration, gehärteter Release-Pipeline und konkreten Kernel-/NIC-Qualifikations-Gates. Es wurde für souveränen Host- und Netzwerkschutz entwickelt.
+VGT GeDefense 5.0.0-beta.2 ist das Flaggschiff des Linux-Sicherheitsgewebes — die gehärtete Verteidigungskette mit Kernel-Geschwindigkeit, kombiniert mit der neuen **Security Fabric Control Plane**, universeller Linux-Integration, gehärteter Release-Pipeline und konkreten Kernel-/NIC-Qualifikations-Gates. Es wurde für souveränen Host- und Netzwerkschutz entwickelt.
 
 **Die Produktionsfreigabe ist bewusst eine Eigenschaft des konkret auditierten Ziel-Hosts — nicht allein des Quellcodes.**
 
@@ -703,17 +718,17 @@ Ist die Gaia Cells-Laufzeit **nicht vorhanden**, meldet der Adapter `runtime_not
 
 ```bash
 # Installer herunterladen
-wget https://github.com/visiongaiatechnology/gedefense/releases/download/v5.0.0-beta.1/GeDefense-5.0.0-beta.1-OneClick.run
+wget https://github.com/visiongaiatechnology/gedefense/releases/download/v5.0.0-beta.2/GeDefense-5.0.0-beta.2-OneClick.run
 
 # SHA-256 verifizieren
-sha256sum --check GeDefense-5.0.0-beta.1-OneClick.run.sha256
+sha256sum --check GeDefense-5.0.0-beta.2-OneClick.run.sha256
 
 # Installieren (Root erforderlich)
-chmod 700 GeDefense-5.0.0-beta.1-OneClick.run
-sudo ./GeDefense-5.0.0-beta.1-OneClick.run
+chmod 700 GeDefense-5.0.0-beta.2-OneClick.run
+sudo ./GeDefense-5.0.0-beta.2-OneClick.run
 ```
 
-> **Installer-Verfügbarkeit:** Die offiziellen v5.0.0-beta.1 Self-Contained-Installer-Assets (`GeDefense-5.0.0-beta.1-OneClick.run`) sind verifiziert und im GitHub Release bereitgestellt.
+> **Installer-Verfügbarkeit:** Die offiziellen v5.0.0-beta.2 Self-Contained-Installer-Assets (`GeDefense-5.0.0-beta.2-OneClick.run`) sind verifiziert und im GitHub Release bereitgestellt.
 
 > Der Installer und die Prüfsumme werden erst veröffentlicht, nachdem alle GitHub-CI- und konkreten Linux-Host-Qualifikations-Gates bestanden wurden. Führe niemals eine nicht verifizierte RUN-Datei aus.
 
@@ -747,7 +762,7 @@ Die Firewall-Regel für den HTTPS-Gateway-Port (TCP 9843) kann während der Inst
 
 ---
 
-## 🚧 Bekannte Einschränkungen (5.0.0-beta.1)
+## 🚧 Bekannte Einschränkungen (5.0.0-beta.2)
 
 - Keine Swarm- / Mesh-Unterstützung
 - Kein QUIC-Offloading
@@ -765,7 +780,7 @@ Die Firewall-Regel für den HTTPS-Gateway-Port (TCP 9843) kann während der Inst
 
 ## 📋 Changelog
 
-### v5.0.0-beta.1 — Automatische Gaia-Cell-Isolation, bewachte Kernel-Mitigation & operatives PHP/L7-Hardening *(Aktuell)*
+### v5.0.0-beta.1 — Automatische Gaia-Cell-Isolation, bewachte Kernel-Mitigation & operatives PHP/L7-Hardening *(Vorherige Version)*
 
 - **Automatische und manuelle Gaia-Cell-Isolation:** Incidents ab `cells.auto_confine_score` isolieren die zugehörige Cell über die reversible Transaction-Engine; die manuelle Isolation steht pro Incident-Zeile bereit. APIs: `POST /api/v1/xdr/incidents/{id}/confine`, `GET /api/v1/cells/confinement`.
 - **Kernel-Mitigation-Guard:** opt-in sysctl-Mitigation mit begrenztem Probation-Fenster, Host-Service-Verifikation und automatischem Rollback; die Hardening-Ansicht bietet Dry-Run, Apply und Rollback mit Begründung.
@@ -1054,6 +1069,6 @@ Die Karte verwendet **jsVectorMap 1.7.0** (MIT, Copyright © 2020 Mustafa Omar; 
 
 [![VGT](https://img.shields.io/badge/VisionGaia-Technology-cyan?style=for-the-badge)](https://visiongaiatechnology.de)
 
-*VGT GeDefense 5.0.0-beta.1 — Universelles Linux Sicherheitsgewebe // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidenz-Ledger // AES-256-GCM verschlüsselter Vault // Reversible Härtung // AstraeaOS-nativer Adapter // Getrennte Vertrauensdomänen // Keine Cloud-Control-Plane // AGPL-3.0-only // Linux x86_64*
+*VGT GeDefense 5.0.0-beta.2 — Universelles Linux Sicherheitsgewebe // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidenz-Ledger // AES-256-GCM verschlüsselter Vault // Reversible Härtung // AstraeaOS-nativer Adapter // Getrennte Vertrauensdomänen // Keine Cloud-Control-Plane // AGPL-3.0-only // Linux x86_64*
 
 </div>

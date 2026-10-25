@@ -32,8 +32,23 @@
 </div>
 
 ---
+## 🆕 Выпуск 5.0.0-beta.2 — исправления 1–9 (25.10.2026)
+
+Этот выпуск переносит исправления безопасности и функциональности из линии Hotfix 1–9 в публичное дерево исходников:
+
+- **Canary-ловушки Deception — настоящие датчики ядра:** привилегированное ядро размещает принадлежащие root ловушки в выделенном jail и наблюдает за ними через fanotify. Неавторизованный доступ автоматически создаёт инцидент и обратимое действие изоляции с ограниченным TTL; собственные открытия ядра при развёртывании и проверке игнорируются.
+- **Подписанные threat-фиды с проверенным применением в ядре:** операторская Ed25519-цепочка сохраняет точные байты фидов, подписывает detached-манифест, проверяет его по закреплённому ключу (включая TTL и anti-rollback) и применяет в ядре только проверенные BLOCK-записи. Блокировки из фидов переживают согласование релиза и перезапуск control plane.
+- **Inline-производитель L7 — полноценный:** inline Unix-socket edge принимает реального локального производителя, блокирует SQLi/XSS/LFI/command-injection до upstream и достоверно сообщает счётчики producer/attachment/coverage. Полный встроенный scope enforcement активен.
+- **Достоверный статус защиты:** control plane вычисляет `protection.effective` по фактическому enforcement ядра, XDR, core, Kinetic, L7 и evidence. Дашборд показывает «полную защиту» только когда действительно работают все уровни, иначе перечисляет точные пробелы.
+- **Целостность и сопровождение релиза:** release-rebaseline для FIM/Titan, API статуса startup self-check, локальный cgroup-v2-реестр Gaia Cells как fallback, операторская подписанная локальная boot-trust-базовая линия и скрипт rebaseline после обновления.
+- **Проверка:** Go-control suite зелёный, Rust 40/40 тестов зелёные, self-test подписанного установщика и проверка payload пройдены.
+
+**Известные ограничения:** публичная CA-/RFC3161-/CRL-/OCSP-аутентичность релиза и внешне закреплённый anti-rollback-канал остаются вне этой беты. Аутентичность threat-фидов обеспечивается оператором через локальный Ed25519-ключ, а не публичный CA. Это по-прежнему публичная бета для тестовых и квалификационных хостов.
+
+---
+
 > [!WARNING]
-> **ПУБЛИЧНАЯ БЕТА — НЕ ДЛЯ ПРОИЗВОДСТВА (Версия 5.0.0-beta.1).**  
+> **ПУБЛИЧНАЯ БЕТА — НЕ ДЛЯ ПРОИЗВОДСТВА (Версия 5.0.0-beta.2).**  
 > GeDefense Titan и Linux Security Fabric находятся в активной разработке.
 > Бета предназначена только для тестовых и квалификационных хостов.
 > Архитектура проверяется автоматическими release-gates, но публичная
@@ -44,9 +59,9 @@
 
 ---
 
-## 🚨 КРИТИЧЕСКОЕ ПРЕДУПРЕЖДЕНИЕ БЕЗОПАСНОСТИ — РЕЛИЗ v5.0.0-beta.1
+## 🚨 КРИТИЧЕСКОЕ ПРЕДУПРЕЖДЕНИЕ БЕЗОПАСНОСТИ — РЕЛИЗ v5.0.0-beta.2
 
-> **Оперативное обновление безопасности 5.0.0-beta.1.** Активны митигация PHP upload-progress (`session.upload_progress.enabled = Off`), критическое L7-правило `L7.PHP.SESSION_UPLOAD_PROGRESS` и rule-scoped inline-enforcement (`l7.enforce_rules`, `mode = "block"`). Origin L7 привязан к loopback, поэтому прямой доступ к origin не обходит инспекцию. Историческое уведомление 4.2.x ниже остаётся частью истории remediation.
+> **Оперативное обновление безопасности 5.0.0-beta.2.** Активны митигация PHP upload-progress (`session.upload_progress.enabled = Off`), критическое L7-правило `L7.PHP.SESSION_UPLOAD_PROGRESS` и rule-scoped inline-enforcement (`l7.enforce_rules`, `mode = "block"`). Origin L7 привязан к loopback, поэтому прямой доступ к origin не обходит инспекцию. Историческое уведомление 4.2.x ниже остаётся частью истории remediation.
 
 
 > [!CAUTION]
@@ -82,9 +97,9 @@
 
 ---
 
-## ⚠️ СТАБИЛЬНОСТЬ И ГАРАНТИИ — РЕЛИЗ v5.0.0-beta.1 · УНИВЕРСАЛЬНАЯ ПЛАТФОРМА LINUX
+## ⚠️ СТАБИЛЬНОСТЬ И ГАРАНТИИ — РЕЛИЗ v5.0.0-beta.2 · УНИВЕРСАЛЬНАЯ ПЛАТФОРМА LINUX
 
-VGT GeDefense 5.0.0-beta.1 — это флагманская фабрика безопасности Linux: закаленная цепочка обороны на скорости ядра в сочетании с новой **Security Fabric Control Plane**, универсальной интеграцией с Linux, защищенным конвейером релизов и конкретными гейтами квалификации ядра/NIC. Разработано для суверенной защиты хоста и сети.
+VGT GeDefense 5.0.0-beta.2 — это флагманская фабрика безопасности Linux: закаленная цепочка обороны на скорости ядра в сочетании с новой **Security Fabric Control Plane**, универсальной интеграцией с Linux, защищенным конвейером релизов и конкретными гейтами квалификации ядра/NIC. Разработано для суверенной защиты хоста и сети.
 
 **Допуск к эксплуатации в продакшене намеренно является свойством конкретно проверенного целевого хоста, а не только исходного кода.**
 
@@ -641,17 +656,17 @@ Observe ──→ Canary ──→ Enforce
 
 ```bash
 # Загрузить инсталлятор
-wget https://github.com/visiongaiatechnology/gedefense/releases/download/v5.0.0-beta.1/GeDefense-5.0.0-beta.1-OneClick.run
+wget https://github.com/visiongaiatechnology/gedefense/releases/download/v5.0.0-beta.2/GeDefense-5.0.0-beta.2-OneClick.run
 
 # Проверить SHA-256
-sha256sum --check GeDefense-5.0.0-beta.1-OneClick.run.sha256
+sha256sum --check GeDefense-5.0.0-beta.2-OneClick.run.sha256
 
 # Установить (требуются права root)
-chmod 700 GeDefense-5.0.0-beta.1-OneClick.run
-sudo ./GeDefense-5.0.0-beta.1-OneClick.run
+chmod 700 GeDefense-5.0.0-beta.2-OneClick.run
+sudo ./GeDefense-5.0.0-beta.2-OneClick.run
 ```
 
-> **Доступность инсталлятора:** Официальные автономные установочные ассеты v5.0.0-beta.1 (`GeDefense-5.0.0-beta.1-OneClick.run`) проверены и опубликованы в GitHub Releases.
+> **Доступность инсталлятора:** Официальные автономные установочные ассеты v5.0.0-beta.2 (`GeDefense-5.0.0-beta.2-OneClick.run`) проверены и опубликованы в GitHub Releases.
 
 > Инсталлятор и контрольные суммы публикуются только после успешного прохождения всех этапов GitHub CI и квалификационных проверок целевого хоста. Никогда не запускайте непроверенные файлы RUN.
 
@@ -685,7 +700,7 @@ sudo ./GeDefense-5.0.0-beta.1-OneClick.run
 
 ---
 
-## 🚧 Известные ограничения (5.0.0-beta.1)
+## 🚧 Известные ограничения (5.0.0-beta.2)
 
 - Отсутствие поддержки Swarm / Mesh
 - Отсутствие разгрузки QUIC
@@ -703,7 +718,7 @@ sudo ./GeDefense-5.0.0-beta.1-OneClick.run
 
 ## 📋 Журнал изменений (Changelog)
 
-### v5.0.0-beta.1 — Автоматическая изоляция Gaia Cells, защищённая kernel-митигация и оперативное PHP/L7-усиление *(Текущая версия)*
+### v5.0.0-beta.1 — Автоматическая изоляция Gaia Cells, защищённая kernel-митигация и оперативное PHP/L7-усиление *(Предыдущая версия)*
 
 - **Автоматическая и ручная изоляция Gaia Cells:** инциденты с оценкой выше `cells.auto_confine_score` изолируют связанную cell через обратимый transaction engine; ручная изоляция доступна в строке инцидента. API: `POST /api/v1/xdr/incidents/{id}/confine`, `GET /api/v1/cells/confinement`.
 - **Kernel mitigation guard:** opt-in sysctl-митигация с ограниченным probation-окном, проверкой сервисов хоста и автоматическим rollback; панель hardening предлагает dry-run, apply и rollback с указанием причины.
@@ -967,6 +982,6 @@ sudo python3 scripts/update-geoip-db.py /var/lib/vgt/gedefense/geoip.csv
 
 [![VGT](https://img.shields.io/badge/VisionGaia-Technology-cyan?style=for-the-badge)](https://visiongaiatechnology.de)
 
-*VGT GeDefense 5.0.0-beta.1 — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
+*VGT GeDefense 5.0.0-beta.2 — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
 
 </div>

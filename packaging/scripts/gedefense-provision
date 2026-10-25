@@ -483,6 +483,7 @@ for directory in \
   "/var/lib/vgt/gedefense:1770:root:${CONTROL_GROUP}" \
   "/var/lib/vgt/gedefense/quarantine:0700:root:${CONTROL_GROUP}" \
   "/var/lib/vgt/gedefense/quarantine/objects:0700:root:${CONTROL_GROUP}" \
+  "/var/lib/vgt/gedefense/canaries:0750:root:${CONTROL_GROUP}" \
   "/var/lib/vgt/gedefense-access:0750:${CONTROL_USER}:${ACCESS_GROUP}" \
   "/var/lib/vgt/gedefense-access/state:0700:${ACCESS_USER}:${ACCESS_GROUP}" \
   "/run/gedefense-scan:0750:root:${CONTROL_GROUP}"; do

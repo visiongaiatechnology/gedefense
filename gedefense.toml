@@ -209,6 +209,22 @@ require_signed_manifest = true
 manifest_path = "/var/lib/vgt/gedefense/threat-feed-manifest.json"
 manifest_max_age_minutes = 1440
 trusted_signing_keys = ""
+# Local operator signing pipeline (optional, recommended for auto_apply).
+# With local_signing=true the control plane downloads every enabled source,
+# stores the exact raw bytes below snapshot_dir, builds the manifest for exactly
+# those bytes and signs it with the operator key below. The fetch then reads the
+# snapshot instead of the network, so signed bytes and parsed bytes can never
+# diverge. The key must be generated as the service account in its data
+# directory (or chgrp gedefense with 0640 before pinning):
+#   sudo -u gedefense gedefense-control --init-feed-signing /var/lib/vgt/gedefense/feed-signing
+# and its printed base64 public key pinned in trusted_signing_keys above.
+# Private key file: 32-byte Ed25519 seed, raw, owner/group-only (0600 or
+# 0640 root:gedefense), never committed to the repository. The pipeline fails
+# closed when require_signed_manifest=false, when no key is pinned, or when the
+# pinned key does not match the operator key.
+local_signing = false
+signing_key_file = ""
+snapshot_dir = "/var/lib/vgt/gedefense/feed-snapshots"
 
 [advisories]
 # Kernel advisories are shipped with the release: a known class of kernel vulnerability, the fixed

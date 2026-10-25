@@ -40,7 +40,7 @@ type CustomRule struct {
 // The settings document stays at version 10: the detection module is additive and optional, so a
 // document written before it existed loads unchanged and receives the module's defaults. A version
 // bump would move every migration gate for a change that has nothing to migrate.
-const fabricSettingsVersion = 10
+const fabricSettingsVersion = 12
 const runtimeSettingsHistoryLimit = 32
 
 type KineticRuntimeSettings struct {
@@ -511,6 +511,44 @@ func upgradeRuntimeSettings(settings *RuntimeSettings, defaults RuntimeSettings)
 				settings.Migrations = append(settings.Migrations,
 					"feed "+fireholLevelOneFeedID+": action raised to BLOCK (upstream documents this list as safe to block; correlating it recorded known-bad sources and then admitted them)")
 			}
+		}
+	}
+	// v11 relocates the shipped decoys from host paths the unprivileged control
+	// plane can never write into the root-owned canary jail observed by the
+	// privileged core. Only the two shipped defaults are moved; operator-defined
+	// canaries are left untouched and skipped visibly by the apply path when they
+	// are outside the jail (no silent re-pointing).
+	if settings.FabricVersion < 11 && settings.Hardening != nil {
+		for index := range settings.Hardening.Deception.Canaries {
+			canary := &settings.Hardening.Deception.Canaries[index]
+			relocated := ""
+			switch canary.Path {
+			case "/tmp/.aws_credentials":
+				relocated = "/var/lib/vgt/gedefense/canaries/.aws_credentials"
+			case "/etc/shadow.bak":
+				relocated = "/var/lib/vgt/gedefense/canaries/shadow.bak"
+			default:
+				continue
+			}
+			canary.Path = relocated
+			canary.OwnerUID = 0
+			canary.FileMode = 0o600
+			settings.Migrations = append(settings.Migrations,
+				"deception canary relocated into the privileged canary root: "+relocated)
+		}
+	}
+	// v12: the shipped singleton L7 enforcement scope ("only the PHP upload-progress
+	// rule may block") turned every other built-in signature into an alert-only rule.
+	// That is not full application defense: SQLi, XSS, traversal, command injection and
+	// the other high-score rules were visible but could never block. The migration
+	// widens only the unchanged legacy singleton; an operator who narrowed or widened
+	// the list deliberately is left alone.
+	if settings.FabricVersion < 12 && settings.L7 != nil {
+		legacy := settings.L7.EnforceRules
+		if len(legacy) == 1 && strings.TrimSpace(legacy[0]) == "L7.PHP.SESSION_UPLOAD_PROGRESS" {
+			settings.L7.EnforceRules = nil
+			settings.Migrations = append(settings.Migrations,
+				"L7 enforcement scope expanded from the legacy PHP upload-progress singleton to every built-in rule with block eligibility (empty list = all non-alert-only rules); narrow it again in Observe/Degraded if required")
 		}
 	}
 	settings.FabricVersion = fabricSettingsVersion

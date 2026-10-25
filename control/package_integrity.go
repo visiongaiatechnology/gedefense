@@ -16,7 +16,13 @@ type PackageIntegrityFinding struct {
 }
 
 type PackageIntegrityStatus struct {
-	Available bool                      `json:"available"`
+	Available bool `json:"available"`
+	// Supported states whether this host has the package database the scanner
+	// can verify. On a distribution it does not support, the scanner is honestly
+	// "not supported" instead of failing its next scan: a pacman database cannot
+	// be missing because the host is insecure.
+	Supported bool                      `json:"supported"`
+	Reason    string                    `json:"reason,omitempty"`
 	Running   bool                      `json:"running"`
 	LastScan  *time.Time                `json:"last_scan,omitempty"`
 	Packages  int                       `json:"packages"`
@@ -42,10 +48,14 @@ func NewPackageIntegrityScanner() *PackageIntegrityScanner {
 }
 
 func newPackageIntegrityScanner(dbRoot, fsRoot string) *PackageIntegrityScanner {
+	supported, reason := packageIntegritySupportedFor(dbRoot)
 	return &PackageIntegrityScanner{
 		dbRoot: dbRoot,
 		fsRoot: fsRoot,
-		status: PackageIntegrityStatus{Available: packageIntegritySupported(), Findings: []PackageIntegrityFinding{}},
+		status: PackageIntegrityStatus{
+			Available: supported, Supported: supported, Reason: reason,
+			Findings: []PackageIntegrityFinding{},
+		},
 		policy: defaultIntegrityFabricSettings(Config{}).Packages.policy(),
 	}
 }
@@ -64,6 +74,10 @@ func (s *PackageIntegrityScanner) Start(onComplete func(PackageIntegrityStatus))
 		s.mu.Unlock()
 		return errors.New("package integrity scan already running")
 	}
+	if !s.status.Supported {
+		s.mu.Unlock()
+		return errors.New("package integrity scanner is not supported on this host")
+	}
 	if !s.status.Available {
 		s.mu.Unlock()
 		return errors.New("package integrity scanner is unavailable")
@@ -74,13 +88,29 @@ func (s *PackageIntegrityScanner) Start(onComplete func(PackageIntegrityStatus))
 
 	go func() {
 		status, err := scanPackageIntegrity(s.dbRoot, s.fsRoot)
-		status.Available = true
 		status.Running = false
 		now := time.Now().UTC()
 		status.LastScan = &now
 		if err != nil {
-			status.Error = "package integrity scan failed closed"
-			status.Errors++
+			// A package database that is absent is a platform property, not a
+			// deviation: report "not supported" with the reason instead of a
+			// red failed scan, and never count it as an integrity error.
+			if supported, reason := packageIntegritySupportedFor(s.dbRoot); !supported {
+				status.Available = false
+				status.Supported = false
+				status.Reason = reason
+				status.Errors = 0
+				status.Error = ""
+			} else {
+				status.Available = true
+				status.Supported = true
+				status.Error = "package integrity scan failed closed"
+				status.Errors++
+			}
+		} else {
+			status.Available = true
+			status.Supported = true
+			status.Reason = ""
 		}
 		s.mu.Lock()
 		s.status = status

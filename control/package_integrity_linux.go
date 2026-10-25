@@ -24,7 +24,22 @@ const (
 	packageIntegrityMaxTotalBytes = int64(16 << 30)
 )
 
-func packageIntegritySupported() bool { return true }
+func packageIntegritySupported() bool {
+	supported, _ := packageIntegritySupportedFor("/var/lib/pacman/local")
+	return supported
+}
+
+// packageIntegritySupportedFor answers whether this host carries the package
+// database the scanner can verify. The scanner understands pacman MTREE
+// manifests; on an apt/dpkg host the honest answer is "not supported", not a
+// failed scan that makes the posture look compromised.
+func packageIntegritySupportedFor(dbRoot string) (bool, string) {
+	info, err := os.Lstat(dbRoot)
+	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return false, "pacman package database is not present on this host; package integrity verification supports pacman-managed distributions only"
+	}
+	return true, ""
+}
 
 func scanPackageIntegrity(dbRoot, fsRoot string) (PackageIntegrityStatus, error) {
 	status := PackageIntegrityStatus{Available: true, Findings: []PackageIntegrityFinding{}}

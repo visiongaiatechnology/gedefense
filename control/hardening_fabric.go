@@ -162,8 +162,8 @@ func defaultHardeningFabricSettings(cfg Config, storageDir string) HardeningFabr
 		Deception: DeceptionFabricSettings{
 			Enabled: true,
 			Canaries: []CanarySettings{
-				{Path: "/tmp/.aws_credentials", Type: string(CanaryCloudCred), Enabled: true, OwnerUID: 1000, FileMode: 0o600},
-				{Path: "/etc/shadow.bak", Type: string(CanaryShadow), Enabled: true, OwnerUID: 0, FileMode: 0o600},
+				{Path: "/var/lib/vgt/gedefense/canaries/.aws_credentials", Type: string(CanaryCloudCred), Enabled: true, OwnerUID: 0, FileMode: 0o600},
+				{Path: "/var/lib/vgt/gedefense/canaries/shadow.bak", Type: string(CanaryShadow), Enabled: true, OwnerUID: 0, FileMode: 0o600},
 			},
 			AllowedRoots:        []string{"/etc", "/home", "/opt", "/root", "/srv", "/tmp", "/var"},
 			ContainmentLevel:    deceptionContainmentContainAndBlock,

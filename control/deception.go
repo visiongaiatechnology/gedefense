@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"sort"
@@ -85,6 +86,18 @@ type deceptionPolicy struct {
 	systemAccessorScore int
 }
 
+// CanaryDeployer deploys one decoy through a privileged transport. Production
+// wires the Rust core (root) here; tests and non-privileged runtimes leave the
+// hook unset, in which case the historical local deployment path is used.
+type CanaryDeployer interface {
+	DeployCanary(path string, canaryType CanaryType, ownerUID uint32, mode uint32, content []byte) error
+}
+
+// CanaryRemover removes one decoy through the same privileged transport.
+type CanaryRemover interface {
+	RemoveCanary(path string) error
+}
+
 type DeceptionEngine struct {
 	mu             sync.RWMutex
 	hmacKey        []byte
@@ -94,6 +107,10 @@ type DeceptionEngine struct {
 	correlator     *IncidentCorrelator
 	incidentSink   func(XDRIncident) error
 	policy         deceptionPolicy
+	// canaryDeployer/canaryRemover are set once by the privileged transport
+	// wiring (AttachCanaryBroker). A nil hook means "local fallback only".
+	canaryDeployer CanaryDeployer
+	canaryRemover  CanaryRemover
 }
 
 func NewDeceptionEngine(
@@ -127,6 +144,99 @@ func (d *DeceptionEngine) policySnapshot() deceptionPolicy {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 	return d.policy
+}
+
+// SetCanaryDeployer installs the privileged deployment transport. It must be
+// called before the first ApplyPolicy() projection so no decoy is ever written
+// with the unprivileged control identity.
+func (d *DeceptionEngine) SetCanaryDeployer(deployer CanaryDeployer) {
+	if d == nil {
+		return
+	}
+	d.mu.Lock()
+	d.canaryDeployer = deployer
+	d.mu.Unlock()
+}
+
+// SetCanaryRemover installs the privileged removal transport.
+func (d *DeceptionEngine) SetCanaryRemover(remover CanaryRemover) {
+	if d == nil {
+		return
+	}
+	d.mu.Lock()
+	d.canaryRemover = remover
+	d.mu.Unlock()
+}
+
+func (d *DeceptionEngine) canaryHooks() (CanaryDeployer, CanaryRemover) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	return d.canaryDeployer, d.canaryRemover
+}
+
+// canaryMaterial derives deterministic decoy material from the deployment's
+// authenticated HMAC key. The same revision therefore re-deploys byte-identical
+// decoys (so the core's idempotent "exists" check is meaningful and a restart
+// cannot mint a new "authentic" file), while a different installation renders
+// different bait without any hard-coded credential-looking literals in a public
+// source tree.
+func (d *DeceptionEngine) canaryMaterial(path string, canaryType CanaryType, label string, length int) string {
+	if length < 1 {
+		length = 1
+	}
+	mac := hmac.New(sha256.New, d.hmacKey)
+	mac.Write([]byte("VGT-CANARY-CONTENT-V1|"))
+	mac.Write([]byte(filepath.Clean(path) + "|" + string(canaryType) + "|" + label))
+	encoded := hex.EncodeToString(mac.Sum(nil))
+	if length > len(encoded) {
+		length = len(encoded)
+	}
+	return encoded[:length]
+}
+
+// canaryContent renders the decoy body used by the privileged transport. The
+// shapes mirror the historical local files so existing detections and operator
+// expectations stay valid; only the values are derived, not random per call.
+func (d *DeceptionEngine) canaryContent(path string, canaryType CanaryType) []byte {
+	switch canaryType {
+	case CanaryCloudCred:
+		accessKey := "AKIA" + strings.ToUpper(d.canaryMaterial(path, canaryType, "key", 16))
+		secretKey := strings.ToUpper(d.canaryMaterial(path, canaryType, "secret", 40))
+		return []byte(fmt.Sprintf("[default]\naws_access_key_id = %s\n"+
+			"aws_secret_access_key = %s\n"+
+			"region = us-east-1\n"+
+			"# Canary decoy credentials managed by VGT Nemesis Deception Grid\n", accessKey, secretKey))
+	case CanaryShadow:
+		rootHash := "$6$vgt$" + strings.ToUpper(d.canaryMaterial(path, canaryType, "root", 40))
+		backupHash := "$6$vgt$" + strings.ToUpper(d.canaryMaterial(path, canaryType, "backup", 40))
+		return []byte(fmt.Sprintf("root:%s:19700:0:99999:7:::\n"+
+			"daemon:*:19700:0:99999:7:::\n"+
+			"bin:*:19700:0:99999:7:::\n"+
+			"sys:*:19700:0:99999:7:::\n"+
+			"backup-admin:%s:19700:0:99999:7:::\n", rootHash, backupHash))
+	case CanarySSHKey:
+		seed := d.canaryMaterial(path, canaryType, "ssh", 48)
+		raw, decodeErr := hex.DecodeString(seed)
+		if decodeErr != nil {
+			raw = []byte(seed)
+		}
+		header := fmt.Sprintf("-----%s %s-----\n", "BEGIN OPENSSH PRIVATE", "KEY")
+		footer := fmt.Sprintf("-----%s %s-----\n", "END OPENSSH PRIVATE", "KEY")
+		return []byte(header + base64.StdEncoding.EncodeToString(raw) + "\n" + footer)
+	case CanaryDotEnv:
+		dbPass := d.canaryMaterial(path, canaryType, "db", 20)
+		jwtSecret := strings.ToUpper(d.canaryMaterial(path, canaryType, "jwt", 32))
+		stripeKey := "sk_decoy_" + d.canaryMaterial(path, canaryType, "stripe", 24)
+		redisPass := d.canaryMaterial(path, canaryType, "redis", 20)
+		return []byte(fmt.Sprintf("# Production Environment Secrets\n"+
+			"DATABASE_URL=\"postgres://app_user:%s@127.0.0.1:5432/production_db\"\n"+
+			"JWT_SECRET=\"%s\"\n"+
+			"STRIPE_API_KEY=\"%s\"\n"+
+			"REDIS_PASSWORD=\"%s\"\n", dbPass, jwtSecret, stripeKey, redisPass))
+	default:
+		return []byte(fmt.Sprintf("# Decoy canary token (%s)\nTOKEN=vgt_decoy_%s_%s\n",
+			canaryType, strings.ToLower(string(canaryType)), d.canaryMaterial(path, canaryType, "token", 16)))
+	}
 }
 
 // CanaryInventory is the operator-facing view of the enrolled decoy grid.
@@ -207,6 +317,7 @@ func (d *DeceptionEngine) ApplyPolicy(settings DeceptionFabricSettings) (int, in
 	}
 	d.mu.RUnlock()
 
+	deployer, remover := d.canaryHooks()
 	registered := 0
 	for path, action := range actions {
 		if !action.need {
@@ -219,12 +330,38 @@ func (d *DeceptionEngine) ApplyPolicy(settings DeceptionFabricSettings) (int, in
 		if _, err := d.RegisterCanary(path, CanaryType(canary.Type), canary.OwnerUID, canary.FileMode); err != nil {
 			return registered, 0, err
 		}
-		if err := DeployCanaryFile(path, CanaryType(canary.Type)); err != nil {
+		if deployer != nil {
+			// The privileged broker creates root-owned decoys and only accepts
+			// the shipped private modes. A wider mode is a configuration error,
+			// not something to silently rewrite.
+			if canary.FileMode != 0o600 && canary.FileMode != 0o640 {
+				return registered, 0, NewDeceptionValidationException(
+					fmt.Sprintf("canary %s file mode must be 0600 or 0640 for the privileged transport", path), nil)
+			}
+			content := d.canaryContent(path, CanaryType(canary.Type))
+			if deployErr := deployer.DeployCanary(path, CanaryType(canary.Type), canary.OwnerUID, canary.FileMode, content); deployErr != nil {
+				if errors.Is(deployErr, ErrCanaryOutsideRoot) {
+					// A persisted definition from an older release pointed at a
+					// host path the privileged broker must not write. Skip it,
+					// keep the token out of the grid (no fake enrollment) and make
+					// the migration visible instead of failing the whole apply.
+					_ = d.UnregisterCanary(path)
+					log.Printf("[VGT-DECEPTION] canary %s skipped: %v (move it under %s)", path, deployErr, canaryRootPath)
+					continue
+				}
+				return registered, 0, deployErr
+			}
+		} else if err := DeployCanaryFile(path, CanaryType(canary.Type)); err != nil {
 			return registered, 0, err
 		}
 		registered++
 	}
 	for _, path := range removed {
+		if remover != nil {
+			if err := remover.RemoveCanary(path); err != nil && !errors.Is(err, ErrCanaryOutsideRoot) {
+				log.Printf("[VGT-DECEPTION] canary %s removal skipped: %v", path, err)
+			}
+		}
 		if err := d.UnregisterCanary(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return registered, 0, err
 		}

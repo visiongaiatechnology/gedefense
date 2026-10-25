@@ -1014,6 +1014,15 @@ type FeedManager struct {
 	// mutable from the dashboard, so a compromised session cannot install a new
 	// trust anchor for feed content (F-03 / CHAIN-009).
 	signingKeys []ed25519.PublicKey
+
+	// Local operator signing pipeline state (feeds.local_signing). The key is
+	// loaded lazily; a load failure is sticky so no sync silently degrades to
+	// unsigned operation. feedSigningMu is independent of mu: the key loader
+	// performs filesystem I/O and must never run under the manager write lock.
+	feedSigningMu        sync.Mutex
+	feedSigningKey       *feedSigningKeyPair
+	feedSigningErr       error
+	localManifestVersion uint64
 }
 
 func NewFeedManager(cfg FeedConfig, stateDir ...string) *FeedManager {
@@ -1316,6 +1325,15 @@ func (m *FeedManager) loadPersistentState() error {
 			existing.LastError = state.LastError
 			existing.ConsecutiveFails = state.ConsecutiveFails
 			existing.LastGoodFingerprint = state.LastGoodFingerprint
+			// The signed-manifest projection must survive a restart: the
+			// anti-rollback floor (ManifestVersion) and the hard validity window
+			// are what keep a previously verified generation enforceable, and
+			// dropping them would let the first sync after a restart reuse a
+			// version this host already published.
+			existing.ManifestVersion = state.ManifestVersion
+			existing.ManifestValidUntil = state.ManifestValidUntil
+			existing.ManifestVerified = state.ManifestVerified
+			existing.ManifestAuthenticity = state.ManifestAuthenticity
 			existing.Status = computeFeedStatus(existing, m.live.activeSettings())
 		}
 	}
@@ -1411,6 +1429,30 @@ func (m *FeedManager) syncInternal(ctx context.Context) ([]string, map[string]er
 	m.mu.Lock()
 	m.lastAttemptAt = now
 	m.mu.Unlock()
+
+	// Local operator signing runs before any fetch: it downloads every enabled
+	// source under the same transport/size/format rules, persists the exact raw
+	// bytes and publishes a manifest that signs them. The fetch loop then reads
+	// those bytes instead of the network, so the verified and the parsed bytes
+	// are the same bytes. A failure aborts the whole sync before a single feed
+	// is promoted (fail closed, previous generation retained).
+	if m.localSigningEnabled() {
+		if prepErr := m.prepareLocalSignedSnapshots(ctx, snapshot); prepErr != nil {
+			m.mu.Lock()
+			m.overallStatus = "ERROR"
+			for _, source := range snapshot.sources {
+				if state := m.feedStates[source.ID]; state != nil {
+					state.LastAttemptAt = now
+					state.LastError = "local signing: " + prepErr.Error()
+					state.ConsecutiveFails++
+					state.Status = computeFeedStatus(state, snapshot.settings)
+				}
+			}
+			_ = m.savePersistentStateLocked()
+			m.mu.Unlock()
+			return nil, map[string]error{"local_signing": prepErr}
+		}
+	}
 
 	for _, src := range sources {
 		src := src
@@ -1633,10 +1675,31 @@ func (m *FeedManager) composeGenerationsLocked(settings ThreatIntelFabricSetting
 // Rollback on a failed diff is a hard safety invariant and is deliberately not
 // administrable.
 func (m *FeedManager) ApplyToKernel(core *CoreClient, allowlist []string) (int, int, error) {
+	if m.localSigningEnabled() {
+		// Load the operator key before taking the manager write lock: the loader
+		// performs filesystem I/O, and a sticky load failure must be reported by
+		// the local signing gate below instead of silently applying nothing.
+		policy := m.localSigningPolicy()
+		if policy.keyFile != "" {
+			_ = m.ensureLocalSigningKey(policy.keyFile)
+		}
+	}
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	settings := m.live.activeSettings()
+
+	// Local signing is a second, independent kernel-apply gate. A manifest that
+	// verifies against a pinned key the local operator cannot produce is not a
+	// usable deployment: apply refuses instead of enforcing foreign content.
+	if err := m.localSigningApplyGate(); err != nil {
+		m.kernelApplyLastAt = time.Now().UTC()
+		m.kernelApplyStatus = kernelApplyError
+		m.lastKernelError = err.Error()
+		_ = m.savePersistentStateLocked()
+		return 0, 0, NewThreatIntelSecurityException("local feed signing trust anchor refused kernel apply", err)
+	}
 
 	// F-03 / CHAIN-009: a kernel diff may only be computed from generations that
 	// carry a verified, unexpired signed manifest. The gate runs before any
@@ -2023,6 +2086,12 @@ func (m *FeedManager) fetchSource(ctx context.Context, src ThreatFeedSource, sna
 	if snapshot == nil {
 		return nil, nil, NewThreatIntelValidationException("threat intelligence configuration unavailable", nil)
 	}
+	// Local operator signing mode never touches the network on the fetch path:
+	// the bytes were downloaded, snapshotted and signed by the same sync before
+	// this call, so the manifest and the parsed bytes are provably the same.
+	if m.localSigningEnabled() {
+		return m.fetchSourceFromSnapshot(src, snapshot)
+	}
 	policy := snapshot.settings
 	u, err := validateFeedSourceURL(src.URL)
 	if err != nil {
@@ -2060,51 +2129,17 @@ func (m *FeedManager) fetchSource(ctx context.Context, src ThreatFeedSource, sna
 	return nil, nil, lastErr
 }
 
+// fetchSourceOnce runs the full network fetch path for one source: bounded
+// download, signed-manifest verification of the exact raw bytes, parsing and
+// indicator-digest verification. In local signing mode the bytes come from the
+// snapshot instead of the network; the verification chain is identical.
 func (m *FeedManager) fetchSourceOnce(ctx context.Context, src ThreatFeedSource, snapshot *threatIntelSnapshot, u *url.URL) ([]string, *threatFeedCertificate, error) {
-	policy := snapshot.settings
-	maxEntries, maxBytes, timeoutSeconds := snapshot.feedBounds(src)
-
-	feedCtx, cancel := context.WithTimeout(ctx, time.Duration(timeoutSeconds)*time.Second)
-	defer cancel()
-	feedCtx = context.WithValue(feedCtx, feedPolicyContextKey{}, snapshot)
-
-	req, err := http.NewRequestWithContext(feedCtx, http.MethodGet, u.String(), nil)
+	if m.localSigningEnabled() {
+		return m.fetchSourceFromSnapshot(src, snapshot)
+	}
+	raw, contentType, err := m.fetchFeedRawOnce(ctx, src, snapshot, u)
 	if err != nil {
 		return nil, nil, err
-	}
-	req.Header.Set("User-Agent", "VGT-GeDefense/5.0.0-beta.1 sovereign-threat-intel")
-	req.Header.Set("Accept", "text/plain, application/json, */*")
-
-	resp, err := m.client.Do(req)
-	if err != nil {
-		var validation *ThreatIntelValidationException
-		var security *ThreatIntelSecurityException
-		if errors.As(err, &validation) || errors.As(err, &security) {
-			return nil, nil, err
-		}
-		return nil, nil, newFeedTransientError("feed request failed", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
-			return nil, nil, newFeedTransientError(fmt.Sprintf("HTTP %d", resp.StatusCode), nil)
-		}
-		return nil, nil, NewThreatIntelValidationException(fmt.Sprintf("feed returned HTTP %d", resp.StatusCode), nil)
-	}
-	if !snapshot.contentAllowed(resp.Header.Get("Content-Type")) {
-		return nil, nil, NewThreatIntelSecurityException("feed content type is outside the configured policy", nil)
-	}
-
-	// Read the bounded raw body once. The signed manifest binds these exact
-	// bytes; parsing the same byte slice removes a re-read/TOCTOU window between
-	// verification and parsing.
-	raw, readErr := io.ReadAll(io.LimitReader(resp.Body, maxBytes+1))
-	if readErr != nil {
-		return nil, nil, newFeedTransientError("feed read failed", readErr)
-	}
-	if int64(len(raw)) > maxBytes {
-		return nil, nil, NewThreatIntelSecurityException("feed exceeds bounded size limit", nil)
 	}
 	certificate, verifyErr := m.verifyFeedArtifact(src, raw)
 	if verifyErr != nil {
@@ -2113,36 +2148,143 @@ func (m *FeedManager) fetchSourceOnce(ctx context.Context, src ThreatFeedSource,
 	if len(bytes.TrimSpace(raw)) == 0 {
 		return nil, certificate, nil
 	}
+	maxEntries, _, _ := snapshot.feedBounds(src)
+	items, parseErr := parseFeedRaw(src, raw, contentType, snapshot.settings.Validation, maxEntries)
+	if parseErr != nil {
+		return nil, nil, parseErr
+	}
+	if digestErr := m.verifyFeedItemsDigest(certificate, src, items); digestErr != nil {
+		return nil, nil, digestErr
+	}
+	return items, certificate, nil
+}
 
-	isJSON := src.Format == "json" || strings.HasSuffix(strings.ToLower(u.Path), ".json") ||
-		strings.Contains(strings.ToLower(resp.Header.Get("Content-Type")), "application/json")
+// fetchFeedRawOnce performs one bounded HTTPS download and returns the exact
+// bytes together with the response content type. The signed manifest binds the
+// returned byte slice; callers must never re-read the body afterwards. A
+// deterministic rejection (validation/security) is returned as-is; everything
+// that may be transient is wrapped so the retry loop can decide.
+func (m *FeedManager) fetchFeedRawOnce(ctx context.Context, src ThreatFeedSource, snapshot *threatIntelSnapshot, u *url.URL) ([]byte, string, error) {
+	maxEntries, maxBytes, timeoutSeconds := snapshot.feedBounds(src)
+	_ = maxEntries
+
+	feedCtx, cancel := context.WithTimeout(ctx, time.Duration(timeoutSeconds)*time.Second)
+	defer cancel()
+	feedCtx = context.WithValue(feedCtx, feedPolicyContextKey{}, snapshot)
+
+	req, err := http.NewRequestWithContext(feedCtx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return nil, "", err
+	}
+	req.Header.Set("User-Agent", "VGT-GeDefense/5.0.0-beta.2 sovereign-threat-intel")
+	req.Header.Set("Accept", "text/plain, application/json, */*")
+
+	resp, err := m.client.Do(req)
+	if err != nil {
+		var validation *ThreatIntelValidationException
+		var security *ThreatIntelSecurityException
+		if errors.As(err, &validation) || errors.As(err, &security) {
+			return nil, "", err
+		}
+		return nil, "", newFeedTransientError("feed request failed", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
+			return nil, "", newFeedTransientError(fmt.Sprintf("HTTP %d", resp.StatusCode), nil)
+		}
+		return nil, "", NewThreatIntelValidationException(fmt.Sprintf("feed returned HTTP %d", resp.StatusCode), nil)
+	}
+	if !snapshot.contentAllowed(resp.Header.Get("Content-Type")) {
+		return nil, "", NewThreatIntelSecurityException("feed content type is outside the configured policy", nil)
+	}
+
+	// Read the bounded raw body once. The signed manifest binds these exact
+	// bytes; parsing the same byte slice removes a re-read/TOCTOU window between
+	// verification and parsing.
+	raw, readErr := io.ReadAll(io.LimitReader(resp.Body, maxBytes+1))
+	if readErr != nil {
+		return nil, "", newFeedTransientError("feed read failed", readErr)
+	}
+	if int64(len(raw)) > maxBytes {
+		return nil, "", NewThreatIntelSecurityException("feed exceeds bounded size limit", nil)
+	}
+	return raw, resp.Header.Get("Content-Type"), nil
+}
+
+// downloadFeedRaw is the raw-byte downloader used by the local signing
+// pipeline. It shares the transport policy, retry classification and byte
+// bounds with the verification path, but deliberately skips manifest
+// verification: this call is what produces the bytes a new manifest will sign.
+func (m *FeedManager) downloadFeedRaw(ctx context.Context, src ThreatFeedSource, snapshot *threatIntelSnapshot) ([]byte, error) {
+	if snapshot == nil {
+		return nil, NewThreatIntelValidationException("threat intelligence configuration unavailable", nil)
+	}
+	u, err := validateFeedSourceURL(src.URL)
+	if err != nil {
+		return nil, err
+	}
+	if !snapshot.hostAllowed(u.Hostname()) {
+		return nil, NewThreatIntelSecurityException("feed host is outside the configured allowlist", nil)
+	}
+	attempts := snapshot.settings.Retry.Attempts
+	if attempts < 1 {
+		attempts = 1
+	}
+	var lastErr error
+	for attempt := 1; attempt <= attempts; attempt++ {
+		if attempt > 1 {
+			backoff := time.Duration(snapshot.settings.Retry.BackoffSeconds) * time.Second * time.Duration(1<<uint(minInt(attempt-2, 4)))
+			timer := time.NewTimer(backoff)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return nil, ctx.Err()
+			case <-timer.C:
+			}
+		}
+		raw, _, fetchErr := m.fetchFeedRawOnce(ctx, src, snapshot, u)
+		if fetchErr == nil {
+			return raw, nil
+		}
+		lastErr = fetchErr
+		if !threatFeedRetryable(fetchErr) {
+			return nil, fetchErr
+		}
+	}
+	return nil, lastErr
+}
+
+// parseFeedRaw applies one validation policy to one raw payload. It is shared
+// by the network path and the local-snapshot path so the indicator set that the
+// manifest signs is produced by exactly the same code that later re-derives it.
+func parseFeedRaw(src ThreatFeedSource, raw []byte, contentType string, policy ThreatIntelValidationSettings, maxEntries int) ([]string, error) {
+	if maxEntries < 1 {
+		return nil, NewThreatIntelValidationException("feed entry bound is not configured", nil)
+	}
+	sourceURL, _ := url.Parse(src.URL)
+	isJSON := src.Format == "json" || strings.Contains(strings.ToLower(contentType), "application/json")
+	if sourceURL != nil {
+		isJSON = isJSON || strings.HasSuffix(strings.ToLower(sourceURL.Path), ".json")
+	}
 
 	stats := threatFeedStats{}
 	set := make(map[string]struct{})
 	if isJSON {
-		if err := collectJSONThreatEntries(bytes.NewReader(raw), maxEntries, policy.Validation, set, &stats); err != nil {
-			return nil, nil, err
+		if err := collectJSONThreatEntries(bytes.NewReader(raw), maxEntries, policy, set, &stats); err != nil {
+			return nil, err
 		}
 	} else {
 		sc := bufio.NewScanner(bytes.NewReader(raw))
 		sc.Buffer(make([]byte, 4096), 64*1024)
 		for sc.Scan() {
-			value, kind := classifyThreatLine(sc.Text(), policy.Validation)
+			value, kind := classifyThreatLine(sc.Text(), policy)
 			switch kind {
 			case threatLineAccepted:
 				stats.Candidates++
 				stats.Accepted++
 				set[value] = struct{}{}
-				if len(set) >= maxEntries {
-					items, finalizeErr := finalizeThreatFeed(set, stats, policy.Validation)
-					if finalizeErr != nil {
-						return nil, nil, finalizeErr
-					}
-					if digestErr := m.verifyFeedItemsDigest(certificate, src, items); digestErr != nil {
-						return nil, nil, digestErr
-					}
-					return items, certificate, nil
-				}
 			case threatLineMalformed:
 				stats.Candidates++
 				stats.Malformed++
@@ -2150,19 +2292,15 @@ func (m *FeedManager) fetchSourceOnce(ctx context.Context, src ThreatFeedSource,
 				stats.Candidates++
 				stats.Filtered++
 			}
+			if len(set) >= maxEntries {
+				break
+			}
 		}
 		if err := sc.Err(); err != nil {
-			return nil, nil, newFeedTransientError("feed stream read failed", err)
+			return nil, newFeedTransientError("feed stream read failed", err)
 		}
 	}
-	items, finalizeErr := finalizeThreatFeed(set, stats, policy.Validation)
-	if finalizeErr != nil {
-		return nil, nil, finalizeErr
-	}
-	if digestErr := m.verifyFeedItemsDigest(certificate, src, items); digestErr != nil {
-		return nil, nil, digestErr
-	}
-	return items, certificate, nil
+	return finalizeThreatFeed(set, stats, policy)
 }
 
 // finalizeThreatFeed applies the validation policy to a completed download. A

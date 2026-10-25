@@ -32,8 +32,23 @@
 </div>
 
 ---
+## 🆕 版本 5.0.0-beta.2 — 修复 1–9（2026-10-25）
+
+本版本将 Hotfix 1–9 系列中的安全与功能修复合并到公开源代码树：
+
+- **Deception 金丝雀是真正的内核传感器：** 特权核心在专用 jail 内部署由 root 拥有的诱饵，并通过 fanotify 监视它们。未授权访问会自动生成事件以及可逆、带 TTL 的遏制操作；核心会忽略自身部署/验证时的打开操作。
+- **带内核验证应用机制的签名威胁情报源：** 由运维方提供的 Ed25519 流水线对精确的源字节做快照、签署 detached 清单、使用固定公钥校验（包含 TTL 与防回滚），并且只在核内应用已验证的 BLOCK 条目。Feed 产生的阻断条目在发布协调与控制平面重启后仍会保留。
+- **L7 内联生产者成为一等公民：** 内联 Unix socket 边缘接受真实本地生产者，在到达上游前阻断 SQLi/XSS/LFI/命令注入载荷，并如实报告 producer/attachment/coverage 计数。完整的内置强制执行范围已启用。
+- **真实可信的防护状态：** 控制平面根据内核、XDR、core、Kinetic、L7 与 evidence 的实际强制执行状态计算 `protection.effective`。只有每一层都真正生效时仪表盘才显示“全面保护”，否则列出确切缺口。
+- **完整性与发布维护：** FIM/Titan 发布重基线、启动自检状态 API、本地 cgroup-v2 Gaia Cells 注册表回退、运维方签名的本地启动信任基线，以及更新后重基线脚本。
+- **验证：** Go control 测试套件通过，Rust 40/40 测试通过，签名安装程序自检与 payload 校验通过。
+
+**已知限制：** 公开 CA/RFC3161/CRL/OCSP 发布真实性以及外部锚定的防回滚通道仍不在本次 beta 范围内。威胁情报源真实性由运维方通过本地 Ed25519 密钥提供，而非公共 CA。本版本仍仅面向测试与资格验证主机的公开 beta。
+
+---
+
 > [!WARNING]
-> **公开测试版 — 不可用于生产环境（版本 5.0.0-beta.1）。**  
+> **公开测试版 — 不可用于生产环境（版本 5.0.0-beta.2）。**  
 > GeDefense Titan 与 Linux Security Fabric 仍在积极开发中。此测试版仅适用于
 > 测试和资格验证主机。核心架构已由自动发布门禁验证，但公开 CA 发布真实性、
 > RFC3161 时间戳、吊销、外部锚定防回滚和 feed 签名密钥仍然缺失。请勿将此
@@ -41,9 +56,9 @@
 
 ---
 
-## 🚨 严重安全警告与公告 — RELEASE v5.0.0-beta.1
+## 🚨 严重安全警告与公告 — RELEASE v5.0.0-beta.2
 
-> **5.0.0-beta.1 操作安全更新。** 已启用 PHP 上传进度缓解（`session.upload_progress.enabled = Off`）、关键 L7 规则 `L7.PHP.SESSION_UPLOAD_PROGRESS` 以及按规则范围的内联强制（`l7.enforce_rules`，`mode = "block"`）。L7 源站仅绑定 loopback，直接访问源站无法绕过检测。下方的 4.2.x 历史公告仍属于修复记录。
+> **5.0.0-beta.2 操作安全更新。** 已启用 PHP 上传进度缓解（`session.upload_progress.enabled = Off`）、关键 L7 规则 `L7.PHP.SESSION_UPLOAD_PROGRESS` 以及按规则范围的内联强制（`l7.enforce_rules`，`mode = "block"`）。L7 源站仅绑定 loopback，直接访问源站无法绕过检测。下方的 4.2.x 历史公告仍属于修复记录。
 
 
 > [!CAUTION]
@@ -79,9 +94,9 @@
 
 ---
 
-## ⚠️ 稳定性与可靠性承诺 — RELEASE v5.0.0-beta.1 · 通用 LINUX 平台
+## ⚠️ 稳定性与可靠性承诺 — RELEASE v5.0.0-beta.2 · 通用 LINUX 平台
 
-VGT GeDefense 5.0.0-beta.1 是主权 Linux 安全防御体系的旗舰产品 — 将经过深度加固的内核级防御链与全新的 **Security Fabric Control Plane（安全织网控制平面）**、通用 Linux 原生集成、加固级发布流水线以及真实的内核/网卡适格门禁融为一体。专为主权主机与高对抗网络防御而设计。
+VGT GeDefense 5.0.0-beta.2 是主权 Linux 安全防御体系的旗舰产品 — 将经过深度加固的内核级防御链与全新的 **Security Fabric Control Plane（安全织网控制平面）**、通用 Linux 原生集成、加固级发布流水线以及真实的内核/网卡适格门禁融为一体。专为主权主机与高对抗网络防御而设计。
 
 **生产环境准入明确属于具体经过审计的目标主机的属性 — 而非仅仅取决于源代码本身。**
 
@@ -633,17 +648,17 @@ Rust Core **未提供任何通用的系统 Shell、文件系统或 Sysctl 执行
 
 ```bash
 # 下载安装程序
-wget https://github.com/visiongaiatechnology/gedefense/releases/download/v5.0.0-beta.1/GeDefense-5.0.0-beta.1-OneClick.run
+wget https://github.com/visiongaiatechnology/gedefense/releases/download/v5.0.0-beta.2/GeDefense-5.0.0-beta.2-OneClick.run
 
 # 校验 SHA-256 完整性指纹
-sha256sum --check GeDefense-5.0.0-beta.1-OneClick.run.sha256
+sha256sum --check GeDefense-5.0.0-beta.2-OneClick.run.sha256
 
 # 执行安装（需要 root 权限）
-chmod 700 GeDefense-5.0.0-beta.1-OneClick.run
-sudo ./GeDefense-5.0.0-beta.1-OneClick.run
+chmod 700 GeDefense-5.0.0-beta.2-OneClick.run
+sudo ./GeDefense-5.0.0-beta.2-OneClick.run
 ```
 
-> **安装程序可用性：** 官方 v5.0.0-beta.1 自包含安装程序（`GeDefense-5.0.0-beta.1-OneClick.run`）已通过验证并发布于 GitHub Releases。
+> **安装程序可用性：** 官方 v5.0.0-beta.2 自包含安装程序（`GeDefense-5.0.0-beta.2-OneClick.run`）已通过验证并发布于 GitHub Releases。
 
 > 安装包与校验和文件仅在通过全部 GitHub CI 测试及实体 Linux 节点验证后发布。切勿运行未经验签的 RUN 可执行文件。
 
@@ -677,7 +692,7 @@ sudo ./GeDefense-5.0.0-beta.1-OneClick.run
 
 ---
 
-## 🚧 当前已知局限（5.0.0-beta.1）
+## 🚧 当前已知局限（5.0.0-beta.2）
 
 - 暂未集成 Swarm / 集群网格（Mesh）支持
 - 暂不支持 QUIC 协议网络卸载
@@ -695,7 +710,7 @@ sudo ./GeDefense-5.0.0-beta.1-OneClick.run
 
 ## 📋 版本更新日志 (Changelog)
 
-### v5.0.0-beta.1 — 自动 Gaia Cell 隔离、受控内核缓解与 PHP/L7 操作加固 *(当前版本)*
+### v5.0.0-beta.1 — 自动 Gaia Cell 隔离、受控内核缓解与 PHP/L7 操作加固 *(上一版本)*
 
 - **自动与手动 Gaia Cell 隔离：** 达到或超过 `cells.auto_confine_score` 的事件会通过可逆事务引擎隔离所属 cell；每个事件行提供手动隔离。API：`POST /api/v1/xdr/incidents/{id}/confine`、`GET /api/v1/cells/confinement`。
 - **内核缓解保护：** 可选 sysctl 缓解，带有限试用窗口、主机服务验证与自动回滚；hardening 视图提供 dry-run、apply、rollback 及原因说明。
@@ -985,6 +1000,6 @@ sudo python3 scripts/update-geoip-db.py /var/lib/vgt/gedefense/geoip.csv
 
 [![VGT](https://img.shields.io/badge/VisionGaia-Technology-cyan?style=for-the-badge)](https://visiongaiatechnology.de)
 
-*VGT GeDefense 5.0.0-beta.1 — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
+*VGT GeDefense 5.0.0-beta.2 — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
 
 </div>

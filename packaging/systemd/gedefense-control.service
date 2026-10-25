@@ -12,6 +12,10 @@ WatchdogSec=20s
 User=gedefense
 Group=gedefense
 SupplementaryGroups=gedefense-l7 gedefense-desktop
+# Local Gaia-Cells fallback for hosts without the AstraeaOS runtime: the control
+# plane owns one dedicated cgroup-v2 subtree. Creating/chowning it needs root once;
+# every later freeze/list operation uses the control identity.
+ExecStartPre=+/bin/sh -c 'mkdir -p /sys/fs/cgroup/vgt-cells && chown gedefense:gedefense /sys/fs/cgroup/vgt-cells'
 ExecStartPre=/opt/vgt/gedefense/current/bin/gedefense-control --config=/etc/vgt/gedefense/gedefense.toml --preflight
 ExecStart=/opt/vgt/gedefense/current/bin/gedefense-control --config=/etc/vgt/gedefense/gedefense.toml
 # Restart=always, not on-failure: the internal restart is a clean self-exit, and a
@@ -43,7 +47,7 @@ SystemCallArchitectures=native
 SystemCallFilter=@system-service
 SystemCallErrorNumber=EPERM
 ReadOnlyPaths=/opt/vgt/gedefense/current /etc/vgt/gedefense
-ReadWritePaths=/var/lib/vgt/gedefense /run/vgt-gedefense /run/vgt-gedefense-l7 /run/gedefense
+ReadWritePaths=/var/lib/vgt/gedefense /run/vgt-gedefense /run/vgt-gedefense-l7 /run/gedefense /sys/fs/cgroup/vgt-cells
 UMask=0077
 
 [Install]

@@ -17,7 +17,7 @@ import (
 	"time"
 )
 
-const version = "5.0.0-beta.1"
+const version = "5.0.0-beta.2"
 
 func detectInterface(requested string) (string, error) {
 	if requested != "" && requested != "auto" {
@@ -89,6 +89,8 @@ func main() {
 	releaseArtifactDir := flag.String("release-artifact-dir", "", "artifact directory used during release manifest verification")
 	releasePrivateKey := flag.String("release-private-key", "", "offline Ed25519 release private key")
 	releasePublicKey := flag.String("release-public-key", "", "trusted Ed25519 release public key")
+	initFeedSigning := flag.String("init-feed-signing", "", "generate the local feed-signing Ed25519 key pair in this directory and print the pinned public key")
+	feedPublicKeyOut := flag.String("feed-public-key", "", "optional output path for the generated feed-signing public key")
 	flag.Parse()
 	if *showVersion {
 		fmt.Println(version)
@@ -113,6 +115,19 @@ func main() {
 			log.Fatalf("release verification: %v", err)
 		}
 		fmt.Printf("release manifest valid; signer=%s version=%s artifacts=%d\n", document.Signer, document.Envelope.Version, len(document.Envelope.Artifacts))
+		return
+	}
+	if *feedPublicKeyOut != "" && *initFeedSigning == "" {
+		log.Fatal("--feed-public-key requires --init-feed-signing")
+	}
+	if *initFeedSigning != "" {
+		publicKey, err := InitFeedSigning(*initFeedSigning, *feedPublicKeyOut)
+		if err != nil {
+			log.Fatalf("feed signing init: %v", err)
+		}
+		fmt.Printf("feed signing key pair created in %s\n", *initFeedSigning)
+		fmt.Printf("feeds.trusted_signing_keys = \"%s\"\n", feedSigningPublicKeyBase64(publicKey))
+		fmt.Printf("key fingerprint: %s\n", feedSigningFingerprint(publicKey))
 		return
 	}
 	if *probeURL != "" {
@@ -526,6 +541,45 @@ func main() {
 	if err := feeds.applyThreatIntelSettings(effectiveThreatIntelSettings(settings.Get()), settings.Get().Revision); err != nil {
 		log.Fatalf("threat intelligence settings: %v", err)
 	}
+	// The bootstrap feeds.auto_apply flag is authoritative for the local signing
+	// pipeline. A persisted runtime document that predates this namespace carries
+	// kernel_apply.auto_apply=false, which would silently ignore the operator's
+	// explicit opt-in. The bootstrap flag has already been validated to require
+	// the signed-manifest gate and a pinned key, so it seeds the running
+	// namespace; the dashboard can still change it at runtime afterwards.
+	if cfg.Feeds.AutoApply {
+		fabric := feeds.LiveSettings()
+		if !fabric.Kernel.AutoApply {
+			fabric.Kernel.AutoApply = true
+			if err := feeds.applyThreatIntelSettings(fabric, settings.Get().Revision); err != nil {
+				log.Fatalf("threat intelligence auto-apply bootstrap: %v", err)
+			}
+		}
+	}
+	if cfg.Feeds.LocalSigning {
+		log.Printf("feed signing: local operator pipeline enabled (key=%s snapshots=%s manifest=%s)",
+			cfg.Feeds.SigningKeyFile, cfg.Feeds.SnapshotDir, cfg.Feeds.ManifestPath)
+	}
+	// Any kernel reconciliation (startup retention, promotion ladder, recovery)
+	// rewrites the blocklist from the signed policy. Republish the validated feed
+	// generation immediately afterwards; feeds are not part of the signed policy
+	// and would otherwise stay absent until the next scheduled sync.
+	release.SetKernelReconciledHook(func() {
+		current := settings.Get()
+		live := feeds.LiveSettings()
+		if !current.FeedsEnabled || !live.Kernel.AutoApply || feeds.Generation() == 0 {
+			return
+		}
+		added, deleted, err := feeds.ApplyToKernel(core, current.ManagementAllowlist)
+		if err != nil {
+			log.Printf("feed kernel republication after reconciliation failed: %v", err)
+			state.AddEvent(Event{Severity: "warning", Kind: "feeds.kernel_reapply_failed", Source: "intelligence", Message: "Threat intelligence kernel republication after a release reconciliation failed: " + err.Error()})
+			return
+		}
+		if added > 0 || deleted > 0 {
+			state.AddEvent(Event{Severity: "info", Kind: "feeds.kernel_reapplied", Source: "intelligence", Message: fmt.Sprintf("Threat intelligence republished after release reconciliation: +%d/-%d kernel entries", added, deleted)})
+		}
+	})
 	state.SetFeedState(
 		feeds.BlockIndex().Count(),
 		feeds.CorrelateIndex().Count(),
@@ -657,6 +711,31 @@ func main() {
 	}()
 
 	go func() {
+		// A restart reconciles the kernel against the signed policy and therefore
+		// drops feed-generated entries. Republish the validated generation once
+		// before the refresh timer can wait up to a full interval.
+		go func() {
+			select {
+			case <-time.After(8 * time.Second):
+			case <-stopWorkers:
+				return
+			}
+			current := settings.Get()
+			if !current.FeedsEnabled || feeds.Generation() == 0 {
+				return
+			}
+			if !feeds.LiveSettings().Kernel.AutoApply {
+				return
+			}
+			added, deleted, err := feeds.ApplyToKernel(core, current.ManagementAllowlist)
+			if err != nil {
+				log.Printf("threat intelligence kernel republication after restart failed: %v", err)
+				return
+			}
+			if added > 0 || deleted > 0 {
+				state.AddEvent(Event{Severity: "info", Kind: "feeds.kernel_reapplied", Source: "intelligence", Message: fmt.Sprintf("Threat intelligence republished after control-plane restart: +%d/-%d kernel entries", added, deleted)})
+			}
+		}()
 		// vis_threat_intel_cron_sync: 12-hour synchronization loop with atomic transient lock (vis_threat_intel_sync_lock).
 		// Invariant 7: Scheduling is based on persisted lastSuccessfulSyncAt, so daemon restarts cannot indefinitely postpone synchronization.
 		// 100% Opt-In: Zero DNS/HTTP egress occurs unless explicitly activated in settings.

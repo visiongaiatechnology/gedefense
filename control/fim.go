@@ -21,7 +21,33 @@ import (
 const (
 	fimBaselineSchema = "vgt-gedefense-fim-v1"
 	fimPurpose        = "fim-baseline"
+
+	// fimReleaseRoot is the only roll-forward path an authorized release
+	// rebaseline may accept. It is a constant, not a setting: widening it is a
+	// code review, not an administration decision.
+	fimReleaseRoot = "/opt/vgt/gedefense/current"
+
+	fimRebaselineScopeRelease   = "release"
+	fimRebaselineConfirmPhrase  = "REBASELINE RELEASE"
+	fimRebaselineMinReasonBytes = 8
+	fimRebaselineMaxReasonBytes = 240
+	fimRebaselineMaxPaths       = 512
 )
+
+// fimRebaselineConfigPaths is the explicit, bounded allowlist of operator
+// configuration files that a release rebaseline may refresh together with the
+// release artifacts. Configuration changes after an update are the one class a
+// pure release-scope walk cannot see; naming them here keeps the scope closed
+// instead of blessing "whatever changed under /etc".
+var fimRebaselineConfigPaths = []string{
+	"/etc/vgt/gedefense/gedefense.toml",
+	"/etc/systemd/system/gedefense-core.service",
+	"/etc/systemd/system/gedefense-control.service",
+	"/etc/systemd/system/gedefense-access.service",
+	"/etc/systemd/system/gedefense-bpffs.service",
+	"/etc/systemd/system/gedefense-provision.service",
+	"/etc/tmpfiles.d/vgt-gedefense.conf",
+}
 
 type FIMRecord struct {
 	SHA256 string      `json:"sha256"`
@@ -77,6 +103,12 @@ type FIMEngine struct {
 	integrityErr error
 	scanning     bool
 	policy       fimPolicy
+	// releaseRoot and releaseConfigPaths bound the authorized release
+	// rebaseline scope (FIND W-REBASE). They default to the compiled-in release
+	// path and never leave the protected root set; tests set the fields directly
+	// to exercise the merge without a deployed release tree.
+	releaseRoot        string
+	releaseConfigPaths []string
 }
 
 func NewFIMEngine(paths []string, baselinePath string, storage *StorageCipher) (*FIMEngine, error) {
@@ -92,8 +124,10 @@ func NewFIMEngine(paths []string, baselinePath string, storage *StorageCipher) (
 	}
 	engine := &FIMEngine{
 		roots: roots, baselinePath: baselinePath, storage: storage,
-		baseline: FIMBaseline{Schema: fimBaselineSchema, Roots: roots, Files: make(map[string]FIMRecord)},
-		policy:   defaultIntegrityFabricSettings(Config{}).FIM.policy(),
+		baseline:           FIMBaseline{Schema: fimBaselineSchema, Roots: roots, Files: make(map[string]FIMRecord)},
+		policy:             defaultIntegrityFabricSettings(Config{}).FIM.policy(),
+		releaseRoot:        fimReleaseRoot,
+		releaseConfigPaths: append([]string(nil), fimRebaselineConfigPaths...),
 	}
 	if err := engine.load(); err != nil && !errors.Is(err, os.ErrNotExist) {
 		engine.integrityErr = err
@@ -256,7 +290,14 @@ func (e *FIMEngine) Scan() (FIMScanSummary, error) {
 		return FIMScanSummary{}, err
 	}
 	defer e.endScan()
+	return e.scanLocked()
+}
 
+// scanLocked verifies the protected set against the loaded baseline. The caller
+// owns the scan slot (beginScan/endScan) so one walk serves both the periodic
+// verification and the authorized release rebaseline, and neither can interleave
+// with the other.
+func (e *FIMEngine) scanLocked() (FIMScanSummary, error) {
 	e.mu.RLock()
 	baseline := cloneFIMBaseline(e.baseline)
 	loadErr := e.integrityErr

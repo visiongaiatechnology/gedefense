@@ -1104,3 +1104,193 @@ func verifyQuarantineIdentityResponse(
 	}
 	return nil
 }
+
+// ------------------------------------------------------------------ canaries
+//
+// The privileged core owns decoy deployment and the fanotify sensor because the
+// unprivileged control plane can neither create files outside its sandbox nor
+// observe host accesses. All values crossing this boundary are typed, bounded
+// and encoded; the core re-validates every one of them.
+
+const (
+	maxCanaryPathBytes     = 256
+	maxCanaryContentBytes  = 1024
+	maxCanaryEventsPerPoll = 64
+)
+
+var canaryTypes = map[string]bool{
+	string(CanarySSHKey):    true,
+	string(CanaryCloudCred): true,
+	string(CanaryShadow):    true,
+	string(CanaryDotEnv):    true,
+}
+
+func validCanaryTargetPath(path string) bool {
+	if path == "" || len(path) > maxCanaryPathBytes || strings.ContainsRune(path, '\x00') {
+		return false
+	}
+	if !filepath.IsAbs(path) || path == "/" || filepath.Clean(path) != path {
+		return false
+	}
+	for _, component := range strings.Split(strings.TrimPrefix(path, "/"), "/") {
+		if component == "" || component == "." || component == ".." {
+			return false
+		}
+	}
+	return true
+}
+
+// CanaryDeploy creates one decoy through the privileged broker. The broker
+// writes it atomically inside a validated canary root and installs the fanotify
+// mark before the call returns; a watcher that cannot be armed fails the
+// deployment instead of leaving an unmonitored decoy behind.
+func (c *CoreClient) CanaryDeploy(path, canaryType string, mode uint32, content []byte) error {
+	if !validCanaryTargetPath(path) {
+		return errors.New("canary path is invalid")
+	}
+	if !canaryTypes[canaryType] {
+		return errors.New("canary type is invalid")
+	}
+	if mode != 0o600 && mode != 0o640 {
+		return errors.New("canary file mode must be 0600 or 0640")
+	}
+	if len(content) == 0 || len(content) > maxCanaryContentBytes || strings.IndexByte(string(content), 0) >= 0 {
+		return errors.New("canary content is outside the accepted bounds")
+	}
+	pathToken := base64.RawURLEncoding.EncodeToString([]byte(path))
+	contentToken := base64.RawURLEncoding.EncodeToString(content)
+	response, err := c.command("CANARY_DEPLOY", pathToken, canaryType, strconv.FormatUint(uint64(mode), 8), contentToken)
+	if err != nil {
+		return err
+	}
+	if response != "deployed" && response != "exists" {
+		return fmt.Errorf("core returned an invalid canary deploy state %q", response)
+	}
+	return nil
+}
+
+// CanaryRemove removes one registered decoy inside the canary jail. A missing
+// decoy reports "absent", which is not an error (the policy may be converging).
+func (c *CoreClient) CanaryRemove(path string) error {
+	if !validCanaryTargetPath(path) {
+		return errors.New("canary path is invalid")
+	}
+	pathToken := base64.RawURLEncoding.EncodeToString([]byte(path))
+	response, err := c.command("CANARY_REMOVE", pathToken)
+	if err != nil {
+		return err
+	}
+	if response != "removed" && response != "absent" {
+		return fmt.Errorf("core returned an invalid canary removal state %q", response)
+	}
+	return nil
+}
+
+// CanaryEvents drains at most four bounded access events per poll.
+func (c *CoreClient) CanaryEvents() (CanaryEventBatch, error) {
+	response, err := c.command("CANARY_EVENTS")
+	if err != nil {
+		return CanaryEventBatch{}, err
+	}
+	return parseCanaryEvents(response)
+}
+
+func parseCanaryEvents(response string) (CanaryEventBatch, error) {
+	batch := CanaryEventBatch{}
+	if response == "empty" {
+		return batch, nil
+	}
+	droppedText, recordsText, ok := strings.Cut(response, "|")
+	if !ok {
+		return CanaryEventBatch{}, errors.New("core returned malformed canary event batch")
+	}
+	dropped, err := strconv.ParseUint(droppedText, 10, 64)
+	if err != nil {
+		return CanaryEventBatch{}, errors.New("core returned invalid canary drop count")
+	}
+	batch.Dropped = dropped
+	if recordsText == "" {
+		return batch, nil
+	}
+	records := strings.Split(recordsText, ",")
+	if len(records) > maxCanaryEventsPerPoll {
+		return CanaryEventBatch{}, errors.New("core returned too many canary events")
+	}
+	batch.Events = make([]CanaryAccessEvent, 0, len(records))
+	for _, record := range records {
+		fields := strings.Split(record, ":")
+		if len(fields) != 5 {
+			return CanaryEventBatch{}, errors.New("core returned malformed canary event")
+		}
+		pid, pidErr := strconv.ParseInt(fields[0], 10, 32)
+		uid, uidErr := strconv.ParseUint(fields[1], 10, 32)
+		execFlag, execErr := strconv.ParseUint(fields[4], 10, 8)
+		rawPath, pathErr := base64.RawURLEncoding.DecodeString(fields[2])
+		if pidErr != nil || uidErr != nil || execErr != nil || pathErr != nil ||
+			pid <= 0 || execFlag > 1 || !canaryTypes[fields[3]] ||
+			len(rawPath) == 0 || len(rawPath) > maxCanaryPathBytes || !validCanaryTargetPath(string(rawPath)) {
+			return CanaryEventBatch{}, errors.New("core returned invalid canary event fields")
+		}
+		batch.Events = append(batch.Events, CanaryAccessEvent{
+			PID:  int(pid),
+			UID:  uint32(uid),
+			Path: string(rawPath),
+			Type: fields[3],
+			Exec: execFlag == 1,
+		})
+	}
+	return batch, nil
+}
+
+// CanaryStatus reports bounded broker sensor health (no paths, no content).
+func (c *CoreClient) CanaryStatus() (CanaryBrokerStatus, error) {
+	response, err := c.command("CANARY_STATUS")
+	if err != nil {
+		return CanaryBrokerStatus{}, err
+	}
+	return parseCanaryBrokerStatus(response)
+}
+
+func parseCanaryBrokerStatus(response string) (CanaryBrokerStatus, error) {
+	status := CanaryBrokerStatus{}
+	fields := strings.Split(strings.TrimSpace(response), ":")
+	if len(fields) != 7 {
+		return CanaryBrokerStatus{}, errors.New("core returned malformed canary status")
+	}
+	values := make(map[string]string, len(fields))
+	for _, field := range fields {
+		key, value, ok := strings.Cut(field, "=")
+		if !ok || key == "" || value == "" {
+			return CanaryBrokerStatus{}, errors.New("core returned malformed canary status field")
+		}
+		values[key] = value
+	}
+	parseInt := func(key string, bits int) (uint64, error) {
+		raw, exists := values[key]
+		if !exists {
+			return 0, fmt.Errorf("core canary status lacks %q", key)
+		}
+		return strconv.ParseUint(raw, 10, bits)
+	}
+	roots, rootErr := parseInt("roots", 32)
+	registered, registeredErr := parseInt("registered", 32)
+	queued, queuedErr := parseInt("queued", 32)
+	dropped, droppedErr := parseInt("dropped", 64)
+	markFailures, markErr := parseInt("mark_failures", 64)
+	if rootErr != nil || registeredErr != nil || queuedErr != nil || droppedErr != nil || markErr != nil {
+		return CanaryBrokerStatus{}, errors.New("core returned invalid canary status counters")
+	}
+	watcher := values["watcher"]
+	if watcher != "active" && watcher != "degraded" {
+		return CanaryBrokerStatus{}, errors.New("core returned invalid canary watcher state")
+	}
+	status = CanaryBrokerStatus{
+		Roots:        int(roots),
+		Registered:   int(registered),
+		Queued:       int(queued),
+		Dropped:      dropped,
+		MarkFailures: markFailures,
+		Watcher:      watcher,
+	}
+	return status, nil
+}

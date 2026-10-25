@@ -12,6 +12,31 @@ import {
 import { t } from './i18n.js';
 import { byID, el, formatTime, text, toast } from './render.js';
 
+// The backend publishes the derived effective protection state. The dashboard must
+// never claim full protection from a single release flag: a release in enforce while
+// XDR is still observe (or the core is gone) is restricted, and the gaps say why.
+const PROTECTION_GAP_KEYS = Object.freeze({
+  kernel_not_enforcing: 'protection.gap.kernel_not_enforcing',
+  xdr_observe: 'protection.gap.xdr_observe',
+  xdr_contain: 'protection.gap.xdr_contain',
+  xdr_disabled: 'protection.gap.xdr_disabled',
+  xdr_degraded: 'protection.gap.xdr_degraded',
+  core_disconnected: 'protection.gap.core_disconnected',
+  kinetic_not_block: 'protection.gap.kinetic_not_block',
+  kinetic_sensor_degraded: 'protection.gap.kinetic_sensor_degraded',
+  l7_not_block: 'protection.gap.l7_not_block',
+  evidence_unhealthy: 'protection.gap.evidence_unhealthy',
+  emergency_stop: 'protection.gap.emergency_stop',
+  release_not_enforce: 'protection.gap.release_not_enforce'
+});
+
+function protectionGapText(gaps) {
+  if (!Array.isArray(gaps) || gaps.length === 0) {
+    return t('protection.gap.unknown');
+  }
+  return gaps.map((gap) => t(PROTECTION_GAP_KEYS[gap] || 'protection.gap.unknown')).join(', ');
+}
+
 let currentPhase = 'observe';
 let soakDeadline = { canary: 0, enforce: 0 };
 let soakTickTimer = 0;
@@ -149,6 +174,9 @@ function renderProtectionHero(snapshot) {
   const heroTitle = byID('heroProtectionTitle');
   const heroDesc = byID('heroProtectionDesc');
   const heroBtn = byID('heroProtectionAction');
+  const effectiveProtection = snapshot.protection || null;
+  const protectionEffective = effectiveProtection ? Boolean(effectiveProtection.effective) : phase === 'enforce';
+  const protectionGaps = effectiveProtection && Array.isArray(effectiveProtection.gaps) ? effectiveProtection.gaps : [];
 
   if (isEmergency) {
     if (heroBadge) {
@@ -161,6 +189,24 @@ function renderProtectionHero(snapshot) {
       heroBtn.textContent = t('emergency.clearBtn');
       heroBtn.className = 'button button-danger';
       heroBtn.onclick = () => openClearEmergencyDialog();
+    }
+    return;
+  }
+
+  if (phase === 'enforce' && !protectionEffective) {
+    if (heroBadge) {
+      heroBadge.textContent = t('overview.hero.partialBadge');
+      heroBadge.className = 'status-pill warn';
+    }
+    if (heroTitle) heroTitle.textContent = t('overview.hero.partialTitle');
+    if (heroDesc) heroDesc.textContent = t('overview.hero.partialDesc', { gaps: protectionGapText(protectionGaps) });
+    if (heroBtn) {
+      heroBtn.textContent = t('overview.hero.btnActive');
+      heroBtn.className = 'button button-warning';
+      heroBtn.onclick = () => {
+        const link = document.querySelector('[data-view="protection"]');
+        if (link) link.click();
+      };
     }
     return;
   }
@@ -245,6 +291,26 @@ function renderProtectionHero(snapshot) {
 async function renderProtectionStepper(snapshot) {
   const stepperContainer = byID('protectionStepperContainer');
   if (!stepperContainer) return;
+
+  const derived = snapshot.protection || null;
+  let statusBanner = stepperContainer.querySelector('#protectionStatusBanner');
+  if (!statusBanner) {
+    statusBanner = document.createElement('div');
+    statusBanner.id = 'protectionStatusBanner';
+    statusBanner.className = 'protection-status-banner';
+    statusBanner.setAttribute('role', 'status');
+    stepperContainer.prepend(statusBanner);
+  }
+  if (derived && !derived.effective) {
+    statusBanner.hidden = false;
+    statusBanner.textContent = t('protection.center.partial', {
+      gaps: protectionGapText(derived.gaps),
+    });
+  } else {
+    statusBanner.hidden = true;
+    statusBanner.textContent = '';
+  }
+
 
   // Readiness arrives with the snapshot. It used to be fetched twice per status frame - two
   // requests per refresh, more traffic than the status itself - although it changes only on a

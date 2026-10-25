@@ -120,8 +120,115 @@ Der Scriptlauf prüft das vorherige Release erneut kryptografisch. Bei fehlgesch
 - jedes Update als neues unveränderliches Release installieren;
 - Policy- und Forensikschlüssel nicht zusammen mit Logs exportieren;
 - Vendor-, Lock- und Release-Manifeste pro Version archivieren;
-- Feed-Quellen bleiben `auto_apply=false`;
+- Feed-Quellen bleiben ohne provisionierten Trust-Anchor `auto_apply=false`; `auto_apply=true` ist nur mit `require_signed_manifest=true`, gepinntem Key und (empfohlen) lokaler Signatur zulässig — siehe Abschnitt „Feed-Signatur lokal provisionieren";
 - Enforce nach Kernel-, NIC- oder Distribution-Upgrade erneut über Observe und Canary qualifizieren.
+
+## Feed-Signatur lokal provisionieren
+
+Der Feed-Trust-Anker wird ausschließlich auf dem Host erzeugt. Private Schlüssel
+verlassen den Host nicht, werden nie in ein Repository geschrieben und nie über
+das Dashboard verwaltet (bootstrap-only Pin).
+
+### 1. Operator-Key erzeugen
+
+Der Dienst läuft als `User=gedefense` (`packaging/systemd/gedefense-control.service`),
+`/etc/vgt/gedefense` ist für ihn read-only und `/var/lib/vgt/gedefense` ist
+`1770 root:gedefense` und in `ReadWritePaths`. Der Key wird daher bevorzugt
+**als Dienstkonto im Datenverzeichnis** erzeugt:
+
+```bash
+sudo -u gedefense /opt/vgt/gedefense/current/bin/gedefense-control \
+  --init-feed-signing /var/lib/vgt/gedefense/feed-signing
+```
+
+Ausgabe (Beispiel):
+
+```text
+feed signing key pair created in /var/lib/vgt/gedefense/feed-signing
+feeds.trusted_signing_keys = "Qm9...BASE64_PUBLIC_KEY..."
+key fingerprint: ed25519:0123456789abcdef
+```
+
+Erzeugt werden:
+
+| Datei | Inhalt | Rechte |
+|---|---|---|
+| `/var/lib/vgt/gedefense/feed-signing/feed-signing.ed25519` | 32-Byte-Ed25519-Seed (roh) | `0600` gedefense |
+| `/var/lib/vgt/gedefense/feed-signing/feed-signing.ed25519.pub` | 32-Byte-Public-Key (roh) | `0644` |
+| Verzeichnis | — | `0700` gedefense |
+
+**Alternative (Key unter `/etc`):** Wenn der Key bewusst außerhalb des
+Datenverzeichnisses liegen soll, als root erzeugen und die Rechte für das
+Dienstkonto öffnen (Verzeichnis `0750 root:gedefense`, Private-Key
+`0640 root:gedefense`):
+
+```bash
+sudo install -d -m 0750 -o root -g gedefense /etc/vgt/gedefense/feed-signing
+sudo /opt/vgt/gedefense/current/bin/gedefense-control \
+  --init-feed-signing /etc/vgt/gedefense/feed-signing
+sudo chmod 0750 /etc/vgt/gedefense/feed-signing
+sudo chgrp gedefense /etc/vgt/gedefense/feed-signing/feed-signing.ed25519
+sudo chmod 0640 /etc/vgt/gedefense/feed-signing/feed-signing.ed25519
+```
+
+Der Loader akzeptiert `0600` (Eigentümer) und `0640` (Gruppe `gedefense`) und
+verweigert welt-/gruppenbeschreibbare Keys. Ein erneuter Aufruf mit demselben
+Verzeichnis wird verweigert (keine stille Rotation). Rotation ist ein expliziter
+Vorgang mit neuem Verzeichnis, neuem Pin und Neustart des Dienstes.
+
+### 2. Konfiguration setzen
+
+In `/etc/vgt/gedefense/gedefense.toml`:
+
+```toml
+[feeds]
+enabled = true
+auto_apply = true
+require_signed_manifest = true
+manifest_path = "/var/lib/vgt/gedefense/threat-feed-manifest.json"
+manifest_max_age_minutes = 1440
+local_signing = true
+signing_key_file = "/var/lib/vgt/gedefense/feed-signing/feed-signing.ed25519"
+snapshot_dir = "/var/lib/vgt/gedefense/feed-snapshots"
+trusted_signing_keys = "<BASE64_PUBLIC_KEY_AUS_SCHRITT_1>"
+```
+
+`snapshot_dir` und `manifest_path` müssen unter einem Verzeichnis liegen, das
+die Unit schreiben darf (`ReadWritePaths=/var/lib/vgt/gedefense`); die Defaults
+tun das. `feeds.auto_apply=true` wird bei fehlendem Trust-Anchor oder
+deaktiviertem Signatur-Gate bereits bei der Konfigurationsprüfung abgelehnt.
+
+### 3. Prüfen, starten, verifizieren
+
+```bash
+sudo /opt/vgt/gedefense/current/bin/gedefense-control -config /etc/vgt/gedefense/gedefense.toml --check-config
+sudo systemctl restart gedefense-control
+journalctl -u gedefense-control --since=-5min | grep -i 'feed signing'
+curl --fail http://127.0.0.1:9843/api/threat-intel
+```
+
+Erwartetes Ergebnis:
+
+- `overall_status = "OK"` bzw. `"PARTIAL"` nur bei echten Upstream-Ausfällen,
+- alle Feed-Einträge mit `manifest_verified = true` und `manifest_authenticity = "SIGNED"`,
+- `kernel_apply_status = "APPLIED"` (der gesunde Wert; das Legacy-„OK" aus 4.1
+  wird beim Laden auf `APPLIED` normalisiert),
+- `last_kernel_added` > 0 beim ersten Lauf, danach 0 bei unverändertem Content.
+
+Snapshots liegen unter `snapshot_dir/raw/<feed-id>` (`0600`), das signierte
+Manifest unter `manifest_path` (`0600`). Feed-Identität im Manifest bleibt die
+konfigurierte HTTPS-URL; `file://` ist ausschließlich das interne Leseschema der
+Snapshots und wird als konfigurierte Quelle abgelehnt.
+
+### 4. Fehlerbilder
+
+| Symptom | Ursache | Abhilfe |
+|---|---|---|
+| `local feed signing trust anchor unavailable` | Key-Datei fehlt, ist ein Symlink oder hat falsche Rechte | `--init-feed-signing` erneut in neuem Verzeichnis, Rechte `0600`/`0640` setzen |
+| `... is not pinned in feeds.trusted_signing_keys` | Operator-Key und Pin passen nicht zusammen | Public-Key erneut ausgeben lassen (`--feed-public-key`), Pin korrigieren |
+| `signed feed manifest is missing/expired` | LAPI-Neustart zwischen den Läufen oder Manifest abgelaufen | Control Plane neu starten; Sync erzeugt ein frisches Manifest |
+| `local feed snapshot fetch failed; no signed manifest was produced` | Quelle down und noch kein Snapshot vorhanden | Upstream prüfen; nach erstem erfolgreichen Lauf überbrückt die Pipeline kurze Ausfälle über den letzten Snapshot |
+| `kernel apply refused` | Kein verifiziertes/ungültiges Manifest oder `ManifestVerified=false` | `manifest_verified` je Feed prüfen, Key-Pin verifizieren |
 
 ## XDR Incident-Ledger Recovery
 

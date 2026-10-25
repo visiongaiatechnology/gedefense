@@ -55,7 +55,7 @@ void TestStatusPayload::parsesFullPayload()
     QVERIFY(payload->valid);
     QCOMPARE(payload->state, StatusState::Secure);
     QCOMPARE(payload->statusReason, QStringLiteral("Alle Schutzschichten aktiv"));
-    QCOMPARE(payload->productVersion, QStringLiteral("5.0.0-beta.1"));
+    QCOMPARE(payload->productVersion, QStringLiteral("5.0.0-beta.2"));
     QCOMPARE(payload->nodeName, QStringLiteral("visiongaia.de"));
     QCOMPARE(payload->releasePhase, QStringLiteral("enforce"));
     QCOMPARE(payload->enforcement, QStringLiteral("enforce"));

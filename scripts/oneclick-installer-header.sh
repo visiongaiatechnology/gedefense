@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# VGT GeDefense 5.0.0-beta.1 Universal Linux One-Click Installer
+# VGT GeDefense 5.0.0-beta.2 Universal Linux One-Click Installer
 set -Eeuo pipefail
 umask 0077
 
-readonly SETUP_VERSION="5.0.0-beta.1"
-readonly PRODUCT_VERSION="5.0.0-beta.1"
+readonly SETUP_VERSION="5.0.0-beta.2"
+readonly PRODUCT_VERSION="5.0.0-beta.2"
 readonly PAYLOAD_SHA256="__PAYLOAD_SHA256__"
 readonly CONTROL_SHA256="__CONTROL_SHA256__"
 readonly ACCESS_SHA256="__ACCESS_SHA256__"
@@ -399,9 +399,9 @@ PY
   if [[ -z $existing_allow && -n ${SSH_CLIENT:-} ]]; then existing_allow="${SSH_CLIENT%% *}/32"; fi
   if [[ -t 0 ]]; then
     if [[ -n $existing_allow ]]; then
-      read -r -p "Management-IP/CIDR (Enter = vorhandenen/SSH-Wert übernehmen): " answer
+      read -r -p "Management-IP/CIDR (/32 oder /24, Enter = vorhandenen/SSH-Wert übernehmen): " answer
     else
-      read -r -p "Management-IP/CIDR (leer = später im Dashboard setzen): " answer
+      read -r -p "Management-IP/CIDR für den Dashboard-Zugriff (/32 oder /24, leer = später im Dashboard setzen): " answer
     fi
     MANAGEMENT_ALLOWLIST=${answer:-$existing_allow}
   else
@@ -418,6 +418,14 @@ for raw in sys.argv[1].split(','):
         ip=ipaddress.ip_address(raw); raw=f'{ip}/{32 if ip.version==4 else 128}'
     net=ipaddress.ip_network(raw, strict=False)
     if net.is_unspecified: raise SystemExit('unspecified management network')
+    # The dashboard exposes the management plane; a broad prefix would defeat the
+    # purpose of the allowlist. Users choose either a single host (/32, /128) or a
+    # site network (/24, /64). The value is installation input, never hard-coded.
+    if net.version == 4:
+        if net.prefixlen not in (24, 32):
+            raise SystemExit('management network must be a /24 or /32')
+    elif net.prefixlen not in (64, 128):
+        raise SystemExit('management network must be a /64 or /128')
     value=str(net)
     if value not in out: out.append(value)
 print(','.join(out))
@@ -458,7 +466,9 @@ ensure_user_and_dirs(){
   # 0700 quarantine vault while preserving private directory listings.
   install -d -o gedefense -g gedefense -m 0710 "$STATE"
   install -d -o root -g gedefense -m 0700 "$QUARANTINE_DIR" "$QUARANTINE_OBJECT_DIR"
-  install -d -o root -g gedefense -m 0750 "$CONFIG_DIR" "$TLS_DIR" "$SECRETS_DIR"
+  install -d -o root -g gedefense -m 0750 "$CONFIG_DIR" "$TLS_DIR" "$SECRETS_DIR" "$STATE/canaries"
+  [[ $(stat -c '%U:%G:%a' "$STATE/canaries") == 'root:gedefense:750' ]] ||
+    fail "Canary-Verzeichnisrechte konnten nicht sicher gesetzt werden."
   install -d -o gedefense -g gedefense-l7 -m 0750 "$L7_RUNTIME_DIR"
   [[ $(stat -c '%U:%G:%a' "$STATE") == 'gedefense:gedefense:710' ]] ||
     fail "Runtime-State-Rechte konnten nicht sicher gesetzt werden."

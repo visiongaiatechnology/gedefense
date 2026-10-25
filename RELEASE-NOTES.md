@@ -1,3 +1,35 @@
+# VGT GeDefense 5.0.0-beta.2 — Hotfixes 1–9 Consolidated
+
+This release consolidates nine security and functional hotfixes into the public
+source tree. It is a public beta for test and qualification hosts, not a
+production certification.
+
+Highlights:
+
+- **Deception:** privileged core-deployed, fanotify-watched canaries with
+  automatic incident creation and reversible TTL-bound containment; the core
+  ignores its own deployment/verification opens.
+- **Threat intelligence:** operator-provisioned Ed25519 signing pipeline,
+  exact-byte snapshots, detached manifest verification with TTL/anti-rollback,
+  and verified BLOCK-only kernel application that survives release
+  reconciliation and control-plane restarts.
+- **Application defense:** the inline Unix-socket edge is a first-class
+  producer; benign traffic reaches the upstream, SQLi/XSS/LFI/command-injection
+  payloads are blocked before it, and the full built-in enforcement scope is
+  active.
+- **Truthful status:** `protection.effective` is derived from actual kernel,
+  XDR, core, Kinetic, L7 and evidence enforcement. The dashboard no longer
+  claims full protection from a single release flag.
+- **Integrity and platform fallbacks:** FIM/Titan release rebaseline, startup
+  self-check status API, local cgroup-v2 Gaia-Cells registry, operator-signed
+  local boot-trust baseline and a post-update rebaseline script.
+- **Validation:** Go control test suite green, Rust 40/40 tests green, signed
+  installer self-test and payload verification pass.
+
+Known limitations remain: public-CA/RFC3161/CRL/OCSP release authenticity and an
+externally anchored anti-rollback channel are outside this beta; threat-feed
+authenticity is operator-provisioned with a local Ed25519 key, not a public CA.
+
 # VGT GeDefense 5.0.0-beta.1 — Titan Ingress Defense & V5 Beta
 
 **GeDefense powered by VisionGaiaTechnology** enters the V5 Beta line with Titan, a

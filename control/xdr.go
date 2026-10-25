@@ -185,20 +185,12 @@ func NewXDREngine(cfg Config, state *State, core *CoreClient, feeds *FeedManager
 			e.appendIncident(inc)
 			return nil
 		}); err == nil {
-			canaries := []struct {
-				path string
-				t    CanaryType
-				uid  uint32
-				mode uint32
-			}{
-				{"/tmp/.aws_credentials", CanaryCloudCred, 1000, 0600},
-				{"/etc/shadow.bak", CanaryShadow, 0, 0600},
-			}
-			for _, c := range canaries {
-				if _, regErr := dec.RegisterCanary(c.path, c.t, c.uid, c.mode); regErr == nil {
-					_ = dec.DeployCanaryFile(c.path, c.t)
-				}
-			}
+			// Deception decoys come exclusively from the administrated policy and
+			// are deployed by the privileged core. Attach the transport BEFORE the
+			// first ApplyPolicy projection (main.go applies the Hardening fabric
+			// right after NewXDREngine), otherwise the engine falls back to writing
+			// decoys with the unprivileged identity.
+			AttachCanaryBroker(dec, core)
 			e.deception = dec
 		}
 	}
@@ -422,6 +414,10 @@ func (e *XDREngine) Run(ctx context.Context) {
 		go e.worker(workerCtx)
 	}
 	defer e.workers.Wait()
+
+	// Kernel-observed deception canaries: fanotify events become incidents and
+	// reversible responses without any manual API call.
+	StartCanarySensor(ctx, e.core, e.deception, e.state)
 
 	runtime := e.runtimeSettings()
 	scanTick := time.NewTicker(time.Duration(runtime.ScanIntervalMillis) * time.Millisecond)
@@ -1145,27 +1141,29 @@ func (e *XDREngine) respond(i XDRIncident) (string, string) {
 	}
 	rule := responseRule(i.RuleIDs)
 	if xdrMode == "contain" || i.Decision == "contain" {
-		if e.responses != nil && i.PID > 0 {
-			respRec, err := e.responses.ApplyResponse(
-				context.Background(),
-				time.Now().UTC(),
-				i.ID,
-				ActionFreezeExecution,
-				"PID",
-				strconv.Itoa(i.PID),
-				i.Score,
-				rule,
-				i.EvidenceRoot,
-			)
-			if err != nil {
-				return actionName(quarantined, "stop"), "failed: " + err.Error()
-			}
-			return actionName(quarantined, "stop"), fmt.Sprintf("process frozen through reversible response engine (TTL=%s)", respRec.ExpiresAt.Sub(respRec.StartedAt))
+		// F-HOTFIX-3: every process freeze must be owned by the reversible
+		// response engine so it carries a TTL and a rollback record. The
+		// privileged core can SIGSTOP a process, but only the response engine
+		// schedules the matching SIGCONT and keeps it across a restart. An
+		// untracked fallback would leave the process frozen forever.
+		if e.responses == nil || i.PID <= 0 {
+			return actionName(quarantined, "none"), "failed: reversible response engine unavailable; untracked freeze refused"
 		}
-		if err := e.core.Stop(i.PID, i.StartTicks, rule); err != nil {
-			return actionName(quarantined, "stop"), "failed: " + err.Error()
+		respRec, err := e.responses.ApplyResponse(
+			context.Background(),
+			time.Now().UTC(),
+			i.ID,
+			ActionFreezeExecution,
+			"PID",
+			strconv.Itoa(i.PID),
+			i.Score,
+			rule,
+			i.EvidenceRoot,
+		)
+		if err != nil {
+			return actionName(quarantined, "none"), "failed: " + err.Error()
 		}
-		return actionName(quarantined, "stop"), "process frozen through authenticated privileged broker"
+		return actionName(quarantined, "stop"), fmt.Sprintf("process frozen through reversible response engine (TTL=%s)", respRec.ExpiresAt.Sub(respRec.StartedAt))
 	}
 	if i.Decision == "kill" && xdrMode == "enforce" {
 		if err := e.core.Kill(i.PID, i.StartTicks, rule); err != nil {

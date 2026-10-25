@@ -347,6 +347,7 @@ func (s *StartupSupervisor) publish(report StartupReport) {
 	s.mu.Lock()
 	s.lastSeen = report.Fingerprint
 	s.mu.Unlock()
+	publishStartupReport(report)
 	if s.reportSink != nil {
 		s.reportSink(report)
 	}
@@ -492,3 +493,142 @@ func sleepContext(ctx context.Context, duration time.Duration) error {
 }
 
 var errStartupNoCore = errors.New("kernel core is not reachable")
+
+// ------------------------------------------------------------------ status
+//
+// The self-check produces the answer to "why is the platform not protecting
+// again?" and until now that answer only reached the journal: the operator had
+// to read logs to see which module needed attention. The report is published
+// here into one process-wide, bounded view that the API can serve from
+// /api/v1/status (or a dedicated endpoint) without reaching into the
+// supervisor's goroutine or the journal.
+//
+// The view is deliberately a projection, not the report itself: module details
+// are truncated, the module list is capped, and a report older than
+// startupStatusMaxAge is marked stale so a dead supervisor is visible as such
+// instead of showing its last healthy state forever.
+
+const (
+	startupStatusMaxModules = 32
+	startupStatusMaxAge     = 30 * time.Minute
+)
+
+// StartupModuleStatus is one bounded line of the exposed self-check.
+type StartupModuleStatus struct {
+	Name     string `json:"name"`
+	State    string `json:"state"`
+	Detail   string `json:"detail,omitempty"`
+	Healed   bool   `json:"healed"`
+	Blocking bool   `json:"blocking"`
+}
+
+// StartupStatus is the bounded startup-supervisor view served by the API. It
+// contains no secrets: module names, states, operator-facing refusals and the
+// re-arm decision only.
+type StartupStatus struct {
+	CheckedAt      time.Time             `json:"checked_at"`
+	Modules        []StartupModuleStatus `json:"modules"`
+	BlockingIssues int                   `json:"blocking_issues"`
+	Healed         int                   `json:"healed"`
+	ReArm          string                `json:"re_arm"`
+	ReArmReason    string                `json:"re_arm_reason,omitempty"`
+	Fingerprint    string                `json:"fingerprint,omitempty"`
+	ReportAgeSec   int64                 `json:"report_age_seconds"`
+	Stale          bool                  `json:"stale"`
+}
+
+var startupReportStore struct {
+	mu      sync.RWMutex
+	report  StartupReport
+	updated time.Time
+	seq     uint64
+}
+
+// publishStartupReport stores the latest self-check report for the API view.
+// It runs on every report the supervisor publishes, including the watch passes.
+func publishStartupReport(report StartupReport) {
+	startupReportStore.mu.Lock()
+	defer startupReportStore.mu.Unlock()
+	startupReportStore.report = cloneStartupReport(report)
+	startupReportStore.updated = time.Now().UTC()
+	startupReportStore.seq++
+}
+
+// CurrentStartupStatus returns the bounded self-check view. The boolean is false
+// until the supervisor has published its first report, which is what the API
+// must show instead of an invented healthy default.
+func CurrentStartupStatus() (StartupStatus, bool) {
+	return currentStartupStatusAt(time.Now().UTC())
+}
+
+func currentStartupStatusAt(now time.Time) (StartupStatus, bool) {
+	startupReportStore.mu.RLock()
+	report := cloneStartupReport(startupReportStore.report)
+	updated := startupReportStore.updated
+	startupReportStore.mu.RUnlock()
+	if updated.IsZero() {
+		return StartupStatus{}, false
+	}
+	return report.statusView(now, updated), true
+}
+
+// StartupStatusSequence is a cheap change marker for the UI: it increments with
+// every published report and does not require copying the report.
+func StartupStatusSequence() uint64 {
+	startupReportStore.mu.RLock()
+	defer startupReportStore.mu.RUnlock()
+	return startupReportStore.seq
+}
+
+func (r StartupReport) statusView(now, updated time.Time) StartupStatus {
+	view := StartupStatus{
+		CheckedAt:      r.CheckedAt.UTC(),
+		BlockingIssues: r.BlockingIssues,
+		Healed:         r.Healed,
+		ReArm:          r.ReArm,
+		ReArmReason:    r.ReArmReason,
+		Fingerprint:    r.Fingerprint,
+		Modules:        make([]StartupModuleStatus, 0, len(r.Modules)),
+	}
+	if view.CheckedAt.IsZero() {
+		view.CheckedAt = updated.UTC()
+	}
+	if !updated.IsZero() {
+		view.ReportAgeSec = int64(now.Sub(updated).Round(time.Second) / time.Second)
+		if view.ReportAgeSec < 0 {
+			view.ReportAgeSec = 0
+		}
+		view.Stale = now.Sub(updated) > startupStatusMaxAge
+	}
+	for _, module := range r.Modules {
+		if len(view.Modules) >= startupStatusMaxModules {
+			break
+		}
+		view.Modules = append(view.Modules, StartupModuleStatus{
+			Name: module.Name, State: module.State, Detail: boundedStartupDetail(module.Detail),
+			Healed: module.Healed, Blocking: module.Blocking,
+		})
+	}
+	return view
+}
+
+// boundedStartupDetail keeps a module refusal readable without letting a
+// pathological error message grow the status document.
+func boundedStartupDetail(detail string) string {
+	const maxDetailRunes = 240
+	detail = strings.TrimSpace(detail)
+	if detail == "" {
+		return ""
+	}
+	runes := []rune(detail)
+	if len(runes) > maxDetailRunes {
+		return string(runes[:maxDetailRunes])
+	}
+	return detail
+}
+
+func cloneStartupReport(in StartupReport) StartupReport {
+	out := in
+	out.Modules = append([]StartupModuleReport(nil), in.Modules...)
+	return out
+}

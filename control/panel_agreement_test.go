@@ -228,8 +228,11 @@ func TestTheInspectedRequestCountIncludesTheInlineListener(t *testing.T) {
 		t.Fatal(err)
 	}
 	source := string(asset)
-	if !strings.Contains(source, "Number(l7.requests_total || 0) + Number(l7.inline_requests_total || 0)") {
-		t.Fatal("the inspected-request count still ignores one of the two counters the coverage verdict uses")
+	if !strings.Contains(source, "Number(l7.requests_total || 0)") {
+		t.Fatal("the inspected-request count no longer reads the aggregated request counter")
+	}
+	if strings.Contains(source, "Number(l7.requests_total || 0) + Number(l7.inline_requests_total || 0)") {
+		t.Fatal("the inspected-request count double-counts inline traffic")
 	}
 	if strings.Count(source, "inspected.toLocaleString(locale())") < 2 {
 		t.Fatal("the inline counter reaches the panel but not every place that shows inspected requests")

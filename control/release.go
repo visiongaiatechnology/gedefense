@@ -77,6 +77,13 @@ type ReleaseController struct {
 	// controller is built before the server that owns the measurement, and it stays optional so the
 	// release tests can exercise the gate without a host.
 	exposure *kernelExposureCache
+	// kernelReconciledHook runs after a successful kernel reconciliation. The
+	// reconcile owns the kernel blocklist: enforcing re-adds the signed policy
+	// blocks, an observe/degrade clears the list. Feed-generated blocks are not
+	// part of that signed policy, so without this hook every restart or phase
+	// transition silently dropped the validated threat-intelligence publication
+	// until the next refresh window.
+	kernelReconciledHook func()
 }
 
 // markSinceLocked records a phase transition for the wall clock (for the API) and the
@@ -564,6 +571,20 @@ func (r *ReleaseController) reconcileVerifiedLocked() error {
 	return nil
 }
 
+// SetKernelReconciledHook installs the post-reconcile callback (threat-intel
+// kernel republication). It is called with the release mutex held.
+func (r *ReleaseController) SetKernelReconciledHook(hook func()) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.kernelReconciledHook = hook
+}
+
+func (r *ReleaseController) notifyKernelReconciledLocked() {
+	if r.kernelReconciledHook != nil {
+		r.kernelReconciledHook()
+	}
+}
+
 func (r *ReleaseController) reconcileLocked(enforcement string) error {
 	if r.core == nil {
 		return errors.New("kernel policy reconciliation unavailable: core client is nil")
@@ -590,6 +611,7 @@ func (r *ReleaseController) reconcileLocked(enforcement string) error {
 			r.state.SetBlockEnforced(block.Target, true)
 			applied = append(applied, block.Target)
 		}
+		r.notifyKernelReconciledLocked()
 		return nil
 	}
 	// The privileged core clears its authoritative mutation ledger rather than
@@ -606,6 +628,7 @@ func (r *ReleaseController) reconcileLocked(enforcement string) error {
 			r.state.SetBlockEnforced(block.Target, false)
 		}
 	}
+	r.notifyKernelReconciledLocked()
 	return nil
 }
 
