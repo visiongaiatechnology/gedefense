@@ -29,7 +29,20 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import release_tool  # noqa: E402
+# The release tool deliberately lives in a hyphenated filename. Load it as a
+# module explicitly; a plain ``import release_tool`` cannot resolve it and made
+# the release-artifacts CI job fail after the security audit.
+import importlib.util  # noqa: E402
+
+_release_tool_spec = importlib.util.spec_from_file_location(
+    "release_tool", Path(__file__).with_name("release-tool.py")
+)
+if _release_tool_spec is None or _release_tool_spec.loader is None:
+    raise SystemExit("release-tool.py could not be loaded for source packaging")
+release_tool = importlib.util.module_from_spec(_release_tool_spec)
+sys.modules["release_tool"] = release_tool
+_release_tool_spec.loader.exec_module(release_tool)
+
 import vgt_release_security as security  # noqa: E402
 
 
