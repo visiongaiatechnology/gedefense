@@ -66,7 +66,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libargon2-1 libargon2-dev python3 openssl jq
-          go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
+          go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
       - name: Installer header syntax gate
         run: bash scripts/tests/check_installer_templates.sh
@@ -89,7 +89,7 @@ jobs:
             . "$HOME/.cargo/env"
           fi
           if ! command -v cargo-audit >/dev/null 2>&1; then
-            cargo install cargo-audit --locked --version 0.21.2
+            cargo install cargo-audit --locked --version 0.22.2
           fi
           bash scripts/sca-gate.sh --strict --report "$RUNNER_TEMP/sca-report.json"
       - name: Release toolchain security floor (blocks vulnerable Go pins)

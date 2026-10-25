@@ -35,7 +35,7 @@ export PYTHONDONTWRITEBYTECODE=1
 for cmd in go node python3 tar gzip sha256sum sed awk ldd grep git; do
   command -v "$cmd" >/dev/null 2>&1 || { echo "missing build tool: $cmd" >&2; exit 1; }
 done
-"$ROOT/scripts/verify-release-toolchains.sh"
+bash "$ROOT/scripts/verify-release-toolchains.sh"
 [[ $OUT != "$ROOT" && $OUT != "$ROOT"/* ]] || { echo "release output must live outside the repository: $OUT" >&2; exit 1; }
 mkdir -p "$OUT"
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/vgt-gedefense-package.XXXXXX")
