@@ -89,7 +89,7 @@ chmod 0755 "$OUTPUT"
 python3 "$ROOT/scripts/tests/verify_rendered_installer.py" \
   --installer "$OUTPUT" --public-key-hex "$PUBLIC_HEX" --expected-version "$VERSION" \
   --expected-payload-sha "$PAYLOAD_SHA" >/dev/null
-sha256sum "$OUTPUT" > "$OUTPUT.sha256"
+(cd "$OUT" && sha256sum "$(basename "$OUTPUT")" > "$(basename "$OUTPUT").sha256")
 
 echo "== publish signed metadata sidecars to $OUT =="
 for name in release-index.signed.json sbom.spdx.json build-provenance.json; do
