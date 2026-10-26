@@ -31,6 +31,10 @@
 
 </div>
 
+
+<img width="1536" height="1024" alt="GeDefense_ Real Security, Many Feathers" src="https://github.com/user-attachments/assets/dc56735e-b2b2-45c9-a363-97554a92ae0a" />
+
+
 ---
 ## 🆕 Release 5.0.0-beta.2 — Hotfixes 1–9 (2026-10-25)
 
