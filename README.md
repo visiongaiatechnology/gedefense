@@ -5,7 +5,7 @@
 
 
 # VGT GeDefense
-### Linux Security Fabric
+### Linux Security Fabric - Your Entenprise System 
 
 [![License](https://img.shields.io/badge/License-AGPL--3.0--only-blue?style=for-the-badge)](https://www.gnu.org/licenses/agpl-3.0)
 [![Version](https://img.shields.io/badge/Version-5.0.0--beta.2-orange?style=for-the-badge)](#)
