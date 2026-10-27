@@ -146,7 +146,7 @@ func defaultCMSSettings() cmsSettings {
 		RelaxClientRateBurst:     200,
 		TrustedAdminTTLSeconds:   int(cmsBridgeDefaultTTL / time.Second),
 		BridgeEnabled:            false,
-		BridgeLogPath:            "/var/lib/vgt/gedefense-wp-bridge/events.log",
+		BridgeLogPath:            "/var/log/php-fpm.log",
 		BridgeMaxSkewSeconds:     300,
 	}
 }
@@ -639,6 +639,22 @@ func (e *CMSEngine) pollBridge() {
 	e.bridgeMu.Unlock()
 }
 
+// cmsBridgePayload extracts the authenticated envelope from a normal PHP error
+// log line. PHP-FPM prefixes records with a timestamp, so the marker may appear
+// after arbitrary log text; only the final JSON envelope is authenticated.
+func cmsBridgePayload(line []byte) []byte {
+	for _, marker := range [][]byte{
+		[]byte("GeDefense: "),
+		[]byte("GeDefense:"),
+		[]byte("GEDEFENSE-BRIDGE "),
+	} {
+		if index := bytes.Index(line, marker); index >= 0 {
+			return bytes.TrimSpace(line[index+len(marker):])
+		}
+	}
+	return bytes.TrimSpace(line)
+}
+
 func (e *CMSEngine) consumeBridgeLine(line []byte) {
 	if len(line) == 0 {
 		return
@@ -646,12 +662,23 @@ func (e *CMSEngine) consumeBridgeLine(line []byte) {
 	if len(line) > cmsBridgeMaxLineBytes {
 		return
 	}
-	if bytes.HasPrefix(line, []byte(cmsBridgePrefix)) {
-		line = bytes.TrimSpace(bytes.TrimPrefix(line, []byte(cmsBridgePrefix)))
+	line = cmsBridgePayload(line)
+	if len(line) == 0 {
+		return
 	}
 	event, err := e.decryptBridgeLine(line)
 	if err != nil {
 		e.setBridgeError(err)
+		return
+	}
+	if event.Event == "bridge_hello" {
+		e.mu.Lock()
+		e.profiles[normalizeCMSHost(event.SiteHost)] = &cmsProfile{kind: CMSWordPress, confidence: 100, evidence: map[string]struct{}{"wordpress_bridge": {}}, lastSeen: time.Now().UTC()}
+		e.mu.Unlock()
+		e.bridgeMu.Lock()
+		e.bridgeLast = time.Now().UTC()
+		e.bridgeMu.Unlock()
+		e.setBridgeError(nil)
 		return
 	}
 	id := strings.TrimSpace(event.EventID)
@@ -733,7 +760,7 @@ func (e *CMSEngine) decryptBridgeLine(line []byte) (cmsBridgeEvent, error) {
 		return cmsBridgeEvent{}, fmt.Errorf("bridge event JSON: %w", err)
 	}
 	now := time.Now().Unix()
-	if event.Version != 1 || event.Event != "master_login" {
+	if event.Version != 1 || (event.Event != "master_login" && event.Event != "bridge_hello") {
 		return cmsBridgeEvent{}, errors.New("bridge event invalid")
 	}
 	if net.ParseIP(event.IP) == nil {
