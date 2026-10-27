@@ -3,6 +3,7 @@
 
 // The overview threat map owns its own refresh cycle and only runs while the overview is visible.
 import { startOverviewThreatMap } from './overview-map.js';
+import { initCMSModule, loadCMSView } from './cms.js';
 
 import {
   acknowledgeIncident,
@@ -139,6 +140,7 @@ const viewMeta = {
   overview: ['view.overview.eyebrow', 'view.overview.title'],
   protection: ['view.protection.eyebrow', 'view.protection.title'],
   l7: ['view.l7.eyebrow', 'view.l7.title'],
+  cms: ['view.cms.eyebrow', 'view.cms.title'],
   kinetic: ['view.kinetic.eyebrow', 'view.kinetic.title'],
   'threat-intel': ['view.threatIntel.eyebrow', 'view.threatIntel.title'],
   hardening: ['view.hardening.eyebrow', 'view.hardening.title'],
@@ -184,6 +186,7 @@ function activateView(name) {
   if (selected === 'overview') requestAnimationFrame(() => drawTraffic(byID('trafficChart')));
   if (selected === 'protection') loadProtectionState(snapshot).catch(handleActionError);
   if (selected === 'l7') loadL7View(snapshot).catch(handleActionError);
+  if (selected === 'cms') loadCMSView(snapshot).catch(handleActionError);
   if (selected === 'kinetic') loadKineticView().catch(handleActionError);
   if (selected === 'threat-intel') loadThreatIntelView().catch(handleActionError);
   if (selected === 'xdr') loadXDRView(snapshot).catch(handleActionError);
@@ -3080,6 +3083,7 @@ function initialize() {
   try { initProtectionCenter(); } catch (_) {}
   try { initL7Module(); } catch (_) {}
   try { initL7IntegrationModule(); } catch (_) {}
+  try { initCMSModule(); } catch (_) {}
   // The attested facts do not change during a session, so they are filled once at
   // startup rather than only on the path that opens the dialog. Populating them on a
   // single entry point left them blank whenever the surface was reached another way.

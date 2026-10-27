@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="/assets/app.css">
       <link rel="stylesheet" href="/assets/vendor/jsvectormap/jsvectormap.css">
   <link rel="stylesheet" href="/assets/v4.css">
+  <link rel="stylesheet" href="/assets/cms.css">
     <link rel="stylesheet" href="/assets/overview-map.css">
   <script type="module" src="/assets/app.js"></script>
 </head>
@@ -57,6 +58,11 @@
             <svg viewBox="0 0 24 24" class="nav-icon-svg"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
             <b data-i18n="nav.applicationDefense">Application Defense</b>
             <span class="nav-badge-l7">L7</span>
+          </button>
+          <button class="nav-item" type="button" data-view="cms">
+            <svg viewBox="0 0 24 24" class="nav-icon-svg"><path d="M4 4h16v16H4z"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>
+            <b data-i18n="nav.cms">CMS Defense</b>
+            <span class="nav-badge-l7">CMS</span>
           </button>
           <button class="nav-item" type="button" data-view="xdr">
             <svg viewBox="0 0 24 24" class="nav-icon-svg"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
@@ -2205,6 +2211,56 @@
             <div class="section-head"><p class="eyebrow" data-i18n="release.blockersKicker">CURRENT BLOCKERS</p><h3 class="m-0" data-i18n="release.conditions">Freigabebedingungen</h3></div>
             <ul id="releaseBlockers" class="gate-list mt-md"></ul>
           </article>
+        </section>
+
+
+        <!-- 3b. CMS DEFENSE VIEW -->
+        <section class="view" data-page="cms" aria-labelledby="cmsHeading" hidden>
+          <div class="view-context-bar">
+            <div>
+              <p class="eyebrow m-0" data-i18n="view.cms.eyebrow">CMS-AUTO-RELAX</p>
+              <h2 id="cmsHeading" class="m-0 fs-xl" data-i18n="view.cms.title">CMS Defense</h2>
+              <p class="view-context-desc" data-i18n="cms.description">Erkennt WordPress, Joomla!, TYPO3 und Laravel anhand von Pfaden, Headern und Response-Signaturen. Statische Assets und verifizierte Master-Sessions werden kontrolliert von den L7-Limits ausgenommen.</p>
+            </div>
+            <div class="view-context-actions"><span id="cmsBridgePill" class="status-pill muted">CHECKING</span></div>
+          </div>
+
+          <div class="cms-layout">
+            <div class="cms-stack">
+              <article class="glass-panel panel-padded">
+                <div class="section-head">
+                  <div><p class="eyebrow" data-i18n="cms.detection.kicker">DETECTION</p><h3 class="m-0" data-i18n="cms.detection.title">Erkannte CMS</h3><p class="view-context-desc" data-i18n="cms.detection.description">Die Erkennung ist passiv: Pfad-, Header- und Response-Signaturen werden lokal ausgewertet. Es findet kein externer Lookup statt.</p></div>
+                </div>
+                <div id="cmsDetections" class="cms-detection-list" aria-live="polite"><p class="empty-note" data-i18n="cms.detection.empty">Noch kein CMS erkannt.</p></div>
+              </article>
+
+              <article class="glass-panel panel-padded">
+                <div class="section-head"><div><p class="eyebrow" data-i18n="cms.relax.kicker">RATE POLICY</p><h3 class="m-0" data-i18n="cms.relax.title">Limit-Lockerung</h3><p class="view-context-desc" data-i18n="cms.relax.desc">Gilt nur für erkannte CMS-Admin-/Editor-Pfade; Login und generische API-Routen bleiben geschützt.</p></div></div>
+                <label class="toggle-row"><span><b data-i18n="cms.enabled">CMS-Erkennung aktiv</b><small class="text-muted d-block" data-i18n="cms.enabledDetail">WordPress, Joomla!, TYPO3 und Laravel automatisch erkennen</small></span><input id="cmsEnabled" type="checkbox"><i></i></label>
+                <label class="toggle-row"><span><b data-i18n="cms.autoRelax">Admin-/Editor-Pfade automatisch lockern</b><small class="text-muted d-block" data-i18n="cms.autoRelaxDetail">Nur erkannte CMS-Verwaltungsoberflächen; Login bleibt limitiert.</small></span><input id="cmsAutoRelax" type="checkbox"><i></i></label>
+                <label class="toggle-row"><span><b data-i18n="cms.relaxAdmin">Admin-Oberflächen lockern</b><small class="text-muted d-block" data-i18n="cms.relaxAdminDetail">Deaktivieren, um ausschließlich die statische Asset-Ausnahme zu verwenden.</small></span><input id="cmsRelaxAdmin" type="checkbox"><i></i></label>
+                <div class="cms-form-grid">
+                  <label class="cms-field"><span class="fabric-field-label" data-i18n="cms.ratePerMinute">Relaxte Requests/Minute</span><input id="cmsRatePerMinute" type="number" min="60" max="60000" step="60"></label>
+                  <label class="cms-field"><span class="fabric-field-label" data-i18n="cms.rateBurst">Relaxter Burst</span><input id="cmsRateBurst" type="number" min="10" max="10000" step="10"></label>
+                  <label class="cms-field"><span class="fabric-field-label" data-i18n="cms.ttl">Admin-TTL (Sekunden)</span><input id="cmsTTL" type="number" min="60" max="7200" step="60"></label>
+                </div>
+                <div class="cms-actions"><button id="cmsSave" class="button" type="button" data-i18n="cms.save">CMS-Regeln speichern</button><span id="cmsSaveStatus" class="fs-xs text-muted" aria-live="polite"></span></div>
+              </article>
+            </div>
+
+            <div class="cms-stack">
+              <article class="glass-panel panel-padded">
+                <div class="section-head"><div><p class="eyebrow" data-i18n="cms.bridge.kicker">WP ↔ LINUX</p><h3 class="m-0" data-i18n="cms.bridge.title">ThroneGuard-Bridge</h3><p class="view-context-desc" data-i18n="cms.bridge.description">GeDefense WP schreibt verschlüsselte Master-Session-Ereignisse (AES-256-GCM). Der Linux-Control-Plan liest sie nur und gewährt dem Admin für 2 Stunden eine L7-Ausnahme.</p></div></div>
+                <label class="toggle-row"><span><b data-i18n="cms.bridge.enabled">GeDefense WP Bridge aktiv</b><small class="text-muted d-block" data-i18n="cms.bridge.enabledDetail">Nur verschlüsselte Ereignisse, niemals direkter Kernel-Zugriff</small></span><input id="cmsBridgeEnabled" type="checkbox"><i></i></label>
+                <label class="cms-field full cms-field-spaced"><span class="fabric-field-label" data-i18n="cms.bridge.path">Bridge-Logdatei</span><input id="cmsBridgePath" class="mono" autocomplete="off" spellcheck="false" maxlength="4096"></label>
+                <div class="cms-keyline"><span data-i18n="cms.bridge.key">Schlüssel-Fingerprint</span><code id="cmsBridgeKey">—</code></div>
+                <div class="cms-actions"><button id="cmsRotateKey" class="button button-quiet" type="button" data-i18n="cms.bridge.rotate">Schlüssel erzeugen</button><button id="cmsRevokeLeases" class="button button-quiet" type="button" data-i18n="cms.bridge.revoke">Leases widerrufen</button></div>
+                <div id="cmsSecretBox" hidden><p class="fs-xs text-muted" data-i18n="cms.bridge.secretOnce">Neuer Secret Key — jetzt in GeDefense WP eintragen. Er wird nur einmal angezeigt.</p><div class="cms-secret"><input id="cmsSecret" class="mono" readonly autocomplete="off"><button id="cmsCopySecret" class="button button-quiet" type="button" data-i18n="cms.copy">Kopieren</button></div></div>
+                <div class="section-head mt-md"><h4 class="m-0" data-i18n="cms.bridge.leases">Aktive Admin-Ausnahmen</h4></div>
+                <div id="cmsLeases" aria-live="polite"><p class="empty-note" data-i18n="cms.bridge.leaseEmpty">Keine aktiven Admin-Ausnahmen.</p></div>
+              </article>
+            </div>
+          </div>
         </section>
 
         <!-- 12. SETTINGS VIEW -->

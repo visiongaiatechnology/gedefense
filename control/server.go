@@ -116,6 +116,7 @@ type APIServer struct {
 	// engine, so the self-test and the integration generator need the service. Without
 	// it both endpoints would have to reconstruct configuration they do not own.
 	l7Service *L7Service
+	cms       *CMSEngine
 	fim       *FIMEngine
 	// kernelExposure is the shared kernel-advisory measurement (see kernel_advisories.go). It is
 	// optional: a server built without it simply has no advisory surface, which is what the unit
@@ -264,6 +265,10 @@ func NewAPIServer(cfg Config, state *State, core *CoreClient, feeds *FeedManager
 	mux.HandleFunc("GET /api/v1/forensics/export", s.auth(s.forensicsExport))
 	mux.HandleFunc("GET /api/v1/release", s.auth(s.releaseStatus))
 	mux.HandleFunc("GET /api/v1/release/readiness", s.auth(s.releaseReadiness))
+	mux.HandleFunc("GET /api/v1/cms", s.auth(s.cmsStatus))
+	mux.HandleFunc("PUT /api/v1/cms", s.auth(s.cmsUpdate))
+	mux.HandleFunc("POST /api/v1/cms/bridge/rotate", s.auth(s.cmsRotateBridgeKey))
+	mux.HandleFunc("POST /api/v1/cms/bridge/revoke", s.auth(s.cmsRevokeLeases))
 	mux.HandleFunc("GET /api/v1/l7/findings", s.auth(s.l7Findings))
 	// The self-test is a POST because it consumes engine admission and moves the
 	// inspection counters it reports on.
@@ -366,6 +371,9 @@ func (s *APIServer) AttachL7(engine *L7Engine) { s.l7 = engine }
 // AttachL7Service gives the API the socket topology and policy owner, which the
 // self-test and the integration generator both need.
 func (s *APIServer) AttachL7Service(service *L7Service) { s.l7Service = service }
+
+// AttachCMS binds the optional CMS detector and WordPress bridge to the API.
+func (s *APIServer) AttachCMS(cms *CMSEngine) { s.cms = cms }
 
 // caseEngine returns the case engine when it is attached.
 func (s *APIServer) caseEngine() *CaseEngine {
@@ -1165,6 +1173,8 @@ var webAssetAllowlist = map[string]bool{
 	"render.js":                true,
 	"threat-intel.js":          true,
 	"v4.css":                   true,
+	"cms.js":                   true,
+	"cms.css":                  true,
 	"vendor/jsvectormap/js/components/base.js":                  true,
 	"vendor/jsvectormap/js/components/concerns/interactable.js": true,
 	"vendor/jsvectormap/js/components/line.js":                  true,

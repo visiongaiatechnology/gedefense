@@ -273,6 +273,7 @@ func main() {
 		log.Fatalf("Gaia Cells adapter attachment: %v", err)
 	}
 	evidenceDir := filepath.Dir(cfg.Policy.StateFile)
+	cmsEngine := NewCMSEngine(filepath.Join(evidenceDir, "cms-settings.json"), filepath.Join(filepath.Dir(cfg.Core.AuthKeyFile), "wp-bridge.key"))
 	evidenceBudget := int64(effectiveIntegritySettings(settings.Get()).Evidence.MaxBytes)
 	if evidenceBudget <= 0 {
 		evidenceBudget = 64 << 20
@@ -627,6 +628,7 @@ func main() {
 	if cfg.L7.Enabled {
 		var l7Err error
 		l7Engine, l7Err = NewL7Engine(cfg.L7, xdr, release)
+		l7Engine.AttachCMS(cmsEngine)
 		if l7Err != nil {
 			log.Fatalf("l7 engine initialization: %v", l7Err)
 		}
@@ -670,6 +672,7 @@ func main() {
 	go titanEngine.Run(xdrCtx)
 	go runFIM(xdrCtx, state, fim, settings)
 	go runEvidenceVerification(xdrCtx, state, settings)
+	go cmsEngine.Run(xdrCtx)
 	go runTransactionVerification(xdrCtx, state, transactions, 60*time.Second)
 
 	state.AddEvent(Event{Severity: "info", Kind: "node.started", Source: "system", Message: "GeDefense Beta control plane started in gated observe phase on " + iface})
@@ -854,6 +857,7 @@ func main() {
 		// lives on the service rather than on the engine.
 		srv.AttachL7Service(l7Service)
 	}
+	srv.AttachCMS(cmsEngine)
 	srv.AttachFeeds(feeds)
 	srv.AttachFIM(fim)
 	if l7Service != nil && l7Engine != nil {

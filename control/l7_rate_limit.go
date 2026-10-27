@@ -131,6 +131,14 @@ func l7Rate(perMinute int) float64 { return float64(perMinute) / 60.0 }
 // handed. The caller passes the same snapshot that governs the rest of the
 // inspection, which keeps a single request self-consistent.
 func (l *L7RateLimiter) Evaluate(snapshot *l7RuntimeSnapshot, remoteIP, host, path, method string, now time.Time) (bool, string) {
+	return l.EvaluatePolicy(snapshot, remoteIP, host, path, method, now, false)
+}
+
+// EvaluatePolicy is the single limiter entry point. bypassClient is used only
+// for an operator-approved, detected CMS admin surface; sensitive-route limits
+// still apply. A verified WordPress master lease is handled by the caller as a
+// full short-lived bypass because that session was authenticated out of band.
+func (l *L7RateLimiter) EvaluatePolicy(snapshot *l7RuntimeSnapshot, remoteIP, host, path, method string, now time.Time, bypassClient bool) (bool, string) {
 	if l == nil || snapshot == nil {
 		return true, ""
 	}
@@ -145,8 +153,10 @@ func (l *L7RateLimiter) Evaluate(snapshot *l7RuntimeSnapshot, remoteIP, host, pa
 		return true, ""
 	}
 	clientKey := remoteIP + "|" + strings.ToLower(host)
-	if !l.client.Allow(clientKey, l7Rate(cfg.ClientRatePerMinute), float64(cfg.ClientRateBurst), now) {
-		return false, "client"
+	if !bypassClient {
+		if !l.client.Allow(clientKey, l7Rate(cfg.ClientRatePerMinute), float64(cfg.ClientRateBurst), now) {
+			return false, "client"
+		}
 	}
 	if snapshot.sensitivePath(path) {
 		globalKey := strings.ToLower(host) + "|" + method + "|" + path

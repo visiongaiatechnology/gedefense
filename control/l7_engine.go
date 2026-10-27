@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
 	"strings"
 	"time"
 )
@@ -24,6 +25,7 @@ type L7Engine struct {
 	canBlock         func() bool
 	responseDetector *l7ResponseDetector
 	tls              *TLSSecurityEngine
+	cms              *CMSEngine
 	admissionSlots   chan struct{}
 	inspectionSlots  chan struct{}
 }
@@ -93,6 +95,22 @@ func validateL7EngineConfig(cfg L7Config) error {
 // LiveSettings returns the fabric revision that is actually active in the
 // running engine. Restart-class keys keep their boot value here until the
 // process is restarted, which is what the module API reports.
+// AttachCMS wires the optional CMS detector and WordPress bridge. A nil engine
+// keeps the historical L7 behavior exactly unchanged.
+func (e *L7Engine) AttachCMS(cms *CMSEngine) {
+	if e != nil {
+		e.cms = cms
+	}
+}
+
+// ObserveHTTPResponse lets the detector learn a CMS from a real response
+// generator/header without making the inspection decision depend on it.
+func (e *L7Engine) ObserveHTTPResponse(host string, headers http.Header, bodyPrefix []byte) {
+	if e != nil && e.cms != nil {
+		e.cms.ObserveResponse(host, headers, bodyPrefix)
+	}
+}
+
 func (e *L7Engine) LiveSettings() L7FabricSettings {
 	if e == nil || e.live == nil {
 		return L7FabricSettings{}
@@ -166,11 +184,20 @@ func (e *L7Engine) inspect(ctx context.Context, req L7InspectionRequest, body []
 	}
 	now := time.Now().UTC()
 	findings := make([]L7Finding, 0, 12)
-	if allowed, scope := e.limiter.Evaluate(snapshot, normalized.RemoteIP, normalized.Host, normalized.RatePath, normalized.Method, now); !allowed {
-		findings = append(findings, newL7Finding(
-			"L7.RATE_LIMIT."+strings.ToUpper(strings.ReplaceAll(scope, "-", "_")), "rate-limit", "high", 95, 99,
-			"request", normalized.RemoteIP+"|"+normalized.Host+"|"+normalized.Path, "Request rate exceeded the configured L7 budget",
-		))
+	trustedAdmin := false
+	relaxClient := false
+	if e.cms != nil {
+		e.cms.ObserveRequest(normalized)
+		trustedAdmin = e.cms.Trusted(normalized.RemoteIP, normalized.Host, now)
+		relaxClient = e.cms.ShouldRelax(normalized)
+	}
+	if !trustedAdmin {
+		if allowed, scope := e.limiter.EvaluatePolicy(snapshot, normalized.RemoteIP, normalized.Host, normalized.RatePath, normalized.Method, now, relaxClient); !allowed {
+			findings = append(findings, newL7Finding(
+				"L7.RATE_LIMIT."+strings.ToUpper(strings.ReplaceAll(scope, "-", "_")), "rate-limit", "high", 95, 99,
+				"request", normalized.RemoteIP+"|"+normalized.Host+"|"+normalized.Path, "Request rate exceeded the configured L7 budget",
+			))
+		}
 	}
 	for _, detector := range e.detectors {
 		if err := ctx.Err(); err != nil {

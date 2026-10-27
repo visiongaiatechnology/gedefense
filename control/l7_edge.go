@@ -338,6 +338,9 @@ func (s *L7EdgeService) inspectResponse(response *http.Response) error {
 		return nil
 	}
 	prefix, replay, decoded := l7ResponseInspectionPrefix(response.Body, response.Header.Get("Content-Encoding"), limit)
+	if s.engine != nil && response.Request != nil {
+		s.engine.ObserveHTTPResponse(response.Request.Host, response.Header, prefix)
+	}
 	if replay != nil {
 		response.Body = replay
 	}

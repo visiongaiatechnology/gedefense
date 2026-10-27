@@ -1,0 +1,17 @@
+/* CMS Defense — compact, task-first surface. */
+.cms-layout{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,.85fr);gap:18px;align-items:start}
+.cms-stack{display:flex;flex-direction:column;gap:18px}
+.cms-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:14px}
+.cms-form-grid .full{grid-column:1/-1}
+.cms-field{display:flex;flex-direction:column;gap:6px}
+.cms-field small{color:var(--text-muted);font-size:.72rem;line-height:1.45}
+.cms-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:16px}
+.cms-detection-list{display:grid;gap:10px;margin-top:12px}
+.cms-detection{display:grid;grid-template-columns:1.4fr .8fr .6fr 1fr;gap:10px;align-items:center;padding:12px 14px;border:1px solid var(--glass-border);border-radius:12px;background:rgba(255,255,255,.025)}
+.cms-detection b{font-size:.82rem}.cms-detection span,.cms-detection small{color:var(--text-muted);font-size:.72rem}
+.cms-secret{display:flex;gap:8px;margin-top:10px}.cms-secret input{flex:1;min-width:0}
+.cms-keyline{display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid var(--glass-border);font-size:.78rem}
+.cms-keyline code{font-size:.72rem}
+.cms-lease{padding:10px 0;border-bottom:1px solid var(--glass-border);font-size:.78rem}.cms-lease b{display:block}.cms-lease small{color:var(--text-muted)}
+@media(max-width:1100px){.cms-layout{grid-template-columns:1fr}}
+@media(max-width:620px){.cms-form-grid{grid-template-columns:1fr}.cms-detection{grid-template-columns:1fr 1fr}}.cms-field-spaced{margin-top:12px}
