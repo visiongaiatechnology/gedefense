@@ -426,6 +426,35 @@ func normalizeCMSHost(host string) string {
 	return strings.Trim(host, "[]")
 }
 
+// cmsTrustedEditorSurface identifies write-shaped CMS administration requests
+// for which a verified ThroneGuard master lease may bypass the content-pattern
+// detector. It deliberately does not bypass protocol, encoding, upload or
+// response checks; those remain active even for a trusted administrator.
+func cmsTrustedEditorSurface(req l7NormalizedRequest) bool {
+	method := strings.ToUpper(strings.TrimSpace(req.Method))
+	if method == "" || method == "GET" || method == "HEAD" {
+		return false
+	}
+	path := strings.ToLower(req.Path)
+	switch {
+	case strings.HasPrefix(path, "/wp-admin/"):
+		// WordPress admin POST/PUT endpoints contain deliberately executable
+		// editor markup (builder previews, block saves). The authenticated
+		// master lease is the trust transition here.
+		return true
+	case strings.HasPrefix(path, "/wp-json/"):
+		return true
+	case strings.HasPrefix(path, "/administrator/"):
+		return true
+	case strings.HasPrefix(path, "/typo3/"):
+		return true
+	case strings.HasPrefix(path, "/admin/"):
+		return true
+	default:
+		return false
+	}
+}
+
 func isCMSAdminPath(kind CMSKind, path, method string) bool {
 	path = strings.ToLower(path)
 	if i := strings.IndexByte(path, '?'); i >= 0 {

@@ -186,10 +186,12 @@ func (e *L7Engine) inspect(ctx context.Context, req L7InspectionRequest, body []
 	findings := make([]L7Finding, 0, 12)
 	trustedAdmin := false
 	relaxClient := false
+	trustedEditor := false
 	if e.cms != nil {
 		e.cms.ObserveRequest(normalized)
 		trustedAdmin = e.cms.Trusted(normalized.RemoteIP, normalized.Host, now)
 		relaxClient = e.cms.ShouldRelax(normalized)
+		trustedEditor = trustedAdmin && cmsTrustedEditorSurface(normalized)
 	}
 	if !trustedAdmin {
 		if allowed, scope := e.limiter.EvaluatePolicy(snapshot, normalized.RemoteIP, normalized.Host, normalized.RatePath, normalized.Method, now, relaxClient); !allowed {
@@ -200,6 +202,11 @@ func (e *L7Engine) inspect(ctx context.Context, req L7InspectionRequest, body []
 		}
 	}
 	for _, detector := range e.detectors {
+		if trustedEditor {
+			if _, isPattern := detector.(*l7PatternDetector); isPattern {
+				continue
+			}
+		}
 		if err := ctx.Err(); err != nil {
 			return L7InspectionResponse{}, l7NormalizedRequest{}, err
 		}
