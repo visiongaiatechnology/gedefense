@@ -449,7 +449,7 @@ create_password_record(){
     (( ${#first} >= 14 && ${#first} <= 128 )) || { log "Passwort muss 14 bis 128 Zeichen lang sein."; continue; }
     tmp="${PASSWORD_FILE}.tmp.$$"
     printf '%s\n' "$first" | "$PAYLOAD/bin/gedefense-access" --hash-password-stdin > "$tmp"
-    chown gedefense:gedefense "$tmp"; chmod 0600 "$tmp"
+    chown gedefense-access:gedefense-access "$tmp"; chmod 0600 "$tmp"
     mv -fT -- "$tmp" "$PASSWORD_FILE"
     unset first second
     log "Dashboard-Passwort mit Argon2id (64 MiB, t=3, p=1) gespeichert."
@@ -544,7 +544,11 @@ prepare_secrets(){
   else
     create_password_record
   fi
-  chown gedefense:gedefense "$PASSWORD_FILE"; chmod 0600 "$PASSWORD_FILE"
+  # The gateway runs as gedefense-access and intentionally cannot read the
+  # control-plane user's files. This record is its own credential, not a shared
+  # file: root prepares it and the dedicated service owner reads it as 0600.
+  chown gedefense-access:gedefense-access "$PASSWORD_FILE"; chmod 0600 "$PASSWORD_FILE"
+  [[ $(stat -c '%U:%G:%a' "$PASSWORD_FILE") == 'gedefense-access:gedefense-access:600' ]] || fail "Gateway-Passwortdatei hat falsche Rechte."
 }
 
 install_rust_toolchains(){
