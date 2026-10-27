@@ -327,3 +327,27 @@ func TestL7EdgeUpstreamFailureDoesNotMisreportSecurityHealth(t *testing.T) {
 		t.Fatalf("upstream diagnostics missing: %#v", status)
 	}
 }
+
+func TestL7EdgeBodyRequestDoesNotTripDuplicateContentLength(t *testing.T) {
+	service, engine, client, hits := newL7EdgeFixture(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}), "block")
+	engine.canBlock = func() bool { return true }
+
+	req := newL7EdgeRequest(t, http.MethodPost, "/wp-login.php", []byte("log=test&pwd=test&wp-submit=Log+In"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("normal body request was blocked: status=%d", resp.StatusCode)
+	}
+	if hits.Load() != 1 {
+		t.Fatalf("normal body request did not reach upstream: hits=%d", hits.Load())
+	}
+	if status := service.state.L7Status(); status.InlineBlockedTotal != 0 {
+		t.Fatalf("normal body request was counted as a security block: %#v", status)
+	}
+}

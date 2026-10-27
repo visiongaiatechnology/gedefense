@@ -304,7 +304,13 @@ func l7HeadersFromHTTPRequest(r *http.Request) []L7Header {
 			headers = append(headers, L7Header{Name: name, Value: value})
 		}
 	}
-	if r.ContentLength >= 0 {
+	// Go's server-side parser retains the incoming Content-Length in
+	// Request.Header (net/http fixLength). Appending it again would create a
+	// duplicate framing header that the L7 protocol-anomaly detector correctly
+	// rejects as request-smuggling-shaped input, blocking every normal POST with
+	// a body. Only synthesize the header for a request path that does not
+	// already expose it.
+	if r.ContentLength > 0 && r.Header.Get("Content-Length") == "" {
 		headers = append(headers, L7Header{Name: "Content-Length", Value: fmt.Sprintf("%d", r.ContentLength)})
 	}
 	return headers
