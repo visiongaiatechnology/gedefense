@@ -5,7 +5,7 @@
 
 
 # VGT GeDefense
-### Linux Security Fabric
+### Linux Security Fabric - Your Entenprise System
 
 [![License](https://img.shields.io/badge/License-AGPL--3.0--only-blue?style=for-the-badge)](https://www.gnu.org/licenses/agpl-3.0)
 [![Version](https://img.shields.io/badge/Version-5.0.0--beta.2-orange?style=for-the-badge)](#)
@@ -30,6 +30,9 @@
 [English](README.md) · **Deutsch** · [Русский](README.ru.md) · [中文 (简体)](README.zh.md)
 
 </div>
+
+<img width="1536" height="1024" alt="GeDefense_ Real Security, Many Feathers" src="https://github.com/user-attachments/assets/dc56735e-b2b2-45c9-a363-97554a92ae0a" />
+
 
 ---
 ## 🆕 Release 5.0.0-beta.2 — Hotfixes 1–9 (25.10.2026)
@@ -120,42 +123,6 @@ Vollständige Texte und Details stehen in
 Kein Drittanbieter unterstützt oder sponsert GeDefense. Das Dashboard lädt diese
 Assets lokal; es gibt keinen Laufzeit-CDN- oder Cloud-Lookup.
 
-
-## 🚨 KRITISCHER SICHERHEITSHINWEIS & WARNUNG — RELEASE v5.0.0-beta.2
-
-> **Betriebliches Sicherheitsupdate in 5.0.0-beta.2.** Die PHP-Upload-Progress-Mitigation (`session.upload_progress.enabled = Off`), die kritische L7-Regel `L7.PHP.SESSION_UPLOAD_PROGRESS` und regelbasiertes Inline-Enforcement (`l7.enforce_rules`, `mode = "block"`) sind aktiv. Der L7-Origin ist auf Loopback gebunden, damit direkter Origin-Zugriff die Inspektion nicht umgeht. Der historische 4.2.x-Hinweis unten bleibt Teil der Remediation-Historie.
-
-
-> [!CAUTION]
-> **DRINGENDER SICHERHEITSHINWEIS FÜR ALLE BETREIBER & SYSTEMADMINISTRATOREN (UPGRADE DRINGEND EMPFOHLEN):**
-> 
-> In GeDefense Version 4.2.0 wurden im Rahmen eines umfassenden Sicherheitsaudits und Verifikationszyklus **mehrere kritische Sicherheitslücken und Integritätsmängel früherer Versionen (4.0.x / 4.1.0)** identifiziert und vollständig behoben. Ein sofortiges Upgrade auf v4.2.4 wird für alle Produktionsinstallationen dringend empfohlen:
-> 
-> 1. **Kritische Rechteeskalation via Symlink-Traversal (Canary-Deployment):**
->    - *Schwachstelle:* Das bisherige Canary-Deployment folgte symbolischen Links im Decoy- oder Staging-Pfad. Ein von einem Angreifer kontrollierter Symlink in übergeordneten Verzeichnissen konnte Schreiboperationen mit Root-Rechten an beliebige Dateisystemorte umleiten (`cron`, `authorized_keys`, `ld.so.preload`) → Willkürliches Dateischreiben mit Root-Privilege-Escalation.
->    - *Behebung:* Ersetzt durch strikte deskriptorbasierte Pfadauflösung (`openat(2)` mit `O_NOFOLLOW|O_DIRECTORY` auf jeder einzelnen Pfadkomponente). Traversale über Symlinks schlagen deterministisch mit `ELOOP` fehl.
-> 
-> 2. **Opake Fehlerantworten zur Beseitigung von Informationslecks (Information Disclosure):**
->    - *Schwachstelle:* Fünf API-Handler gaben ungefilterte Laufzeitfehler an Clients weiter (interne Dateisystempfade, Kernelfehler, Upstream-Feed-URLs, DNS/TLS-Interna). Die frühere Wort-Blacklist war fragil und unvollständig.
->    - *Behebung:* Strukturelle Entkopplung — interne Laufzeitfehler werden niemals als API-Fehlerantworten weitergeleitet, sondern durch typisierte, opake Fehlerantworten ersetzt.
-> 
-> 3. **Fail-Closed CSPRNG & Vorhersagbarkeitsschutz:**
->    - *Schwachstelle:* Versagte die CSPRNG-Entropiequelle, fielen Evidenz-, Vorfalls-, Block- und Transaktions-IDs auf vorhersagbare Zeitstempel zurück.
->    - *Behebung:* Strikte Fail-Closed-Semantik via `log.Fatalf` — kryptografische Bezeichner degradieren niemals zu vorhersagbaren Werten.
-> 
-> 4. **Absturzsicherer atomarer Writer (`atomicWriteFile`):**
->    - Richtlinien (Policies), Feed-Zustände und Chronos-Checkpoints nutzen ausnahmslos atomare Schreibvorgänge mit Symlink-Zurückweisung, `O_EXCL` und `fsync` sowohl auf die Datei als auch auf das Elternverzeichnis.
-> 
-> 5. **Härtung der Content Security Policy (CSP) & Trusted Types:**
->    - `unsafe-inline`-Styles wurden vollständig aus der CSP verbannt.
->    - `require-trusted-types-for 'script'` wird vom Browser aktiv als Laufzeitinvariante erzwungen (keine DOM-XSS-Sinks).
-> 
-> 6. **Beseitigung von Deadlocks & Fail-Open in der Engine:**
->    - Deadlock in `CaseEngine.Status` behoben (rekursiver Mutex-Lock).
->    - Fail-Open-Zustände im Airlock-Inspektor und in der CaseEngine eliminiert.
-> 
-> 7. **Toolchain-Sicherheitsboden (Go ≥ 1.26.6):**
->    - Behebung von 6 erreichbaren Standardbibliotheks-CVEs älterer Go-Releases auf den Pfaden des Ingress-Reverse-Proxys und der Threat-Intelligence-Feeds.
 
 ---
 
@@ -718,7 +685,7 @@ Ist die Gaia Cells-Laufzeit **nicht vorhanden**, meldet der Adapter `runtime_not
 
 ```bash
 # Installer herunterladen
-wget https://github.com/visiongaiatechnology/gedefense/releases/download/v5.0.0-beta.2-hotfix1/GeDefense-5.0.0-beta.2-OneClick.run
+wget https://github.com/visiongaiatechnology/gedefense/releases/download/v5.0.0-beta.2-hotfix2/GeDefense-5.0.0-beta.2-OneClick.run
 
 # SHA-256 verifizieren
 sha256sum --check GeDefense-5.0.0-beta.2-OneClick.run.sha256

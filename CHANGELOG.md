@@ -3,7 +3,7 @@
 All notable public changes to GeDefense Linux. The project is a beta; entries
 describe verified source changes, not a production certification.
 
-## 5.0.0-beta.2-hotfix2 - 2026-10-27 - L7 duplicate Content-Length correction
+## 5.0.0-beta.2-hotfix2 - 2026-10-27 - Entenprise release, L7 gate fix, clean docs
 
 - Fixed a false-positive `L7.HTTP.DUPLICATE_CONTENT_LENGTH` block on every
   normal POST body handled by the inline L7 edge. Go's server-side parser
@@ -18,6 +18,17 @@ describe verified source changes, not a production certification.
 - Added regression coverage proving a normal body request passes the edge in
   block mode and reaches the upstream without being counted as a security
   block.
+- Added the official **Sir Du / Entenprise** mascot to the gateway login page as
+  an embedded, self-hosted asset with a descriptive alternative text, an
+  Entenprise signature caption, responsive composition and zero external
+  runtime assets.
+- Unified the public product line to **Linux Security Fabric - Your Entenprise
+  System** in all four READMEs.
+- Removed the obsolete 5.0.0-beta.2 critical security advisory and the historical
+  4.x caution block from all four READMEs; the current beta guidance remains.
+- Restored the same "Real Security, Many Feathers" image under the language
+  selector in every README, preserving the English source image URL.
+- Updated installer references to the clean `v5.0.0-beta.2-hotfix2` release.
 
 ## 5.0.0-beta.2-hotfix1 - 2026-10-25 - Version labels and UI branding
 

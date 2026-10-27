@@ -1,3 +1,24 @@
+# VGT GeDefense 5.0.0-beta.2-hotfix2 — Entenprise clean release
+
+This is the clean 5.0.0-beta.2 release: it consolidates the inline-L7
+duplicate-Content-Length fix, the official Sir Du / Entenprise mascot on the
+gateway sign-in page, the unified **Linux Security Fabric - Your Entenprise
+System** product line, and cleaned public READMEs in all four languages.
+
+- **L7 gate fix:** ordinary POST bodies reach the upstream again; request
+  smuggling detection remains active and is not weakened.
+- **Entenprise identity:** the embedded mascot is served from the gateway itself
+  (no external runtime asset), with a responsive identity-plane composition and
+  an accessible description.
+- **Clean documentation:** the obsolete 5.0.0-beta.2 critical advisory and the
+  historical 4.x caution block are removed; the "Real Security, Many Feathers"
+  language image is preserved in every README.
+- **Installer:** the signed `GeDefense-5.0.0-beta.2-OneClick.run` asset is
+  rebuilt from this release tag and referenced by all READMEs.
+
+The signed release index, SBOM, build provenance, source manifest and public
+release key are attached to the GitHub release.
+
 # VGT GeDefense 5.0.0-beta.2-hotfix1 — Version-label and branding correction
 
 This release corrects the public surface labels of the 5.0.0-beta.2 source tree:

@@ -5,7 +5,7 @@
 
 
 # VGT GeDefense
-### Linux Security Fabric - Your Entenprise System 
+### Linux Security Fabric - Your Entenprise System
 
 [![License](https://img.shields.io/badge/License-AGPL--3.0--only-blue?style=for-the-badge)](https://www.gnu.org/licenses/agpl-3.0)
 [![Version](https://img.shields.io/badge/Version-5.0.0--beta.2-orange?style=for-the-badge)](#)
@@ -122,42 +122,6 @@ and further details are in [THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md).
 No third-party maintainer endorses or sponsors GeDefense. The dashboard loads
 these assets locally; no runtime CDN or cloud lookup is used.
 
-
-## 🚨 CRITICAL SECURITY ADVISORY & WARNING — RELEASE v5.0.0-beta.2
-
-> **Release 5.0.0-beta.2 operational security update.** The PHP upload-progress mitigation (`session.upload_progress.enabled = Off`), the critical L7 rule `L7.PHP.SESSION_UPLOAD_PROGRESS` and rule-scoped inline enforcement (`l7.enforce_rules`, `mode = "block"`) are active. The L7 origin is bound to loopback, so direct origin access cannot bypass inspection. The historical 4.2.x advisory below remains part of the remediation record.
-
-
-> [!CAUTION]
-> **URGENT SECURITY NOTICE FOR ALL OPERATORS & SYSTEM ADMINISTRATORS (UPGRADE STRONGLY RECOMMENDED):**
-> 
-> In GeDefense version 4.2.0, as part of an exhaustive security audit and verification cycle, **multiple critical vulnerabilities and integrity flaws present in previous versions (4.0.x / 4.1.0)** were identified and completely remediated. An immediate upgrade to v4.2.4 is strongly advised for all production installations:
-> 
-> 1. **Critical Privilege Escalation via Symlink Traversal (Canary Deployment):**
->    - *Vulnerability:* The previous canary deployment followed symbolic links at the decoy or staging path. An attacker-controlled symlink in parent directories could redirect file writes with root privileges to arbitrary filesystem locations (`cron`, `authorized_keys`, `ld.so.preload`) → Arbitrary file write leading to root privilege escalation.
->    - *Remediation:* Replaced with strict descriptor-based path resolution (`openat(2)` with `O_NOFOLLOW|O_DIRECTORY` on every single path component). Traversals across symlinks fail deterministically with `ELOOP`.
-> 
-> 2. **Opaque Error Responses Eliminating Information Disclosure:**
->    - *Vulnerability:* Five API handlers leaked raw runtime errors to clients (internal filesystem paths, kernel faults, upstream feed URLs, DNS/TLS internals). The previous keyword blacklist was brittle and incomplete.
->    - *Remediation:* Structural decoupling — internal runtime errors are never forwarded as API error responses and are instead replaced by opaque, typed error responses.
-> 
-> 3. **Fail-Closed CSPRNG & Predictability Protection:**
->    - *Vulnerability:* If the CSPRNG entropy source failed, Evidence, Incident, Block, and Transaction IDs fell back to predictable timestamps.
->    - *Remediation:* Strict fail-closed semantics via `log.Fatalf` — cryptographic identifiers never degrade to predictable values.
-> 
-> 4. **Crash-Safe Atomic Writer (`atomicWriteFile`):**
->    - Policies, feed state, and Chronos checkpoints universally utilize atomic writes with symlink rejection, `O_EXCL`, and `fsync` on both the file and its parent directory.
-> 
-> 5. **Content Security Policy (CSP) Hardening & Trusted Types:**
->    - `unsafe-inline` styles have been completely eliminated from the CSP.
->    - `require-trusted-types-for 'script'` is actively enforced by the browser as a runtime invariant (zero DOM-XSS sinks).
-> 
-> 6. **Deadlock & Fail-Open Elimination in Engine:**
->    - Fixed deadlock in `CaseEngine.Status` (recursive mutex lock).
->    - Eliminated fail-open states in the Airlock inspector and CaseEngine.
-> 
-> 7. **Toolchain Security Floor (Go ≥ 1.26.6):**
->    - Remediated 6 reachable standard-library CVEs of older Go releases on the ingress reverse proxy and threat-intelligence feed paths.
 
 ---
 
@@ -728,7 +692,7 @@ If the Gaia Cells runtime is **not present**, the adapter reports `runtime_not_i
 ### One-Click installer
 
 ```bash
-wget https://github.com/visiongaiatechnology/gedefense/releases/download/v5.0.0-beta.2-hotfix1/GeDefense-5.0.0-beta.2-OneClick.run
+wget https://github.com/visiongaiatechnology/gedefense/releases/download/v5.0.0-beta.2-hotfix2/GeDefense-5.0.0-beta.2-OneClick.run
 sha256sum --check GeDefense-5.0.0-beta.2-OneClick.run.sha256
 chmod 700 GeDefense-5.0.0-beta.2-OneClick.run
 sudo ./GeDefense-5.0.0-beta.2-OneClick.run

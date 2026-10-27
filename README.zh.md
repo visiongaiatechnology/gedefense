@@ -5,7 +5,7 @@
 
 
 # VGT GeDefense
-### Linux 主权安全矩阵 (Linux Security Fabric)
+### Linux Security Fabric - Your Entenprise System
 
 [![License](https://img.shields.io/badge/License-AGPL--3.0--only-blue?style=for-the-badge)](https://www.gnu.org/licenses/agpl-3.0)
 [![Version](https://img.shields.io/badge/Version-5.0.0--beta.2-orange?style=for-the-badge)](#)
@@ -31,6 +31,9 @@
 
 </div>
 
+<img width="1536" height="1024" alt="GeDefense_ Real Security, Many Feathers" src="https://github.com/user-attachments/assets/dc56735e-b2b2-45c9-a363-97554a92ae0a" />
+
+
 ---
 ## 🆕 版本 5.0.0-beta.2 — 修复 1–9（2026-10-25）
 
@@ -55,42 +58,6 @@
 > 测试版作为生产安全控制部署；请先阅读 `SECURITY.md` 和 `CHANGELOG.md`。
 
 ---
-
-## 🚨 严重安全警告与公告 — RELEASE v5.0.0-beta.2
-
-> **5.0.0-beta.2 操作安全更新。** 已启用 PHP 上传进度缓解（`session.upload_progress.enabled = Off`）、关键 L7 规则 `L7.PHP.SESSION_UPLOAD_PROGRESS` 以及按规则范围的内联强制（`l7.enforce_rules`，`mode = "block"`）。L7 源站仅绑定 loopback，直接访问源站无法绕过检测。下方的 4.2.x 历史公告仍属于修复记录。
-
-
-> [!CAUTION]
-> **全体系统运维人员与管理员紧急安全通告（强烈建议立即升级）：**
-> 
-> 在 GeDefense 4.2.0 版本中，作为全面安全审计与验证周期的一部分，**我们排查并彻底修复了此前版本（4.0.x / 4.1.0）中存在的多个严重安全漏洞与完整性缺陷**。强烈建议所有生产环境节点立即升级至 v4.2.4：
-> 
-> 1. **金丝雀陷阱符号链接遍历提权漏洞（Canary Deployment）：**
->    - *漏洞详情：* 此前的金丝雀诱饵部署在诱饵路径或暂存路径上会跟随符号链接。攻击者若控制上级目录中的符号链接，即可将具有 root 权限的写操作重定向至文件系统的任意位置（如 `cron`、`authorized_keys`、`ld.so.preload`）→ 导致任意文件写入及 root 提权。
->    - *修复措施：* 全面替换为严格基于文件描述符的逐级路径解析（对路径中的每一个组件均使用 `openat(2)` 并附带 `O_NOFOLLOW|O_DIRECTORY`）。跨越符号链接的遍历行为将确定性地返回 `ELOOP` 错误并终止。
-> 
-> 2. **消除信息泄露的不透明错误响应（Information Disclosure）：**
->    - *漏洞详情：* 5 个 API 处理器曾将原始运行时错误直接暴露给客户端（内部文件系统路径、内核故障、上游威胁源 URL、DNS/TLS 内部状态）。此前的关键词黑名单机制脆弱且不完整。
->    - *修复措施：* 架构解耦 — 内部运行时错误绝不作为 API 响应返回，统一替换为强类型的预定义不透明错误响应。
-> 
-> 3. **CSPRNG 故障安全关闭（Fail-Closed）及随机数预测防护：**
->    - *漏洞详情：* 当加密级随机数生成器（CSPRNG）熵源不足或失败时，证据链、安全事件、阻断及事务 ID 曾降级为可预测的时间戳。
->    - *修复措施：* 实施严格的 `log.Fatalf` 故障安全终止语义 — 加密标识符绝不降级为可预测数值。
-> 
-> 4. **防崩溃原子化写入器（`atomicWriteFile`）：**
->    - 安全策略、威胁情报同步状态及 Chronos 检查点全面采用带符号链接拒绝、`O_EXCL` 标识以及对目标文件与父目录双重 `fsync` 的原子写入机制。
-> 
-> 5. **内容安全策略（CSP）加固与可信类型（Trusted Types）：**
->    - 彻底从 CSP 中剔除 `unsafe-inline` 样式指令。
->    - 浏览器端强制实施 `require-trusted-types-for 'script'` 运行时不变量（彻底阻断 DOM-XSS 汇聚点）。
-> 
-> 6. **消除引擎死锁与故障开放（Fail-Open）：**
->    - 修复 `CaseEngine.Status` 中的递归互斥锁死锁问题。
->    - 彻底消除 Airlock 检查器及 CaseEngine 中的故障开放状态。
-> 
-> 7. **提升工具链安全基线（Go ≥ 1.26.6）：**
->    - 修复了旧版 Go 标准库在反向代理入站及威胁情报源解析路径上可被触发的 6 项已知 CVE 漏洞。
 
 ---
 
@@ -648,7 +615,7 @@ Rust Core **未提供任何通用的系统 Shell、文件系统或 Sysctl 执行
 
 ```bash
 # 下载安装程序
-wget https://github.com/visiongaiatechnology/gedefense/releases/download/v5.0.0-beta.2-hotfix1/GeDefense-5.0.0-beta.2-OneClick.run
+wget https://github.com/visiongaiatechnology/gedefense/releases/download/v5.0.0-beta.2-hotfix2/GeDefense-5.0.0-beta.2-OneClick.run
 
 # 校验 SHA-256 完整性指纹
 sha256sum --check GeDefense-5.0.0-beta.2-OneClick.run.sha256
