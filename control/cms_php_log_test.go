@@ -31,7 +31,7 @@ func TestCMSBridgeReadsPhpErrorLogLineAndHello(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Now().Unix()
-	hello := cmsBridgeEvent{Version: 1, Event: "bridge_hello", SiteHost: "example.test", IP: "127.0.0.1", IssuedAt: now, ExpiresAt: now + 300, EventID: "hello-1"}
+	hello := cmsBridgeEvent{Version: 1, Event: "bridge_hello", SiteHost: "example.test", IP: "127.0.0.1", IssuedAt: now + 2, ExpiresAt: now + 300, EventID: "hello-1"}
 	helloLine := append([]byte("[27-Oct-2026 14:00:00 UTC] GeDefense: "), encryptCMSBridgeTestEvent(t, key, hello)...)
 	if err := os.WriteFile(logPath, append(helloLine, '\n'), 0o640); err != nil {
 		t.Fatal(err)
@@ -44,7 +44,7 @@ func TestCMSBridgeReadsPhpErrorLogLineAndHello(t *testing.T) {
 		t.Fatal("hello event must not create a lease")
 	}
 
-	lease := cmsBridgeEvent{Version: 1, Event: "master_login", SiteHost: "example.test", IP: "203.0.113.77", User: "master", IssuedAt: now, ExpiresAt: now + 7200, EventID: "lease-1"}
+	lease := cmsBridgeEvent{Version: 1, Event: "master_login", SiteHost: "example.test", IP: "203.0.113.77", User: "master", IssuedAt: now + 2, ExpiresAt: now + 7200, EventID: "lease-1"}
 	leaseLine := append([]byte("[27-Oct-2026 14:01:00 UTC] GeDefense: "), encryptCMSBridgeTestEvent(t, key, lease)...)
 	file, err := os.OpenFile(logPath, os.O_APPEND|os.O_WRONLY, 0)
 	if err != nil {

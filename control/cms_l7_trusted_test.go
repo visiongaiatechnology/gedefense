@@ -16,6 +16,12 @@ func TestTrustedCMSEditorRequestBypassesPatternDetector(t *testing.T) {
 		t.Fatal(err)
 	}
 	cms := NewCMSEngine(filepath.Join(t.TempDir(), "cms.json"), filepath.Join(t.TempDir(), "bridge.key"))
+	settings := cms.Settings()
+	settings.Enabled = true
+	settings.BridgeEnabled = true
+	if err := cms.UpdateSettings(settings); err != nil {
+		t.Fatal(err)
+	}
 	lease := cmsLease{
 		IP: "203.0.113.55", Host: "example.test", User: "master", Source: "wordpress-bridge",
 		IssuedAt: time.Now().Add(-time.Minute).Unix(), ExpiresAt: time.Now().Add(time.Hour).Unix(),

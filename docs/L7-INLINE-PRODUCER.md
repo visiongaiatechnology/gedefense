@@ -1,6 +1,6 @@
 # L7 Inline Producer — first-class traffic path without a web-server plugin
 
-**Status:** verbindlich für GeDefense Linux 5.1.0-beta.1
+**Status:** verbindlich für GeDefense Linux 5.1.0-beta.2
 **Gilt für:** `control/l7_edge.go`, `control/l7_types.go`
 **Ziel:** Der Inline-Edge-Pfad ist ein vollwertiger L7-Produzent. Es ist **kein** zusätzliches
 Webserver-Plugin, kein separates Paket und kein externer Producer-Daemon nötig: der

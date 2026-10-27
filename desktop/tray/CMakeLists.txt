@@ -15,7 +15,7 @@ project(gedefense-tray
 
 # CMake project() versions must be numeric. The public product version is a
 # pre-release string and is passed to the tray through its own definition.
-set(GEDEFENSE_TRAY_PRODUCT_VERSION "5.1.0-beta.1")
+set(GEDEFENSE_TRAY_PRODUCT_VERSION "5.1.0-beta.2")
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

@@ -8,8 +8,8 @@
 ### Linux Security Fabric - Your Entenprise System
 
 [![License](https://img.shields.io/badge/License-AGPL--3.0--only-blue?style=for-the-badge)](https://www.gnu.org/licenses/agpl-3.0)
-[![Version](https://img.shields.io/badge/Version-5.1.0--beta.1-orange?style=for-the-badge)](#)
-[![Status](https://img.shields.io/badge/Status-Release_v5.1.0--beta.1-yellow?style=for-the-badge)](#)
+[![Version](https://img.shields.io/badge/Version-5.1.0--beta.2-orange?style=for-the-badge)](#)
+[![Status](https://img.shields.io/badge/Status-Release_v5.1.0--beta.2-yellow?style=for-the-badge)](#)
 [![Installer](https://img.shields.io/badge/Installer-Universal_Linux-green?style=for-the-badge)](#-快速上手)
 [![Platform](https://img.shields.io/badge/Platform-Linux_x86__64-lightgrey?style=for-the-badge&logo=linux)](#)
 [![Data Plane](https://img.shields.io/badge/Data_Plane-Rust_eBPF%2FXDP-red?style=for-the-badge&logo=rust)](#-系统架构)
@@ -35,7 +35,18 @@
 
 
 ---
-## 🆕 版本 5.1.0-beta.1 — CMS Defense 与加密 WordPress 桥（2026-10-27）
+## 🆕 版本 5.1.0-beta.2 — 安全加固（2026-10-27）
+
+针对 5.1.0-beta.1 的安全热修复。**在暴露桥梁前建议更新。**
+
+- **Trusted editor 范围收窄：** 仅精确的 VGT preview/save 动作和文章保存路径可以抑制 XSS 误报族；SQLi、LFI、PHP-tag 及所有其他模式、协议、编码、上传和响应检查仍保持启用。
+- **Master lease 仍保留敏感 L7 限制：** login/XML-RPC 等敏感路由不再被绕过；配置的 CMS 放宽客户端预算现在真正生效，而不是无条件绕过。
+- **Revocation/replay 加固：** 撤销状态持久化到 control 重启后；早于撤销 watermark 的事件被忽略；拒绝 loopback master lease；收紧 lease/配置/事件边界与 fail-closed 行为。
+- **WordPress 桥加固：** 需要已解锁的 ThroneGuard master 会话，拒绝弱/默认/重复盐值，发送注销撤销并拒绝 loopback master 事件；已有 master 时普通管理员不能再认领。
+- **Installer 加固：** gateway 访问目录在 secrets/TLS 前创建，python3 在 trust 检查前安装，仅接受 `prebuilt`/`source-signed`，修复 rollback ownership。
+- **ALPHA：** GeDefense WP ↔ Linux 桥仍是 alpha 测试功能，并非生产就绪。参见 `SECURITY.md` 与 `CHANGELOG.md`。
+
+## 🆕 版本 5.1.0-beta.2 — CMS Defense 与加密 WordPress 桥（2026-10-27）
 
 本版本新增 CMS 感知 L7 层和新的 **GeDefense WP ↔ Linux 桥**：
 
@@ -66,7 +77,7 @@
 ---
 
 > [!WARNING]
-> **公开测试版 — 不可用于生产环境（版本 5.1.0-beta.1）。**  
+> **公开测试版 — 不可用于生产环境（版本 5.1.0-beta.2）。**  
 > GeDefense Titan 与 Linux Security Fabric 仍在积极开发中。此测试版仅适用于
 > 测试和资格验证主机。核心架构已由自动发布门禁验证，但公开 CA 发布真实性、
 > RFC3161 时间戳、吊销、外部锚定防回滚和 feed 签名密钥仍然缺失。请勿将此
@@ -76,7 +87,7 @@
 
 ---
 
-## ⚠️ 稳定性与可靠性承诺 — RELEASE v5.1.0-beta.1 · 通用 LINUX 平台
+## ⚠️ 稳定性与可靠性承诺 — RELEASE v5.1.0-beta.2 · 通用 LINUX 平台
 
 VGT GeDefense 5.0.0-beta.2 是主权 Linux 安全防御体系的旗舰产品 — 将经过深度加固的内核级防御链与全新的 **Security Fabric Control Plane（安全织网控制平面）**、通用 Linux 原生集成、加固级发布流水线以及真实的内核/网卡适格门禁融为一体。专为主权主机与高对抗网络防御而设计。
 
@@ -630,17 +641,17 @@ Rust Core **未提供任何通用的系统 Shell、文件系统或 Sysctl 执行
 
 ```bash
 # 下载安装程序
-wget https://github.com/visiongaiatechnology/gedefense/releases/download/v5.1.0-beta.1/GeDefense-5.1.0-beta.1-OneClick.run
+wget https://github.com/visiongaiatechnology/gedefense/releases/download/v5.1.0-beta.2/GeDefense-5.1.0-beta.2-OneClick.run
 
 # 校验 SHA-256 完整性指纹
-sha256sum --check GeDefense-5.1.0-beta.1-OneClick.run.sha256
+sha256sum --check GeDefense-5.1.0-beta.2-OneClick.run.sha256
 
 # 执行安装（需要 root 权限）
-chmod 700 GeDefense-5.1.0-beta.1-OneClick.run
-sudo ./GeDefense-5.1.0-beta.1-OneClick.run
+chmod 700 GeDefense-5.1.0-beta.2-OneClick.run
+sudo ./GeDefense-5.1.0-beta.2-OneClick.run
 ```
 
-> **安装程序可用性：** 官方 v5.1.0-beta.1 自包含安装程序（`GeDefense-5.1.0-beta.1-OneClick.run`）已通过验证并发布于 GitHub Releases。
+> **安装程序可用性：** 官方 v5.1.0-beta.2 自包含安装程序（`GeDefense-5.1.0-beta.2-OneClick.run`）已通过验证并发布于 GitHub Releases。
 
 > 安装包与校验和文件仅在通过全部 GitHub CI 测试及实体 Linux 节点验证后发布。切勿运行未经验签的 RUN 可执行文件。
 
@@ -674,7 +685,7 @@ sudo ./GeDefense-5.1.0-beta.1-OneClick.run
 
 ---
 
-## 🚧 当前已知局限（5.1.0-beta.1）
+## 🚧 当前已知局限（5.1.0-beta.2）
 
 - 暂未集成 Swarm / 集群网格（Mesh）支持
 - 暂不支持 QUIC 协议网络卸载
@@ -982,6 +993,6 @@ sudo python3 scripts/update-geoip-db.py /var/lib/vgt/gedefense/geoip.csv
 
 [![VGT](https://img.shields.io/badge/VisionGaia-Technology-cyan?style=for-the-badge)](https://visiongaiatechnology.de)
 
-*VGT GeDefense 5.1.0-beta.1 — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
+*VGT GeDefense 5.1.0-beta.2 — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
 
 </div>

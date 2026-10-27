@@ -8,8 +8,8 @@
 ### Linux Security Fabric - Your Entenprise System
 
 [![License](https://img.shields.io/badge/License-AGPL--3.0--only-blue?style=for-the-badge)](https://www.gnu.org/licenses/agpl-3.0)
-[![Version](https://img.shields.io/badge/Version-5.1.0--beta.1-orange?style=for-the-badge)](#)
-[![Status](https://img.shields.io/badge/Status-Release_v5.1.0--beta.1-yellow?style=for-the-badge)](#)
+[![Version](https://img.shields.io/badge/Version-5.1.0--beta.2-orange?style=for-the-badge)](#)
+[![Status](https://img.shields.io/badge/Status-Release_v5.1.0--beta.2-yellow?style=for-the-badge)](#)
 [![Installer](https://img.shields.io/badge/Installer-Universal_Linux-green?style=for-the-badge)](#-quick-start)
 [![Platform](https://img.shields.io/badge/Platform-Linux_x86__64-lightgrey?style=for-the-badge&logo=linux)](#)
 [![Data Plane](https://img.shields.io/badge/Data_Plane-Rust_eBPF%2FXDP-red?style=for-the-badge&logo=rust)](#-architecture)
@@ -38,6 +38,17 @@
 
 
 ---
+## 🆕 Release 5.1.0-beta.2 — Security Hardening (2026-10-27)
+
+Security hotfix for the 5.1.0-beta.1 CMS/bridge release. **Update is recommended before exposing the bridge.**
+
+- **Trusted editor scope narrowed:** only exact VGT preview/save actions and post save routes may suppress the XSS false-positive family. SQLi, LFI, PHP-tag and all other pattern families remain active; protocol, encoding, upload and response checks remain active.
+- **Sensitive L7 limits remain active for master leases:** login/XML-RPC and other sensitive-route buckets are no longer bypassed. The configured relaxed CMS client budget is now actually applied instead of an unconditional client bypass.
+- **Revocation/replay hardening:** revocation is persisted across control restarts; bridge events older than the revoke watermark are ignored; loopback master leases are rejected; lease/profile/event bounds and fail-closed settings were tightened.
+- **WordPress bridge hardening:** requires an unlocked ThroneGuard master session, rejects weak/default/duplicate salts, emits logout revocation and rejects loopback master events; normal administrators cannot claim a master when one already exists.
+- **Installer hardening:** gateway access directories are created before secrets/TLS, python3 is installed before trust verification, only `prebuilt`/`source-signed` trust modes are accepted, and rollback ownership is corrected.
+- **ALPHA:** the GeDefense WP ↔ Linux bridge remains an alpha test feature, not production-ready. See `SECURITY.md` and `CHANGELOG.md`.
+
 ## 🆕 Release 5.1.0-beta.1 — CMS Defense & Encrypted WordPress Bridge (2026-10-27)
 
 This release adds the CMS-aware L7 layer and the new **GeDefense WP ↔ Linux Bridge**:
@@ -69,7 +80,7 @@ This release consolidates the security and functional fixes from the Hotfix 1–
 ---
 
 > [!WARNING]
-> **PUBLIC BETA — NOT PRODUCTION-READY (Version 5.1.0-beta.1).**  
+> **PUBLIC BETA — NOT PRODUCTION-READY (Version 5.1.0-beta.2).**  
 > GeDefense Titan and the Linux security fabric are in active development. This
 > beta is for test and qualification hosts only. The core architecture is
 > exercised by automated release gates, but public-CA release authenticity,
@@ -142,7 +153,7 @@ these assets locally; no runtime CDN or cloud lookup is used.
 
 ---
 
-## ⚠️ STABILITY & ASSURANCE — RELEASE v5.1.0-beta.1 · UNIVERSAL LINUX PLATFORM
+## ⚠️ STABILITY & ASSURANCE — RELEASE v5.1.0-beta.2 · UNIVERSAL LINUX PLATFORM
 
 VGT GeDefense 5.0.0-beta.2 is the flagship Linux security fabric — the hardened kernel-speed defense chain combined with the new **Security Fabric Control Plane**, universal Linux integration, hardened release pipeline, and concrete kernel/NIC qualification gates. It is engineered for sovereign host and network protection.
 
@@ -709,10 +720,10 @@ If the Gaia Cells runtime is **not present**, the adapter reports `runtime_not_i
 ### One-Click installer
 
 ```bash
-wget https://github.com/visiongaiatechnology/gedefense/releases/download/v5.1.0-beta.1/GeDefense-5.1.0-beta.1-OneClick.run
-sha256sum --check GeDefense-5.1.0-beta.1-OneClick.run.sha256
-chmod 700 GeDefense-5.1.0-beta.1-OneClick.run
-sudo ./GeDefense-5.1.0-beta.1-OneClick.run
+wget https://github.com/visiongaiatechnology/gedefense/releases/download/v5.1.0-beta.2/GeDefense-5.1.0-beta.2-OneClick.run
+sha256sum --check GeDefense-5.1.0-beta.2-OneClick.run.sha256
+chmod 700 GeDefense-5.1.0-beta.2-OneClick.run
+sudo ./GeDefense-5.1.0-beta.2-OneClick.run
 ```
 
 The installer is source-self-contained and verifies its signed release index,
@@ -1070,6 +1081,6 @@ these assets locally; no runtime CDN or cloud lookup is used.
 
 [![VGT](https://img.shields.io/badge/VisionGaia-Technology-cyan?style=for-the-badge)](https://visiongaiatechnology.de)
 
-*VGT GeDefense 5.1.0-beta.1 — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
+*VGT GeDefense 5.1.0-beta.2 — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
 
 </div>

@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# VGT GeDefense 5.1.0-beta.1 Universal Linux One-Click Installer
+# VGT GeDefense 5.1.0-beta.2 Universal Linux One-Click Installer
 set -Eeuo pipefail
 umask 0077
 
-readonly SETUP_VERSION="5.1.0-beta.1"
-readonly PRODUCT_VERSION="5.1.0-beta.1"
+readonly SETUP_VERSION="5.1.0-beta.2"
+readonly PRODUCT_VERSION="5.1.0-beta.2"
 readonly PAYLOAD_SHA256="__PAYLOAD_SHA256__"
 readonly CONTROL_SHA256="__CONTROL_SHA256__"
 readonly ACCESS_SHA256="__ACCESS_SHA256__"
@@ -106,6 +106,9 @@ restore_backup_path(){
     if [[ ! -d $parent ]]; then
       case "$target" in
         "$STATE"/*) install -d -m 0700 -o gedefense -g gedefense "$parent" ;;
+        "$ACCESS_DIR"/*) install -d -m 0750 -o gedefense-access -g gedefense-access "$parent" ;;
+        "$ACCESS_STATE_DIR"/*) install -d -m 0700 -o gedefense-access -g gedefense-access "$parent" ;;
+        "$ACCESS_STATE_PARENT"/*) install -d -m 0750 -o gedefense -g gedefense-access "$parent" ;;
         *) install -d -m 0750 -o root -g gedefense "$parent" ;;
       esac
     fi
@@ -209,7 +212,10 @@ release_trust_check(){
   have python3 || fail "python3 ist für die Signaturprüfung erforderlich."
   have sha256sum || fail "sha256sum ist für die Signaturprüfung erforderlich."
   EFFECTIVE_TRUST_MODE=$RELEASE_TRUST_MODE
-  if [[ ${VGT_RELEASE_TRUST_MODE:-} == "source-signed" ]]; then EFFECTIVE_TRUST_MODE="source-signed"; fi
+  case "$EFFECTIVE_TRUST_MODE" in
+    prebuilt|source-signed) ;;
+    *) fail "Unbekannter Release-Trust-Modus; nur prebuilt/source-signed sind zulässig." ;;
+  esac
   TRUST_WORK=$(mktemp -d "${TMPDIR:-/tmp}/gedefense-release-trust.XXXXXX")
   printf '%s' "$RELEASE_INDEX_B64" | base64 -d > "$TRUST_WORK/release-index.signed.json"
   printf '%s' "$RELEASE_VERIFIER_B64" | base64 -d > "$TRUST_WORK/release-verifier.py"
@@ -465,6 +471,11 @@ ensure_user_and_dirs(){
   # Group=gedefense. 0710 lets that group traverse only to the root-owned
   # 0700 quarantine vault while preserving private directory listings.
   install -d -o gedefense -g gedefense -m 0710 "$STATE"
+  # Gateway credentials/TLS are prepared before install_units runs. Create the
+  # separated gateway directories early with their exact final ownership.
+  install -d -o gedefense -g gedefense-access -m 0750 "$ACCESS_STATE_PARENT"
+  install -d -o gedefense-access -g gedefense-access -m 0750 "$ACCESS_DIR"
+  install -d -o gedefense-access -g gedefense-access -m 0700 "$ACCESS_STATE_DIR"
   install -d -o root -g gedefense -m 0700 "$QUARANTINE_DIR" "$QUARANTINE_OBJECT_DIR"
   install -d -o root -g gedefense -m 0750 "$CONFIG_DIR" "$TLS_DIR" "$SECRETS_DIR" "$STATE/canaries"
   [[ $(stat -c '%U:%G:%a' "$STATE/canaries") == 'root:gedefense:750' ]] ||
@@ -881,8 +892,8 @@ main(){
   parse_args "$@"
   log "VGT GeDefense ${PRODUCT_VERSION} Full-Stack Installation startet."
   platform_check
-  release_trust_check
   install_build_dependencies
+  release_trust_check
   extract_payload
   detect_interface
   collect_access_settings

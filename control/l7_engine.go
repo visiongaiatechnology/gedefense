@@ -193,8 +193,21 @@ func (e *L7Engine) inspect(ctx context.Context, req L7InspectionRequest, body []
 		relaxClient = e.cms.ShouldRelax(normalized)
 		trustedEditor = trustedAdmin && cmsTrustedEditorSurface(normalized)
 	}
-	if !trustedAdmin {
-		if allowed, scope := e.limiter.EvaluatePolicy(snapshot, normalized.RemoteIP, normalized.Host, normalized.RatePath, normalized.Method, now, relaxClient); !allowed {
+	if trustedAdmin {
+		// The master lease bypasses only the client bucket; the sensitive-route
+		// buckets remain active for login, XML-RPC and other credential surfaces.
+		if allowed, scope := e.limiter.EvaluatePolicy(snapshot, normalized.RemoteIP, normalized.Host, normalized.RatePath, normalized.Method, now, true); !allowed {
+			findings = append(findings, newL7Finding(
+				"L7.RATE_LIMIT."+strings.ToUpper(strings.ReplaceAll(scope, "-", "_")), "rate-limit", "high", 95, 99,
+				"request", normalized.RemoteIP+"|"+normalized.Host+"|"+normalized.Path, "Request rate exceeded the configured L7 budget",
+			))
+		}
+	} else {
+		clientRate, clientBurst := 0, 0
+		if relaxClient && e.cms != nil {
+			clientRate, clientBurst = e.cms.RelaxedClientBudget(normalized.Host)
+		}
+		if allowed, scope := e.limiter.evaluatePolicyWithBudget(snapshot, normalized.RemoteIP, normalized.Host, normalized.RatePath, normalized.Method, now, false, clientRate, clientBurst); !allowed {
 			findings = append(findings, newL7Finding(
 				"L7.RATE_LIMIT."+strings.ToUpper(strings.ReplaceAll(scope, "-", "_")), "rate-limit", "high", 95, 99,
 				"request", normalized.RemoteIP+"|"+normalized.Host+"|"+normalized.Path, "Request rate exceeded the configured L7 budget",
@@ -202,11 +215,6 @@ func (e *L7Engine) inspect(ctx context.Context, req L7InspectionRequest, body []
 		}
 	}
 	for _, detector := range e.detectors {
-		if trustedEditor {
-			if _, isPattern := detector.(*l7PatternDetector); isPattern {
-				continue
-			}
-		}
 		if err := ctx.Err(); err != nil {
 			return L7InspectionResponse{}, l7NormalizedRequest{}, err
 		}
@@ -219,6 +227,19 @@ func (e *L7Engine) inspect(ctx context.Context, req L7InspectionRequest, body []
 			findings = findings[:64]
 			break
 		}
+	}
+	if trustedEditor && len(findings) > 0 {
+		// Suppress only the XSS false-positive family on exact VGT editor
+		// actions. SQLi, LFI, PHP-tag and all other pattern families remain
+		// active, as do protocol, encoding, upload and response checks.
+		kept := findings[:0]
+		for _, finding := range findings {
+			if strings.HasPrefix(finding.RuleID, "L7.XSS.") {
+				continue
+			}
+			kept = append(kept, finding)
+		}
+		findings = kept
 	}
 	if e.tls != nil && len(findings) < 64 {
 		findings = append(findings, e.tls.RecordHTTPRequestForHost(normalized.RemoteIP, normalized.Host, now)...)

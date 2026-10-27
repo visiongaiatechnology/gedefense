@@ -4,7 +4,7 @@
 > **ALPHA TEST — GeDefense WP ↔ Linux Bridge.** The new WordPress bridge is an alpha preview, not production-ready. A fully compromised WordPress can forge bridge records while it holds the shared secret. The Linux lease is limited to two hours, IP/host-bound and only relaxes L7 rate limits/content-pattern checks on verified admin write surfaces. WAF, protocol, upload and kernel enforcement remain active. Do not use the bridge in unsupervised production and do not treat a passing test as a security certification.
 
 
-GeDefense 5.1.0-beta.1 is a security-sensitive universal Linux **public beta**.
+GeDefense 5.1.0-beta.2 is a security-sensitive universal Linux **public beta**.
 It starts in Observe and requires explicit, gated operator action before Canary
 or Enforce. It is not production-ready until the external trust-anchor and
 release-qualification items documented in [CHANGELOG.md](CHANGELOG.md) are

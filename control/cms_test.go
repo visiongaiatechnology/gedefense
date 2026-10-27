@@ -49,7 +49,7 @@ func TestCMSBridgeDecryptsLeaseAndRejectsTampering(t *testing.T) {
 	key, _ := base64.StdEncoding.DecodeString(secret)
 	event := cmsBridgeEvent{
 		Version: 1, Event: "master_login", SiteHost: "example.test", IP: "203.0.113.55",
-		User: "master", IssuedAt: time.Now().Unix(), ExpiresAt: time.Now().Add(time.Hour).Unix(),
+		User: "master", IssuedAt: time.Now().Add(2 * time.Second).Unix(), ExpiresAt: time.Now().Add(time.Hour).Unix(),
 		EventID: "event-1",
 	}
 	line := encryptCMSBridgeEventForTest(t, key, event)

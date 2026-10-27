@@ -139,6 +139,12 @@ func (l *L7RateLimiter) Evaluate(snapshot *l7RuntimeSnapshot, remoteIP, host, pa
 // still apply. A verified WordPress master lease is handled by the caller as a
 // full short-lived bypass because that session was authenticated out of band.
 func (l *L7RateLimiter) EvaluatePolicy(snapshot *l7RuntimeSnapshot, remoteIP, host, path, method string, now time.Time, bypassClient bool) (bool, string) {
+	return l.evaluatePolicyWithBudget(snapshot, remoteIP, host, path, method, now, bypassClient, 0, 0)
+}
+
+// evaluatePolicyWithBudget applies an optional CMS-specific client bucket.
+// A zero rate keeps the snapshot's configured client budget.
+func (l *L7RateLimiter) evaluatePolicyWithBudget(snapshot *l7RuntimeSnapshot, remoteIP, host, path, method string, now time.Time, bypassClient bool, clientRatePerMinute, clientRateBurst int) (bool, string) {
 	if l == nil || snapshot == nil {
 		return true, ""
 	}
@@ -154,7 +160,13 @@ func (l *L7RateLimiter) EvaluatePolicy(snapshot *l7RuntimeSnapshot, remoteIP, ho
 	}
 	clientKey := remoteIP + "|" + strings.ToLower(host)
 	if !bypassClient {
-		if !l.client.Allow(clientKey, l7Rate(cfg.ClientRatePerMinute), float64(cfg.ClientRateBurst), now) {
+		rate := cfg.ClientRatePerMinute
+		burst := cfg.ClientRateBurst
+		if clientRatePerMinute > 0 && clientRateBurst > 0 {
+			rate = clientRatePerMinute
+			burst = clientRateBurst
+		}
+		if !l.client.Allow(clientKey, l7Rate(rate), float64(burst), now) {
 			return false, "client"
 		}
 	}
@@ -186,8 +198,12 @@ func l7ClientRateExempt(method, requestURI string) bool {
 		path = path[:i]
 	}
 	lower := strings.ToLower(path)
+	// Do not exempt dynamic PHP/CGI paths merely because they sit under a
+	// static-looking prefix; only actual static file extensions qualify.
+	dynamic := strings.HasSuffix(lower, ".php") || strings.HasSuffix(lower, ".phtml") ||
+		strings.HasSuffix(lower, ".cgi") || strings.HasSuffix(lower, ".pl")
 	for _, prefix := range []string{"/storage/", "/wp-content/", "/wp-includes/"} {
-		if strings.HasPrefix(lower, prefix) {
+		if strings.HasPrefix(lower, prefix) && !dynamic {
 			return true
 		}
 	}

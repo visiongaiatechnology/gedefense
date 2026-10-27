@@ -654,7 +654,7 @@ func (s *l7RuntimeSnapshot) sensitivePath(path string) bool {
 		return true
 	}
 	for _, root := range s.sensitiveRoots {
-		if len(path) > len(root) && strings.HasPrefix(path, root) {
+		if len(path) >= len(root) && strings.HasPrefix(path, root) {
 			return true
 		}
 	}

@@ -1,5 +1,15 @@
 # Changelog
 
+## 5.1.0-beta.2 - 2026-10-27 - Security hardening for CMS bridge and L7
+
+- Trusted editor exception narrowed to exact VGT preview/save surfaces; only the XSS finding family is suppressed, while SQLi/LFI/PHP-tag and all other pattern families remain active.
+- Master leases no longer bypass sensitive-route rate limits; the configured relaxed CMS client budget is applied.
+- Revocation is persisted across control restarts; loopback master leases, oversized events/leases/profiles and fail-open bridge settings are rejected.
+- WordPress bridge now requires an unlocked ThroneGuard master session, strong distinct wp-config salts, emits logout revocation and rejects loopback master events.
+- Installer: access directories created before secrets/TLS, python3 before trust verification, strict prebuilt/source-signed trust modes, corrected rollback ownership.
+- ALPHA bridge remains non-production; read SECURITY.md and CHANGELOG.md.
+
+
 ## 5.1.0-beta.1 - 2026-10-27 - CMS Defense & encrypted WordPress bridge (Alpha)
 
 ### Added

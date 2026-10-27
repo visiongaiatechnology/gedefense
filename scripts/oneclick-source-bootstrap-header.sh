@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# VGT GeDefense 5.1.0-beta.1 source-self-contained one-click bootstrap installer
+# VGT GeDefense 5.1.0-beta.2 source-self-contained one-click bootstrap installer
 set -Eeuo pipefail
 umask 0077
 
-readonly PRODUCT_VERSION="5.1.0-beta.1"
+readonly PRODUCT_VERSION="5.1.0-beta.2"
 readonly PAYLOAD_SHA256="__SOURCE_PAYLOAD_SHA256__"
 readonly GO_VERSION="1.27.3"
 readonly GO_LINUX_AMD64_SHA256="65efbc80fdc1fa2cd2631cad5b481777a68e8725f34e89f50fc6ac714e379b40"
@@ -36,14 +36,14 @@ trap cleanup EXIT
 
 usage(){
   cat <<'USAGE'
-VGT GeDefense 5.1.0-beta.1 One-Click Installer
+VGT GeDefense 5.1.0-beta.2 One-Click Installer
 
 Usage:
-  ./GeDefense-5.1.0-beta.1-OneClick.run              Install or upgrade GeDefense
-  ./GeDefense-5.1.0-beta.1-OneClick.run --self-test  Verify this installer and inspect host readiness without modifying the host
-  ./GeDefense-5.1.0-beta.1-OneClick.run --verify     Alias for --self-test
-  ./GeDefense-5.1.0-beta.1-OneClick.run --allow-downgrade  Explicit recovery downgrade (still blocked below the release floor)
-  ./GeDefense-5.1.0-beta.1-OneClick.run --help       Show this help
+  ./GeDefense-5.1.0-beta.2-OneClick.run              Install or upgrade GeDefense
+  ./GeDefense-5.1.0-beta.2-OneClick.run --self-test  Verify this installer and inspect host readiness without modifying the host
+  ./GeDefense-5.1.0-beta.2-OneClick.run --verify     Alias for --self-test
+  ./GeDefense-5.1.0-beta.2-OneClick.run --allow-downgrade  Explicit recovery downgrade (still blocked below the release floor)
+  ./GeDefense-5.1.0-beta.2-OneClick.run --help       Show this help
 
 The installer verifies the embedded signed release index with the pinned
 Ed25519 release public key and enforces semantic version monotonicity before any

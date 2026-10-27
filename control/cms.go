@@ -16,6 +16,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -136,6 +137,8 @@ type CMSEngine struct {
 	bridgeLast        time.Time
 	bridgeErr         string
 	bridgeInitialized bool
+	revokedBefore     int64
+	revocationsPath   string
 }
 
 func defaultCMSSettings() cmsSettings {
@@ -157,12 +160,13 @@ func defaultCMSSettings() cmsSettings {
 // operator rotates a key from the dashboard.
 func NewCMSEngine(settingsPath, keyPath string) *CMSEngine {
 	engine := &CMSEngine{
-		settings:     defaultCMSSettings(),
-		profiles:     make(map[string]*cmsProfile),
-		leases:       make(map[string]cmsLease),
-		settingsPath: settingsPath,
-		keyPath:      keyPath,
-		bridgeSeen:   make(map[string]struct{}),
+		settings:        defaultCMSSettings(),
+		profiles:        make(map[string]*cmsProfile),
+		leases:          make(map[string]cmsLease),
+		settingsPath:    settingsPath,
+		keyPath:         keyPath,
+		revocationsPath: filepath.Join(filepath.Dir(settingsPath), "cms-revocations.json"),
+		bridgeSeen:      make(map[string]struct{}),
 	}
 	if raw, err := os.ReadFile(settingsPath); err == nil {
 		var stored cmsSettings
@@ -172,6 +176,14 @@ func NewCMSEngine(settingsPath, keyPath string) *CMSEngine {
 	}
 	if key, err := readCMSBridgeKey(keyPath); err == nil {
 		engine.key = key
+	}
+	if raw, err := os.ReadFile(engine.revocationsPath); err == nil {
+		var revocation struct {
+			RevokedBefore int64 `json:"revoked_before"`
+		}
+		if json.Unmarshal(raw, &revocation) == nil && revocation.RevokedBefore > 0 {
+			engine.revokedBefore = revocation.RevokedBefore
+		}
 	}
 	return engine
 }
@@ -207,6 +219,7 @@ func (e *CMSEngine) Settings() cmsSettings {
 }
 
 func (e *CMSEngine) UpdateSettings(next cmsSettings) error {
+	previous := e.Settings()
 	next = sanitizeCMSSettings(next)
 	raw, err := json.MarshalIndent(next, "", "  ")
 	if err != nil {
@@ -221,6 +234,9 @@ func (e *CMSEngine) UpdateSettings(next cmsSettings) error {
 	e.mu.Lock()
 	e.settings = next
 	e.mu.Unlock()
+	if (previous.Enabled && !next.Enabled) || (previous.BridgeEnabled && !next.BridgeEnabled) {
+		e.RevokeLeases()
+	}
 	return nil
 }
 
@@ -290,6 +306,7 @@ func (e *CMSEngine) rotateBridgeKey() (string, error) {
 	e.mu.Lock()
 	e.key = key
 	e.mu.Unlock()
+	e.RevokeLeases()
 	return base64.StdEncoding.EncodeToString(key), nil
 }
 
@@ -388,10 +405,17 @@ func (e *CMSEngine) profileFor(host string, now time.Time) *cmsProfile {
 }
 
 func (e *CMSEngine) Trusted(remoteIP, host string, now time.Time) bool {
+	ip := net.ParseIP(strings.TrimSpace(remoteIP))
+	if ip == nil || ip.IsLoopback() || ip.IsUnspecified() {
+		return false
+	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	if !e.settings.Enabled || !e.settings.BridgeEnabled {
+		return false
+	}
 	e.pruneLeasesLocked(now)
-	_, ok := e.leases[cmsLeaseKey(remoteIP, host)]
+	_, ok := e.leases[cmsLeaseKey(ip.String(), host)]
 	return ok
 }
 
@@ -399,11 +423,32 @@ func (e *CMSEngine) ShouldRelax(req l7NormalizedRequest) bool {
 	e.mu.RLock()
 	settings := e.settings
 	profile := e.profiles[normalizeCMSHost(req.Host)]
-	e.mu.RUnlock()
-	if !settings.Enabled || !settings.AutoRelax || !settings.RelaxAdmin || profile == nil {
+	if profile == nil || time.Since(profile.lastSeen) > cmsDetectorTTL {
+		e.mu.RUnlock()
 		return false
 	}
-	return isCMSAdminPath(profile.kind, req.Path, req.Method)
+	kind := profile.kind
+	e.mu.RUnlock()
+	if !settings.Enabled || !settings.AutoRelax || !settings.RelaxAdmin {
+		return false
+	}
+	return isCMSAdminPath(kind, req.Path, req.Method)
+}
+
+// RelaxedClientBudget returns the operator-configured client budget for a
+// detected CMS while AutoRelax is active. The caller applies it as a bucket
+// override, never as an unconditional bypass.
+func (e *CMSEngine) RelaxedClientBudget(host string) (int, int) {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	if !e.settings.Enabled || !e.settings.AutoRelax {
+		return 0, 0
+	}
+	profile := e.profiles[normalizeCMSHost(host)]
+	if profile == nil {
+		return 0, 0
+	}
+	return e.settings.RelaxClientRatePerMinute, e.settings.RelaxClientRateBurst
 }
 
 func (e *CMSEngine) pruneLeasesLocked(now time.Time) {
@@ -439,26 +484,25 @@ func cmsTrustedEditorSurface(req l7NormalizedRequest) bool {
 	if i := strings.IndexByte(path, '?'); i >= 0 {
 		path = path[:i]
 	}
+	// Only the exact VGT editor actions may suppress the XSS false-positive
+	// family. This is not a general content-WAF exemption.
 	switch path {
-	case "/wp-admin/post.php", "/wp-admin/post-new.php", "/wp-admin/customize.php", "/wp-admin/site-editor.php":
+	case "/wp-admin/post.php", "/wp-admin/post-new.php":
 		return true
 	case "/wp-admin/admin-ajax.php":
-		// The builder preview is an admin-ajax POST. Only the known VGT editor
-		// actions are allowed through the content-pattern exemption; generic
-		// admin-ajax actions keep the pattern detector.
-		body := strings.ToLower(string(req.Body))
-		return strings.Contains(body, "action=vgt_")
-	case "/wp-admin/admin-post.php":
-		body := strings.ToLower(string(req.Body))
-		return strings.Contains(body, "action=vgt_")
+		values, err := url.ParseQuery(string(req.Body))
+		if err != nil {
+			return false
+		}
+		switch values.Get("action") {
+		case "vgt_render_preview", "vgt_save", "vgt_autosave", "vgt_bulk_migration":
+			return true
+		default:
+			return false
+		}
+	default:
+		return false
 	}
-	if strings.HasPrefix(path, "/wp-json/") {
-		// Block editor / REST content writes are admin-authenticated; the
-		// master lease is the server-side trust transition.
-		return true
-	}
-	// Other CMS administration surfaces that carry editor markup.
-	return strings.HasPrefix(path, "/administrator/") || strings.HasPrefix(path, "/typo3/")
 }
 
 func isCMSAdminPath(kind CMSKind, path, method string) bool {
@@ -721,9 +765,25 @@ func (e *CMSEngine) consumeBridgeLine(line []byte) {
 		e.setBridgeError(err)
 		return
 	}
+	e.mu.RLock()
+	revokedBefore := e.revokedBefore
+	e.mu.RUnlock()
+	if event.IssuedAt <= revokedBefore {
+		return
+	}
+	if event.Event == "master_logout" {
+		e.mu.Lock()
+		delete(e.leases, cmsLeaseKey(event.IP, event.SiteHost))
+		e.mu.Unlock()
+		e.bridgeMu.Lock()
+		e.bridgeLast = time.Now().UTC()
+		e.bridgeMu.Unlock()
+		e.setBridgeError(nil)
+		return
+	}
 	if event.Event == "bridge_hello" {
 		e.mu.Lock()
-		e.profiles[normalizeCMSHost(event.SiteHost)] = &cmsProfile{kind: CMSWordPress, confidence: 100, evidence: map[string]struct{}{"wordpress_bridge": {}}, lastSeen: time.Now().UTC()}
+		e.profileLocked(normalizeCMSHost(event.SiteHost), CMSWordPress, 100, []string{"wordpress_bridge"})
 		e.mu.Unlock()
 		e.bridgeMu.Lock()
 		e.bridgeLast = time.Now().UTC()
@@ -750,6 +810,14 @@ func (e *CMSEngine) consumeBridgeLine(line []byte) {
 		event.ExpiresAt = maxExpiry
 	}
 	lease := cmsLease{IP: event.IP, Host: normalizeCMSHost(event.SiteHost), User: event.User, Source: "wordpress-bridge", IssuedAt: event.IssuedAt, ExpiresAt: event.ExpiresAt}
+	if len(e.leases) >= cmsBridgeMaxLeases {
+		e.pruneLeasesLocked(time.Now())
+	}
+	if len(e.leases) >= cmsBridgeMaxLeases {
+		e.mu.Unlock()
+		e.setBridgeError(errors.New("bridge lease capacity reached"))
+		return
+	}
 	e.leases[cmsLeaseKey(lease.IP, lease.Host)] = lease
 	if host := lease.Host; host != "" {
 		p := e.profiles[host]
@@ -810,13 +878,18 @@ func (e *CMSEngine) decryptBridgeLine(line []byte) (cmsBridgeEvent, error) {
 		return cmsBridgeEvent{}, fmt.Errorf("bridge event JSON: %w", err)
 	}
 	now := time.Now().Unix()
-	if event.Version != 1 || (event.Event != "master_login" && event.Event != "bridge_hello") {
+	if event.Version != 1 || (event.Event != "master_login" && event.Event != "bridge_hello" && event.Event != "master_logout") {
 		return cmsBridgeEvent{}, errors.New("bridge event invalid")
 	}
-	if net.ParseIP(event.IP) == nil {
+	ip := net.ParseIP(strings.TrimSpace(event.IP))
+	if ip == nil || ip.IsUnspecified() || (event.Event == "master_login" && ip.IsLoopback()) {
 		return cmsBridgeEvent{}, errors.New("bridge event invalid")
 	}
-	if event.SiteHost == "" || event.ExpiresAt <= now || event.ExpiresAt > now+int64(settings.TrustedAdminTTLSeconds)+int64(settings.BridgeMaxSkewSeconds) {
+	event.IP = ip.String()
+	if event.SiteHost == "" || len(event.SiteHost) > 253 || len(event.User) > 128 || len(event.EventID) > 128 || len(event.IP) > 64 {
+		return cmsBridgeEvent{}, errors.New("bridge event field bounds rejected")
+	}
+	if event.ExpiresAt <= now || event.ExpiresAt > now+int64(settings.TrustedAdminTTLSeconds)+int64(settings.BridgeMaxSkewSeconds) {
 		return cmsBridgeEvent{}, errors.New("bridge lease bounds rejected")
 	}
 	if event.IssuedAt > now+int64(settings.BridgeMaxSkewSeconds) || event.IssuedAt < now-86400 {
@@ -837,8 +910,18 @@ func (e *CMSEngine) setBridgeError(err error) {
 
 func (e *CMSEngine) RevokeLeases() int {
 	e.mu.Lock()
-	defer e.mu.Unlock()
 	count := len(e.leases)
 	e.leases = make(map[string]cmsLease)
+	e.revokedBefore = time.Now().UTC().Unix()
+	path := e.revocationsPath
+	payload := []byte(fmt.Sprintf("{\n  \"revoked_before\": %d\n}\n", e.revokedBefore))
+	e.mu.Unlock()
+	if path != "" {
+		if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+			e.setBridgeError(err)
+		} else if err := writeCMSFileAtomic(path, payload, 0o600); err != nil {
+			e.setBridgeError(err)
+		}
+	}
 	return count
 }

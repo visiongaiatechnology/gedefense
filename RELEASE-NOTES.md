@@ -1,5 +1,12 @@
 # Release Notes
 
+## 5.1.0-beta.2 — 2026-10-27 — Security hardening
+
+Security hotfix for 5.1.0-beta.1. Trusted editor scope is limited to exact VGT actions and XSS findings only; sensitive L7 limits remain active; revocation persists across restarts; loopback/weak-salt/fail-open bridge states are rejected; installer ordering/trust/rollback are corrected.
+
+> **ALPHA:** The WordPress bridge is an alpha feature, not production-ready. Update before exposing it. A compromised WordPress holding the shared secret can forge records; see SECURITY.md.
+
+
 # Release Notes
 
 ## 5.1.0-beta.1 — 2026-10-27
