@@ -481,12 +481,13 @@ ensure_user_and_dirs(){
 }
 
 ensure_raw_key(){
-  local path=$1 bytes=$2
+  local path=$1 bytes=$2 owner=${3:-gedefense}
   if [[ ! -f $path || -L $path || $(stat -c %s "$path" 2>/dev/null || echo 0) -ne $bytes ]]; then
     [[ -e $path ]] && mv -f -- "$path" "${path}.invalid.$(date +%s)" || true
     head -c "$bytes" /dev/urandom > "$path"
   fi
-  chown gedefense:gedefense "$path"; chmod 0600 "$path"
+  chown "$owner:$owner" "$path"; chmod 0600 "$path"
+  [[ $(stat -c '%U:%G:%a' "$path") == "$owner:$owner:600" ]] || fail "Schlüsselrechte für $path konnten nicht gesetzt werden."
 }
 
 # Shared only by the root Rust broker and the unprivileged gedefense control
@@ -538,7 +539,7 @@ prepare_secrets(){
   ensure_storage_key
   ensure_raw_key "$XDR_KEY_FILE" 32
   ensure_raw_key "$RUNTIME_KEY_FILE" 32
-  ensure_raw_key "$SESSION_KEY_FILE" 32
+  ensure_raw_key "$SESSION_KEY_FILE" 32 gedefense-access
   if valid_password_record; then
     log "Bestehendes Dashboard-Passwort wird übernommen."
   else
