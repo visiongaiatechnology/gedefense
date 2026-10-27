@@ -322,8 +322,13 @@ build_inner_installer(){
     -e "s/__PAYLOAD_SHA256__/$payload_sha/g" \
     -e "s/__CONTROL_SHA256__/$control_sha/g" \
     -e "s/__ACCESS_SHA256__/$access_sha/g" \
+    -e "s|__RELEASE_PUBKEY_HEX__|$RELEASE_PUBKEY_HEX|g" \
+    -e "s|__RELEASE_INDEX_B64__|$RELEASE_INDEX_B64|g" \
+    -e "s|__RELEASE_VERIFIER_B64__|$RELEASE_VERIFIER_B64|g" \
+    -e "s|__RELEASE_TRUST_MODE__|$RELEASE_TRUST_MODE|g" \
     "$SOURCE_ROOT/scripts/oneclick-installer-header.sh" > "$header"
   grep -q '^__VGT_PAYLOAD_BELOW__$' "$header" || fail "Inner installer payload marker missing."
+  ! grep -q '__RELEASE_\|__PAYLOAD_SHA256__\|__CONTROL_SHA256__\|__ACCESS_SHA256__' "$header" || fail "Inner installer contains unresolved release placeholders."
   head -n "$(awk '/^__VGT_PAYLOAD_BELOW__$/{print NR; exit}' "$header")" "$header" | bash -n
   cat "$header" "$tar_gz" > "$output"
   chmod 0700 "$output"

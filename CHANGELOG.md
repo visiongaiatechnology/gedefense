@@ -3,6 +3,20 @@
 All notable public changes to GeDefense Linux. The project is a beta; entries
 describe verified source changes, not a production certification.
 
+## 5.0.0-beta.2-hotfix6 - 2026-10-27 - Inner installer release context
+
+- Fixed the source OneClick installer handoff to its embedded full-stack
+  installer. The inner header was generated with unresolved
+  `__RELEASE_PUBKEY_HEX__`, `__RELEASE_INDEX_B64__`, `__RELEASE_VERIFIER_B64__`
+  and `__RELEASE_TRUST_MODE__` placeholders, so a real install stopped after the
+  bootstrap gates with "Installer wurde ohne signierten Release-Kontext
+  gebaut".
+- The bootstrap now substitutes the already-rendered release context into the
+  inner header and fails closed if any release or payload placeholder remains.
+- Includes all hotfix2–5 content: Entenprise mascot and READMEs, installer
+  checksum/test-isolation corrections, L7 POST gate fix and WordPress admin
+  client-rate-limit correction. README installer links target this tag.
+
 ## 5.0.0-beta.2-hotfix5 - 2026-10-27 - WordPress admin rate-limit and clean release
 
 - Fixed aggressive `L7.RATE_LIMIT.CLIENT` blocks on normal WordPress admin
