@@ -135,6 +135,15 @@ func (l *L7RateLimiter) Evaluate(snapshot *l7RuntimeSnapshot, remoteIP, host, pa
 		return true, ""
 	}
 	cfg := snapshot.cfg
+	// Static assets and the loader endpoints of the WordPress admin page are not
+	// attack-shaped requests. Counting every image, stylesheet and script against
+	// the same 100-request burst that protects dynamic endpoints made a normal
+	// media-heavy admin page exhaust the bucket before its preview/save requests
+	// were sent. Keep the client limiter for state-changing and dynamic routes;
+	// static reads have their own transport-level limits.
+	if l7ClientRateExempt(method, path) {
+		return true, ""
+	}
 	clientKey := remoteIP + "|" + strings.ToLower(host)
 	if !l.client.Allow(clientKey, l7Rate(cfg.ClientRatePerMinute), float64(cfg.ClientRateBurst), now) {
 		return false, "client"
@@ -150,4 +159,35 @@ func (l *L7RateLimiter) Evaluate(snapshot *l7RuntimeSnapshot, remoteIP, host, pa
 		}
 	}
 	return true, ""
+}
+
+// l7ClientRateExempt reports whether a request is a read-only static asset or a
+// WordPress admin loader endpoint whose per-request count must not consume the
+// dynamic-client budget. The decision is deliberately narrow: POST/PUT/PATCH/
+// DELETE and dynamic HTML/API reads still pass through the limiter.
+func l7ClientRateExempt(method, requestURI string) bool {
+	switch method {
+	case "GET", "HEAD":
+	default:
+		return false
+	}
+	path := requestURI
+	if i := strings.IndexByte(path, '?'); i >= 0 {
+		path = path[:i]
+	}
+	lower := strings.ToLower(path)
+	for _, prefix := range []string{"/storage/", "/wp-content/", "/wp-includes/"} {
+		if strings.HasPrefix(lower, prefix) {
+			return true
+		}
+	}
+	if strings.HasPrefix(lower, "/wp-admin/") &&
+		(lower == "/wp-admin/load-styles.php" || lower == "/wp-admin/load-scripts.php") {
+		return true
+	}
+	switch strings.ToLower(path[strings.LastIndexByte(path, '.')+1:]) {
+	case "css", "js", "mjs", "map", "png", "jpg", "jpeg", "gif", "svg", "webp", "avif", "ico", "woff", "woff2", "ttf", "otf", "eot":
+		return true
+	}
+	return false
 }

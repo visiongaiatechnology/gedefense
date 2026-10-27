@@ -615,7 +615,7 @@ Rust Core **未提供任何通用的系统 Shell、文件系统或 Sysctl 执行
 
 ```bash
 # 下载安装程序
-wget https://github.com/visiongaiatechnology/gedefense/releases/download/v5.0.0-beta.2-hotfix4/GeDefense-5.0.0-beta.2-OneClick.run
+wget https://github.com/visiongaiatechnology/gedefense/releases/download/v5.0.0-beta.2-hotfix5/GeDefense-5.0.0-beta.2-OneClick.run
 
 # 校验 SHA-256 完整性指纹
 sha256sum --check GeDefense-5.0.0-beta.2-OneClick.run.sha256

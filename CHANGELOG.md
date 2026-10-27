@@ -3,6 +3,24 @@
 All notable public changes to GeDefense Linux. The project is a beta; entries
 describe verified source changes, not a production certification.
 
+## 5.0.0-beta.2-hotfix5 - 2026-10-27 - WordPress admin rate-limit and clean release
+
+- Fixed aggressive `L7.RATE_LIMIT.CLIENT` blocks on normal WordPress admin
+  traffic. Static assets under `/storage/`, `/wp-content/` and `/wp-includes/`,
+  common static extensions and the WordPress admin loader endpoints
+  (`load-styles.php`, `load-scripts.php`) no longer consume the dynamic client
+  token bucket. State-changing POST/PUT/PATCH/DELETE and dynamic reads remain
+  rate-limited.
+- Added regression coverage proving a burst of media/asset reads cannot exhaust
+  the bucket, while the next dynamic POST is allowed and the following one is
+  still rate-limited.
+- This fixes media-heavy page editing where the editor's asset burst exhausted
+  the client bucket before preview/save requests, producing 403 responses and
+  `request rejected` on `/wp-admin/post.php`.
+- Includes all previous hotfix2–4 content: Entenprise mascot and READMEs,
+  installer checksum correction and test isolation. README installer links now
+  target this clean release tag.
+
 ## 5.0.0-beta.2-hotfix4 - 2026-10-27 - Installer test isolation on installed hosts
 
 - Isolated the default dashboard credential path from the Go test suite. Tests

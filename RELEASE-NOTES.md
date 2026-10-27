@@ -1,3 +1,19 @@
+# VGT GeDefense 5.0.0-beta.2-hotfix5 — Clean Entenprise release
+
+This is the clean, deployable 5.0.0-beta.2 release. It includes:
+
+- the inline-L7 POST gate fix,
+- the WordPress admin rate-limit correction (static/assets do not exhaust the
+  dynamic client bucket; preview and save requests are no longer blocked by a
+  normal media-heavy page load),
+- the official Sir Du / Entenprise mascot on the gateway sign-in page,
+- the clean Entenprise READMEs in all four languages with the language image
+  preserved and obsolete security advisories removed,
+- the corrected installer toolchain checksum and live-host test isolation.
+
+The signed installer, release index, SBOM, build provenance, source manifest
+and public release key are attached.
+
 # VGT GeDefense 5.0.0-beta.2-hotfix4 — Installer test isolation correction
 
 This release makes the source OneClick installer buildable and testable on a

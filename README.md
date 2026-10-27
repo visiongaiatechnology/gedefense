@@ -692,7 +692,7 @@ If the Gaia Cells runtime is **not present**, the adapter reports `runtime_not_i
 ### One-Click installer
 
 ```bash
-wget https://github.com/visiongaiatechnology/gedefense/releases/download/v5.0.0-beta.2-hotfix4/GeDefense-5.0.0-beta.2-OneClick.run
+wget https://github.com/visiongaiatechnology/gedefense/releases/download/v5.0.0-beta.2-hotfix5/GeDefense-5.0.0-beta.2-OneClick.run
 sha256sum --check GeDefense-5.0.0-beta.2-OneClick.run.sha256
 chmod 700 GeDefense-5.0.0-beta.2-OneClick.run
 sudo ./GeDefense-5.0.0-beta.2-OneClick.run
