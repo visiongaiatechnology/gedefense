@@ -465,6 +465,18 @@ ensure_user_and_dirs(){
   # Group=gedefense. 0710 lets that group traverse only to the root-owned
   # 0700 quarantine vault while preserving private directory listings.
   install -d -o gedefense -g gedefense -m 0710 "$STATE"
+  # The optional WordPress bridge spool is the only directory the web user may
+  # write. It is a sibling of the 0710 control state, so www-data/www can
+  # traverse to its own encrypted spool without gaining control-plane access.
+  local wp_bridge_dir="/var/lib/vgt/gedefense-wp-bridge"
+  local wp_user=""
+  for candidate in www-data www; do
+    if id -u "$candidate" >/dev/null 2>&1; then wp_user="$candidate"; break; fi
+  done
+  if [[ -n $wp_user ]]; then
+    install -d -o "$wp_user" -g gedefense -m 2770 "$wp_bridge_dir"
+    [[ $(stat -c '%U:%G:%a' "$wp_bridge_dir") == "$wp_user:gedefense:2770" ]] || fail "WordPress-Bridge-Verzeichnis ist inkonsistent."
+  fi
   install -d -o root -g gedefense -m 0700 "$QUARANTINE_DIR" "$QUARANTINE_OBJECT_DIR"
   install -d -o root -g gedefense -m 0750 "$CONFIG_DIR" "$TLS_DIR" "$SECRETS_DIR" "$STATE/canaries"
   [[ $(stat -c '%U:%G:%a' "$STATE/canaries") == 'root:gedefense:750' ]] ||

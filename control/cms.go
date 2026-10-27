@@ -146,7 +146,7 @@ func defaultCMSSettings() cmsSettings {
 		RelaxClientRateBurst:     200,
 		TrustedAdminTTLSeconds:   int(cmsBridgeDefaultTTL / time.Second),
 		BridgeEnabled:            false,
-		BridgeLogPath:            "/var/lib/vgt/gedefense/wp-bridge/events.log",
+		BridgeLogPath:            "/var/lib/vgt/gedefense-wp-bridge/events.log",
 		BridgeMaxSkewSeconds:     300,
 	}
 }
