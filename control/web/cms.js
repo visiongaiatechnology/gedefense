@@ -104,7 +104,7 @@ function readForm() {
     relax_client_rate_burst: Number(byID('cmsRateBurst')?.value || 200),
     trusted_admin_ttl_seconds: Number(byID('cmsTTL')?.value || 7200),
     bridge_enabled: Boolean(byID('cmsBridgeEnabled')?.checked),
-    bridge_log_path: byID('cmsBridgePath')?.value || '/var/log/php-fpm.log',
+    bridge_log_path: byID('cmsBridgePath')?.value || '/var/log/syslog',
     bridge_max_skew_seconds: 300
   };
 }

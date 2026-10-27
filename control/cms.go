@@ -122,19 +122,20 @@ type cmsBridgeEnvelope struct {
 // CMSEngine owns detection profiles, verified bridge leases and the bridge
 // reader. All maps are bounded and all external file reads are budgeted.
 type CMSEngine struct {
-	mu           sync.RWMutex
-	settings     cmsSettings
-	profiles     map[string]*cmsProfile
-	leases       map[string]cmsLease
-	settingsPath string
-	keyPath      string
-	key          []byte
-	bridgeMu     sync.Mutex
-	bridgeOffset int64
-	bridgeInode  uint64
-	bridgeSeen   map[string]struct{}
-	bridgeLast   time.Time
-	bridgeErr    string
+	mu                sync.RWMutex
+	settings          cmsSettings
+	profiles          map[string]*cmsProfile
+	leases            map[string]cmsLease
+	settingsPath      string
+	keyPath           string
+	key               []byte
+	bridgeMu          sync.Mutex
+	bridgeOffset      int64
+	bridgeInode       uint64
+	bridgeSeen        map[string]struct{}
+	bridgeLast        time.Time
+	bridgeErr         string
+	bridgeInitialized bool
 }
 
 func defaultCMSSettings() cmsSettings {
@@ -146,7 +147,7 @@ func defaultCMSSettings() cmsSettings {
 		RelaxClientRateBurst:     200,
 		TrustedAdminTTLSeconds:   int(cmsBridgeDefaultTTL / time.Second),
 		BridgeEnabled:            false,
-		BridgeLogPath:            "/var/log/php-fpm.log",
+		BridgeLogPath:            "/var/log/syslog",
 		BridgeMaxSkewSeconds:     300,
 	}
 }
@@ -602,7 +603,19 @@ func (e *CMSEngine) pollBridge() {
 	e.bridgeMu.Lock()
 	if inode != 0 && e.bridgeInode != 0 && inode != e.bridgeInode {
 		e.bridgeOffset = 0
+		e.bridgeInitialized = false
 		e.bridgeSeen = make(map[string]struct{})
+	}
+	if !e.bridgeInitialized {
+		// A PHP error log or syslog can be large. Start with a bounded tail so
+		// enabling the bridge does not replay unrelated history or stall behind
+		// megabytes of old lines. Still capture recent authenticated records.
+		if info.Size() > cmsBridgeReadBudget {
+			e.bridgeOffset = info.Size() - cmsBridgeReadBudget
+		} else {
+			e.bridgeOffset = 0
+		}
+		e.bridgeInitialized = true
 	}
 	if info.Size() < e.bridgeOffset {
 		e.bridgeOffset = 0
@@ -642,17 +655,19 @@ func (e *CMSEngine) pollBridge() {
 // cmsBridgePayload extracts the authenticated envelope from a normal PHP error
 // log line. PHP-FPM prefixes records with a timestamp, so the marker may appear
 // after arbitrary log text; only the final JSON envelope is authenticated.
-func cmsBridgePayload(line []byte) []byte {
+func cmsBridgePayload(line []byte) ([]byte, bool) {
 	for _, marker := range [][]byte{
 		[]byte("GeDefense: "),
 		[]byte("GeDefense:"),
 		[]byte("GEDEFENSE-BRIDGE "),
 	} {
 		if index := bytes.Index(line, marker); index >= 0 {
-			return bytes.TrimSpace(line[index+len(marker):])
+			return bytes.TrimSpace(line[index+len(marker):]), true
 		}
 	}
-	return bytes.TrimSpace(line)
+	// A PHP error log contains many unrelated lines. They are not bridge
+	// records and must not be parsed or surface as bridge errors.
+	return nil, false
 }
 
 func (e *CMSEngine) consumeBridgeLine(line []byte) {
@@ -662,8 +677,8 @@ func (e *CMSEngine) consumeBridgeLine(line []byte) {
 	if len(line) > cmsBridgeMaxLineBytes {
 		return
 	}
-	line = cmsBridgePayload(line)
-	if len(line) == 0 {
+	line, ok := cmsBridgePayload(line)
+	if !ok || len(line) == 0 {
 		return
 	}
 	event, err := e.decryptBridgeLine(line)

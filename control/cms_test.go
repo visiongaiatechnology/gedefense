@@ -53,7 +53,7 @@ func TestCMSBridgeDecryptsLeaseAndRejectsTampering(t *testing.T) {
 		EventID: "event-1",
 	}
 	line := encryptCMSBridgeEventForTest(t, key, event)
-	if err := os.WriteFile(logPath, append(line, '\n'), 0o640); err != nil {
+	if err := os.WriteFile(logPath, append([]byte("GeDefense: "), append(line, '\n')...), 0o640); err != nil {
 		t.Fatal(err)
 	}
 	engine.pollBridge()
@@ -67,7 +67,7 @@ func TestCMSBridgeDecryptsLeaseAndRejectsTampering(t *testing.T) {
 	badEvent.EventID = "event-2"
 	bad = encryptCMSBridgeEventForTest(t, key, badEvent)
 	bad[len(bad)-2] ^= 0x01
-	if err := os.WriteFile(logPath, append(line, append(bad, '\n')...), 0o640); err != nil {
+	if err := os.WriteFile(logPath, append([]byte("GeDefense: "), append(line, append(bad, '\n')...)...), 0o640); err != nil {
 		t.Fatal(err)
 	}
 	engine.pollBridge()
