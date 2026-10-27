@@ -8,8 +8,8 @@
 ### Linux Security Fabric - Your Entenprise System
 
 [![License](https://img.shields.io/badge/License-AGPL--3.0--only-blue?style=for-the-badge)](https://www.gnu.org/licenses/agpl-3.0)
-[![Version](https://img.shields.io/badge/Version-5.0.0--beta.2-orange?style=for-the-badge)](#)
-[![Status](https://img.shields.io/badge/Status-Release_v5.0.0--beta.2-yellow?style=for-the-badge)](#)
+[![Version](https://img.shields.io/badge/Version-5.1.0--beta.1-orange?style=for-the-badge)](#)
+[![Status](https://img.shields.io/badge/Status-Release_v5.1.0--beta.1-yellow?style=for-the-badge)](#)
 [![Installer](https://img.shields.io/badge/Installer-Universal_Linux-green?style=for-the-badge)](#-quick-start)
 [![Platform](https://img.shields.io/badge/Platform-Linux_x86__64-lightgrey?style=for-the-badge&logo=linux)](#)
 [![Data Plane](https://img.shields.io/badge/Data_Plane-Rust_eBPF%2FXDP-red?style=for-the-badge&logo=rust)](#-architecture)
@@ -31,11 +31,28 @@
 
 </div>
 
+> **GeDefense Ecosystem / Ökosystem / Экосистема / 生态系统:** [GeDefense WP](https://github.com/visiongaiatechnology/gedefensewp) — the WordPress side of the same security fabric.
+
 
 <img width="1536" height="1024" alt="GeDefense_ Real Security, Many Feathers" src="https://github.com/user-attachments/assets/dc56735e-b2b2-45c9-a363-97554a92ae0a" />
 
 
 ---
+## 🆕 Release 5.1.0-beta.1 — CMS Defense & Encrypted WordPress Bridge (2026-10-27)
+
+This release adds the CMS-aware L7 layer and the new **GeDefense WP ↔ Linux Bridge**:
+
+- **CMS detection for WordPress, Joomla!, TYPO3 and Laravel** with a new **CMS Defense** dashboard view. Operators configure how far static assets and CMS administration paths may relax the L7 client budget.
+- **Verified ThroneGuard master sessions** can receive a bounded **2-hour, IP-and-host-bound L7 rate-limit exemption**. Verified editor write surfaces additionally skip only the content-pattern detector so legitimate builder previews and page saves are not blocked as XSS.
+- **Encrypted WordPress bridge (Alpha):** the Linux-issued secret is encrypted at rest in the WordPress database with a key derived from wp-config salts; WordPress emits one AES-256-GCM authenticated line through its existing PHP log. No custom WordPress file write, no WordPress-to-kernel path.
+- **L7 false-positive fixes:** static WordPress assets/loaders and verified editor writes no longer exhaust or trip the client budget; login and generic API routes remain limited.
+- **Ecosystem:** pair this release with [GeDefense WP](https://github.com/visiongaiatechnology/gedefensewp) for the complete Linux + WordPress security fabric.
+- **Validation:** full Go control suite, CMS/bridge regression tests and live encrypted-lease tests passed. See [`CHANGELOG.md`](CHANGELOG.md).
+
+> [!CAUTION]
+> **ALPHA SECURITY NOTICE — GeDefense WP ↔ Linux Bridge.** The encrypted bridge is an **alpha test feature**, not production-ready. A fully compromised WordPress can still forge bridge events with the shared secret. The lease is therefore limited to two hours, IP/host-bound and only relaxes L7 rate limits/content-pattern checks on admin surfaces; WAF, protocol, upload and kernel enforcement remain active. Do not use this bridge in unsupervised production. No release can be considered secure merely because this alpha test passes.
+
+
 ## 🆕 Release 5.0.0-beta.2 — Hotfixes 1–9 (2026-10-25)
 
 This release consolidates the security and functional fixes from the Hotfix 1–9 line into the public source tree:
@@ -52,7 +69,7 @@ This release consolidates the security and functional fixes from the Hotfix 1–
 ---
 
 > [!WARNING]
-> **PUBLIC BETA — NOT PRODUCTION-READY (Version 5.0.0-beta.2).**  
+> **PUBLIC BETA — NOT PRODUCTION-READY (Version 5.1.0-beta.1).**  
 > GeDefense Titan and the Linux security fabric are in active development. This
 > beta is for test and qualification hosts only. The core architecture is
 > exercised by automated release gates, but public-CA release authenticity,
@@ -125,7 +142,7 @@ these assets locally; no runtime CDN or cloud lookup is used.
 
 ---
 
-## ⚠️ STABILITY & ASSURANCE — RELEASE v5.0.0-beta.2 · UNIVERSAL LINUX PLATFORM
+## ⚠️ STABILITY & ASSURANCE — RELEASE v5.1.0-beta.1 · UNIVERSAL LINUX PLATFORM
 
 VGT GeDefense 5.0.0-beta.2 is the flagship Linux security fabric — the hardened kernel-speed defense chain combined with the new **Security Fabric Control Plane**, universal Linux integration, hardened release pipeline, and concrete kernel/NIC qualification gates. It is engineered for sovereign host and network protection.
 
@@ -692,10 +709,10 @@ If the Gaia Cells runtime is **not present**, the adapter reports `runtime_not_i
 ### One-Click installer
 
 ```bash
-wget https://github.com/visiongaiatechnology/gedefense/releases/download/v5.0.0-beta.2-hotfix6/GeDefense-5.0.0-beta.2-OneClick.run
-sha256sum --check GeDefense-5.0.0-beta.2-OneClick.run.sha256
-chmod 700 GeDefense-5.0.0-beta.2-OneClick.run
-sudo ./GeDefense-5.0.0-beta.2-OneClick.run
+wget https://github.com/visiongaiatechnology/gedefense/releases/download/v5.1.0-beta.1/GeDefense-5.1.0-beta.1-OneClick.run
+sha256sum --check GeDefense-5.1.0-beta.1-OneClick.run.sha256
+chmod 700 GeDefense-5.1.0-beta.1-OneClick.run
+sudo ./GeDefense-5.1.0-beta.1-OneClick.run
 ```
 
 The installer is source-self-contained and verifies its signed release index,
@@ -726,7 +743,7 @@ has to pass kernel verifier, XDP attachment, IPC, backend and TLS gates.
 
 ---
 
-## 🚧 Known Limitations (5.0.0-beta.2)
+## 🚧 Known Limitations (5.1.0-beta.1)
 
 - No Swarm / Mesh support
 - No QUIC offloading
@@ -1053,6 +1070,6 @@ these assets locally; no runtime CDN or cloud lookup is used.
 
 [![VGT](https://img.shields.io/badge/VisionGaia-Technology-cyan?style=for-the-badge)](https://visiongaiatechnology.de)
 
-*VGT GeDefense 5.0.0-beta.2 — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
+*VGT GeDefense 5.1.0-beta.1 — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
 
 </div>

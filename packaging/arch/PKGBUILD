@@ -3,7 +3,7 @@
 
 pkgname=gedefense
 pkgver=5.0.0beta.1
-_release=5.0.0-beta.2
+_release=5.1.0-beta.1
 pkgrel=1
 pkgdesc='GeDefense Linux security platform: XDP, XDR, evidence and response plane'
 arch=('x86_64')

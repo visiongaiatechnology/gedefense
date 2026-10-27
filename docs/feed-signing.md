@@ -2,7 +2,7 @@
 
 **Status:** implementiert in `control/feed_signing.go`, integriert in
 `control/feeds.go`, `control/config.go`, `control/main.go`.
-**Gültig für:** GeDefense Linux 5.0.0-beta.2 (Control Plane `gedefense-control`).
+**Gültig für:** GeDefense Linux 5.1.0-beta.1 (Control Plane `gedefense-control`).
 
 ## Zweck
 

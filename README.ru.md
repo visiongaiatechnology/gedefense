@@ -8,8 +8,8 @@
 ### Linux Security Fabric - Your Entenprise System
 
 [![License](https://img.shields.io/badge/License-AGPL--3.0--only-blue?style=for-the-badge)](https://www.gnu.org/licenses/agpl-3.0)
-[![Version](https://img.shields.io/badge/Version-5.0.0--beta.2-orange?style=for-the-badge)](#)
-[![Status](https://img.shields.io/badge/Status-Release_v5.0.0--beta.2-yellow?style=for-the-badge)](#)
+[![Version](https://img.shields.io/badge/Version-5.1.0--beta.1-orange?style=for-the-badge)](#)
+[![Status](https://img.shields.io/badge/Status-Release_v5.1.0--beta.1-yellow?style=for-the-badge)](#)
 [![Installer](https://img.shields.io/badge/Installer-Universal_Linux-green?style=for-the-badge)](#-быстрый-старт)
 [![Platform](https://img.shields.io/badge/Platform-Linux_x86__64-lightgrey?style=for-the-badge&logo=linux)](#)
 [![Data Plane](https://img.shields.io/badge/Data_Plane-Rust_eBPF%2FXDP-red?style=for-the-badge&logo=rust)](#-архитектура)
@@ -35,6 +35,21 @@
 
 
 ---
+## 🆕 Выпуск 5.1.0-beta.1 — CMS Defense и зашифрованный мост WordPress (27.10.2026)
+
+В этом выпуске добавлены CMS-осведомлённый слой L7 и новый **мост GeDefense WP ↔ Linux**:
+
+- **Обнаружение CMS для WordPress, Joomla!, TYPO3 и Laravel** и новая панель **CMS Defense**. Оператор настраивает, насколько статические ресурсы и административные пути CMS могут ослаблять клиентский бюджет L7.
+- **Проверенные master-сессии ThroneGuard** получают ограниченное **двухчасовое исключение L7 rate limit, привязанное к IP и хосту**. На проверенных поверхностях редактирования дополнительно пропускается только детектор content-pattern, чтобы законные предпросмотры и сохранения не блокировались как XSS.
+- **Зашифрованный мост WordPress (Alpha):** секрет Linux хранится в базе WordPress в зашифрованном виде; ключ выводится из солей wp-config. WordPress передаёт одну строку с AES-256-GCM-аутентификацией через существующий журнал PHP. Без собственного файла WordPress и без моста WordPress→ядро.
+- **Исправления ложных срабатываний L7:** статические ресурсы/загрузчики WordPress и проверенные сохранения редактора больше не исчерпывают и не блокируют клиентский бюджет; вход и общие API-маршруты остаются ограниченными.
+- **Экосистема:** используйте вместе с [GeDefense WP](https://github.com/visiongaiatechnology/gedefensewp) для полного Linux- и WordPress-контура безопасности.
+- **Проверка:** полный набор Go control, регрессии CMS/моста и живые тесты зашифрованных leases пройдены. См. [`CHANGELOG.md`](CHANGELOG.md).
+
+> [!CAUTION]
+> **ALPHA-УВЕДОМЛЕНИЕ О БЕЗОПАСНОСТИ — мост GeDefense WP ↔ Linux.** Зашифрованный мост — **alpha-функция**, не готовая для production. Полностью скомпрометированный WordPress всё ещё может подделывать события при наличии общего секрета. Поэтому lease ограничен двумя часами, IP/хостом и ослабляет только L7 rate limit/content-pattern на административных поверхностях; WAF, протокол, загрузки и ядро остаются активными. Не использовать мост в production без наблюдения. Ни один релиз не считается безопасным только из-за прохождения alpha-теста.
+
+
 ## 🆕 Выпуск 5.0.0-beta.2 — исправления 1–9 (25.10.2026)
 
 Этот выпуск переносит исправления безопасности и функциональности из линии Hotfix 1–9 в публичное дерево исходников:
@@ -51,7 +66,7 @@
 ---
 
 > [!WARNING]
-> **ПУБЛИЧНАЯ БЕТА — НЕ ДЛЯ ПРОИЗВОДСТВА (Версия 5.0.0-beta.2).**  
+> **ПУБЛИЧНАЯ БЕТА — НЕ ДЛЯ ПРОИЗВОДСТВА (Версия 5.1.0-beta.1).**  
 > GeDefense Titan и Linux Security Fabric находятся в активной разработке.
 > Бета предназначена только для тестовых и квалификационных хостов.
 > Архитектура проверяется автоматическими release-gates, но публичная
@@ -64,9 +79,9 @@
 
 ---
 
-## ⚠️ СТАБИЛЬНОСТЬ И ГАРАНТИИ — РЕЛИЗ v5.0.0-beta.2 · УНИВЕРСАЛЬНАЯ ПЛАТФОРМА LINUX
+## ⚠️ СТАБИЛЬНОСТЬ И ГАРАНТИИ — РЕЛИЗ v5.1.0-beta.1 · УНИВЕРСАЛЬНАЯ ПЛАТФОРМА LINUX
 
-VGT GeDefense 5.0.0-beta.2 — это флагманская фабрика безопасности Linux: закаленная цепочка обороны на скорости ядра в сочетании с новой **Security Fabric Control Plane**, универсальной интеграцией с Linux, защищенным конвейером релизов и конкретными гейтами квалификации ядра/NIC. Разработано для суверенной защиты хоста и сети.
+VGT GeDefense 5.1.0-beta.1 — это флагманская фабрика безопасности Linux: закаленная цепочка обороны на скорости ядра в сочетании с новой **Security Fabric Control Plane**, универсальной интеграцией с Linux, защищенным конвейером релизов и конкретными гейтами квалификации ядра/NIC. Разработано для суверенной защиты хоста и сети.
 
 **Допуск к эксплуатации в продакшене намеренно является свойством конкретно проверенного целевого хоста, а не только исходного кода.**
 
@@ -623,17 +638,17 @@ Observe ──→ Canary ──→ Enforce
 
 ```bash
 # Загрузить инсталлятор
-wget https://github.com/visiongaiatechnology/gedefense/releases/download/v5.0.0-beta.2-hotfix6/GeDefense-5.0.0-beta.2-OneClick.run
+wget https://github.com/visiongaiatechnology/gedefense/releases/download/v5.1.0-beta.1/GeDefense-5.1.0-beta.1-OneClick.run
 
 # Проверить SHA-256
-sha256sum --check GeDefense-5.0.0-beta.2-OneClick.run.sha256
+sha256sum --check GeDefense-5.1.0-beta.1-OneClick.run.sha256
 
 # Установить (требуются права root)
-chmod 700 GeDefense-5.0.0-beta.2-OneClick.run
-sudo ./GeDefense-5.0.0-beta.2-OneClick.run
+chmod 700 GeDefense-5.1.0-beta.1-OneClick.run
+sudo ./GeDefense-5.1.0-beta.1-OneClick.run
 ```
 
-> **Доступность инсталлятора:** Официальные автономные установочные ассеты v5.0.0-beta.2 (`GeDefense-5.0.0-beta.2-OneClick.run`) проверены и опубликованы в GitHub Releases.
+> **Доступность инсталлятора:** Официальные автономные установочные ассеты v5.1.0-beta.1 (`GeDefense-5.1.0-beta.1-OneClick.run`) проверены и опубликованы в GitHub Releases.
 
 > Инсталлятор и контрольные суммы публикуются только после успешного прохождения всех этапов GitHub CI и квалификационных проверок целевого хоста. Никогда не запускайте непроверенные файлы RUN.
 
@@ -667,7 +682,7 @@ sudo ./GeDefense-5.0.0-beta.2-OneClick.run
 
 ---
 
-## 🚧 Известные ограничения (5.0.0-beta.2)
+## 🚧 Известные ограничения (5.1.0-beta.1)
 
 - Отсутствие поддержки Swarm / Mesh
 - Отсутствие разгрузки QUIC
@@ -949,6 +964,6 @@ sudo python3 scripts/update-geoip-db.py /var/lib/vgt/gedefense/geoip.csv
 
 [![VGT](https://img.shields.io/badge/VisionGaia-Technology-cyan?style=for-the-badge)](https://visiongaiatechnology.de)
 
-*VGT GeDefense 5.0.0-beta.2 — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
+*VGT GeDefense 5.1.0-beta.1 — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
 
 </div>

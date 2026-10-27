@@ -1,5 +1,33 @@
 # Changelog
 
+## 5.1.0-beta.1 - 2026-10-27 - CMS Defense & encrypted WordPress bridge (Alpha)
+
+### Added
+
+- CMS detection for WordPress, Joomla!, TYPO3 and Laravel with a dedicated **CMS Defense** dashboard view.
+- Per-operator CMS relaxation policy for static assets and CMS administration paths.
+- Encrypted WordPress bridge (alpha): Linux key generation, WordPress AES-256-GCM secret-at-rest, authenticated records through the existing PHP log, two-hour IP/host-bound leases, API status and revoke.
+- Trusted ThroneGuard editor handling: verified master write surfaces skip only the L7 content-pattern detector for legitimate builder previews/page saves; protocol, encoding, upload, SSRF and response checks remain active.
+- Regression tests for PHP-log parsing, encrypted lease/tamper handling, CMS detection, rate-limiter exemptions and trusted-editor behavior.
+
+### Changed
+
+- WordPress admin assets/loaders no longer consume the dynamic L7 client bucket.
+- Full-stack installer: bounded Python replacement for large release blobs (ARG_MAX), correct gateway password/session-key ownership, and release context in the embedded installer.
+- Linux product version 5.1.0-beta.1; gateway, feeds User-Agent, packaging, tray metadata and installer version aligned.
+- README ecosystem links to GeDefense WP: https://github.com/visiongaiatechnology/gedefensewp
+
+### Security
+
+- **ALPHA TEST:** the GeDefense WP ↔ Linux bridge is not production-ready. The shared secret means a fully compromised WordPress can forge bridge records. Mitigations are a two-hour TTL, IP/host binding, bounded lease acceptance, read-only log consumption and a content-pattern skip only on verified admin write surfaces. WAF and kernel enforcement are not disabled. Do not deploy this bridge in unsupervised production.
+
+### Validation
+
+- Full Go control suite with testdata: PASS.
+- Focused CMS/bridge/L7 tests: PASS.
+- Encrypted lease end-to-end test and live server acceptance: PASS; test records removed.
+
+
 All notable public changes to GeDefense Linux. The project is a beta; entries
 describe verified source changes, not a production certification.
 

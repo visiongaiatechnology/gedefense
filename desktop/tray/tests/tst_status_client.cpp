@@ -241,7 +241,7 @@ void TestStatusClient::pollsAndParsesReply()
     const auto payload = updatedSpy.at(0).at(0).value<StatusPayload>();
     QVERIFY(payload.valid);
     QCOMPARE(payload.state, StatusState::Secure);
-    QCOMPARE(payload.productVersion, QStringLiteral("5.0.0-beta.2"));
+    QCOMPARE(payload.productVersion, QStringLiteral("5.1.0-beta.1"));
     QCOMPARE(payload.nodeName, QStringLiteral("visiongaia.de"));
     QVERIFY(payload.ebpfActive.has_value());
     QCOMPARE(*payload.ebpfActive, true);

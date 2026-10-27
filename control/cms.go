@@ -436,23 +436,29 @@ func cmsTrustedEditorSurface(req l7NormalizedRequest) bool {
 		return false
 	}
 	path := strings.ToLower(req.Path)
-	switch {
-	case strings.HasPrefix(path, "/wp-admin/"):
-		// WordPress admin POST/PUT endpoints contain deliberately executable
-		// editor markup (builder previews, block saves). The authenticated
-		// master lease is the trust transition here.
-		return true
-	case strings.HasPrefix(path, "/wp-json/"):
-		return true
-	case strings.HasPrefix(path, "/administrator/"):
-		return true
-	case strings.HasPrefix(path, "/typo3/"):
-		return true
-	case strings.HasPrefix(path, "/admin/"):
-		return true
-	default:
-		return false
+	if i := strings.IndexByte(path, '?'); i >= 0 {
+		path = path[:i]
 	}
+	switch path {
+	case "/wp-admin/post.php", "/wp-admin/post-new.php", "/wp-admin/customize.php", "/wp-admin/site-editor.php":
+		return true
+	case "/wp-admin/admin-ajax.php":
+		// The builder preview is an admin-ajax POST. Only the known VGT editor
+		// actions are allowed through the content-pattern exemption; generic
+		// admin-ajax actions keep the pattern detector.
+		body := strings.ToLower(string(req.Body))
+		return strings.Contains(body, "action=vgt_")
+	case "/wp-admin/admin-post.php":
+		body := strings.ToLower(string(req.Body))
+		return strings.Contains(body, "action=vgt_")
+	}
+	if strings.HasPrefix(path, "/wp-json/") {
+		// Block editor / REST content writes are admin-authenticated; the
+		// master lease is the server-side trust transition.
+		return true
+	}
+	// Other CMS administration surfaces that carry editor markup.
+	return strings.HasPrefix(path, "/administrator/") || strings.HasPrefix(path, "/typo3/")
 }
 
 func isCMSAdminPath(kind CMSKind, path, method string) bool {

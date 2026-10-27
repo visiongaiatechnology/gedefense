@@ -8,8 +8,8 @@
 ### Linux Security Fabric - Your Entenprise System
 
 [![License](https://img.shields.io/badge/License-AGPL--3.0--only-blue?style=for-the-badge)](https://www.gnu.org/licenses/agpl-3.0)
-[![Version](https://img.shields.io/badge/Version-5.0.0--beta.2-orange?style=for-the-badge)](#)
-[![Status](https://img.shields.io/badge/Status-Release_v5.0.0--beta.2-yellow?style=for-the-badge)](#)
+[![Version](https://img.shields.io/badge/Version-5.1.0--beta.1-orange?style=for-the-badge)](#)
+[![Status](https://img.shields.io/badge/Status-Release_v5.1.0--beta.1-yellow?style=for-the-badge)](#)
 [![Installer](https://img.shields.io/badge/Installer-Universal_Linux-green?style=for-the-badge)](#-快速上手)
 [![Platform](https://img.shields.io/badge/Platform-Linux_x86__64-lightgrey?style=for-the-badge&logo=linux)](#)
 [![Data Plane](https://img.shields.io/badge/Data_Plane-Rust_eBPF%2FXDP-red?style=for-the-badge&logo=rust)](#-系统架构)
@@ -35,6 +35,21 @@
 
 
 ---
+## 🆕 版本 5.1.0-beta.1 — CMS Defense 与加密 WordPress 桥（2026-10-27）
+
+本版本新增 CMS 感知 L7 层和新的 **GeDefense WP ↔ Linux 桥**：
+
+- **识别 WordPress、Joomla!、TYPO3 与 Laravel**，新增 **CMS Defense** 仪表盘视图。管理员可配置静态资源和 CMS 管理路径对 L7 客户端预算的放宽程度。
+- **已验证的 ThroneGuard master 会话**可获得有限的 **两小时、IP 与主机绑定的 L7 速率限制豁免**。在已验证的编辑器写入接口上，仅跳过内容模式检测器，避免合法构建器预览和页面保存被误判为 XSS。
+- **加密 WordPress 桥（Alpha）：** Linux 发出的 secret 在 WordPress 数据库中加密保存，密钥由 wp-config 盐值派生；WordPress 通过现有 PHP 日志写入一行 AES-256-GCM 认证记录。没有 WordPress 自定义文件写入，也没有 WordPress 到内核的桥。
+- **L7 误报修复：** WordPress 静态资源/加载器和已验证编辑器写入不再耗尽或触发客户端预算；登录和通用 API 路由仍受限。
+- **生态系统：** 与 [GeDefense WP](https://github.com/visiongaiatechnology/gedefensewp) 配合使用，获得完整的 Linux + WordPress 安全织网。
+- **验证：** 完整 Go 控制平面套件、CMS/桥回归测试和实时加密 lease 测试均通过。参见 [`CHANGELOG.md`](CHANGELOG.md)。
+
+> [!CAUTION]
+> **ALPHA 安全提示 — GeDefense WP ↔ Linux 桥。** 加密桥是 **alpha 测试功能**，并非生产就绪。完全被攻陷的 WordPress 仍可使用共享 secret 伪造桥事件。因此 lease 限制为两小时、绑定 IP/主机，并且仅放宽管理界面上的 L7 速率限制/内容模式检查；WAF、协议、上传和内核执行仍保持启用。请勿在无人值守的生产环境中使用。仅通过 alpha 测试并不代表发布版安全。
+
+
 ## 🆕 版本 5.0.0-beta.2 — 修复 1–9（2026-10-25）
 
 本版本将 Hotfix 1–9 系列中的安全与功能修复合并到公开源代码树：
@@ -51,7 +66,7 @@
 ---
 
 > [!WARNING]
-> **公开测试版 — 不可用于生产环境（版本 5.0.0-beta.2）。**  
+> **公开测试版 — 不可用于生产环境（版本 5.1.0-beta.1）。**  
 > GeDefense Titan 与 Linux Security Fabric 仍在积极开发中。此测试版仅适用于
 > 测试和资格验证主机。核心架构已由自动发布门禁验证，但公开 CA 发布真实性、
 > RFC3161 时间戳、吊销、外部锚定防回滚和 feed 签名密钥仍然缺失。请勿将此
@@ -61,7 +76,7 @@
 
 ---
 
-## ⚠️ 稳定性与可靠性承诺 — RELEASE v5.0.0-beta.2 · 通用 LINUX 平台
+## ⚠️ 稳定性与可靠性承诺 — RELEASE v5.1.0-beta.1 · 通用 LINUX 平台
 
 VGT GeDefense 5.0.0-beta.2 是主权 Linux 安全防御体系的旗舰产品 — 将经过深度加固的内核级防御链与全新的 **Security Fabric Control Plane（安全织网控制平面）**、通用 Linux 原生集成、加固级发布流水线以及真实的内核/网卡适格门禁融为一体。专为主权主机与高对抗网络防御而设计。
 
@@ -615,17 +630,17 @@ Rust Core **未提供任何通用的系统 Shell、文件系统或 Sysctl 执行
 
 ```bash
 # 下载安装程序
-wget https://github.com/visiongaiatechnology/gedefense/releases/download/v5.0.0-beta.2-hotfix6/GeDefense-5.0.0-beta.2-OneClick.run
+wget https://github.com/visiongaiatechnology/gedefense/releases/download/v5.1.0-beta.1/GeDefense-5.1.0-beta.1-OneClick.run
 
 # 校验 SHA-256 完整性指纹
-sha256sum --check GeDefense-5.0.0-beta.2-OneClick.run.sha256
+sha256sum --check GeDefense-5.1.0-beta.1-OneClick.run.sha256
 
 # 执行安装（需要 root 权限）
-chmod 700 GeDefense-5.0.0-beta.2-OneClick.run
-sudo ./GeDefense-5.0.0-beta.2-OneClick.run
+chmod 700 GeDefense-5.1.0-beta.1-OneClick.run
+sudo ./GeDefense-5.1.0-beta.1-OneClick.run
 ```
 
-> **安装程序可用性：** 官方 v5.0.0-beta.2 自包含安装程序（`GeDefense-5.0.0-beta.2-OneClick.run`）已通过验证并发布于 GitHub Releases。
+> **安装程序可用性：** 官方 v5.1.0-beta.1 自包含安装程序（`GeDefense-5.1.0-beta.1-OneClick.run`）已通过验证并发布于 GitHub Releases。
 
 > 安装包与校验和文件仅在通过全部 GitHub CI 测试及实体 Linux 节点验证后发布。切勿运行未经验签的 RUN 可执行文件。
 
@@ -659,7 +674,7 @@ sudo ./GeDefense-5.0.0-beta.2-OneClick.run
 
 ---
 
-## 🚧 当前已知局限（5.0.0-beta.2）
+## 🚧 当前已知局限（5.1.0-beta.1）
 
 - 暂未集成 Swarm / 集群网格（Mesh）支持
 - 暂不支持 QUIC 协议网络卸载
@@ -967,6 +982,6 @@ sudo python3 scripts/update-geoip-db.py /var/lib/vgt/gedefense/geoip.csv
 
 [![VGT](https://img.shields.io/badge/VisionGaia-Technology-cyan?style=for-the-badge)](https://visiongaiatechnology.de)
 
-*VGT GeDefense 5.0.0-beta.2 — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
+*VGT GeDefense 5.1.0-beta.1 — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
 
 </div>

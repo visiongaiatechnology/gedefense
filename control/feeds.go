@@ -2176,7 +2176,7 @@ func (m *FeedManager) fetchFeedRawOnce(ctx context.Context, src ThreatFeedSource
 	if err != nil {
 		return nil, "", err
 	}
-	req.Header.Set("User-Agent", "VGT-GeDefense/5.0.0-beta.2 sovereign-threat-intel")
+	req.Header.Set("User-Agent", "VGT-GeDefense/5.1.0-beta.1 sovereign-threat-intel")
 	req.Header.Set("Accept", "text/plain, application/json, */*")
 
 	resp, err := m.client.Do(req)

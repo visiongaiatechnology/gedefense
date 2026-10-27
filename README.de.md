@@ -8,8 +8,8 @@
 ### Linux Security Fabric - Your Entenprise System
 
 [![License](https://img.shields.io/badge/License-AGPL--3.0--only-blue?style=for-the-badge)](https://www.gnu.org/licenses/agpl-3.0)
-[![Version](https://img.shields.io/badge/Version-5.0.0--beta.2-orange?style=for-the-badge)](#)
-[![Status](https://img.shields.io/badge/Status-Release_v5.0.0--beta.2-yellow?style=for-the-badge)](#)
+[![Version](https://img.shields.io/badge/Version-5.1.0--beta.1-orange?style=for-the-badge)](#)
+[![Status](https://img.shields.io/badge/Status-Release_v5.1.0--beta.1-yellow?style=for-the-badge)](#)
 [![Installer](https://img.shields.io/badge/Installer-Universal_Linux-green?style=for-the-badge)](#-schnellstart)
 [![Platform](https://img.shields.io/badge/Platform-Linux_x86__64-lightgrey?style=for-the-badge&logo=linux)](#)
 [![Data Plane](https://img.shields.io/badge/Data_Plane-Rust_eBPF%2FXDP-red?style=for-the-badge&logo=rust)](#-architektur)
@@ -35,6 +35,21 @@
 
 
 ---
+## 🆕 Release 5.1.0-beta.1 — CMS Defense & verschlüsselte WordPress-Bridge (27.10.2026)
+
+Dieses Release ergänzt die CMS-bewusste L7-Schicht und die neue **GeDefense WP ↔ Linux Bridge**:
+
+- **CMS-Erkennung für WordPress, Joomla!, TYPO3 und Laravel** mit einer neuen **CMS-Defense**-Dashboard-Ansicht. Administratoren legen fest, wie weit statische Assets und CMS-Verwaltungspfade das L7-Client-Budget lockern dürfen.
+- **Verifizierte ThroneGuard-Master-Sessions** erhalten eine begrenzte **2-Stunden-, IP- und Host-gebundene L7-Rate-Limit-Ausnahme**. Bei verifizierten Editor-Schreibpfaden wird zusätzlich ausschließlich der Content-Pattern-Detector übersprungen, damit legitime Builder-Vorschauen und Seiten-Saves nicht als XSS blockiert werden.
+- **Verschlüsselte WordPress-Bridge (Alpha):** Das von Linux ausgegebene Secret wird in der WordPress-Datenbank mit einem aus wp-config-Salts abgeleiteten Schlüssel verschlüsselt gespeichert; WordPress schreibt eine AES-256-GCM-authentifizierte Zeile über sein bestehendes PHP-Log. Kein eigener WordPress-Schreibpfad, keine WordPress-zu-Kernel-Brücke.
+- **L7-False-Positive-Fixes:** Statische WordPress-Assets/Loader und verifizierte Editor-Schreibvorgänge sprengen bzw. trippen das Client-Budget nicht mehr; Login und generische API-Routen bleiben limitiert.
+- **Ökosystem:** Dieses Release mit [GeDefense WP](https://github.com/visiongaiatechnology/gedefensewp) kombinieren, um das vollständige Linux- + WordPress-Sicherheitsfabric zu erhalten.
+- **Validierung:** Vollständige Go-Control-Suite, CMS-/Bridge-Regressionstests und Live-Tests der verschlüsselten Leases bestanden. Siehe [`CHANGELOG.md`](CHANGELOG.md).
+
+> [!CAUTION]
+> **ALPHA-SICHERHEITSHINWEIS — GeDefense WP ↔ Linux Bridge.** Die verschlüsselte Bridge ist ein **Alpha-Testfeature**, nicht produktionsreif. Ein vollständig kompromittiertes WordPress kann mit dem gemeinsamen Secret weiterhin Bridge-Ereignisse fälschen. Die Lease ist deshalb auf zwei Stunden, IP/Host begrenzt und lockert nur L7-Rate-Limits/Content-Pattern-Prüfungen auf Admin-Oberflächen; WAF-, Protokoll-, Upload- und Kernel-Enforcement bleiben aktiv. Diese Bridge nicht im unbeaufsichtigten Produktivbetrieb einsetzen. Kein Release ist allein wegen dieses Alpha-Tests als sicher zu betrachten.
+
+
 ## 🆕 Release 5.0.0-beta.2 — Hotfixes 1–9 (25.10.2026)
 
 Dieses Release überführt die Sicherheits- und Funktionsfixes der Hotfix-1–9-Linie in den öffentlichen Quellstand:
@@ -51,7 +66,7 @@ Dieses Release überführt die Sicherheits- und Funktionsfixes der Hotfix-1–9-
 ---
 
 > [!WARNING]
-> **ÖFFENTLICHE BETA — KEIN PRODUKTIONSRELEASE (Version 5.0.0-beta.2).**  
+> **ÖFFENTLICHE BETA — KEIN PRODUKTIONSRELEASE (Version 5.1.0-beta.1).**  
 > GeDefense Titan und das Linux-Security-Fabric befinden sich in aktiver
 > Entwicklung. Diese Beta ist ausschließlich für Test- und Qualifizierungshosts
 > bestimmt. Die Kernarchitektur wird durch automatisierte Release-Gates geprüft,
@@ -126,7 +141,7 @@ Assets lokal; es gibt keinen Laufzeit-CDN- oder Cloud-Lookup.
 
 ---
 
-## ⚠️ STABILITÄT & ZUSICHERUNG — RELEASE v5.0.0-beta.2 · UNIVERSELLE LINUX-PLATTFORM
+## ⚠️ STABILITÄT & ZUSICHERUNG — RELEASE v5.1.0-beta.1 · UNIVERSELLE LINUX-PLATTFORM
 
 VGT GeDefense 5.0.0-beta.2 ist das Flaggschiff des Linux-Sicherheitsgewebes — die gehärtete Verteidigungskette mit Kernel-Geschwindigkeit, kombiniert mit der neuen **Security Fabric Control Plane**, universeller Linux-Integration, gehärteter Release-Pipeline und konkreten Kernel-/NIC-Qualifikations-Gates. Es wurde für souveränen Host- und Netzwerkschutz entwickelt.
 
@@ -685,17 +700,17 @@ Ist die Gaia Cells-Laufzeit **nicht vorhanden**, meldet der Adapter `runtime_not
 
 ```bash
 # Installer herunterladen
-wget https://github.com/visiongaiatechnology/gedefense/releases/download/v5.0.0-beta.2-hotfix6/GeDefense-5.0.0-beta.2-OneClick.run
+wget https://github.com/visiongaiatechnology/gedefense/releases/download/v5.1.0-beta.1/GeDefense-5.1.0-beta.1-OneClick.run
 
 # SHA-256 verifizieren
-sha256sum --check GeDefense-5.0.0-beta.2-OneClick.run.sha256
+sha256sum --check GeDefense-5.1.0-beta.1-OneClick.run.sha256
 
 # Installieren (Root erforderlich)
-chmod 700 GeDefense-5.0.0-beta.2-OneClick.run
-sudo ./GeDefense-5.0.0-beta.2-OneClick.run
+chmod 700 GeDefense-5.1.0-beta.1-OneClick.run
+sudo ./GeDefense-5.1.0-beta.1-OneClick.run
 ```
 
-> **Installer-Verfügbarkeit:** Die offiziellen v5.0.0-beta.2 Self-Contained-Installer-Assets (`GeDefense-5.0.0-beta.2-OneClick.run`) sind verifiziert und im GitHub Release bereitgestellt.
+> **Installer-Verfügbarkeit:** Die offiziellen v5.1.0-beta.1 Self-Contained-Installer-Assets (`GeDefense-5.1.0-beta.1-OneClick.run`) sind verifiziert und im GitHub Release bereitgestellt.
 
 > Der Installer und die Prüfsumme werden erst veröffentlicht, nachdem alle GitHub-CI- und konkreten Linux-Host-Qualifikations-Gates bestanden wurden. Führe niemals eine nicht verifizierte RUN-Datei aus.
 
@@ -729,7 +744,7 @@ Die Firewall-Regel für den HTTPS-Gateway-Port (TCP 9843) kann während der Inst
 
 ---
 
-## 🚧 Bekannte Einschränkungen (5.0.0-beta.2)
+## 🚧 Bekannte Einschränkungen (5.1.0-beta.1)
 
 - Keine Swarm- / Mesh-Unterstützung
 - Kein QUIC-Offloading
@@ -1036,6 +1051,6 @@ Die Karte verwendet **jsVectorMap 1.7.0** (MIT, Copyright © 2020 Mustafa Omar; 
 
 [![VGT](https://img.shields.io/badge/VisionGaia-Technology-cyan?style=for-the-badge)](https://visiongaiatechnology.de)
 
-*VGT GeDefense 5.0.0-beta.2 — Universelles Linux Sicherheitsgewebe // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidenz-Ledger // AES-256-GCM verschlüsselter Vault // Reversible Härtung // AstraeaOS-nativer Adapter // Getrennte Vertrauensdomänen // Keine Cloud-Control-Plane // AGPL-3.0-only // Linux x86_64*
+*VGT GeDefense 5.1.0-beta.1 — Universelles Linux Sicherheitsgewebe // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidenz-Ledger // AES-256-GCM verschlüsselter Vault // Reversible Härtung // AstraeaOS-nativer Adapter // Getrennte Vertrauensdomänen // Keine Cloud-Control-Plane // AGPL-3.0-only // Linux x86_64*
 
 </div>

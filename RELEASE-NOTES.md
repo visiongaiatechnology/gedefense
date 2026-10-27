@@ -1,3 +1,18 @@
+# Release Notes
+
+# Release Notes
+
+## 5.1.0-beta.1 — 2026-10-27
+
+- CMS detection and configurable CMS Defense relaxation (WordPress / Joomla! / TYPO3 / Laravel).
+- Encrypted GeDefense WP ↔ Linux bridge (ALPHA): secret encrypted in the WordPress database, authenticated records in the existing PHP log, two-hour IP/host-bound L7 lease.
+- Verified ThroneGuard editor false-positive fix; WAF/protocol/upload/kernel enforcement remains active.
+- Updated signed installer and release context; no custom WordPress write path outside its webroot.
+- Ecosystem: GeDefense WP — https://github.com/visiongaiatechnology/gedefensewp
+
+> **ALPHA SECURITY NOTICE:** The bridge is an alpha test feature. A compromised WordPress holding the shared secret can forge records. Use only in test/qualification environments; the lease is limited to two hours and admin IP/host. Do not treat this release as production-ready.
+
+
 # VGT GeDefense 5.0.0-beta.2-hotfix6 — Clean installable Entenprise release
 
 This is the clean installable 5.0.0-beta.2 release. The source OneClick
