@@ -3,6 +3,17 @@
 All notable public changes to GeDefense Linux. The project is a beta; entries
 describe verified source changes, not a production certification.
 
+## 5.0.0-beta.2-hotfix3 - 2026-10-27 - Clean release build correction
+
+- Corrected the pinned Go 1.27.3 linux-amd64 checksum in the source
+  self-contained OneClick installer. The previous value did not match the
+  official immutable archive (official SHA-256:
+  `65efbc80fdc1fa2cd2631cad5b481777a68e8725f34e89f50fc6ac714e379b40`), so a
+  clean install failed closed after downloading the toolchain.
+- Updated every README installer link to this corrected release tag. No
+  application, L7, gateway, UI or documentation content changed relative to
+  hotfix2.
+
 ## 5.0.0-beta.2-hotfix2 - 2026-10-27 - Entenprise release, L7 gate fix, clean docs
 
 - Fixed a false-positive `L7.HTTP.DUPLICATE_CONTENT_LENGTH` block on every

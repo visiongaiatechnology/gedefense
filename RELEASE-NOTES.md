@@ -1,3 +1,15 @@
+# VGT GeDefense 5.0.0-beta.2-hotfix3 — Clean release build correction
+
+This release corrects the source-self-contained OneClick installer build. The
+pinned Go 1.27.3 archive checksum now matches the official immutable archive, so
+a clean installation can download and verify the toolchain without failing
+closed. The release contains the same product changes as hotfix2: the L7 POST
+gate fix, the official Sir Du / Entenprise mascot, the clean Entenprise READMEs
+and the embedded self-hosted gateway asset.
+
+The signed installer, release index, SBOM, build provenance, source manifest
+and public release key are attached.
+
 # VGT GeDefense 5.0.0-beta.2-hotfix2 — Entenprise clean release
 
 This is the clean 5.0.0-beta.2 release: it consolidates the inline-L7

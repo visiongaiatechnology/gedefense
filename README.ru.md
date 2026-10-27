@@ -623,7 +623,7 @@ Observe ──→ Canary ──→ Enforce
 
 ```bash
 # Загрузить инсталлятор
-wget https://github.com/visiongaiatechnology/gedefense/releases/download/v5.0.0-beta.2-hotfix2/GeDefense-5.0.0-beta.2-OneClick.run
+wget https://github.com/visiongaiatechnology/gedefense/releases/download/v5.0.0-beta.2-hotfix3/GeDefense-5.0.0-beta.2-OneClick.run
 
 # Проверить SHA-256
 sha256sum --check GeDefense-5.0.0-beta.2-OneClick.run.sha256

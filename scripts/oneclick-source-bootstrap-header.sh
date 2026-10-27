@@ -6,7 +6,7 @@ umask 0077
 readonly PRODUCT_VERSION="5.0.0-beta.2"
 readonly PAYLOAD_SHA256="__SOURCE_PAYLOAD_SHA256__"
 readonly GO_VERSION="1.27.3"
-readonly GO_LINUX_AMD64_SHA256="d0f743b33e8d8945e6b1f432edd15785c70507121d6e2a723b21285eddf8b57b"
+readonly GO_LINUX_AMD64_SHA256="65efbc80fdc1fa2cd2631cad5b481777a68e8725f34e89f50fc6ac714e379b40"
 readonly GO_URL="https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz"
 readonly SELF="$(readlink -f -- "${BASH_SOURCE[0]}")"
 # Rendered by scripts/render-installer-header.py. Unfilled placeholders fail

@@ -685,7 +685,7 @@ Ist die Gaia Cells-Laufzeit **nicht vorhanden**, meldet der Adapter `runtime_not
 
 ```bash
 # Installer herunterladen
-wget https://github.com/visiongaiatechnology/gedefense/releases/download/v5.0.0-beta.2-hotfix2/GeDefense-5.0.0-beta.2-OneClick.run
+wget https://github.com/visiongaiatechnology/gedefense/releases/download/v5.0.0-beta.2-hotfix3/GeDefense-5.0.0-beta.2-OneClick.run
 
 # SHA-256 verifizieren
 sha256sum --check GeDefense-5.0.0-beta.2-OneClick.run.sha256
