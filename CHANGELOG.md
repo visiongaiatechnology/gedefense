@@ -3,6 +3,22 @@
 All notable public changes to GeDefense Linux. The project is a beta; entries
 describe verified source changes, not a production certification.
 
+## 5.0.0-beta.2-hotfix4 - 2026-10-27 - Installer test isolation on installed hosts
+
+- Isolated the default dashboard credential path from the Go test suite. Tests
+  constructing `defaultConfig()` previously inherited the live host token path;
+  on a host with an existing installation the authenticated API tests then read
+  the production token and failed with 401, which made the OneClick installer
+  fail closed before upgrading.
+- The test binary now uses an absolute, non-existent `/tmp` token path by
+  default, while production still uses `/var/lib/vgt/gedefense/dashboard.token`
+  and explicit token-rotation tests keep their own temp file. This is a
+  test-isolation correction, not a production authorization change.
+- Verified the full control suite on the live `visiongaia.de` host without
+  filesystem masking: PASS (117.965 s).
+- Updated README installer links to this release tag. No product, L7, gateway,
+  UI or documentation content changed relative to hotfix3.
+
 ## 5.0.0-beta.2-hotfix3 - 2026-10-27 - Clean release build correction
 
 - Corrected the pinned Go 1.27.3 linux-amd64 checksum in the source

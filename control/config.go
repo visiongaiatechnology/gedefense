@@ -426,6 +426,11 @@ type FeedConfig struct {
 	SnapshotDir    string
 }
 
+// defaultDashboardTokenFile is the packaged dashboard credential path. Tests
+// override it through the package init in test_isolation_test.go so a test
+// binary never reads the live host credential by accident.
+var defaultDashboardTokenFile = "/var/lib/vgt/gedefense/dashboard.token"
+
 func defaultConfig() Config {
 	return Config{
 		Node:       NodeConfig{Name: "VGT-Beta-Node", Interface: "auto", Mode: "standalone"},
@@ -439,7 +444,7 @@ func defaultConfig() Config {
 			// access unit (backend http://127.0.0.1:9844) and the AstraeaOS
 			// profile; it was historically 9843 here, which collided with the
 			// public listener on package installs.
-			Listen: canonicalDashboardInternalListen, TokenFile: "/var/lib/vgt/gedefense/dashboard.token",
+			Listen: canonicalDashboardInternalListen, TokenFile: defaultDashboardTokenFile,
 			AllowedHosts:       []string{"127.0.0.1", "localhost", "[::1]"},
 			RateLimitPerMinute: 240, RateLimitBurst: 40, MaxSSEClients: 16,
 		},

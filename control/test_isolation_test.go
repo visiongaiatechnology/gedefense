@@ -18,6 +18,8 @@ import (
 // reason - and a red suite that everyone learns to ignore is worse than no suite. The platform treats
 // the file as authoritative (that is what makes a token rotation take effect without a restart), so a
 // test that supplies a token must also supply the file that holds it.
+func init() { defaultDashboardTokenFile = "/tmp/gedefense-dashboard-test.token" }
+
 func isolatedTokenConfig(t *testing.T, token string) Config {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "dashboard.token")

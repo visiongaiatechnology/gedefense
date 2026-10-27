@@ -1,3 +1,16 @@
+# VGT GeDefense 5.0.0-beta.2-hotfix4 — Installer test isolation correction
+
+This release makes the source OneClick installer buildable and testable on a
+host that already runs GeDefense. The control test suite no longer inherits the
+live dashboard token path from `defaultConfig()`; it uses an isolated absolute
+test path, so upgrades do not fail with spurious 401 responses. Production
+configuration and authorization are unchanged.
+
+The release contains the hotfix3 installer checksum correction together with
+the hotfix2 L7 POST fix, the Sir Du / Entenprise mascot, the clean Entenprise
+READMEs and the embedded gateway asset. Full control tests pass on the live
+host without masking.
+
 # VGT GeDefense 5.0.0-beta.2-hotfix3 — Clean release build correction
 
 This release corrects the source-self-contained OneClick installer build. The
