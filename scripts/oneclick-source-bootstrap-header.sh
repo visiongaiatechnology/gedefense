@@ -322,11 +322,25 @@ build_inner_installer(){
     -e "s/__PAYLOAD_SHA256__/$payload_sha/g" \
     -e "s/__CONTROL_SHA256__/$control_sha/g" \
     -e "s/__ACCESS_SHA256__/$access_sha/g" \
-    -e "s|__RELEASE_PUBKEY_HEX__|$RELEASE_PUBKEY_HEX|g" \
-    -e "s|__RELEASE_INDEX_B64__|$RELEASE_INDEX_B64|g" \
-    -e "s|__RELEASE_VERIFIER_B64__|$RELEASE_VERIFIER_B64|g" \
-    -e "s|__RELEASE_TRUST_MODE__|$RELEASE_TRUST_MODE|g" \
     "$SOURCE_ROOT/scripts/oneclick-installer-header.sh" > "$header"
+  # The release index and verifier are base64 blobs. Passing them as sed
+  # replacement arguments can exceed ARG_MAX on a real installation, so the
+  # header is rendered by a bounded Python substitution instead.
+  VGT_RELEASE_PUBKEY_HEX="$RELEASE_PUBKEY_HEX" \
+  VGT_RELEASE_INDEX_B64="$RELEASE_INDEX_B64" \
+  VGT_RELEASE_VERIFIER_B64="$RELEASE_VERIFIER_B64" \
+  VGT_RELEASE_TRUST_MODE="$RELEASE_TRUST_MODE" \
+  python3 - "$header" <<'PY'
+import os
+import sys
+path = sys.argv[1]
+with open(path, "r", encoding="utf-8") as handle:
+    text = handle.read()
+for key in ("RELEASE_PUBKEY_HEX", "RELEASE_INDEX_B64", "RELEASE_VERIFIER_B64", "RELEASE_TRUST_MODE"):
+    text = text.replace("__" + key + "__", os.environ.get("VGT_" + key, ""))
+with open(path, "w", encoding="utf-8", newline="\n") as handle:
+    handle.write(text)
+PY
   grep -q '^__VGT_PAYLOAD_BELOW__$' "$header" || fail "Inner installer payload marker missing."
   ! grep -q '__RELEASE_\|__PAYLOAD_SHA256__\|__CONTROL_SHA256__\|__ACCESS_SHA256__' "$header" || fail "Inner installer contains unresolved release placeholders."
   head -n "$(awk '/^__VGT_PAYLOAD_BELOW__$/{print NR; exit}' "$header")" "$header" | bash -n
