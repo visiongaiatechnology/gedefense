@@ -273,7 +273,7 @@ func main() {
 		log.Fatalf("Gaia Cells adapter attachment: %v", err)
 	}
 	evidenceDir := filepath.Dir(cfg.Policy.StateFile)
-	cmsEngine := NewCMSEngine(filepath.Join(evidenceDir, "cms-settings.json"), filepath.Join(filepath.Dir(cfg.Core.AuthKeyFile), "wp-bridge.key"))
+	cmsEngine := NewCMSEngine(filepath.Join(evidenceDir, "cms-settings.json"), filepath.Join(evidenceDir, "wp-bridge.key"))
 	evidenceBudget := int64(effectiveIntegritySettings(settings.Get()).Evidence.MaxBytes)
 	if evidenceBudget <= 0 {
 		evidenceBudget = 64 << 20
