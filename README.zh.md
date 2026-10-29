@@ -3,7 +3,6 @@
 <img width="256" height="256" alt="GeDefense" src="https://github.com/user-attachments/assets/978d2835-c915-473d-9995-d315efaa869c" />
 
 
-
 # VGT GeDefense
 ### Linux Security Fabric - Your Entenprise System
 
@@ -35,6 +34,19 @@
 
 
 ---
+
+## 🌐 GeDefense 宇宙
+
+GeDefense 是一套本地优先的安全架构，覆盖 Linux、Windows、Android 和 WordPress。所有同系项目遵循同一理念：本地控制、诚实可见性、无静默遥测。
+
+| 项目 | 方向 |
+| --- | --- |
+| [![Android TV](https://img.shields.io/badge/Android_TV-3DDC84?style=flat-square&logo=android&logoColor=0B1220)](https://github.com/visiongaiatechnology/gedefense_androidtv) **GeDefense TV** | Android TV / Google TV 安全控制台：回环 VPN、流量地图、XDR-Light 与可逆 Kinetic-Lite 遏制。 |
+| [![Linux](https://img.shields.io/badge/Linux-D4AF37?style=flat-square&logo=linux&logoColor=0B1220)](https://github.com/visiongaiatechnology/gedefense) **GeDefense Linux** *（本仓库）* | 内核级网络防御：eBPF/XDP 执行、L7 WAF、带签名证据的主机 XDR、可逆加固（Rust/Go，完全本地）。 |
+| [![Windows](https://img.shields.io/badge/Windows-8B5CF6?style=flat-square&logo=windows&logoColor=ffffff)](https://github.com/visiongaiatechnology/gedefensewin) **GeDefense Windows** | 本地自主的 Windows 11 安全控制台：Defender/ASR/WFP/App Control、加固、MHX EDR/XDR、本地威胁情报与 HMAC 链式证据。 |
+| [![Android](https://img.shields.io/badge/Android-22D3EE?style=flat-square&logo=android&logoColor=0B1220)](https://github.com/visiongaiatechnology/gedefenseandroid) **GeDefense Android** | 原生 Android 安全平台：本地 VPN 执行、端点遥测、XDR/EDR 关联、威胁情报、应用风险分析与加密证据。 |
+| [![WordPress](https://img.shields.io/badge/WordPress-1F8FFF?style=flat-square&logo=wordpress&logoColor=ffffff)](https://github.com/visiongaiatechnology/gedefensewp) **GeDefense WordPress** | AGPL-3.0 开源核心 WordPress 套件：ZEUS WAF、AEGIS 深度包检测、TRINITY XDR、ThroneGuard 锁定与 HADES 后台隐藏。 |
+
 ## 🆕 版本 5.1.0-beta.2 — 安全加固（2026-10-27）
 
 针对 5.1.0-beta.1 的安全热修复。**在暴露桥梁前建议更新。**
@@ -46,34 +58,6 @@
 - **Installer 加固：** gateway 访问目录在 secrets/TLS 前创建，python3 在 trust 检查前安装，仅接受 `prebuilt`/`source-signed`，修复 rollback ownership。
 - **ALPHA：** GeDefense WP ↔ Linux 桥仍是 alpha 测试功能，并非生产就绪。参见 `SECURITY.md` 与 `CHANGELOG.md`。
 
-## 🆕 版本 5.1.0-beta.2 — CMS Defense 与加密 WordPress 桥（2026-10-27）
-
-本版本新增 CMS 感知 L7 层和新的 **GeDefense WP ↔ Linux 桥**：
-
-- **识别 WordPress、Joomla!、TYPO3 与 Laravel**，新增 **CMS Defense** 仪表盘视图。管理员可配置静态资源和 CMS 管理路径对 L7 客户端预算的放宽程度。
-- **已验证的 ThroneGuard master 会话**可获得有限的 **两小时、IP 与主机绑定的 L7 速率限制豁免**。在已验证的编辑器写入接口上，仅跳过内容模式检测器，避免合法构建器预览和页面保存被误判为 XSS。
-- **加密 WordPress 桥（Alpha）：** Linux 发出的 secret 在 WordPress 数据库中加密保存，密钥由 wp-config 盐值派生；WordPress 通过现有 PHP 日志写入一行 AES-256-GCM 认证记录。没有 WordPress 自定义文件写入，也没有 WordPress 到内核的桥。
-- **L7 误报修复：** WordPress 静态资源/加载器和已验证编辑器写入不再耗尽或触发客户端预算；登录和通用 API 路由仍受限。
-- **生态系统：** 与 [GeDefense WP](https://github.com/visiongaiatechnology/gedefensewp) 配合使用，获得完整的 Linux + WordPress 安全织网。
-- **验证：** 完整 Go 控制平面套件、CMS/桥回归测试和实时加密 lease 测试均通过。参见 [`CHANGELOG.md`](CHANGELOG.md)。
-
-> [!CAUTION]
-> **ALPHA 安全提示 — GeDefense WP ↔ Linux 桥。** 加密桥是 **alpha 测试功能**，并非生产就绪。完全被攻陷的 WordPress 仍可使用共享 secret 伪造桥事件。因此 lease 限制为两小时、绑定 IP/主机，并且仅放宽管理界面上的 L7 速率限制/内容模式检查；WAF、协议、上传和内核执行仍保持启用。请勿在无人值守的生产环境中使用。仅通过 alpha 测试并不代表发布版安全。
-
-
-## 🆕 版本 5.0.0-beta.2 — 修复 1–9（2026-10-25）
-
-本版本将 Hotfix 1–9 系列中的安全与功能修复合并到公开源代码树：
-
-- **Deception 金丝雀是真正的内核传感器：** 特权核心在专用 jail 内部署由 root 拥有的诱饵，并通过 fanotify 监视它们。未授权访问会自动生成事件以及可逆、带 TTL 的遏制操作；核心会忽略自身部署/验证时的打开操作。
-- **带内核验证应用机制的签名威胁情报源：** 由运维方提供的 Ed25519 流水线对精确的源字节做快照、签署 detached 清单、使用固定公钥校验（包含 TTL 与防回滚），并且只在核内应用已验证的 BLOCK 条目。Feed 产生的阻断条目在发布协调与控制平面重启后仍会保留。
-- **L7 内联生产者成为一等公民：** 内联 Unix socket 边缘接受真实本地生产者，在到达上游前阻断 SQLi/XSS/LFI/命令注入载荷，并如实报告 producer/attachment/coverage 计数。完整的内置强制执行范围已启用。
-- **真实可信的防护状态：** 控制平面根据内核、XDR、core、Kinetic、L7 与 evidence 的实际强制执行状态计算 `protection.effective`。只有每一层都真正生效时仪表盘才显示“全面保护”，否则列出确切缺口。
-- **完整性与发布维护：** FIM/Titan 发布重基线、启动自检状态 API、本地 cgroup-v2 Gaia Cells 注册表回退、运维方签名的本地启动信任基线，以及更新后重基线脚本。
-- **验证：** Go control 测试套件通过，Rust 40/40 测试通过，签名安装程序自检与 payload 校验通过。
-
-**已知限制：** 公开 CA/RFC3161/CRL/OCSP 发布真实性以及外部锚定的防回滚通道仍不在本次 beta 范围内。威胁情报源真实性由运维方通过本地 Ed25519 密钥提供，而非公共 CA。本版本仍仅面向测试与资格验证主机的公开 beta。
-
 ---
 
 > [!WARNING]
@@ -84,32 +68,6 @@
 > 测试版作为生产安全控制部署；请先阅读 `SECURITY.md` 和 `CHANGELOG.md`。
 
 ---
-
----
-
-## ⚠️ 稳定性与可靠性承诺 — RELEASE v5.1.0-beta.2 · 通用 LINUX 平台
-
-VGT GeDefense 5.0.0-beta.2 是主权 Linux 安全防御体系的旗舰产品 — 将经过深度加固的内核级防御链与全新的 **Security Fabric Control Plane（安全织网控制平面）**、通用 Linux 原生集成、加固级发布流水线以及真实的内核/网卡适格门禁融为一体。专为主权主机与高对抗网络防御而设计。
-
-**生产环境准入明确属于具体经过审计的目标主机的属性 — 而非仅仅取决于源代码本身。**
-
-初次部署建议：**仅使用 Observe（观察模式）。** 必须在满足文档规定的各项安全门禁后，方可升级至 Canary（金丝雀）与 Enforce（强制执行）模式。
-
-### 🛡️ GeDefense Titan (Linux)
-
-Titan 是原生 Linux 入站文件完整性模块，防御未授权篡改、远程文件投放、走私注入
-与静默投放。它不推断行为主体，而是评估变更是否被授权、如何被观察到、何种响应
-是安全的，以及存在哪些独立证据。
-
-- 信任状态 AUTHORIZED / TOLERATED / UNEXPECTED / COMPROMISED，策略模式
-  OBSERVE / CONTAIN / STRICT；
-- 有界 inotify 传感器、FIM 基线和有界 dpkg/pacman 数据库读取，不在运行时执行
-  命令；传感器溢出会明确降级状态；
-- 仅通过加密、可逆的隔离事务实施遏制；不安全路径会附带理由拒绝；默认关闭自动遏制；
-- `/api/v1/titan/*` 与原生 Glass-2100 Titan 页面，展示信任分布、传感器健康、
-  关联质量、策略、有界事件、复核/遏制对话框以及明确的不可用状态。
-
-发现漏洞或有改进建议？**欢迎提交 Issue 或直接联系我们团队。**
 
 ---
 
@@ -195,131 +153,6 @@ bash scripts/validate.sh
 
 ---
 
-## 🚀 GeDefense 4.2.0 新特性：安全织网控制平面、全栈审计修复与 UI/UX 巅峰
-
-VGT GeDefense 4.2.0 标志着主权 Linux 安全矩阵的重大技术跨越：
-
-* **Security Fabric Control Plane（12 大可管理模块）：**
-  * 为 12 个模块化子系统提供完整的 Schema 驱动配置（`kinetic`、`network`、`protection`、`xdr`、`l7`、`threat_intel`、`hardening`、`integrity`、`boot_trust`、`policy_trust`、`forensics`、`system`）。
-  * 服务端作为唯一可信源；控制台完全基于 Schema 动态渲染，无任何硬编码的配置项名称。
-  * **热路径上的不可变快照：** 配置版本编译为原子的不可变快照。单个请求在执行周期内始终绑定唯一快照，彻底杜绝请求期间并发修改导致的竞争或混合状态。
-  * **加固级不变量完全不可更改：** 内核 Map 边界、Core IPC 认证、路径校验、私钥保密性、管理自锁定防护及情报防投毒等核心逻辑永久锁定。
-
-* **控制平面工作台操作与配置漂移检测：**
-  * `GET /api/v1/settings/search` — 在所有配置键之间进行确定性检索，显示生效的实时数值与命中判定依据。
-  * `POST /api/v1/settings/export` — 生成经过密码学签名、剔除敏感机密的跨命名空间配置导出包。
-  * `POST /api/v1/settings/import/preview` + `.../apply` — 真正的双阶段导入：密码学签名验证、Diff 生成，并通过绑定到已审计内容的单次有效临时令牌执行应用。
-  * `GET /api/v1/settings/drift` — 持续配置漂移监控：若当前配置版本未与底层引擎同步，将标记为 `CONFIG_DRIFT`（绝不虚假显示 `SYSTEM_NOMINAL`）。
-
-* **完全本地化的离线 SVG 世界地图（jsVectorMap 1.7.0）：**
-  * 涵盖 43 个本地源码文件的完整几何数据（`world_merc`）。零 CDN，零瓦片服务器，零外部网络请求。
-  * **严格的可信类型执行：** 通过使用原生 button 元素绕过 DOM 字符串汇聚点，100% 符合 `require-trusted-types-for 'script'` 规范。
-  * 实时跟踪标记、动态脉冲源、事件密度等值面分布图及被阻断威胁的专属色彩分级。
-  * 有界的 DOM 渲染资源预算（96 跟踪、48 阻断、24 脉冲、192 区域）及视觉阈值控制。
-
-* **UI/UX Supreme — 现代化控制台重新设计：**
-  * 废弃了 Kinetic 防御、威胁情报、应用防御和 XDR 中杂乱的卡片网格，采用统一的指挥层与分组遥测面板。
-  * 采用带有发丝分割线的语义化 `<dl>` 数据条带取代厚重的卡片边框。
-  * 纯状态驱动的高亮配色：仅在指标非零时激活功能性提示色。
-  * 原生 `<button>` 键盘无障碍支持，符合 WCAG AA 对比度规范，全面支持 `prefers-reduced-motion`。
-
----
-
-## 🚀 GeDefense 4.0.1 特性：简体中文本地化、专用 XDR 内核恢复与扩展
-
-VGT GeDefense 4.0.1 带来了全面的多语言主权支持与自动化自愈维护能力：
-
-* **完整的简体中文（`zh-CN` / `ZH`）本地化：**
-  * 指挥中心全量支持简体中文，覆盖所有标签页、弹窗、操作面板、图表、占位符及运行时通知（共 743 个词条，与德语、英语、俄语完全对齐）。
-  * 扩展了公共访问网关登录页（`gateway/main.go`）的中文字段，提供 Cookie 持久化语言切换与专属 `ZH` 选择项。
-  * 实现了基于 HTTP `Accept-Language` 的浏览器语言自动检测与偏好匹配。
-* **专用 XDR 内核恢复面板与安全状态重置：**
-  * 新增专用 XDR 内核恢复界面（`#xdr` 恢复面板），允许管理员在安装或故障后直接通过 UI 检查、归档并重新初始化内核传感器栈，无需依赖紧急 SSH 或终端命令。
-  * 经过身份鉴权的 `/api/v1/xdr/recovery` 接口，具备严格的 `ARCHIVE_AND_REINITIALIZE_XDR` 确认防护。
-  * 损坏或降级的事件账本链将以字节精确度备份至 `/var/lib/vgt/gedefense/xdr-recovery/`，附带 SHA-256 清单。
-  * 在安全重置新事件链的同时，严格保留主密钥、传感器 IPC 凭据与管理员账户。
-  * 重新初始化内核 eBPF 探针、BPF-LSM 钩子、Ring Buffer 连接与进程监控器。
-  * 要求在解除 `DEGRADED` 降级状态前完成磁盘校验与签名证据提交。
-* **密码学证据与账本哈希域分离：**
-  * 分离了攻击故事默克尔证据树根（`evidence_root`）与事件账本 HMAC 链哈希（`record_hash`），确保关联事件在守护进程重启后仍可验签。
-  * 加固了状态传递机制，避免后台轮询掩盖真实的内核异常。
-
----
-
-## 🚀 原生 L7 应用安全防御与主权加固（v4.0.0 架构）
-
-VGT GeDefense 4.0 在原有 L3/L4/内核防御体系的基础上，**深度集成了原生的 L7 应用安全平面（WAF 与反向代理网关）**。系统在流量进入业务逻辑前直接完成检查与过滤 — 完全基于 Go 标准库构建，零第三方依赖，零 CGO，无脚本引擎开销。
-
-### 🌟 核心能力与 L7 应用安全（WAF）
-* **原生 L7 平面（纯 Go 标准库）：** 内置 WAF 直接编译进 `gedefense-control` 守护进程。`go.mod` 零外部扩展包，无 Lua/WASM/Node.js 开销，超低延迟与内存占用。
-* **双模式部署架构：**
-  * *建议/独立套接字模式（`inspect.sock`）：* `0660` 权限的 Unix 套接字，通过标准 JSON 协议（`POST /v1/inspect`）为 nginx、Apache、Caddy、Envoy 等外部代理提供服务，启用严格模式校验（`DisallowUnknownFields`）。
-  * *原生内联反向代理模式（`edge.sock`）：* 部署在 TLS 终止与后端应用之间。具备并发控制、故障安全关闭预算与严格的上游隔离（仅允许干净的绝对 Unix 套接字或回环 IP，无动态 DNS 与请求重定向漏洞）。
-* **有界规范化与反绕过引擎：**
-  * 多轮递归解码（URL 路径/查询参数、HTML 实体、`\uXXXX` 及 `\xXX` 转义符）。
-  * 全角字符转半角映射（Unicode Fullwidth Fold 将 `\uff01`–`\uff5e` 映射为 ASCII），杜绝利用特殊宽字符绕过过滤。
-  * 自动识别并解码参数中的未填充及 URL 安全 Base64 负载。
-  * 流式 JSON 解析器，具有严格的递归深度限制（`max_json_depth = 32`）与令牌配额。
-  * 有界解压缩：通过 `io.LimitReader` 处理 Gzip/Deflate，防御解压炸弹（Zip-bomb DoS）。
-  * 对非结构化文本使用 256 字节重叠分块，防止特征码在分块边界被截断绕过。
-* **全方位攻击检测特征库（线性 RE2 引擎，零 ReDoS 风险）：**
-  * *SQL 注入（SQLi）：* UNION SELECT 语法、布尔恒真式（`' OR 1=1`）、时间延迟（`pg_sleep`、`benchmark`）及堆叠查询语句。
-  * *跨站脚本（XSS）：* 脚本标签、内联事件处理器（`onerror=`、`onload=`）、危险伪协议（`javascript:`、`data:text/html`）及 `iframe srcdoc` 攻击载荷。
-  * *命令注入 / RCE：* 命令拼接符（`;`、`&&`、`||`、`|`）、命令替换（`$(...)`、反引号）及 PowerShell/CMD 载荷。
-  * *路径遍历与本地文件包含（LFI）：* 遍历序列（`../`、`..\`）、Linux 敏感路径（`/etc/passwd`、`/proc/self/environ`）及流包装器（`php://`、`phar://`、`data://`）。
-  * *SSTI、XXE 与反序列化：* 模板语法（Jinja、Twig、Smarty、Spring）、外部 XML 实体、PHP 序列化对象、Java 序列化魔数（`rO0AB`）及 JNDI/Log4j 表达式。
-  * *HTTP 协议走私与畸形解析：* 重复或非法的 `Content-Length`、CL.TE / TE.CL 冲突、非法传输编码及被禁用的 `TRACE` 方法。
-* **反规避 SSRF 检测与灵活 IP 规范化：**
-  * 规范化并拦截非常规 IPv4 表示法：十六进制（`0x7f.1`）、八进制（`0177.1`）、十进制 DWORD 整数（`2130706433`）及 2/3 段式简写。
-  * 针对主流云厂商元数据端点的严格隔离区（AWS IMDSv2 `169.254.169.254`、GCP `metadata.google.internal`、Azure `168.63.129.16`、阿里云 `100.100.100.200`、Oracle `192.0.0.192`）。
-* **内存中 Airlock 复合上传检查（`InspectBytes`）：**
-  * 多部件文件上传直接在内存中完成检测 — **绝不在持久化磁盘上落盘暂存**。
-  * 限制分块数量与文件大小；严格验证魔数（ELF、PNG、JPEG、GIF、PDF、ZIP）、MIME 匹配、双重扩展名（`.php.jpg`）、截断空字节及 SHA-256 恶意哈希黑名单。
-* **三层分片令牌桶速率限制：**
-  * 64 个基于 FNV-1a 哈希的独立分片，消除高并发流量下的全局锁竞争。
-  * 客户端维度的流量速率限制。
-  * 敏感路径的专属防护（针对 `/login`、`/wp-login.php`、`/api/login` 防暴力破解）。
-  * 全局敏感路由限速（防御分布式僵尸网络与凭据撞库攻击）。
-* **响应数据泄露防护（DLP）：**
-  * 监控上游响应体，防止数据库报错泄露（`SQLSTATE`）、服务端源码泄露（`<?php`、`<jsp:`）、堆栈轨迹泄露（Python、Java、Go）及私钥泄露（`BEGIN RSA PRIVATE KEY`）。
-  * 基于无损前缀缓冲的检测技术，确保原始字节未经篡改即时传输至客户端。
-* **XDR 中的 Web 证据隔离（误报防护屏障）：**
-  * L7 事件记录为 `AlertOnly: true`（`ResponseScore: 0`）。
-  * **安全保障：** Web 攻击**绝不能自主**对本地服务进程发起破坏性的阻断操作（SIGKILL/SIGSTOP）。破坏性处置必须同时满足独立的主机/内核证据。
-  * L7 事件作为节点接入 Trinity XDR 2.0 因果有向无环图（DAG），并带有默克尔根签名证明。
-* **Linux DAC 与操作系统加固：**
-  * 专用系统组 `gedefense-l7`。
-  * 运行时目录 `/run/vgt-gedefense-l7`（权限 `0750`，所属 `gedefense:gedefense-l7`）通过 `systemd-tmpfiles` 创建。
-  * 套接字权限配置为 `0660`，启用内核级对端凭证校验（`SO_PEERCRED`）。
-  * 针对 systemd 服务单元加固，限制 `ReadWritePaths`。
-* **持续模糊测试与质量门禁：**
-  * 3 个新的 CI 模糊测试套件（`FuzzL7NormalizerNeverPanics`、`FuzzL7ResponseInspectionPreservesWireBytes`、`FuzzL7InlineUpstreamParserNeverEscapesLocalHost`）。
-  * 锁定 Go 1.27.3 工具链，并在 `scripts/security-audit.sh` 中集成了 AST 自动化安全审计。
-
----
-
-## 🌟 从 V2 Beta 1 到 V3 Beta 1（`3.0.0-beta.1`）的架构突破
-
-VGT GeDefense 3.0.0-beta.1 完成了从静态主机/网络传感器向**完全自主、可逆、纵深防御的 Linux 主权安全矩阵**的蜕变：
-
-* **双模部署教条（单一二进制，动态特性探测）：** 统一的二进制文件同时适配 AstraeaOS（原生 Ring-1 GaiaCells、BPF-LSM、Key-Broker）与标准 Linux 发行版（Ubuntu、Debian、RHEL、Fedora、Arch、Alpine），支持运行时安全飞地自动检测（`platform_caps.go`）。
-* **Trinity 动态攻击故事图谱（DAG）与事件关联器：** 完整因果链图谱还原（`CANARY_TRIGGERED` → `PRIVILEGE_ESCALATED` → `EGRESS_ATTEMPTED`），基于确定性默克尔根提供铁证，取代孤立日志条目。
-* **自主可逆响应引擎：** 多阶段隔离策略（`CONTAIN_IP`、`FREEZE_EXECUTION`、`CONTAIN_CELL`），内置语义化 TTL 并在未得到管理员确认时自动审计回滚。
-* **Nemesis 网络欺骗诱捕网格：** 物理磁盘金丝雀陷阱（`0600` 权限），结合 `StorageCipher` 动态密钥派生与校准的 RASP 辨别机制。
-* **Styx 零信任出站与 SSRF 护盾：** 基于 Cgroup/Cell 的出站流量白名单，内置针对各大云厂商元数据接口的防外发过滤机制。
-* **Airlock 入站复合检查器：** 严格验证文件魔数，净化 SVG（清除嵌入式脚本、foreignObjects、iframe 及 DTD），有界暂存与符号链接防逃逸。
-* **Morpheus Linux RASP 与凭据擦除器：** 保护敏感守护进程免受内存抓取（`/proc/<pid>/mem`、`ptrace`），自动脱敏命令行中的 API 密钥与凭证。
-* **Chronos 断点续检 FIM：** 高效的文件完整性扫描器，具备原子检查点、零句柄泄漏与默克尔树完整性根。
-* **可逆进程冻结机制：** 校验 `/proc/<pid>/stat` 启动时钟以防 PID 复用竞争；Rust Core 利用 `libc::SIGCONT` 在 TTL 到期后安全唤醒被暂停进程。
-* **防规避 SSRF 校验：** 规范化并拦截十六进制、八进制、DWORD 及 IPv4-in-IPv6 格式，全面封堵内部回环地址。
-* **零信任内存擦除：** `StorageCipher.Destroy()` 在停机时彻底覆写 RAM 中的主密钥。
-
----
-
-<img width="2560" height="1229" alt="image" src="https://github.com/user-attachments/assets/29413de7-469a-4207-98bf-496ab69ef20a" />
-
-
-
 ## 🔍 什么是 VGT GeDefense？
 
 GeDefense 绝非简单的防火墙规则管理器。它是**本地化主权 Linux 安全防御矩阵** — 集成了内核级网络防御、主机 XDR、加密证据账本、可逆系统加固以及可选的 AstraeaOS 原生隔离，全程无需任何云端控制平面。
@@ -353,7 +186,6 @@ VGT GeDefense:
 <img width="2560" height="1229" alt="image" src="https://github.com/user-attachments/assets/1f5cf6ae-ee59-498d-9c5b-e06e8efc9ef2" />
 
 
-
 ## 🏛️ 系统架构
 
 ```
@@ -380,7 +212,6 @@ VGT GeDefense:
 <img width="2560" height="1229" alt="image" src="https://github.com/user-attachments/assets/0712a990-f3ad-4b4a-8d18-8e0a60395fe1" />
 
 
-
 ### 信任域分离
 
 | 信任域 | 承担职责 | 运行特权 |
@@ -399,7 +230,6 @@ VGT GeDefense:
 ---
 
 <img width="2560" height="1229" alt="image" src="https://github.com/user-attachments/assets/57feccc5-75ab-46a1-a575-3a5ec3402087" />
-
 
 
 ## 🛡️ 防御矩阵核心机制

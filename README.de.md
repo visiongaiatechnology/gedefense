@@ -3,7 +3,6 @@
 <img width="256" height="256" alt="GeDefense" src="https://github.com/user-attachments/assets/978d2835-c915-473d-9995-d315efaa869c" />
 
 
-
 # VGT GeDefense
 ### Linux Security Fabric - Your Entenprise System
 
@@ -35,6 +34,19 @@
 
 
 ---
+
+## 🌐 Das GeDefense-Universum
+
+GeDefense ist eine lokal-first Security-Fabric – für Linux, Windows, Android und WordPress. Alle Schwesterprojekte teilen dieselbe Philosophie: lokale Kontrolle, ehrliche Sichtbarkeit, keine stille Telemetrie.
+
+| Projekt | Schwerpunkt |
+| --- | --- |
+| [![Android TV](https://img.shields.io/badge/Android_TV-3DDC84?style=flat-square&logo=android&logoColor=0B1220)](https://github.com/visiongaiatechnology/gedefense_androidtv) **GeDefense TV** | Sicherheitskonsole für Android TV / Google TV: Loopback-VPN, Traffic-Map, XDR-Light und reversibles Kinetic-Lite-Containment. |
+| [![Linux](https://img.shields.io/badge/Linux-D4AF37?style=flat-square&logo=linux&logoColor=0B1220)](https://github.com/visiongaiatechnology/gedefense) **GeDefense Linux** *(dieses Repository)* | Kernel-nahe Netzwerkverteidigung: eBPF/XDP-Durchsetzung, L7-WAF, Host-XDR mit signierter Evidenz und reversible Härtung (Rust/Go, vollständig lokal). |
+| [![Windows](https://img.shields.io/badge/Windows-8B5CF6?style=flat-square&logo=windows&logoColor=ffffff)](https://github.com/visiongaiatechnology/gedefensewin) **GeDefense Windows** | Lokale, souveräne Windows-11-Sicherheitskonsole: Defender/ASR/WFP/App Control, Härtung, MHX EDR/XDR, lokale Threat Intelligence und HMAC-verkettete Evidenz. |
+| [![Android](https://img.shields.io/badge/Android-22D3EE?style=flat-square&logo=android&logoColor=0B1220)](https://github.com/visiongaiatechnology/gedefenseandroid) **GeDefense Android** | Native Android-Sicherheitsplattform: lokale VPN-Durchsetzung, Endpoint-Telemetrie, XDR/EDR-Korrelation, Threat Intelligence, App-Risikoanalyse und verschlüsselte Evidenz. |
+| [![WordPress](https://img.shields.io/badge/WordPress-1F8FFF?style=flat-square&logo=wordpress&logoColor=ffffff)](https://github.com/visiongaiatechnology/gedefensewp) **GeDefense WordPress** | AGPL-3.0-Open-Core-Suite für WordPress: ZEUS-WAF, AEGIS-Deep-Packet-Inspection, TRINITY-XDR, ThroneGuard-Lockdown und HADES-Admin-Cloaking. |
+
 ## 🆕 Release 5.1.0-beta.2 — Sicherheits-Hardening (27.10.2026)
 
 Sicherheits-Hotfix für 5.1.0-beta.1. **Vor dem Exponieren der Bridge ist das Update empfohlen.**
@@ -45,34 +57,6 @@ Sicherheits-Hotfix für 5.1.0-beta.1. **Vor dem Exponieren der Bridge ist das Up
 - **WordPress-Bridge-Härtung:** benötigt eine entsperrte ThroneGuard-Master-Session, lehnt schwache/default/doppelte Salts ab, sendet Logout-Revocation und lehnt Loopback-Master-Events ab; normale Administratoren können keinen Master mehr beanspruchen, wenn bereits einer existiert.
 - **Installer-Härtung:** Gateway-Zugriffsverzeichnisse werden vor Secrets/TLS angelegt, python3 vor der Trust-Prüfung installiert, nur `prebuilt`/`source-signed` akzeptiert und Rollback-Ownership korrigiert.
 - **ALPHA:** Die GeDefense-WP-↔-Linux-Bridge bleibt ein Alpha-Testfeature, nicht produktionsreif. Siehe `SECURITY.md` und `CHANGELOG.md`.
-
-## 🆕 Release 5.1.0-beta.1 — CMS Defense & verschlüsselte WordPress-Bridge (27.10.2026)
-
-Dieses Release ergänzt die CMS-bewusste L7-Schicht und die neue **GeDefense WP ↔ Linux Bridge**:
-
-- **CMS-Erkennung für WordPress, Joomla!, TYPO3 und Laravel** mit einer neuen **CMS-Defense**-Dashboard-Ansicht. Administratoren legen fest, wie weit statische Assets und CMS-Verwaltungspfade das L7-Client-Budget lockern dürfen.
-- **Verifizierte ThroneGuard-Master-Sessions** erhalten eine begrenzte **2-Stunden-, IP- und Host-gebundene L7-Rate-Limit-Ausnahme**. Bei verifizierten Editor-Schreibpfaden wird zusätzlich ausschließlich der Content-Pattern-Detector übersprungen, damit legitime Builder-Vorschauen und Seiten-Saves nicht als XSS blockiert werden.
-- **Verschlüsselte WordPress-Bridge (Alpha):** Das von Linux ausgegebene Secret wird in der WordPress-Datenbank mit einem aus wp-config-Salts abgeleiteten Schlüssel verschlüsselt gespeichert; WordPress schreibt eine AES-256-GCM-authentifizierte Zeile über sein bestehendes PHP-Log. Kein eigener WordPress-Schreibpfad, keine WordPress-zu-Kernel-Brücke.
-- **L7-False-Positive-Fixes:** Statische WordPress-Assets/Loader und verifizierte Editor-Schreibvorgänge sprengen bzw. trippen das Client-Budget nicht mehr; Login und generische API-Routen bleiben limitiert.
-- **Ökosystem:** Dieses Release mit [GeDefense WP](https://github.com/visiongaiatechnology/gedefensewp) kombinieren, um das vollständige Linux- + WordPress-Sicherheitsfabric zu erhalten.
-- **Validierung:** Vollständige Go-Control-Suite, CMS-/Bridge-Regressionstests und Live-Tests der verschlüsselten Leases bestanden. Siehe [`CHANGELOG.md`](CHANGELOG.md).
-
-> [!CAUTION]
-> **ALPHA-SICHERHEITSHINWEIS — GeDefense WP ↔ Linux Bridge.** Die verschlüsselte Bridge ist ein **Alpha-Testfeature**, nicht produktionsreif. Ein vollständig kompromittiertes WordPress kann mit dem gemeinsamen Secret weiterhin Bridge-Ereignisse fälschen. Die Lease ist deshalb auf zwei Stunden, IP/Host begrenzt und lockert nur L7-Rate-Limits/Content-Pattern-Prüfungen auf Admin-Oberflächen; WAF-, Protokoll-, Upload- und Kernel-Enforcement bleiben aktiv. Diese Bridge nicht im unbeaufsichtigten Produktivbetrieb einsetzen. Kein Release ist allein wegen dieses Alpha-Tests als sicher zu betrachten.
-
-
-## 🆕 Release 5.0.0-beta.2 — Hotfixes 1–9 (25.10.2026)
-
-Dieses Release überführt die Sicherheits- und Funktionsfixes der Hotfix-1–9-Linie in den öffentlichen Quellstand:
-
-- **Deception-Canaries sind echte Kernel-Sensoren:** Der privilegierte Core legt root-eigene Decoys in einem dedizierten Jail ab und überwacht sie per fanotify. Ein unautorisierter Zugriff erzeugt automatisch einen Incident und eine reversible, TTL-gebundene Containment-Aktion; der Core ignoriert die eigenen Deploy-/Verifikations-Öffnungen.
-- **Signierte Threat Feeds mit verifiziertem Kernel-Apply:** Eine operator-provisionierte Ed25519-Pipeline erstellt Snapshots der exakten Feed-Bytes, signiert das detached Manifest, verifiziert es gegen den gepinnten Key (inklusive TTL und Anti-Rollback) und wendet nur verifizierte BLOCK-Einträge im Kernel an. Feed-Blocks überleben Release-Reconciliation und Control-Plane-Neustarts.
-- **L7-Inline-Producer ist First-Class:** Die Inline-Unix-Socket-Edge akzeptiert einen echten lokalen Producer, blockt SQLi/XSS/LFI/Command-Injection-Payloads vor dem Upstream und meldet Producer-, Attachment- und Coverage-Zähler wahrheitsgemäß. Der vollständige eingebaute Enforcement-Scope ist aktiv.
-- **Wahrheitsgemäßer Schutzstatus:** Die Control Plane leitet `protection.effective` aus Kernel-, XDR-, Core-, Kinetic-, L7- und Evidenz-Enforcement ab. Das Dashboard zeigt „Vollschutz“ nur, wenn tatsächlich jede Ebene durchsetzt, und benennt andernfalls die exakten Lücken.
-- **Integrität und Release-Wartung:** FIM/Titan-Release-Rebaseline, Startup-Self-Check-Status-API, lokale cgroup-v2-Gaia-Cells-Registry als Fallback, eine operator-signierte lokale Boot-Trust-Baseline und ein Post-Update-Rebaseline-Skript.
-- **Validierung:** Go-Control-Suite grün, Rust 40/40 Tests grün, signierter Installer-Self-Test und Payload-Verifikation bestanden.
-
-**Bekannte Einschränkungen:** Öffentliche CA-/RFC3161-/CRL-/OCSP-Release-Authentizität und ein extern verankerter Anti-Rollback-Kanal bleiben außerhalb dieser Beta. Die Threat-Feed-Authentizität wird operator-provisioniert über einen lokalen Ed25519-Schlüssel bereitgestellt, nicht über eine öffentliche CA. Es bleibt eine öffentliche Beta für Test- und Qualifizierungshosts.
 
 ---
 
@@ -149,36 +133,6 @@ Vollständige Texte und Details stehen in
 Kein Drittanbieter unterstützt oder sponsert GeDefense. Das Dashboard lädt diese
 Assets lokal; es gibt keinen Laufzeit-CDN- oder Cloud-Lookup.
 
-
----
-
-## ⚠️ STABILITÄT & ZUSICHERUNG — RELEASE v5.1.0-beta.2 · UNIVERSELLE LINUX-PLATTFORM
-
-VGT GeDefense 5.0.0-beta.2 ist das Flaggschiff des Linux-Sicherheitsgewebes — die gehärtete Verteidigungskette mit Kernel-Geschwindigkeit, kombiniert mit der neuen **Security Fabric Control Plane**, universeller Linux-Integration, gehärteter Release-Pipeline und konkreten Kernel-/NIC-Qualifikations-Gates. Es wurde für souveränen Host- und Netzwerkschutz entwickelt.
-
-**Die Produktionsfreigabe ist bewusst eine Eigenschaft des konkret auditierten Ziel-Hosts — nicht allein des Quellcodes.**
-
-Initiale Bereitstellung: **Ausschließlich Observe-Modus.** Canary und Enforce erst nach Erfüllung aller dokumentierten Gates.
-
-### 🛡️ GeDefense Titan (Linux)
-
-Titan ist das native Linux-Modul für Integrität eingehender Dateien: unautorisierte
-Manipulation, Remote File Planting, Contraband Injection und Silent Dropping. Es
-bewertet **keine Urheber**, sondern ob eine Änderung autorisiert war, wie sie
-beobachtet wurde, welche Antwort sicher ist und welche unabhängigen Belege
-existieren.
-
-- Vertrauenszustände AUTHORIZED / TOLERATED / UNEXPECTED / COMPROMISED sowie
-  OBSERVE / CONTAIN / STRICT;
-- begrenzter inotify-Sensor, FIM-Baseline und begrenzte dpkg-/pacman-Datenbanken
-  ohne Laufzeit-Kommandoausführung; Sensorüberlauf degradiert sichtbar;
-- Eindämmung nur über die verschlüsselte, reversible Quarantäne-Transaktion;
-  unsichere Pfade werden mit Begründung abgelehnt; Auto-Containment ist standardmäßig aus;
-- `/api/v1/titan/*` und eine native Glass-2100-Titan-Seite mit
-  Vertrauensverteilung, Sensorzustand, Korrelationsqualität, Policy, begrenzten
-  Ereignissen, Review-/Contain-Dialogen und ehrlichen Nicht-verfügbar-Zuständen.
-
-Sicherheitslücke gefunden oder Verbesserungsvorschlag? **Eröffne ein Issue oder kontaktiere uns direkt.**
 
 ---
 
@@ -264,131 +218,6 @@ bash scripts/validate.sh
 
 ---
 
-## 🚀 Neu in GeDefense 4.2.0: Security Fabric Control Plane, Full-Stack Audit-Fixes & UI/UX Supreme
-
-VGT GeDefense 4.2.0 stellt einen maßgeblichen Evolutionssprung für das souveräne Linux-Sicherheitsgewebe dar:
-
-* **Security Fabric Control Plane (12 administrierbare Module):**
-  * Vollständig schemagesteuerte Konfiguration für 12 modulare Subsysteme (`kinetic`, `network`, `protection`, `xdr`, `l7`, `threat_intel`, `hardening`, `integrity`, `boot_trust`, `policy_trust`, `forensics`, `system`).
-  * Der Server ist die einzige autoritative Quelle; das Dashboard wird vollständig aus Schemas ohne fest codierte Einstellungsnamen gerendert.
-  * **Unveränderliche Snapshots auf heißen Pfaden:** Konfigurationsrevisionen werden zu atomaren, unveränderlichen Snapshots kompiliert. Ein Request bindet exakt einen Snapshot, was Race Conditions oder Hybridzustände bei Änderungen während laufender Anfragen ausschließt.
-  * **Gehärtete Invarianten sind nicht administrierbar:** Kernel-Map-Grenzen, Core-IPC-Authentifizierung, Pfadvalidierung, Geheimhaltung privater Schlüssel, Management-Selbstaussperrschutz und Feed-Anti-Poisoning bleiben dauerhaft unveränderlich gesperrt.
-
-* **Fabric Control-Plane Operationen & Drift-Erkennung:**
-  * `GET /api/v1/settings/search` — Deterministische Suche über alle Konfigurationsschlüssel mit Live-Effektivwerten und Trefferbegründung.
-  * `POST /api/v1/settings/export` — Kryptografisch signierte, geheimnisfreie Export-Bundles über alle Namensräume.
-  * `POST /api/v1/settings/import/preview` + `.../apply` — Echter zweistufiger Import: kryptografische Signaturprüfung, Diff-Generierung und Ausführung via einmalig gültigen, ablaufenden Tokens, die an den geprüften Inhalt gebunden sind.
-  * `GET /api/v1/settings/drift` — Kontinuierliche Drift-Überwachung: Revisionen, die die Synchronisation mit der Engine verfehlen, signalisieren `CONFIG_DRIFT` (niemals fälschlicherweise `SYSTEM_NOMINAL`).
-
-* **Vollständig vendorte Offline-SVG-Weltkarte (jsVectorMap 1.7.0):**
-  * 100% lokale Geometrie (`world_merc`) über 43 vendorte Quelldateien. Null CDN, null Kachelserver, null externe Netzwerkaufrufe.
-  * **Strikte Durchsetzung von Trusted Types:** Arbeitet 100% konform mit `require-trusted-types-for 'script'`, indem DOM-String-Sinks durch native Button-Elemente umgangen werden.
-  * Live-Tracking-Marker, pulsierende neue Quellen, Ereignisraten-Choroplethenkarten und distinkte Farbkategorien für blockierte Bedrohungen.
-  * Begrenzte DOM-Render-Budgets (96 Tracking, 48 Blockiert, 24 Puls, 192 Regionen) mit visuellen Schwellenwerten.
-
-* **UI/UX Supreme — Vollständiges Dashboard-Redesign:**
-  * Wiederholende Kartenraster in Kinetic Defense, Threat Intel, Application Defense und XDR durch eine einheitliche Befehlsebene und gruppierte Telemetriespuren ersetzt.
-  * Semantische `<dl>`-Datenstrukturen mit Haarlinien-Trennern ersetzen schwere Rahmen.
-  * Zustandsgesteuerte Akzentfarben: funktionale Hervorhebungen aktivieren sich nur bei Werten ungleich Null.
-  * Echte Tastatur-Barrierefreiheit (`<button>`), vollständige WCAG AA-Kontrastkonformität und voller Support für `prefers-reduced-motion`.
-
----
-
-## 🚀 Neu in GeDefense 4.0.1: Chinesische Lokalisierung, Dedizierter XDR-Kernel-Recovery-Tab & Souveräne Expansion
-
-VGT GeDefense 4.0.1 erweitert die Linux-Verteidigungsplattform um vollständige mehrsprachige Souveränität und selbstheilende Operator-Funktionen:
-
-* **Vollständige Lokalisierung für vereinfachtes Chinesisch (`zh-CN` / `ZH`):**
-  * 100% vollständige Übersetzung im gesamten Command Center über alle Tabs, Dialoge, Bedienfelder, Diagramme, Platzhalter und Toast-Benachrichtigungen (743 Schlüssel, identische Parität zu DE, EN und RU).
-  * Erweiterung des öffentlichen Access Gateway Startbildschirms (`gateway/main.go`) um lokalisierte Texte, Cookie-gespeicherten Sprachwechsel und dedizierte `ZH`-Auswahl.
-  * Automatische Erkennung via HTTP-`Accept-Language` priorisiert chinesische Spracheinstellungen (`zh`, `zh-CN`, `zh-Hans`).
-* **Dedizierter XDR-Kernel-Recovery-Tab & Sicherer Zustands-Reset:**
-  * Eigener XDR-Kernel-Recovery-Tab und Workflow (`#xdr`-Wiederherstellungsdialog), der es Administratoren ermöglicht, den Kernel-Sensor-Stack direkt über das Dashboard zu inspizieren, wiederherzustellen und neu zu initialisieren — ohne Notfall-SSH-Zugriff oder manuelle Befehlszeileneingriffe.
-  * Authentifizierter Endpunkt `/api/v1/xdr/recovery` mit strikter Bestätigungsschranke `ARCHIVE_AND_REINITIALIZE_XDR`.
-  * Beschädigte oder degradierte Vorfalls-Ledger-Ketten werden Byte für Byte mit kryptografischen SHA-256-Manifesten nach `/var/lib/vgt/gedefense/xdr-recovery/` archiviert.
-  * Erstellt absturzsicher eine frische Vorfallskette unter strikter Bewahrung von Master-Keys, Sensor-IPC-Tokens und Administrator-Zugangsdaten.
-  * Re-initialisiert Kernel-eBPF-Sensoren, BPF-LSM-Hooks, Ring-Buffer-Verbindungen und Prozessmonitore.
-  * Erfordert Festplattenverifikation und einen unveränderlichen, signierten Evidenz-Ledger-Commit, bevor der permanente `DEGRADED`-Status aufgehoben wird.
-* **Kryptografische Evidenz & Ledger-Hash-Integrität:**
-  * Trennung der Angriffs-Merkle-Evidenzwurzel (`evidence_root`) von den MAC-Kettenhashes des Vorfalls-Ledgers (`record_hash`), wodurch korrelierte Vorfälle auch über Dienstneustarts hinweg kryptografisch prüfbar bleiben.
-  * Gehärtete XDR-Statusweitergabe stellt sicher, dass routinemäßige Hintergrundabfragen niemals einen persistenten degradierten Kernelzustand maskieren.
-
----
-
-## 🚀 Native L7-Anwendungsverteidigung & Souveräne Härtung (v4.0.0 Architektur)
-
-VGT GeDefense 4.0 erweitert die bisherige L3/L4/Kernel-Architektur um eine **vollständig integrierte, native L7-Anwendungssicherheitsebene (WAF & Reverse-Proxy-Gate)**. Das System analysiert und schützt Webanwendungen und APIs unmittelbar vor der eigentlichen Anwendungslogik — vollständig implementiert mit Primitiven der Go-Standardbibliothek, null Drittanbieter-Abhängigkeiten, null CGO und null externen Skript-Runtimes.
-
-### 🌟 Kernfähigkeiten & L7-Anwendungssicherheit (WAF)
-* **Native L7-Ebene (Nur Go-Stdlib):** Voll integrierte WAF, direkt in den `gedefense-control`-Daemon einkompiliert. Null externe Pakete in `go.mod`, kein Lua/WASM/Node.js-Overhead, minimale Latenz und minimaler Speicherverbrauch.
-* **Dual-Mode Bereitstellungsarchitektur:**
-  * *Advisory / Standalone Socket (`inspect.sock`):* Lokaler Unix-Socket im Modus `0660` für beliebige Webserver (nginx, Apache, Caddy, Envoy) via standardisiertem JSON-Inspektionsprotokoll (`POST /v1/inspect`) mit strikter Envelope-Validierung (`DisallowUnknownFields`).
-  * *Natives Inline-Reverse-Proxy-Gate (`edge.sock`):* Arbeitet transparent zwischen TLS-Terminierung und Upstream-Anwendung. Begrenzte Nebenläufigkeit, Fail-Closed-Zulassungsbudgets und strikte Upstream-Isolierung (ausschließlich saubere absolute Unix-Sockets oder explizite Loopback-IP-Literale; keine DNS-Auflösung zur Laufzeit, kein anfragegesteuertes Routing).
-* **Begrenzte Normalisierungs- & Anti-Evasions-Engine:**
-  * Mehrstufige rekursive Dekodierung (URL-Pfad-/Query-Unescaping, HTML-Entities, Escape-Sequenzen `\uXXXX` und `\xXX`).
-  * Unicode Fullwidth Fold (`\uff01`–`\uff5e` auf ASCII abgebildet), verhindert Filterumgehungen durch asiatische Vollbreitenzeichen.
-  * Automatische Erkennung und Dekodierung von ungepaddeten und URL-sicheren Base64-Strings in Parametern.
-  * Streaming-JSON-Parser mit strikten Rekursionstiefenbegrenzungen (`max_json_depth = 32`) und Token-Budgets.
-  * Begrenzte Dekomprimierung: Gzip/Deflate via `io.LimitReader` (Schutz vor Zip-Bomb-/Dekompressions-DoS).
-  * Überlappende Blockverarbeitung (256-Byte-Überlappung) für unstrukturierte Textkörper, verhindert Signaturumgehung an Blockgrenzen.
-* **Vollständige Angriffserkennungs-Suite (Lineares RE2, Null ReDoS):**
-  * *SQL-Injection (SQLi):* UNION SELECT-Syntax, boolesche Tautologien (`' OR 1=1`), Zeitverzögerungen (`pg_sleep`, `benchmark`), gestapelte Query-Befehle.
-  * *Cross-Site Scripting (XSS):* Script-Tags, Inline-Event-Handler (`onerror=`, `onload=`), gefährliche Browser-Schemata (`javascript:`, `data:text/html`), `iframe srcdoc`.
-  * *Command Injection / RCE:* Shell-Verkettungen (`;`, `&&`, `||`, `|`), Substitutionssyntax (`$(...)`, Backticks), PowerShell- und CMD-Payloads.
-  * *Pfadtraversal & LFI:* Traversal-Sequenzen (`../`, `..\`), sensible Linux-Pfade (`/etc/passwd`, `/proc/self/environ`), Stream-Wrapper (`php://`, `phar://`, `data://`).
-  * *SSTI, XXE & Deserialisierung:* Template-Syntax (Jinja, Twig, Smarty, Spring), externe XML-Entitäten, PHP-Objektserialisierung, Java-Magic-Bytes (`rO0AB`), JNDI/Log4j-Aufrufe.
-  * *HTTP-Protokoll-Smuggling & Anomalien:* Doppelte oder ungültige `Content-Length`, CL.TE / TE.CL-Mehrdeutigkeiten, ungültige Transfer-Encodings, blockierte Methoden (`TRACE`).
-* **Evasive SSRF-Erkennung mit flexibler IP-Normalisierung:**
-  * Normalisiert und blockiert alternative IPv4-Darstellungen: Hexadezimal (`0x7f.1`), Oktal (`0177.1`), dezimale DWORD-Ganzzahlen (`2130706433`), 2-/3-teilige Kurzschreibweisen.
-  * Umfassende Schutzräume gegen Cloud-Metadaten-Endpunkte (AWS/OpenStack IMDSv2 `169.254.169.254`, GCP `metadata.google.internal`, Azure `168.63.129.16`, Alibaba `100.100.100.200`, Oracle `192.0.0.192`).
-* **In-Memory Airlock Multipart-Inspektion (`InspectBytes`):**
-  * Multipart-Dateiuploads werden direkt im RAM geprüft — **niemals auf persistenten Datenträgern zwischengespeichert**.
-  * Begrenzte Dateigrößen und Part-Zahlen; Prüfung von Magic Bytes (ELF, PNG, JPEG, GIF, PDF, ZIP), MIME-Konsistenz, doppelten Endungen (`.php.jpg`), Null-Byte-Injektionen und Malware-Hash-Blacklists.
-* **3-stufiges geshardetes Token-Bucket Rate Limiting:**
-  * 64 unabhängige Shards via FNV-1a-Hashing eliminieren globale Mutex-Konflikte unter hoher Last.
-  * Client-bezogene Volumengrenzen (glätten volumetrische Verkehrsspitzen).
-  * Routenbezogene Schutzgrenzen für sensible Endpunkte (schützen `/login`, `/wp-login.php`, `/api/login` vor Brute Force).
-  * Globale Routengrenzen (wehren verteilte Botnetze und Credential-Stuffing über rotierende IPs ab).
-* **Response Data-Leak Prevention (DLP):**
-  * Überwacht Upstream-Antwortkörper auf Datenbankfehler (`SQLSTATE`), Quellcode-Leaks (`<?php`, `<jsp:`), Anwendungs-Stacktraces (Python, Java, Go) und Offenlegung privater Schlüssel (`BEGIN RSA PRIVATE KEY`).
-  * Begrenzte Präfixprüfung unter Beibehaltung der exakten Wire-Bytes (`FuzzL7ResponseInspectionPreservesWireBytes`).
-* **Web-Evidenz-Isolation im XDR (Anti-False-Positive-Barriere):**
-  * L7-Ereignisse werden mit `AlertOnly: true` und `ResponseScore: 0` protokolliert.
-  * **Sicherheitsgarantie:** Ein Webangriff kann **niemals autonom** destruktive Host-Reaktionen (SIGKILL/SIGSTOP) gegen lokale Serverprozesse auslösen. Destruktive Reaktionen erfordern stets unabhängige Host-/Kernel-Evidenz.
-  * L7-Ereignisse werden als Knoten (`HTTP_REQUEST`, `HTTP_RESPONSE`) in den Trinity XDR 2.0 Kausal-DAG mit Merkle-Root-Beweisen eingespeist.
-* **Linux DAC & Betriebssystem-Härtung:**
-  * Dedizierte Systemgruppe `gedefense-l7`.
-  * Laufzeitverzeichnis `/run/vgt-gedefense-l7` (Modus `0750`, `gedefense:gedefense-l7`) via `systemd-tmpfiles`.
-  * Sockets mit Modus `0660` und Kernel-Peer-Credentials (`SO_PEERCRED` via `syscall.GetsockoptUcred`).
-  * Gehärtete systemd-Units mit `SupplementaryGroups=gedefense-l7` und restriktiven `ReadWritePaths`.
-* **Kontinuierliches Fuzzing & Quality Gates:**
-  * 3 neue CI-Fuzz-Ziele (`FuzzL7NormalizerNeverPanics`, `FuzzL7ResponseInspectionPreservesWireBytes`, `FuzzL7InlineUpstreamParserNeverEscapesLocalHost`).
-  * Go 1.27.3 Toolchain-Pinning mit automatisiertem AST-Sicherheits-Audit in `scripts/security-audit.sh`.
-
----
-
-## 🌟 Architekturdurchbrüche von V2 Beta 1 zu V3 Beta 1 (`3.0.0-beta.1`)
-
-VGT GeDefense 3.0.0-beta.1 wandelte die Architektur von einem statischen Host-/Netzwerksensor in ein **vollständig autonomes, reversibles Linux-Sicherheitsgewebe mit Defense-in-Depth**:
-
-* **Dual-Mode-Doktrin (Identische Binärdateien, dynamische Fähigkeitserkennung):** Einheitliche Binaries für AstraeaOS (native Ring-1 GaiaCells, BPF-LSM, Key-Broker) und generische Linux-Distributionen (Ubuntu, Debian, RHEL, Fedora, Arch, Alpine) mit dynamischer Laufzeit-Enklavenerkennung (`platform_caps.go`).
-* **Trinity Dynamischer Angriffs-Story-DAG & Vorfallskorrelator:** Kausale Rekonstruktion vollständiger Angriffsgraphen (`CANARY_TRIGGERED`, `PRIVILEGE_ESCALATED`, `EGRESS_ATTEMPTED`) mit deterministischer Merkle-Root-Evidenz statt isolierter Protokollzeilen.
-* **Autonome reversible Reaktions-Engine:** Mehrstufige Quarantäne (`CONTAIN_IP`, `FREEZE_EXECUTION`, `CONTAIN_CELL`) mit semantischen TTL-Vorgaben und automatisiertem Rollback bei fehlender Operator-Bestätigung.
-* **Nemesis Cyber Deception Grid:** Physische Canary-Fallen auf der Festplatte (`0600`) mit dynamischer Schlüsselableitung via `StorageCipher` und kalibrierter RASP-Erkennung (85% System/Backup vs. 98% unbefugte Entitäten).
-* **Styx Zero-Trust Egress & SSRF Shield:** Cgroup-/Cell-basierte Whitelist für ausgehenden Verkehr mit integriertem Filter gegen Cloud-Metadaten-Exfiltration (AWS, GCP, Azure, Alibaba, OCI, IPv6 IMDSv2).
-* **Airlock Ingress & Polyglot-Inspektor:** Strikte Magic-Byte-Prüfung, SVG-Bereinigung (neutralisiert eingebettete Skripte, foreignObjects, Embeds, Iframes und DTDs) und Quarantäne-Bereitstellung mit harten Größenlimits und Symlink-Einsperrung.
-* **Morpheus Linux RASP & Credential Scrubber:** Schützt überwachte Daemons vor Speicher-Scraping (`/proc/<pid>/mem`, `ptrace`) und maskiert API-Keys und Token in Befehlszeilenargumenten automatisch.
-* **Chronos Wiederaufnehmbare FIM:** Ressourceneffizienter Dateiintegritätsscanner mit atomaren Checkpoints, Deskriptor-Leak-Beseitigung und Merkle-Baum-Integritätswurzeln.
-* **Reversibler Prozess-Freeze:** Validiert `/proc/<pid>/stat` Start-Ticks gegen PID-Wiederverwendungs-Races; der Rust Core nutzt `libc::SIGCONT` (`XDR_CONT`), um Prozesse nach Ablauf der TTL sicher fortzusetzen.
-* **Evasionssichere SSRF-Validierung:** Kanonisiert und fängt dezimale DWORD-, Hexadezimal-, Oktal- und IPv4-in-IPv6-Darstellungen ab und blockiert interne Loopback-Ziele strikt.
-* **Zero-Trust Memory Zeroization:** `StorageCipher.Destroy()` überschreibt Hauptschlüssel beim Herunterfahren sicher im RAM.
-
----
-
-<img width="2560" height="1229" alt="image" src="https://github.com/user-attachments/assets/29413de7-469a-4207-98bf-496ab69ef20a" />
-
-
-
 ## 🔍 Was ist VGT GeDefense?
 
 GeDefense ist kein einfacher Firewall-Regelmanager. Es ist ein **lokales, souveränes Linux-Sicherheitsgewebe** — kernelnahe Netzwerkverteidigung, Host-XDR, verschlüsselter Evidenz-Ledger, reversible Systemhärtung und optionale AstraeaOS-native Isolation in einem System, betrieben ohne jede Cloud-Control-Plane.
@@ -422,7 +251,6 @@ Ein einzelner Regex-, Feed-, Verhaltens- oder Maskierungs-Treffer **kann niemals
 <img width="2560" height="1229" alt="image" src="https://github.com/user-attachments/assets/1f5cf6ae-ee59-498d-9c5b-e06e8efc9ef2" />
 
 
-
 ## 🏛️ Architektur
 
 ```
@@ -449,7 +277,6 @@ Ein einzelner Regex-, Feed-, Verhaltens- oder Maskierungs-Treffer **kann niemals
 <img width="2560" height="1229" alt="image" src="https://github.com/user-attachments/assets/0712a990-f3ad-4b4a-8d18-8e0a60395fe1" />
 
 
-
 ### Trennung der Vertrauensdomänen
 
 | Domäne | Rolle | Privilegien |
@@ -468,7 +295,6 @@ Ein einzelner Regex-, Feed-, Verhaltens- oder Maskierungs-Treffer **kann niemals
 ---
 
 <img width="2560" height="1229" alt="image" src="https://github.com/user-attachments/assets/57feccc5-75ab-46a1-a575-3a5ec3402087" />
-
 
 
 ## 🛡️ Verteidigungsgewebe
