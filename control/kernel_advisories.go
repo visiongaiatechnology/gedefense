@@ -185,6 +185,10 @@ type KernelAdvisory struct {
 	UpstreamFix string
 	// DistroFix maps a distribution release channel (ID/codename) to the first fixed build.
 	DistroFix map[string]string
+	// DistroVulnerableThrough names the last build a vendor has explicitly marked unfixed for a
+	// channel (for example an Ubuntu "needed" CVE state). It is deliberately a bounded statement:
+	// a build above the bound is not declared safe, only no-longer-known-vulnerable.
+	DistroVulnerableThrough map[string]string
 	// EntryPoints lists the precondition identifiers this advisory needs to be reachable.
 	EntryPoints []string
 	Mitigations []KernelMitigationInfo
@@ -283,6 +287,45 @@ func kernelAdvisories() []KernelAdvisory {
 				"post-exploitation side of a chain, not the heap corruption itself. This entry reports exposure " +
 				"and names the entry point that can be closed.",
 		},
+		{
+			// Verified against the Linux CVE announcement, the Debian security tracker and the Ubuntu CVE
+			// status on 29.10.2026. Ubuntu 24.04 HWE 7.0 is "needed" (no fixed package); the 7.0.0-42
+			// candidate changelog does not contain the fix. The bound below is a vendor statement, not a
+			// claim that 7.0.0-43 is safe.
+			ID:          "CVE-2026-98432",
+			Title:       "IPv4 TCP inet_opt/ireq_opt use-after-free after an RCU grace period",
+			Class:       kernelClassMemorySafety,
+			Severity:    "critical",
+			CVSS:        9.8,
+			GuardCommit: "e3f33b0a1d89d738e2b913dab519226eaf76e15b",
+			UpstreamFix: "7.3",
+			DistroFix: map[string]string{
+				"debian-bookworm": "6.1.190-1",
+				"debian-trixie":   "6.12.113-1",
+				"debian-sid":      "7.2.13-1",
+			},
+			DistroVulnerableThrough: map[string]string{
+				"ubuntu-noble": "7.0.0-42",
+			},
+			EntryPoints: []string{"mptcp-enabled", "tcp-listener"},
+			Mitigations: []KernelMitigationInfo{
+				{
+					Precondition: "mptcp-enabled",
+					Command:      "sysctl -w net.mptcp.enabled=0",
+					Tradeoff:     "MPTCP applications lose multipath transport; the kernel remains affected by the UAF until patched",
+				},
+				{
+					Precondition: "tcp-listener",
+					Command:      "restrict Internet-facing TCP listeners to required sources and install the fixed kernel build",
+					Tradeoff:     "unused remote services become unreachable; this reduces exposure but does not fix the UAF",
+				},
+			},
+			Reference: "https://lists.openwall.net/linux-cve-announce/2026/10/15/1",
+			Detects: "GeDefense reads the running kernel release, whether MPTCP is enabled and whether at least " +
+				"one TCP socket is listening. It cannot detect the internal request-socket race or prove that a " +
+				"specific listener uses MPTCP: the version/fix state is decisive, the entry points only describe " +
+				"whether the documented path is reachable. XDP/eBPF can reduce exposure, never repair the UAF.",
+		},
 	}
 }
 
@@ -322,6 +365,8 @@ func kernelPreconditionCatalogue() []struct {
 		{"container-packet-socket", "A container runtime can hand out CAP_NET_RAW", 40},
 		{"tun-writable", "/dev/net/tun is writable by unprivileged users", 25},
 		{"user-namespace", "Unprivileged user namespaces are enabled", 20},
+		{"mptcp-enabled", "MPTCP is enabled in the kernel", 30},
+		{"tcp-listener", "At least one IPv4 TCP socket is listening", 35},
 		{"virtio-guest", "The host is itself a virtual machine (virtio devices present)", 10},
 		{"kvm-host", "The host can run guests (/dev/kvm present)", 5},
 	}
@@ -519,6 +564,22 @@ func classifyAdvisory(advisory KernelAdvisory, identity KernelIdentity) KernelAd
 		match.Reason = fmt.Sprintf("%s %s is below the fixed build %s for %s", identity.Distro, identity.Release, fixed, identity.Channel)
 		return match
 	}
+	// A vendor can publish the last build it has explicitly marked unfixed even when the fixed
+	// package is not available yet. That is a bounded "known affected" statement: only the same
+	// kernel series is covered, and a build above the bound is not declared safe.
+	if lastVulnerable, exists := advisory.DistroVulnerableThrough[identity.Channel]; exists {
+		boundVersion, boundOK := parseKernelVersion(lastVulnerable)
+		if !boundOK {
+			match.Verdict = kernelVerdictUnknown
+			match.Reason = fmt.Sprintf("the catalogue carries an unparsable known-vulnerable bound %q for %s", lastVulnerable, identity.Channel)
+			return match
+		}
+		if version.Major == boundVersion.Major && version.Minor == boundVersion.Minor && compareKernelVersion(version, boundVersion) <= 0 {
+			match.Verdict = kernelVerdictVulnerable
+			match.Reason = fmt.Sprintf("%s %s is at or below the last build marked unfixed (%s) for %s", identity.Distro, identity.Release, lastVulnerable, identity.Channel)
+			return match
+		}
+	}
 	// No statement for this channel. A mainline fix point is still useful evidence, but it cannot
 	// prove a distribution kernel unaffected: distributions backport. That asymmetry is why the
 	// unknown verdict exists instead of being folded into "unaffected".
@@ -612,6 +673,29 @@ func readKernelPreconditions(src kernelExposureSource) []KernelPrecondition {
 				break
 			}
 			precondition.Evidence = "the user-namespace boundary could not be measured"
+		case "mptcp-enabled":
+			if raw, err := src.ReadFile("/proc/sys/net/mptcp/enabled"); err == nil {
+				precondition.Measured = true
+				if strings.TrimSpace(string(raw)) == "1" {
+					precondition.Present = true
+					precondition.Evidence = "net.mptcp.enabled=1"
+				} else {
+					precondition.Evidence = "net.mptcp.enabled=0"
+				}
+			} else {
+				precondition.Evidence = "the MPTCP sysctl is not visible to the control plane"
+			}
+		case "tcp-listener":
+			if raw, err := src.ReadFile("/proc/net/tcp"); err == nil {
+				precondition.Measured = true
+				total, beyondLoopback := countIPv4TCPListeners(raw)
+				if total > 0 {
+					precondition.Present = true
+				}
+				precondition.Evidence = fmt.Sprintf("%d IPv4 TCP listener(s), %d bound beyond loopback", total, beyondLoopback)
+			} else {
+				precondition.Evidence = "/proc/net/tcp is not readable by the control plane"
+			}
 		case "virtio-guest":
 			names, err := src.ReadDir("/sys/bus/virtio/devices")
 			if err != nil {
@@ -637,6 +721,37 @@ func readKernelPreconditions(src kernelExposureSource) []KernelPrecondition {
 		preconditions = append(preconditions, precondition)
 	}
 	return preconditions
+}
+
+// countIPv4TCPListeners reads the kernel's /proc/net/tcp table and counts sockets in state 0A
+// (LISTEN). It also reports how many of those are bound beyond the IPv4 loopback so a loopback-only
+// debug port is not presented as remotely reachable. The parser is deliberately narrow: a malformed
+// row is ignored, never treated as an open door.
+func countIPv4TCPListeners(raw []byte) (total, beyondLoopback int) {
+	for _, line := range strings.Split(string(raw), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 4 || fields[3] != "0A" {
+			continue
+		}
+		total++
+		local := fields[1]
+		address, _, ok := strings.Cut(local, ":")
+		if !ok || !ipv4ProcAddressIsLoopback(address) {
+			beyondLoopback++
+		}
+	}
+	return total, beyondLoopback
+}
+
+// ipv4ProcAddressIsLoopback decodes the little-endian IPv4 address representation used by
+// /proc/net/tcp and tests the whole 127.0.0.0/8 range, not only 127.0.0.1. A malformed address is
+// reported as non-loopback (the conservative choice for an exposure count).
+func ipv4ProcAddressIsLoopback(address string) bool {
+	value, err := strconv.ParseUint(strings.TrimSpace(address), 16, 32)
+	if err != nil {
+		return false
+	}
+	return value&0xFF == 127
 }
 
 // kernelReachability returns the 0-100 share of the weighted, measurable entry points that are
@@ -825,6 +940,16 @@ func kernelExposureRecommendation(exposure KernelExposure) string {
 	for _, precondition := range relevant {
 		if precondition.ID == "user-namespace" && precondition.Present {
 			return "Disable unprivileged user namespaces (kernel.unprivileged_userns_clone=0) or install the fixed kernel build."
+		}
+	}
+	for _, precondition := range relevant {
+		if precondition.ID == "tcp-listener" && precondition.Present {
+			return "Restrict exposed IPv4 TCP listeners to required sources; keep MPTCP disabled if unused and install the fixed kernel build."
+		}
+	}
+	for _, precondition := range relevant {
+		if precondition.ID == "mptcp-enabled" && precondition.Present {
+			return "Disable MPTCP (sysctl -w net.mptcp.enabled=0) if unused and install the fixed kernel build."
 		}
 	}
 	return "Install the fixed kernel build for this release channel."

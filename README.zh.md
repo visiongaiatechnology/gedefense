@@ -7,8 +7,8 @@
 ### Linux Security Fabric - Your Entenprise System
 
 [![License](https://img.shields.io/badge/License-AGPL--3.0--only-blue?style=for-the-badge)](https://www.gnu.org/licenses/agpl-3.0)
-[![Version](https://img.shields.io/badge/Version-5.1.0--beta.2-orange?style=for-the-badge)](#)
-[![Status](https://img.shields.io/badge/Status-Release_v5.1.0--beta.2-yellow?style=for-the-badge)](#)
+[![Version](https://img.shields.io/badge/Version-5.1.0--beta.3-orange?style=for-the-badge)](#)
+[![Status](https://img.shields.io/badge/Status-Release_v5.1.0--beta.3-yellow?style=for-the-badge)](#)
 [![Installer](https://img.shields.io/badge/Installer-Universal_Linux-green?style=for-the-badge)](#-快速上手)
 [![Platform](https://img.shields.io/badge/Platform-Linux_x86__64-lightgrey?style=for-the-badge&logo=linux)](#)
 [![Data Plane](https://img.shields.io/badge/Data_Plane-Rust_eBPF%2FXDP-red?style=for-the-badge&logo=rust)](#-系统架构)
@@ -30,6 +30,14 @@
 
 </div>
 
+> **更新 5.1.0-beta.3（2026-10-29）— 情报源自愈、CVE 响应与签名发布**
+>
+> - **自愈式威胁情报源：** 缺失的 feed 签名 trust anchor 会通过 rotation-safe 标记从本地运维密钥（需显式启用）自举；过期 manifest 会重新签名。密钥轮换后旧标记仍然 fail-closed。
+> - **CVE-2026-98432 / CVE-2026-99999：** 受管的 user-namespace 与 MPTCP 对策持续保持生效；在安装 Ubuntu 内核修复前，内核暴露仍会明确显示。
+> - **Mitigation guard：** 权限受限的探测现在会明确标记为 UNOBSERVED，不再被静默跳过，也不会触发错误的自动回滚。
+> - **签名发布：** 5.1.0-beta.3 以签名 OneClick 安装器和可复现源码归档发布。
+
+
 <img width="1536" height="1024" alt="GeDefense_ Real Security, Many Feathers" src="https://github.com/user-attachments/assets/dc56735e-b2b2-45c9-a363-97554a92ae0a" />
 
 
@@ -47,6 +55,10 @@ GeDefense 是一套本地优先的安全架构，覆盖 Linux、Windows、Androi
 | [![Android](https://img.shields.io/badge/Android-22D3EE?style=flat-square&logo=android&logoColor=0B1220)](https://github.com/visiongaiatechnology/gedefenseandroid) **GeDefense Android** | 原生 Android 安全平台：本地 VPN 执行、端点遥测、XDR/EDR 关联、威胁情报、应用风险分析与加密证据。 |
 | [![WordPress](https://img.shields.io/badge/WordPress-1F8FFF?style=flat-square&logo=wordpress&logoColor=ffffff)](https://github.com/visiongaiatechnology/gedefensewp) **GeDefense WordPress** | AGPL-3.0 开源核心 WordPress 套件：ZEUS WAF、AEGIS 深度包检测、TRINITY XDR、ThroneGuard 锁定与 HADES 后台隐藏。 |
 
+## 🆕 版本 5.1.0-beta.3 — 情报源自愈、CVE 响应与签名发布（2026-10-29）
+
+签名威胁情报源现在可自愈缺失的 trust anchor/manifest 引导，受管的 user-namespace 与 MPTCP 控制会协同保持生效，发布产物使用新的离线密钥签名。详情见 `CHANGELOG.md`、`RELEASE-NOTES.md` 和最新发布资产。
+
 ## 🆕 版本 5.1.0-beta.2 — 安全加固（2026-10-27）
 
 针对 5.1.0-beta.1 的安全热修复。**在暴露桥梁前建议更新。**
@@ -61,7 +73,7 @@ GeDefense 是一套本地优先的安全架构，覆盖 Linux、Windows、Androi
 ---
 
 > [!WARNING]
-> **公开测试版 — 不可用于生产环境（版本 5.1.0-beta.2）。**  
+> **公开测试版 — 不可用于生产环境（版本 5.1.0-beta.3）。**  
 > GeDefense Titan 与 Linux Security Fabric 仍在积极开发中。此测试版仅适用于
 > 测试和资格验证主机。核心架构已由自动发布门禁验证，但公开 CA 发布真实性、
 > RFC3161 时间戳、吊销、外部锚定防回滚和 feed 签名密钥仍然缺失。请勿将此
@@ -471,17 +483,17 @@ Rust Core **未提供任何通用的系统 Shell、文件系统或 Sysctl 执行
 
 ```bash
 # 下载安装程序
-wget https://github.com/visiongaiatechnology/gedefense/releases/download/v5.1.0-beta.2/GeDefense-5.1.0-beta.2-OneClick.run
+wget https://github.com/visiongaiatechnology/gedefense/releases/download/v5.1.0-beta.3/VGT_GeDefense_Beta_v5_5.1.0-beta.3_OneClick.run
 
 # 校验 SHA-256 完整性指纹
-sha256sum --check GeDefense-5.1.0-beta.2-OneClick.run.sha256
+sha256sum --check VGT_GeDefense_Beta_v5_5.1.0-beta.3_OneClick.run.sha256
 
 # 执行安装（需要 root 权限）
-chmod 700 GeDefense-5.1.0-beta.2-OneClick.run
-sudo ./GeDefense-5.1.0-beta.2-OneClick.run
+chmod 700 VGT_GeDefense_Beta_v5_5.1.0-beta.3_OneClick.run
+sudo ./VGT_GeDefense_Beta_v5_5.1.0-beta.3_OneClick.run
 ```
 
-> **安装程序可用性：** 官方 v5.1.0-beta.2 自包含安装程序（`GeDefense-5.1.0-beta.2-OneClick.run`）已通过验证并发布于 GitHub Releases。
+> **安装程序可用性：** 官方 v5.1.0-beta.3 自包含安装程序（`VGT_GeDefense_Beta_v5_5.1.0-beta.3_OneClick.run`）已通过验证并发布于 GitHub Releases。
 
 > 安装包与校验和文件仅在通过全部 GitHub CI 测试及实体 Linux 节点验证后发布。切勿运行未经验签的 RUN 可执行文件。
 
@@ -515,7 +527,7 @@ sudo ./GeDefense-5.1.0-beta.2-OneClick.run
 
 ---
 
-## 🚧 当前已知局限（5.1.0-beta.2）
+## 🚧 当前已知局限（5.1.0-beta.3）
 
 - 暂未集成 Swarm / 集群网格（Mesh）支持
 - 暂不支持 QUIC 协议网络卸载
@@ -823,6 +835,6 @@ sudo python3 scripts/update-geoip-db.py /var/lib/vgt/gedefense/geoip.csv
 
 [![VGT](https://img.shields.io/badge/VisionGaia-Technology-cyan?style=for-the-badge)](https://visiongaiatechnology.de)
 
-*VGT GeDefense 5.1.0-beta.2 — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
+*VGT GeDefense 5.1.0-beta.3 — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
 
 </div>

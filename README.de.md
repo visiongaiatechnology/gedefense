@@ -7,8 +7,8 @@
 ### Linux Security Fabric - Your Entenprise System
 
 [![License](https://img.shields.io/badge/License-AGPL--3.0--only-blue?style=for-the-badge)](https://www.gnu.org/licenses/agpl-3.0)
-[![Version](https://img.shields.io/badge/Version-5.1.0--beta.2-orange?style=for-the-badge)](#)
-[![Status](https://img.shields.io/badge/Status-Release_v5.1.0--beta.2-yellow?style=for-the-badge)](#)
+[![Version](https://img.shields.io/badge/Version-5.1.0--beta.3-orange?style=for-the-badge)](#)
+[![Status](https://img.shields.io/badge/Status-Release_v5.1.0--beta.3-yellow?style=for-the-badge)](#)
 [![Installer](https://img.shields.io/badge/Installer-Universal_Linux-green?style=for-the-badge)](#-schnellstart)
 [![Platform](https://img.shields.io/badge/Platform-Linux_x86__64-lightgrey?style=for-the-badge&logo=linux)](#)
 [![Data Plane](https://img.shields.io/badge/Data_Plane-Rust_eBPF%2FXDP-red?style=for-the-badge&logo=rust)](#-architektur)
@@ -30,6 +30,14 @@
 
 </div>
 
+> **Update 5.1.0-beta.3 (29.10.2026) — Feed-Self-Healing, CVE-Abwehr & signierter Release**
+>
+> - **Selbstheilender Threat-Intelligence-Feed:** Ein fehlender Feed-Signatur-Trust-Anchor wird aus dem opt-in lokalen Operator-Key über einen rotationssicheren Marker gebootstrappt; abgelaufene Manifeste werden neu signiert. Ein rotierter Key mit altem Marker bleibt fail-closed.
+> - **CVE-2026-98432 / CVE-2026-99999:** verwaltete User-Namespace- und MPTCP-Gegenmaßnahmen sind aktiv gehalten; die Kernel-Exposition bleibt sichtbar, bis der Ubuntu-Kernel-Fix installiert ist.
+> - **Mitigation-Guard:** berechtigungslimitierte Probes werden jetzt als UNOBSERVED ausgewiesen statt still übersprungen und lösen keinen falschen Auto-Revert mehr aus.
+> - **Signierter Release:** 5.1.0-beta.3 erscheint als signierter OneClick-Installer und reproduzierbares Quellarchiv.
+
+
 <img width="1536" height="1024" alt="GeDefense_ Real Security, Many Feathers" src="https://github.com/user-attachments/assets/dc56735e-b2b2-45c9-a363-97554a92ae0a" />
 
 
@@ -47,6 +55,10 @@ GeDefense ist eine lokal-first Security-Fabric – für Linux, Windows, Android 
 | [![Android](https://img.shields.io/badge/Android-22D3EE?style=flat-square&logo=android&logoColor=0B1220)](https://github.com/visiongaiatechnology/gedefenseandroid) **GeDefense Android** | Native Android-Sicherheitsplattform: lokale VPN-Durchsetzung, Endpoint-Telemetrie, XDR/EDR-Korrelation, Threat Intelligence, App-Risikoanalyse und verschlüsselte Evidenz. |
 | [![WordPress](https://img.shields.io/badge/WordPress-1F8FFF?style=flat-square&logo=wordpress&logoColor=ffffff)](https://github.com/visiongaiatechnology/gedefensewp) **GeDefense WordPress** | AGPL-3.0-Open-Core-Suite für WordPress: ZEUS-WAF, AEGIS-Deep-Packet-Inspection, TRINITY-XDR, ThroneGuard-Lockdown und HADES-Admin-Cloaking. |
 
+## 🆕 Release 5.1.0-beta.3 — Feed-Self-Healing, CVE-Abwehr & signierter Release (29.10.2026)
+
+Der signierte Threat-Intelligence-Feed heilt seinen fehlenden Trust-Anchor/Manifest-Bootstrap jetzt selbst, die verwalteten User-Namespace- und MPTCP-Kontrollen werden gemeinsam gehalten, und die Release-Artefakte sind mit einem neuen Offline-Key signiert. Details in `CHANGELOG.md`, `RELEASE-NOTES.md` und den neuesten Release-Assets.
+
 ## 🆕 Release 5.1.0-beta.2 — Sicherheits-Hardening (27.10.2026)
 
 Sicherheits-Hotfix für 5.1.0-beta.1. **Vor dem Exponieren der Bridge ist das Update empfohlen.**
@@ -61,7 +73,7 @@ Sicherheits-Hotfix für 5.1.0-beta.1. **Vor dem Exponieren der Bridge ist das Up
 ---
 
 > [!WARNING]
-> **ÖFFENTLICHE BETA — KEIN PRODUKTIONSRELEASE (Version 5.1.0-beta.2).**  
+> **ÖFFENTLICHE BETA — KEIN PRODUKTIONSRELEASE (Version 5.1.0-beta.3).**  
 > GeDefense Titan und das Linux-Security-Fabric befinden sich in aktiver
 > Entwicklung. Diese Beta ist ausschließlich für Test- und Qualifizierungshosts
 > bestimmt. Die Kernarchitektur wird durch automatisierte Release-Gates geprüft,
@@ -537,17 +549,17 @@ Ist die Gaia Cells-Laufzeit **nicht vorhanden**, meldet der Adapter `runtime_not
 
 ```bash
 # Installer herunterladen
-wget https://github.com/visiongaiatechnology/gedefense/releases/download/v5.1.0-beta.2/GeDefense-5.1.0-beta.2-OneClick.run
+wget https://github.com/visiongaiatechnology/gedefense/releases/download/v5.1.0-beta.3/VGT_GeDefense_Beta_v5_5.1.0-beta.3_OneClick.run
 
 # SHA-256 verifizieren
-sha256sum --check GeDefense-5.1.0-beta.2-OneClick.run.sha256
+sha256sum --check VGT_GeDefense_Beta_v5_5.1.0-beta.3_OneClick.run.sha256
 
 # Installieren (Root erforderlich)
-chmod 700 GeDefense-5.1.0-beta.2-OneClick.run
-sudo ./GeDefense-5.1.0-beta.2-OneClick.run
+chmod 700 VGT_GeDefense_Beta_v5_5.1.0-beta.3_OneClick.run
+sudo ./VGT_GeDefense_Beta_v5_5.1.0-beta.3_OneClick.run
 ```
 
-> **Installer-Verfügbarkeit:** Die offiziellen v5.1.0-beta.2 Self-Contained-Installer-Assets (`GeDefense-5.1.0-beta.2-OneClick.run`) sind verifiziert und im GitHub Release bereitgestellt.
+> **Installer-Verfügbarkeit:** Die offiziellen v5.1.0-beta.3 Self-Contained-Installer-Assets (`VGT_GeDefense_Beta_v5_5.1.0-beta.3_OneClick.run`) sind verifiziert und im GitHub Release bereitgestellt.
 
 > Der Installer und die Prüfsumme werden erst veröffentlicht, nachdem alle GitHub-CI- und konkreten Linux-Host-Qualifikations-Gates bestanden wurden. Führe niemals eine nicht verifizierte RUN-Datei aus.
 
@@ -581,7 +593,7 @@ Die Firewall-Regel für den HTTPS-Gateway-Port (TCP 9843) kann während der Inst
 
 ---
 
-## 🚧 Bekannte Einschränkungen (5.1.0-beta.2)
+## 🚧 Bekannte Einschränkungen (5.1.0-beta.3)
 
 - Keine Swarm- / Mesh-Unterstützung
 - Kein QUIC-Offloading
@@ -888,6 +900,6 @@ Die Karte verwendet **jsVectorMap 1.7.0** (MIT, Copyright © 2020 Mustafa Omar; 
 
 [![VGT](https://img.shields.io/badge/VisionGaia-Technology-cyan?style=for-the-badge)](https://visiongaiatechnology.de)
 
-*VGT GeDefense 5.1.0-beta.2 — Universelles Linux Sicherheitsgewebe // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidenz-Ledger // AES-256-GCM verschlüsselter Vault // Reversible Härtung // AstraeaOS-nativer Adapter // Getrennte Vertrauensdomänen // Keine Cloud-Control-Plane // AGPL-3.0-only // Linux x86_64*
+*VGT GeDefense 5.1.0-beta.3 — Universelles Linux Sicherheitsgewebe // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidenz-Ledger // AES-256-GCM verschlüsselter Vault // Reversible Härtung // AstraeaOS-nativer Adapter // Getrennte Vertrauensdomänen // Keine Cloud-Control-Plane // AGPL-3.0-only // Linux x86_64*
 
 </div>

@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"time"
 )
@@ -38,6 +39,11 @@ import (
 //
 // The guard writes nothing into a report path: every transition is an event on the platform's own
 // stream, which the evidence ledger signs.
+
+// errMitigationProbeUnavailable marks a probe that cannot observe the host from this process
+// (typically a permission boundary on a runtime socket). It is not a regression: treating it as one
+// would revert a valid mitigation because the monitor cannot look, not because the host broke.
+var errMitigationProbeUnavailable = errors.New("mitigation probe cannot observe the host")
 
 const (
 	mitigationStateIdle      = "idle"
@@ -88,7 +94,22 @@ type MitigationStatus struct {
 	WatchUntil  *time.Time             `json:"watch_until,omitempty"`
 	Failures    int                    `json:"probing_failures"`
 	Drift       int                    `json:"drift_corrections"`
+	Warnings    []string               `json:"warnings,omitempty"`
+	Auxiliary   []AuxiliaryMitigation  `json:"auxiliary,omitempty"`
 	Transitions []MitigationTransition `json:"transitions,omitempty"`
+}
+
+// AuxiliaryMitigation is a second catalogue control the guard actively re-asserts while it is in
+// force. It is not a replacement for the single probation-managed primary record; it closes the
+// "both CVEs are active but only one is held by the guard" gap without inventing a second rollback
+// state machine for controls that have no host probe of their own.
+type AuxiliaryMitigation struct {
+	Control   string `json:"control"`
+	Key       string `json:"key"`
+	Desired   string `json:"desired"`
+	Previous  string `json:"previous,omitempty"`
+	Current   string `json:"current,omitempty"`
+	AdoptedAt string `json:"adopted_at,omitempty"`
 }
 
 type mitigationRecord struct {
@@ -102,17 +123,18 @@ type mitigationRecord struct {
 
 // MitigationGuard applies one catalogue mitigation and watches the host while it is in force.
 type MitigationGuard struct {
-	mu       sync.Mutex
-	core     mitigationCore
-	exposure *kernelExposureCache
-	cfg      AdvisoryConfig
-	state    *State
-	probes   []MitigationProbe
-	now      func() time.Time
-	record   *mitigationRecord
-	cancel   context.CancelFunc
-	watch    time.Duration
-	interval time.Duration
+	mu        sync.Mutex
+	core      mitigationCore
+	exposure  *kernelExposureCache
+	cfg       AdvisoryConfig
+	state     *State
+	probes    []MitigationProbe
+	now       func() time.Time
+	record    *mitigationRecord
+	auxiliary []AuxiliaryMitigation
+	cancel    context.CancelFunc
+	watch     time.Duration
+	interval  time.Duration
 	// StatePath overrides where the applied mitigation is recorded (tests use a temp dir).
 	StatePath string
 	// stateMACKey is the HMAC-SHA256 subkey derived from the runtime settings key. It
@@ -144,7 +166,16 @@ func (g *MitigationGuard) Status() MitigationStatus {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	if g.record == nil {
-		return MitigationStatus{State: mitigationStateIdle, Enabled: g.cfg.AutoMitigate}
+		status := MitigationStatus{State: mitigationStateIdle, Enabled: g.cfg.AutoMitigate}
+		status.Auxiliary = append([]AuxiliaryMitigation(nil), g.auxiliary...)
+		if g.core != nil {
+			for i := range status.Auxiliary {
+				if current, err := g.core.SysctlGet(status.Auxiliary[i].Key); err == nil {
+					status.Auxiliary[i].Current = current
+				}
+			}
+		}
+		return status
 	}
 	status := g.record.status
 	status.Enabled = g.cfg.AutoMitigate
@@ -159,7 +190,35 @@ func (g *MitigationGuard) Status() MitigationStatus {
 			}
 		}
 	}
+	status.Auxiliary = append([]AuxiliaryMitigation(nil), g.auxiliary...)
+	if g.core != nil {
+		for i := range status.Auxiliary {
+			if current, err := g.core.SysctlGet(status.Auxiliary[i].Key); err == nil {
+				status.Auxiliary[i].Current = current
+			}
+		}
+	}
 	return status
+}
+
+// noteProbeUnobserved makes the visibility limit explicit instead of silently discarding it. It is
+// deliberately not a failure: a control-plane process that cannot read a root-owned socket must not
+// roll back a valid mitigation. The warning is surfaced in the status/evidence stream.
+func (g *MitigationGuard) noteProbeUnobserved(name string, probeErr error) {
+	message := fmt.Sprintf("health probe %q returned UNOBSERVED (permission/visibility limit: %v); it was not treated as a host regression", name, probeErr)
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.record == nil {
+		return
+	}
+	for _, existing := range g.record.status.Warnings {
+		if existing == message {
+			return
+		}
+	}
+	g.record.status.Warnings = append(g.record.status.Warnings, message)
+	g.record.status.Transitions = append(g.record.status.Transitions, MitigationTransition{At: g.now(), Kind: "probe-unobserved", Detail: message})
+	go g.emit("warning", "kernel.mitigation_probe_unobserved", message)
 }
 
 // Plan answers what the guard would do without doing it. It is the dry-run an operator uses before
@@ -253,8 +312,127 @@ func mitigationTargetFor(entryPoint string) (mitigationTarget, bool) {
 	switch entryPoint {
 	case "user-namespace":
 		return mitigationTarget{control: "kernel.userns", key: "kernel.unprivileged_userns_clone", desired: "0"}, true
+	case "mptcp-enabled":
+		return mitigationTarget{control: "network.mptcp", key: "net.mptcp.enabled", desired: "0"}, true
 	}
 	return mitigationTarget{}, false
+}
+
+// AdoptAuxiliaryTargets closes every other reachable, catalogue-managed entry point while the
+// guard is already holding the primary mitigation. It runs at startup (the two CVE-2026-98432 /
+// CVE-2026-99999 controls are independent) and the watcher re-asserts the values on every tick.
+// An auxiliary control has no probation state of its own: it is a sysctl switch, not a privileged
+// host mutation, and the primary record remains the rollback authority.
+func (g *MitigationGuard) AdoptAuxiliaryTargets(reason string) error {
+	g.mu.Lock()
+	if !g.cfg.Enabled || g.exposure == nil || g.core == nil {
+		g.mu.Unlock()
+		return nil
+	}
+	exposure := g.exposure.Current()
+	primaryKey := ""
+	if g.record != nil {
+		primaryKey = g.record.status.Key
+	}
+	g.mu.Unlock()
+
+	adopted := false
+	for _, match := range exposure.Advisories {
+		if match.Verdict == kernelVerdictUnaffected || match.Reachability == 0 {
+			continue
+		}
+		for _, entryPoint := range match.EntryPoints {
+			target, ok := mitigationTargetFor(entryPoint)
+			if !ok || target.key == primaryKey {
+				continue
+			}
+			// Adopt every catalogued auxiliary control for a reachable advisory, even when
+			// its precondition is already closed: the point is that the guard, not a static
+			// sysctl.d file, keeps holding the value across drift and restarts.
+			g.mu.Lock()
+			before := len(g.auxiliary)
+			err := g.adoptAuxiliaryTargetLocked(target, reason)
+			after := len(g.auxiliary)
+			g.mu.Unlock()
+			if err != nil {
+				// A missing/unsupported auxiliary sysctl is not a reason to fail the
+				// primary mitigation; log the visibility limit and continue.
+				log.Printf("kernel mitigation: auxiliary %s not adoptable: %v", target.key, err)
+				continue
+			}
+			if after > before {
+				adopted = true
+			}
+		}
+	}
+	if adopted {
+		g.startWatcher()
+	}
+	return nil
+}
+
+// adoptAuxiliaryTargetLocked adds one target to the guard-held auxiliary set. The caller holds
+// g.mu; the privileged read/write is bounded to the same compare-set path as the primary control.
+func (g *MitigationGuard) adoptAuxiliaryTargetLocked(target mitigationTarget, reason string) error {
+	for _, existing := range g.auxiliary {
+		if existing.Key == target.key {
+			return nil
+		}
+	}
+	current, err := g.core.SysctlGet(target.key)
+	if err != nil {
+		return fmt.Errorf("auxiliary mitigation %s could not be read: %w", target.key, err)
+	}
+	if current != target.desired {
+		if err := g.core.SysctlCompareSet(target.key, current, target.desired); err != nil {
+			return fmt.Errorf("auxiliary mitigation %s was refused: %w", target.key, err)
+		}
+	}
+	got, err := g.core.SysctlGet(target.key)
+	if err != nil || got != target.desired {
+		return fmt.Errorf("auxiliary mitigation %s did not verify (got %q, err %v)", target.key, got, err)
+	}
+	adopted := AuxiliaryMitigation{
+		Control: target.control, Key: target.key, Desired: target.desired,
+		Previous: current, Current: got, AdoptedAt: g.now().Format(time.RFC3339),
+	}
+	g.auxiliary = append(g.auxiliary, adopted)
+	go g.emit("info", "kernel.mitigation_auxiliary_adopted", fmt.Sprintf(
+		"Auxiliary managed control %s=%s is now held and re-asserted by the mitigation guard (was %s; %s)",
+		target.key, target.desired, current, reason))
+	return nil
+}
+
+// assertAuxiliary re-asserts every guard-held auxiliary value outside the primary probation window.
+func (g *MitigationGuard) assertAuxiliary() {
+	g.mu.Lock()
+	aux := append([]AuxiliaryMitigation(nil), g.auxiliary...)
+	g.mu.Unlock()
+	for i := range aux {
+		current, err := g.core.SysctlGet(aux[i].Key)
+		if err != nil {
+			g.emit("warning", "kernel.mitigation_auxiliary_unreadable", fmt.Sprintf(
+				"Auxiliary managed control %s could not be read: %v", aux[i].Key, err))
+			continue
+		}
+		if current != aux[i].Desired {
+			if err := g.core.SysctlCompareSet(aux[i].Key, current, aux[i].Desired); err != nil {
+				g.emit("high", "kernel.mitigation_auxiliary_drift_failed", fmt.Sprintf(
+					"Auxiliary managed control %s drifted to %q and could not be re-asserted: %v", aux[i].Key, current, err))
+				continue
+			}
+			g.emit("high", "kernel.mitigation_auxiliary_drift", fmt.Sprintf(
+				"Auxiliary managed control %s was changed outside GeDefense to %q and has been re-asserted to %s",
+				aux[i].Key, current, aux[i].Desired))
+		}
+		g.mu.Lock()
+		for j := range g.auxiliary {
+			if g.auxiliary[j].Key == aux[i].Key {
+				g.auxiliary[j].Current = aux[i].Desired
+			}
+		}
+		g.mu.Unlock()
+	}
 }
 
 // Apply is the operator's explicit intervention. It changes the value even when the automatic path is
@@ -466,9 +644,13 @@ func (g *MitigationGuard) watchLoop(ctx context.Context) {
 func (g *MitigationGuard) tick(ctx context.Context) bool {
 	g.mu.Lock()
 	record := g.record
+	hasAuxiliary := len(g.auxiliary) > 0
 	if record == nil {
 		g.mu.Unlock()
-		return true
+		if hasAuxiliary {
+			g.assertAuxiliary()
+		}
+		return !hasAuxiliary
 	}
 	key, desired := record.status.Key, record.status.Desired
 	inWindow := !record.stable && g.now().Before(*record.status.WatchUntil)
@@ -494,6 +676,9 @@ func (g *MitigationGuard) tick(ctx context.Context) bool {
 		g.emit("high", "kernel.mitigation_drift", fmt.Sprintf(
 			"%s was changed outside GeDefense to %q and has been re-asserted to %s", key, current, desired))
 	}
+
+	// 1b. Auxiliary controls have no probation; re-assert them on every cycle.
+	g.assertAuxiliary()
 
 	// 2. Probation: probes run while the host is still proving that it tolerates the change, and the
 	// window closes on the first tick that lands after its deadline - including the case where no tick
@@ -532,6 +717,11 @@ func (g *MitigationGuard) probeAll(ctx context.Context) error {
 		probeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		err := probe.Check(probeCtx)
 		cancel()
+		if errors.Is(err, errMitigationProbeUnavailable) {
+			log.Printf("kernel mitigation: probe %q cannot observe the host; not treating it as a regression", probe.Name)
+			g.noteProbeUnobserved(probe.Name, err)
+			continue
+		}
 		if err != nil {
 			return fmt.Errorf("health probe %q failed after the change: %w", probe.Name, err)
 		}
@@ -632,6 +822,12 @@ func DefaultMitigationProbes(corePing func(context.Context) error) []MitigationP
 			dialer := net.Dialer{Timeout: 3 * time.Second}
 			connection, err := dialer.DialContext(ctx, "unix", socket)
 			if err != nil {
+				// The control plane runs as an unprivileged user. A socket that exists but is
+				// not reachable from this uid is a visibility limit, not evidence that the
+				// runtime broke; returning a failure here would auto-revert a valid mitigation.
+				if errors.Is(err, os.ErrPermission) || strings.Contains(strings.ToLower(err.Error()), "permission denied") {
+					return errMitigationProbeUnavailable
+				}
 				return fmt.Errorf("the container runtime socket is not answering: %w", err)
 			}
 			return connection.Close()

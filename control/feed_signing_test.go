@@ -287,24 +287,34 @@ func TestLocalFeedSigningPipelineEndToEnd(t *testing.T) {
 	}
 }
 
-func TestLocalFeedSigningFailsClosedWithoutPinnedKey(t *testing.T) {
-	// No pinned key at all: the pipeline must refuse before downloading anything.
+func TestLocalFeedSigningSelfHealsMissingPinAndFailsClosedOnRotation(t *testing.T) {
+	// Opt-in local signing with an operator key but no pinned public key is the
+	// documented self-heal case: the marker records the key, the sync proceeds.
 	env := newFeedSigningTestEnv(t, func(cfg *FeedConfig) {
 		cfg.TrustedSigningKeys = nil
 	})
-	_, errs := env.sync(t)
-	if len(errs) == 0 {
-		t.Fatal("local signing without a pinned key was accepted")
+	items, errs := env.sync(t)
+	if len(errs) != 0 {
+		t.Fatalf("self-heal sync reported errors: %v", errs)
 	}
-	if !strings.Contains(errs["local_signing"].Error(), "pinned") {
-		t.Fatalf("unexpected fail-closed error: %v", errs["local_signing"])
+	if len(items) == 0 {
+		t.Fatal("self-heal sync produced no indicators")
 	}
-	if env.transport.requestCount() != 0 {
-		t.Fatal("local signing downloaded sources before the trust anchor was proven")
+	markerPath := filepath.Join(env.stateDir, feedSigningSelfHealMarkerFile)
+	if _, err := os.Lstat(markerPath); err != nil {
+		t.Fatalf("feed signing self-heal marker missing: %v", err)
 	}
+	pins := env.manager.localSigningPolicy().pinnedKeys
+	if len(pins) != 1 || !pins[0].Equal(env.publicKey) {
+		t.Fatalf("self-healed pin = %v, want the operator key", pins)
+	}
+	if _, err := env.manager.readSignedFeedManifest(env.manifestPath, pins, time.Hour); err != nil {
+		t.Fatalf("self-signed manifest does not verify: %v", err)
+	}
+	healEnv := env
 
-	// Pinned key does not match the operator key: signing would produce a
-	// manifest the manager itself refuses, so the pipeline stops before writing.
+	// A pinned foreign key remains a hard fail-closed error: self-heal must not
+	// override an explicit trust anchor.
 	foreignPublic, _, generateErr := ed25519.GenerateKey(rand.Reader)
 	if generateErr != nil {
 		t.Fatal(generateErr)
@@ -321,6 +331,37 @@ func TestLocalFeedSigningFailsClosedWithoutPinnedKey(t *testing.T) {
 	}
 	if _, statErr := os.Lstat(env.manifestPath); !errors.Is(statErr, os.ErrNotExist) {
 		t.Fatal("pipeline wrote a manifest whose signer is not pinned")
+	}
+
+	// A rotated operator key with the old self-heal marker must fail closed:
+	// rotation requires an explicit pin, not silent re-trust.
+	rotatedDir := filepath.Join(healEnv.dir, "rotated-keys")
+	if _, initErr := InitFeedSigning(rotatedDir, ""); initErr != nil {
+		t.Fatalf("rotate test key: %v", initErr)
+	}
+	rotatedEnv := &feedSigningTestEnv{
+		dir: healEnv.dir, stateDir: healEnv.stateDir,
+		privatePath: filepath.Join(rotatedDir, feedSigningPrivateKeyFile),
+		snapshotDir: healEnv.snapshotDir, manifestPath: healEnv.manifestPath,
+		transport: newFeedSigningTestTransport(),
+	}
+	rotatedCfg := FeedConfig{
+		Enabled: true, RefreshMinutes: 60, MaxDownloadBytes: 1 << 20, MaxEntries: 5000,
+		RequireSignedManifest: true, TrustedSigningKeys: nil,
+		ManifestPath: rotatedEnv.manifestPath, ManifestMaxAgeMinutes: 60,
+		LocalSigning: true, SigningKeyFile: rotatedEnv.privatePath, SnapshotDir: rotatedEnv.snapshotDir,
+	}
+	rotatedEnv.manager = NewFeedManager(rotatedCfg, rotatedEnv.stateDir)
+	rotatedEnv.manager.client = &http.Client{Transport: rotatedEnv.transport}
+	_, errs = rotatedEnv.sync(t)
+	if len(errs) == 0 {
+		t.Fatal("rotated operator key was silently re-pinned by self-heal")
+	}
+	if !strings.Contains(errs["local_signing"].Error(), "pinned") && !strings.Contains(errs["local_signing"].Error(), "trust anchor") {
+		t.Fatalf("unexpected rotation error: %v", errs["local_signing"])
+	}
+	if rotatedEnv.transport.requestCount() != 0 {
+		t.Fatal("rotated key downloaded sources before the trust anchor was verified")
 	}
 }
 

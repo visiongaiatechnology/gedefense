@@ -634,6 +634,10 @@ fn sysctl_spec(key: &str) -> Option<(&'static str, &'static [&'static str])> {
         "kernel.unprivileged_userns_clone" => {
             Some(("/proc/sys/kernel/unprivileged_userns_clone", &["0", "1"]))
         }
+        // CVE-2026-98432 reaches the IPv4 request-socket UAF through MPTCP. The mitigation
+        // guard must be able to read and compare-set this knob through the privileged core,
+        // exactly like the user-namespace boundary above. The kernel exposes 0 or 1.
+        "net.mptcp.enabled" => Some(("/proc/sys/net/mptcp/enabled", &["0", "1"])),
         "fs.protected_fifos" => Some(("/proc/sys/fs/protected_fifos", &["0", "1", "2"])),
         "fs.protected_regular" => Some(("/proc/sys/fs/protected_regular", &["0", "1", "2"])),
         "fs.suid_dumpable" => Some(("/proc/sys/fs/suid_dumpable", &["0", "1", "2"])),
@@ -2053,6 +2057,10 @@ mod tests {
             sysctl_spec("kernel.unprivileged_userns_clone").expect("allowlisted userns sysctl");
         assert_eq!(userns_path, "/proc/sys/kernel/unprivileged_userns_clone");
         assert_eq!(userns_domain, &["0", "1"]);
+        let (mptcp_path, mptcp_domain) =
+            sysctl_spec("net.mptcp.enabled").expect("allowlisted MPTCP mitigation");
+        assert_eq!(mptcp_path, "/proc/sys/net/mptcp/enabled");
+        assert_eq!(mptcp_domain, &["0", "1"]);
         assert!(sysctl_spec("user.max_user_namespaces").is_none());
         assert!(sysctl_spec("kernel.core_pattern").is_none());
         assert!(sysctl_spec("../kernel/kptr_restrict").is_none());

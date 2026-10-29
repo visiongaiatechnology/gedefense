@@ -17,7 +17,7 @@ import (
 	"time"
 )
 
-const version = "5.1.0-beta.2"
+const version = "5.1.0-beta.3"
 
 func detectInterface(requested string) (string, error) {
 	if requested != "" && requested != "auto" {
@@ -497,11 +497,17 @@ func main() {
 			case <-time.After(10 * time.Second):
 			}
 			mitigationGuard.HealIfUnasserted()
+			if err := mitigationGuard.AdoptAuxiliaryTargets("startup: managed auxiliary CVE control"); err != nil {
+				log.Printf("kernel mitigation: auxiliary control adoption not complete: %v", err)
+			}
 		}
 	}()
 	// A mitigation recorded by the previous run is re-established before anything else claims the host.
 	if err := mitigationGuard.Restore(); err != nil {
 		log.Printf("kernel mitigation: restore after restart not possible: %v", err)
+	}
+	if err := mitigationGuard.AdoptAuxiliaryTargets("startup: managed auxiliary CVE control"); err != nil {
+		log.Printf("kernel mitigation: auxiliary control adoption not possible yet: %v", err)
 	}
 	if cfg.Advisories.AutoMitigate {
 		go func() {

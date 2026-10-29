@@ -7,8 +7,8 @@
 ### Linux Security Fabric - Your Entenprise System
 
 [![License](https://img.shields.io/badge/License-AGPL--3.0--only-blue?style=for-the-badge)](https://www.gnu.org/licenses/agpl-3.0)
-[![Version](https://img.shields.io/badge/Version-5.1.0--beta.2-orange?style=for-the-badge)](#)
-[![Status](https://img.shields.io/badge/Status-Release_v5.1.0--beta.2-yellow?style=for-the-badge)](#)
+[![Version](https://img.shields.io/badge/Version-5.1.0--beta.3-orange?style=for-the-badge)](#)
+[![Status](https://img.shields.io/badge/Status-Release_v5.1.0--beta.3-yellow?style=for-the-badge)](#)
 [![Installer](https://img.shields.io/badge/Installer-Universal_Linux-green?style=for-the-badge)](#-quick-start)
 [![Platform](https://img.shields.io/badge/Platform-Linux_x86__64-lightgrey?style=for-the-badge&logo=linux)](#)
 [![Data Plane](https://img.shields.io/badge/Data_Plane-Rust_eBPF%2FXDP-red?style=for-the-badge&logo=rust)](#-architecture)
@@ -30,6 +30,14 @@
 
 </div>
 
+> **Update 5.1.0-beta.3 (2026-10-29) — Feed Self-Healing, CVE Response & Signed Release**
+>
+> - **Self-healing threat-intelligence feed:** a missing feed-signing trust anchor is bootstrapped from the opt-in local operator key through a rotation-safe marker; expired manifests are re-signed. A rotated key with an old marker still fails closed.
+> - **CVE-2026-98432 / CVE-2026-99999 response:** managed user-namespace and MPTCP countermeasures are actively held; kernel exposure remains explicitly visible until the Ubuntu kernel fix is installed.
+> - **Mitigation guard:** permission-limited probes are now reported as UNOBSERVED instead of being silently skipped, and no longer trigger a false auto-revert.
+> - **Signed release:** 5.1.0-beta.3 ships as a signed OneClick installer and reproducible source archive.
+
+
 > **GeDefense Ecosystem / Ökosystem / Экосистема / 生态系统:** [GeDefense WP](https://github.com/visiongaiatechnology/gedefensewp) — the WordPress side of the same security fabric.
 
 
@@ -50,6 +58,10 @@ GeDefense is one local-first security fabric — for Linux, Windows, Android and
 | [![Android](https://img.shields.io/badge/Android-22D3EE?style=flat-square&logo=android&logoColor=0B1220)](https://github.com/visiongaiatechnology/gedefenseandroid) **GeDefense Android** | Native Android security platform: local VPN enforcement, endpoint telemetry, XDR/EDR correlation, threat intelligence, app-risk analysis and encrypted evidence. |
 | [![WordPress](https://img.shields.io/badge/WordPress-1F8FFF?style=flat-square&logo=wordpress&logoColor=ffffff)](https://github.com/visiongaiatechnology/gedefensewp) **GeDefense WordPress** | AGPL-3.0 open-core suite for WordPress: ZEUS WAF, AEGIS deep-packet inspection, TRINITY XDR, ThroneGuard lockdown and HADES admin cloaking. |
 
+## 🆕 Release 5.1.0-beta.3 — Feed Self-Healing, CVE Response & Signed Release (2026-10-29)
+
+The signed threat-intelligence feed now self-heals its missing trust anchor/manifest bootstrap, the managed user-namespace + MPTCP controls are held together, and the release artifacts are signed with a fresh offline key. See `CHANGELOG.md`, `RELEASE-NOTES.md` and the latest release assets.
+
 ## 🆕 Release 5.1.0-beta.2 — Security Hardening (2026-10-27)
 
 Security hotfix for the 5.1.0-beta.1 CMS/bridge release. **Update is recommended before exposing the bridge.**
@@ -64,7 +76,7 @@ Security hotfix for the 5.1.0-beta.1 CMS/bridge release. **Update is recommended
 ---
 
 > [!WARNING]
-> **PUBLIC BETA — NOT PRODUCTION-READY (Version 5.1.0-beta.2).**  
+> **PUBLIC BETA — NOT PRODUCTION-READY (Version 5.1.0-beta.3).**  
 > GeDefense Titan and the Linux security fabric are in active development. This
 > beta is for test and qualification hosts only. The core architecture is
 > exercised by automated release gates, but public-CA release authenticity,
@@ -540,10 +552,10 @@ If the Gaia Cells runtime is **not present**, the adapter reports `runtime_not_i
 ### One-Click installer
 
 ```bash
-wget https://github.com/visiongaiatechnology/gedefense/releases/download/v5.1.0-beta.2/GeDefense-5.1.0-beta.2-OneClick.run
-sha256sum --check GeDefense-5.1.0-beta.2-OneClick.run.sha256
-chmod 700 GeDefense-5.1.0-beta.2-OneClick.run
-sudo ./GeDefense-5.1.0-beta.2-OneClick.run
+wget https://github.com/visiongaiatechnology/gedefense/releases/download/v5.1.0-beta.3/VGT_GeDefense_Beta_v5_5.1.0-beta.3_OneClick.run
+sha256sum --check VGT_GeDefense_Beta_v5_5.1.0-beta.3_OneClick.run.sha256
+chmod 700 VGT_GeDefense_Beta_v5_5.1.0-beta.3_OneClick.run
+sudo ./VGT_GeDefense_Beta_v5_5.1.0-beta.3_OneClick.run
 ```
 
 The installer is source-self-contained and verifies its signed release index,
@@ -901,6 +913,6 @@ these assets locally; no runtime CDN or cloud lookup is used.
 
 [![VGT](https://img.shields.io/badge/VisionGaia-Technology-cyan?style=for-the-badge)](https://visiongaiatechnology.de)
 
-*VGT GeDefense 5.1.0-beta.2 — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
+*VGT GeDefense 5.1.0-beta.3 — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
 
 </div>

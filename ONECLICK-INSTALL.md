@@ -1,22 +1,21 @@
-# GeDefense 5.1.0-beta.2 One-Click Installer
+# GeDefense 5.1.0-beta.3 One-Click Installer
 
 ## Install / Upgrade
 
 ```bash
-chmod +x GeDefense-5.1.0-beta.2-OneClick.run
-sudo ./GeDefense-5.1.0-beta.2-OneClick.run
+chmod +x VGT_GeDefense_Beta_v5_5.1.0-beta.3_OneClick.run
+sudo ./VGT_GeDefense_Beta_v5_5.1.0-beta.3_OneClick.run
 ```
 
-The installer is source-self-contained. It verifies the embedded payload and its
-per-file SHA-256 manifest, downloads the pinned Go 1.27.3 Linux/x86_64 toolchain
-when necessary and verifies its official SHA-256 checksum, builds and tests the
-Go control/gateway binaries, and then hands off to the existing transactional
-GeDefense full-stack installer.
+The signed installer verifies its embedded Ed25519-signed release index,
+release manifest and payload SHA-256 bindings before any privileged action. It
+then hands off to the transactional GeDefense full-stack installer, which stages
+a versioned release, validates systemd and authenticated health paths, and rolls
+back the previous installation if activation fails.
 
-The transactional stage installs the pinned Rust toolchains, builds/tests the
-Rust broker and eBPF program on the destination host, stages a versioned release,
-validates systemd and authenticated health paths, and rolls back the previous
-installation if activation fails.
+The published 5.1.0-beta.3 installer is a prebuilt, signed release: the control,
+gateway, Rust core and eBPF artifacts are the exact binaries covered by the
+signed release manifest and SBOM.
 
 Fresh installations prompt for the public host/port, optional management CIDR,
 and a dashboard password. Existing compatible configuration and secrets are
@@ -25,17 +24,14 @@ preserved transactionally.
 ## Non-destructive verification
 
 ```bash
-./GeDefense-5.1.0-beta.2-OneClick.run --self-test
+sha256sum --check VGT_GeDefense_Beta_v5_5.1.0-beta.3_OneClick.run.sha256
+./VGT_GeDefense_Beta_v5_5.1.0-beta.3_OneClick.run --help
 ```
 
-This verifies the embedded archive, per-file payload manifest, installer shell
-syntax and Linux integration contract. It also reports host readiness without
-changing packages, services, firewall state or files under `/opt`, `/etc` or
-`/var/lib`.
-
-`PENDING` is not a failure. It means a capability such as active systemd, bpffs,
-bpftool, Rust or the pinned Go toolchain is not available in the environment
-running the self-test and will need to be provided/installed for a real install.
+The installer verifies its signed release index and manifest internally before
+any privileged action; `--help` prints the supported options without modifying
+the host. The build pipeline's final offline verification is the authoritative
+artifact check (signed manifest/index, SBOM, provenance and SHA256SUMS).
 
 ## Supported install target
 

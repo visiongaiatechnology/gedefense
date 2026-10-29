@@ -150,6 +150,132 @@ func TestClassifyAdvisoryNeverInventsUnaffected(t *testing.T) {
 	}
 }
 
+// TestCVE202698432Classification pins the version statements for the TCP UAF: the Ubuntu HWE
+// build that the vendor has marked unfixed is vulnerable; a build above that bound is unknown, not
+// safe; the mainline and Debian fixed builds are unaffected.
+func TestCVE202698432Classification(t *testing.T) {
+	var advisory KernelAdvisory
+	for _, candidate := range kernelAdvisories() {
+		if candidate.ID == "CVE-2026-98432" {
+			advisory = candidate
+		}
+	}
+	if advisory.ID == "" {
+		t.Fatal("CVE-2026-98432 is not in the advisory catalogue")
+	}
+	cases := []struct {
+		name     string
+		release  string
+		channel  string
+		expected KernelVerdict
+		reason   string
+	}{
+		{"ubuntu HWE build marked unfixed", "7.0.0-38-generic", "ubuntu-noble", kernelVerdictVulnerable, "at or below"},
+		{"ubuntu HWE last bounded build", "7.0.0-42-generic", "ubuntu-noble", kernelVerdictVulnerable, "at or below"},
+		{"above the vendor bound is not declared safe", "7.0.0-43-generic", "ubuntu-noble", kernelVerdictUnknown, "backport cannot be excluded"},
+		{"mainline fix release", "7.3.0-1", "mainline", kernelVerdictUnaffected, "mainline fix"},
+		{"debian trixie fixed build", "6.12.113-1", "debian-trixie", kernelVerdictUnaffected, "at or above"},
+		{"debian trixie previous build", "6.12.112-1", "debian-trixie", kernelVerdictVulnerable, "below"},
+		{"debian bookworm backport", "6.1.190-1", "debian-bookworm", kernelVerdictUnaffected, "at or above"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			match := classifyAdvisory(advisory, KernelIdentity{Release: tc.release, Channel: tc.channel})
+			if match.Verdict != tc.expected {
+				t.Fatalf("verdict = %q want %q (%s)", match.Verdict, tc.expected, match.Reason)
+			}
+			if !strings.Contains(match.Reason, tc.reason) {
+				t.Fatalf("reason %q does not name %q", match.Reason, tc.reason)
+			}
+		})
+	}
+}
+
+// TestMPTCPAndTCPListenerProbes proves the two new entry points are measured only from facts the
+// process can actually read. Missing proc files stay unmeasured, never "closed".
+func TestMPTCPAndTCPListenerProbes(t *testing.T) {
+	source := newFakeExposureSource()
+	source.files["/proc/sys/net/mptcp/enabled"] = "1\n"
+	source.files["/proc/net/tcp"] = "  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode\n" +
+		"   0: 00000000:0016 00000000:0000 0A 00000000:00000000 00:00000000 00000000     0        0 111 1 0 100 0 0 10 0\n" +
+		"   1: 0100007F:1F90 00000000:0000 0A 00000000:00000000 00:00000000 00000000     0        0 222 1 0 100 0 0 10 0\n" +
+		"   3: 0200007F:1F92 00000000:0000 0A 00000000:00000000 00:00000000 00000000     0        0 444 1 0 100 0 0 10 0\n" +
+		"   2: 0100007F:1F91 0100007F:9000 08 00000000:00000000 00:00000000 00000000     0        0 333 1 0 100 0 0 10 0\n"
+	byID := map[string]KernelPrecondition{}
+	for _, precondition := range readKernelPreconditions(source) {
+		byID[precondition.ID] = precondition
+	}
+	if p := byID["mptcp-enabled"]; !p.Measured || !p.Present {
+		t.Fatalf("mptcp-enabled = %+v, want measured and present", p)
+	}
+	if p := byID["tcp-listener"]; !p.Measured || !p.Present || !strings.Contains(p.Evidence, "3 IPv4 TCP listener") {
+		t.Fatalf("tcp-listener = %+v, want three listeners", p)
+	}
+	if p := byID["tcp-listener"]; !strings.Contains(p.Evidence, "1 bound beyond loopback") {
+		t.Fatalf("tcp-listener loopback split = %q", p.Evidence)
+	}
+
+	source.files["/proc/sys/net/mptcp/enabled"] = "0\n"
+	source.files["/proc/net/tcp"] = "  sl  local_address rem_address   st\n" +
+		"   0: 0100007F:1F91 0100007F:9000 08 00000000:00000000 00:00000000 00000000     0        0 333 1 0 100 0 0 10 0\n"
+	byID = map[string]KernelPrecondition{}
+	for _, precondition := range readKernelPreconditions(source) {
+		byID[precondition.ID] = precondition
+	}
+	if p := byID["mptcp-enabled"]; !p.Measured || p.Present {
+		t.Fatalf("disabled MPTCP = %+v, want measured and absent", p)
+	}
+	if p := byID["tcp-listener"]; !p.Measured || p.Present {
+		t.Fatalf("non-listening TCP table = %+v, want measured and absent", p)
+	}
+
+	unreadable := newFakeExposureSource()
+	byID = map[string]KernelPrecondition{}
+	for _, precondition := range readKernelPreconditions(unreadable) {
+		byID[precondition.ID] = precondition
+	}
+	if p := byID["mptcp-enabled"]; p.Measured || p.Present {
+		t.Fatalf("unreadable MPTCP became a measurement: %+v", p)
+	}
+	if p := byID["tcp-listener"]; p.Measured || p.Present {
+		t.Fatalf("unreadable TCP table became a measurement: %+v", p)
+	}
+}
+
+// TestExposureOnServerLikeUbuntuHost is the end-to-end case that matters for the production host:
+// Ubuntu 24.04 HWE 7.0.0-38, MPTCP enabled, at least one TCP listener. It must produce a vulnerable
+// verdict and a high exposure score, while naming the limitation that no MPTCP listener was proven.
+func TestExposureOnServerLikeUbuntuHost(t *testing.T) {
+	source := newFakeExposureSource()
+	source.files["/proc/sys/kernel/osrelease"] = "7.0.0-38-generic\n"
+	source.files["/etc/os-release"] = "ID=ubuntu\nVERSION_CODENAME=noble\nVERSION_ID=\"24.04\"\n"
+	source.files["/proc/sys/net/mptcp/enabled"] = "1\n"
+	source.files["/proc/net/tcp"] = "  sl  local_address rem_address   st\n" +
+		"   0: 00000000:0016 00000000:0000 0A 00000000:00000000 00:00000000 00000000     0        0 111 1 0 100 0 0 10 0\n"
+	exposure := evaluateKernelExposure(source, kernelAdvisories(), time.Unix(1_800_000_000, 0).UTC())
+	if exposure.Verdict != kernelVerdictVulnerable {
+		t.Fatalf("verdict = %q (%s)", exposure.Verdict, exposure.UnknownReason)
+	}
+	var match KernelAdvisoryMatch
+	for _, candidate := range exposure.Advisories {
+		if candidate.ID == "CVE-2026-98432" {
+			match = candidate
+		}
+	}
+	if match.Verdict != kernelVerdictVulnerable {
+		t.Fatalf("CVE verdict = %q (%s)", match.Verdict, match.Reason)
+	}
+	if match.Reachability != 100 {
+		t.Fatalf("CVE reachability = %d, want 100", match.Reachability)
+	}
+	if exposure.Score != 100 || exposure.Grade != "EXPOSED" {
+		t.Fatalf("exposure score=%d grade=%s, want 100/EXPOSED", exposure.Score, exposure.Grade)
+	}
+	if !strings.Contains(match.Detects, "cannot detect the internal request-socket race") {
+		t.Fatalf("detection limit not stated: %q", match.Detects)
+	}
+}
+
 func TestKernelReachabilityIsWeighted(t *testing.T) {
 	none := readKernelPreconditions(newFakeExposureSource())
 	for _, precondition := range none {
@@ -225,7 +351,9 @@ func TestEvaluateKernelExposureOnTwoHosts(t *testing.T) {
 	}
 
 	open := newFakeExposureSource()
-	open.files["/proc/sys/kernel/osrelease"] = "7.0.0-31-generic\n"
+	// Above the vendor's last known-unfixed Ubuntu HWE build: still below the mainline fix,
+	// so the honest verdict is unknown - not "safe". The 7.0.0-38 case is covered separately.
+	open.files["/proc/sys/kernel/osrelease"] = "7.0.0-43-generic\n"
 	open.files["/etc/os-release"] = "ID=ubuntu\nVERSION_CODENAME=noble\nVERSION_ID=\"24.04\"\n"
 	open.modes["/dev/net/tun"] = 0o666
 	open.files["/proc/sys/kernel/unprivileged_userns_clone"] = "1\n"
@@ -282,6 +410,21 @@ func TestKernelAdvisoryCatalogueIsComplete(t *testing.T) {
 		for _, entryPoint := range advisory.EntryPoints {
 			if !known[entryPoint] {
 				t.Fatalf("%s names the unmeasurable entry point %q", advisory.ID, entryPoint)
+			}
+		}
+		for channel, bound := range advisory.DistroVulnerableThrough {
+			boundVersion, boundOK := parseKernelVersion(bound)
+			if !boundOK {
+				t.Fatalf("%s has an unparsable known-vulnerable bound %q for %s", advisory.ID, bound, channel)
+			}
+			if fixed, exists := advisory.DistroFix[channel]; exists {
+				fixedVersion, fixedOK := parseKernelVersion(fixed)
+				if !fixedOK {
+					t.Fatalf("%s has an unparsable fixed version %q for %s", advisory.ID, fixed, channel)
+				}
+				if compareKernelVersion(boundVersion, fixedVersion) >= 0 {
+					t.Fatalf("%s marks %s as unfixed through %s but also as fixed in %s", advisory.ID, channel, bound, fixed)
+				}
 			}
 		}
 		if len(advisory.Mitigations) == 0 {

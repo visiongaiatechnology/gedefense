@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# VGT GeDefense 5.1.0-beta.2 Universal Linux One-Click Installer
+# VGT GeDefense 5.1.0-beta.3 Universal Linux One-Click Installer
 set -Eeuo pipefail
 umask 0077
 
-readonly SETUP_VERSION="5.1.0-beta.2"
-readonly PRODUCT_VERSION="5.1.0-beta.2"
+readonly SETUP_VERSION="5.1.0-beta.3"
+readonly PRODUCT_VERSION="5.1.0-beta.3"
 readonly PAYLOAD_SHA256="__PAYLOAD_SHA256__"
 readonly CONTROL_SHA256="__CONTROL_SHA256__"
 readonly ACCESS_SHA256="__ACCESS_SHA256__"

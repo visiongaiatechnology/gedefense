@@ -510,6 +510,94 @@ func verifyFeedSigningManifest(document threatFeedManifestDocument, keys []ed255
 // FeedManager local-signing methods
 // ---------------------------------------------------------------------------
 
+// feedSigningSelfHealMarkerFile records the local feed-signing public key that
+// this host already trusted through the opt-in local-signing pipeline. It is a
+// public-key marker, not a secret. A marker that no longer matches the operator
+// key is a rotation/compromise signal and must fail closed instead of silently
+// re-pinning a new key.
+const feedSigningSelfHealMarkerFile = "feed-signing.self-heal.json"
+
+type feedSigningSelfHealMarker struct {
+	Schema    string `json:"schema"`
+	PublicKey string `json:"public_key"`
+}
+
+// selfHealFeedSigningPin is the narrow bootstrap for the documented operational
+// failure: local_signing=true, an operator key exists, but
+// feeds.trusted_signing_keys was never provisioned. The explicit opt-in, a
+// secure 0600/0640 key file and a stable self-heal marker are required. A
+// rotation (new key, old marker) fails closed and requires an operator pin.
+func selfHealFeedSigningPin(cfg FeedConfig, stateDir string) (ed25519.PublicKey, bool, error) {
+	if !cfg.LocalSigning || !cfg.RequireSignedManifest || len(cfg.TrustedSigningKeys) != 0 {
+		return nil, false, nil
+	}
+	keyFile := strings.TrimSpace(cfg.SigningKeyFile)
+	if keyFile == "" {
+		return nil, false, errors.New("feeds.local_signing requires feeds.signing_key_file for self-healing")
+	}
+	key, err := loadFeedSigningKeyPair(keyFile)
+	if err != nil {
+		return nil, false, err
+	}
+	markerPath := filepath.Join(stateDir, feedSigningSelfHealMarkerFile)
+	if err := os.MkdirAll(stateDir, 0o700); err != nil {
+		return nil, false, fmt.Errorf("prepare feed signing self-heal state: %w", err)
+	}
+	if info, statErr := os.Lstat(markerPath); statErr == nil {
+		if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
+			return nil, false, errors.New("feed signing self-heal marker must be a regular non-symlink file")
+		}
+		raw, readErr := os.ReadFile(markerPath)
+		if readErr != nil {
+			return nil, false, fmt.Errorf("read feed signing self-heal marker: %w", readErr)
+		}
+		var marker feedSigningSelfHealMarker
+		if decodeErr := json.Unmarshal(raw, &marker); decodeErr != nil || marker.Schema != "vgt.feed-signing.self-heal/v1" {
+			return nil, false, errors.New("feed signing self-heal marker is malformed")
+		}
+		if marker.PublicKey != feedSigningPublicKeyBase64(key.public) {
+			return nil, false, errors.New("feed signing self-heal marker does not match the operator key; explicit pin required after rotation")
+		}
+		return key.public, true, nil
+	} else if !errors.Is(statErr, os.ErrNotExist) {
+		return nil, false, fmt.Errorf("inspect feed signing self-heal marker: %w", statErr)
+	}
+	marker, err := json.Marshal(feedSigningSelfHealMarker{
+		Schema: "vgt.feed-signing.self-heal/v1", PublicKey: feedSigningPublicKeyBase64(key.public),
+	})
+	if err != nil {
+		return nil, false, err
+	}
+	tmp := markerPath + ".tmp"
+	file, err := os.OpenFile(tmp, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		// A concurrent self-heal may have created the marker first; re-read it
+		// instead of guessing.
+		if errors.Is(err, os.ErrExist) {
+			return key.public, true, nil
+		}
+		return nil, false, err
+	}
+	cleanup := func() { _ = file.Close(); _ = os.Remove(tmp) }
+	if _, err := file.Write(marker); err != nil {
+		cleanup()
+		return nil, false, err
+	}
+	if err := file.Sync(); err != nil {
+		cleanup()
+		return nil, false, err
+	}
+	if err := file.Close(); err != nil {
+		_ = os.Remove(tmp)
+		return nil, false, err
+	}
+	if err := os.Rename(tmp, markerPath); err != nil {
+		_ = os.Remove(tmp)
+		return nil, false, err
+	}
+	return key.public, true, nil
+}
+
 // localSigningPolicy snapshots the bootstrap local-signing configuration. The
 // policy is immutable after construction (only bootstrap config carries it), so
 // the copy is safe to use while the manager lock is not held.

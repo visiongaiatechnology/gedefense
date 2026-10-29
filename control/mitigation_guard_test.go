@@ -417,6 +417,84 @@ func TestMitigationStateTamperIsRefused(t *testing.T) {
 	}
 }
 
+// TestMitigationProbeUnavailableIsNotARegression pins the distinction the live host exposed: an
+// unprivileged control plane cannot connect to the root-owned Docker socket, but that is a visibility
+// limit, not a broken runtime. The mitigation must survive the probation instead of being reverted.
+func TestMitigationProbeUnavailableIsNotARegression(t *testing.T) {
+	fixture := newGuardFixture(t, true, MitigationProbe{
+		Name: "container-runtime",
+		Check: func(context.Context) error {
+			return errMitigationProbeUnavailable
+		},
+	})
+	if _, err := fixture.guard.Apply("test"); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	defer fixture.guard.Close()
+	// Run one probe while the probation window is still open, so the visibility limit is
+	// actually observed and surfaced; then close the window and confirm it is not a failure.
+	fixture.advance(30 * time.Second)
+	fixture.guard.tick(context.Background())
+	status := fixture.guard.Status()
+	if len(status.Warnings) == 0 || !strings.Contains(status.Warnings[0], "UNOBSERVED") {
+		t.Fatalf("unobservable probe was not surfaced in status warnings: %+v", status)
+	}
+	fixture.advance(2 * time.Minute)
+	fixture.guard.tick(context.Background())
+	status = fixture.guard.Status()
+	if status.Failures != 0 {
+		t.Fatalf("probe visibility limit was counted as a failure: %+v", status)
+	}
+	if status.State != mitigationStateStable {
+		t.Fatalf("mitigation state = %q, want %q: %+v", status.State, mitigationStateStable, status)
+	}
+	if got := fixture.core.get("kernel.unprivileged_userns_clone"); got != "0" {
+		t.Fatalf("mitigation was reverted by an unobservable probe: %q", got)
+	}
+}
+
+// TestMitigationGuardHoldsAuxiliaryControls pins the multi-CVE gap: the primary probation record
+// owns the user-namespace switch, while MPTCP is adopted as an actively re-asserted auxiliary
+// control instead of being left to a static sysctl.d file.
+func TestMitigationGuardHoldsAuxiliaryControls(t *testing.T) {
+	fixture := newGuardFixture(t, false)
+	fixture.core.set("net.mptcp.enabled", "1")
+	target, ok := mitigationTargetFor("mptcp-enabled")
+	if !ok {
+		t.Fatal("mptcp target missing")
+	}
+	fixture.guard.mu.Lock()
+	err := fixture.guard.adoptAuxiliaryTargetLocked(target, "test auxiliary")
+	fixture.guard.mu.Unlock()
+	if err != nil {
+		t.Fatalf("adopt auxiliary: %v", err)
+	}
+	if got := fixture.core.get("net.mptcp.enabled"); got != "0" {
+		t.Fatalf("auxiliary MPTCP value = %q, want 0", got)
+	}
+	status := fixture.guard.Status()
+	if len(status.Auxiliary) != 1 || status.Auxiliary[0].Key != "net.mptcp.enabled" || status.Auxiliary[0].Current != "0" {
+		t.Fatalf("auxiliary status = %+v", status.Auxiliary)
+	}
+	fixture.core.set("net.mptcp.enabled", "1")
+	fixture.guard.assertAuxiliary()
+	if got := fixture.core.get("net.mptcp.enabled"); got != "0" {
+		t.Fatalf("auxiliary drift was not re-asserted: %q", got)
+	}
+}
+
+// TestMitigationTargetIncludesMPTCP keeps the CVE-2026-98432 entry point actionable instead of
+// leaving MPTCP as advice that no operator path can execute.
+func TestMitigationTargetIncludesMPTCP(t *testing.T) {
+	target, ok := mitigationTargetFor("mptcp-enabled")
+	if !ok {
+		t.Fatal("mptcp-enabled has no managed mitigation target")
+	}
+	if target.key != "net.mptcp.enabled" || target.desired != "0" || target.control != "network.mptcp" {
+		t.Fatalf("mptcp target = %+v", target)
+	}
+}
+
 // TestMitigationConfirmationIsDerivedFromTheTarget pins the intent proof used by the API.
 func TestMitigationConfirmationIsDerivedFromTheTarget(t *testing.T) {
 	if got := expectedMitigationConfirmation("APPLY", "kernel.userns"); got != "APPLY kernel.userns" {

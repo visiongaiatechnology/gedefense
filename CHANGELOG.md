@@ -1,5 +1,14 @@
 # Changelog
 
+## 5.1.0-beta.3 - 2026-10-29 - Feed self-healing, CVE-2026-98432 response and mitigation hardening
+
+- Threat-intelligence feed signing self-heals the documented bootstrap case: with `feeds.local_signing=true`, an operator key and no pinned public key, the local key is pinned via a rotation-safe self-heal marker; a changed key with an old marker fails closed and requires an explicit pin.
+- CVE-2026-98432 (`ipv4: free inet_opt and ireq_opt after an RCU grace period`) added to the kernel advisory catalogue with Debian fixed builds, the Ubuntu HWE "known unfixed through 7.0.0-42" bound, MPTCP/TCP listener probes and a managed MPTCP mitigation.
+- Mitigation guard no longer treats a permission-limited runtime probe (`EACCES` on a root-owned socket) as a host regression; unobservable probes are logged and do not auto-revert a valid mitigation.
+- Mitigation guard now adopts a second reachable, catalogue-managed control (MPTCP) and re-asserts it on every watch cycle; the privileged core exposes a typed MPTCP sysctl allowlist.
+- Permission-limited health probes are surfaced as `UNOBSERVED` warnings in the mitigation status/event stream instead of being silently skipped.
+- Version, control/gateway/core binaries, Rust crate metadata, installer headers, packaging and integration contracts aligned to 5.1.0-beta.3.
+
 ## 5.1.0-beta.2 - 2026-10-27 - Security hardening for CMS bridge and L7
 
 - Trusted editor exception narrowed to exact VGT preview/save surfaces; only the XSS finding family is suppressed, while SQLi/LFI/PHP-tag and all other pattern families remain active.

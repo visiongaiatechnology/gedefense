@@ -1,5 +1,12 @@
 # Release Notes
 
+## 5.1.0-beta.3 — 2026-10-29 — Feed self-healing and CVE response
+
+This release makes the signed threat-intelligence feed recover itself from the bootstrap failure that previously required an operator:
+`feeds.local_signing=true` + an existing operator key + no pinned public key now self-pins through a rotation-safe marker. A changed key with the old marker fails closed and needs an explicit pin.
+
+It also ships the CVE-2026-98432 advisory and MPTCP/TCP exposure probes, a managed MPTCP mitigation target that the guard actively re-asserts alongside the user-namespace record, and the permission-aware mitigation-probe fix. Permission-limited probes are reported as `UNOBSERVED` instead of being silently skipped. Kernel exposure remains visible; a kernel update is still the only fix for the UAF.
+
 ## 5.1.0-beta.2 — 2026-10-27 — Security hardening
 
 Security hotfix for 5.1.0-beta.1. Trusted editor scope is limited to exact VGT actions and XSS findings only; sensitive L7 limits remain active; revocation persists across restarts; loopback/weak-salt/fail-open bridge states are rejected; installer ordering/trust/rollback are corrected.

@@ -4,6 +4,15 @@ This repository publishes the Ed25519 public key used to sign GeDefense release
 artifacts. Private keys are never stored in the repository or CI; the release
 private key remains offline.
 
+
+## 5.1.0-beta.3 (2026-10-29)
+
+- Signer: `ed25519:2ec8259b2e45a496`
+- Public key (32 raw bytes, hex):
+  `2ec8259b2e45a4963617d40ab984baddd89fdab740560081e7eb8c8bbf116c72`
+- SHA-256 of the public key: `716a08d725742588e9e9d8fa3877a37706ee4c96a9318b54addf1cfe5fcc367a`
+- Public key file: [`release/gedefense-release-2026-10-29.ed25519.pub`](release/gedefense-release-2026-10-29.ed25519.pub)
+
 ## 5.0.0-beta.2 (2026-10-25) and later
 
 - Signer: `ed25519:e011a96c7c6ab4f6`

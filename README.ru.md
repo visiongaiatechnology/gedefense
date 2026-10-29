@@ -7,8 +7,8 @@
 ### Linux Security Fabric - Your Entenprise System
 
 [![License](https://img.shields.io/badge/License-AGPL--3.0--only-blue?style=for-the-badge)](https://www.gnu.org/licenses/agpl-3.0)
-[![Version](https://img.shields.io/badge/Version-5.1.0--beta.2-orange?style=for-the-badge)](#)
-[![Status](https://img.shields.io/badge/Status-Release_v5.1.0--beta.2-yellow?style=for-the-badge)](#)
+[![Version](https://img.shields.io/badge/Version-5.1.0--beta.3-orange?style=for-the-badge)](#)
+[![Status](https://img.shields.io/badge/Status-Release_v5.1.0--beta.3-yellow?style=for-the-badge)](#)
 [![Installer](https://img.shields.io/badge/Installer-Universal_Linux-green?style=for-the-badge)](#-быстрый-старт)
 [![Platform](https://img.shields.io/badge/Platform-Linux_x86__64-lightgrey?style=for-the-badge&logo=linux)](#)
 [![Data Plane](https://img.shields.io/badge/Data_Plane-Rust_eBPF%2FXDP-red?style=for-the-badge&logo=rust)](#-архитектура)
@@ -30,6 +30,14 @@
 
 </div>
 
+> **Обновление 5.1.0-beta.3 (29.10.2026) — самовосстановление фидов, реакция на CVE и подписанный релиз**
+>
+> - **Самовосстанавливающийся threat-intelligence фид:** отсутствующий trust anchor подписи фида создаётся из локального ключа оператора (opt-in) через rotation-safe маркер; просроченные манифесты переподписываются. Ротированный ключ со старым маркером остаётся fail-closed.
+> - **CVE-2026-98432 / CVE-2026-99999:** управляемые меры user-namespace и MPTCP активно удерживаются; экспозиция ядра остаётся видимой до установки исправления Ubuntu.
+> - **Mitigation guard:** пробы с ограниченными правами теперь явно помечаются как UNOBSERVED, а не пропускаются молча, и не вызывают ложный auto-revert.
+> - **Подписанный релиз:** 5.1.0-beta.3 поставляется как подписанный OneClick-установщик и воспроизводимый архив исходников.
+
+
 <img width="1536" height="1024" alt="GeDefense_ Real Security, Many Feathers" src="https://github.com/user-attachments/assets/dc56735e-b2b2-45c9-a363-97554a92ae0a" />
 
 
@@ -47,6 +55,10 @@ GeDefense — единая локальная security-fabric для Linux, Wind
 | [![Android](https://img.shields.io/badge/Android-22D3EE?style=flat-square&logo=android&logoColor=0B1220)](https://github.com/visiongaiatechnology/gedefenseandroid) **GeDefense Android** | Нативная платформа безопасности Android: локальное VPN-принуждение, телеметрия конечных точек, корреляция XDR/EDR, threat intelligence, анализ рисков приложений и зашифрованные доказательства. |
 | [![WordPress](https://img.shields.io/badge/WordPress-1F8FFF?style=flat-square&logo=wordpress&logoColor=ffffff)](https://github.com/visiongaiatechnology/gedefensewp) **GeDefense WordPress** | Open-core набор AGPL-3.0 для WordPress: ZEUS WAF, глубокая проверка пакетов AEGIS, TRINITY XDR, блокировка ThroneGuard и маскировка админки HADES. |
 
+## 🆕 Выпуск 5.1.0-beta.3 — самовосстановление фидов, реакция на CVE и подписанный релиз (29.10.2026)
+
+Подписанный threat-intelligence фид теперь сам восстанавливает отсутствующий trust anchor/bootstrap манифеста, управляемые меры user-namespace и MPTCP удерживаются вместе, а релизные артефакты подписаны новым офлайн-ключом. Подробности в `CHANGELOG.md`, `RELEASE-NOTES.md` и последних release-активах.
+
 ## 🆕 Выпуск 5.1.0-beta.2 — усиление безопасности (27.10.2026)
 
 Security-хотфикс для 5.1.0-beta.1. **Обновление рекомендуется до публикации моста.**
@@ -61,7 +73,7 @@ Security-хотфикс для 5.1.0-beta.1. **Обновление рекоме
 ---
 
 > [!WARNING]
-> **ПУБЛИЧНАЯ БЕТА — НЕ ДЛЯ ПРОИЗВОДСТВА (Версия 5.1.0-beta.2).**  
+> **ПУБЛИЧНАЯ БЕТА — НЕ ДЛЯ ПРОИЗВОДСТВА (Версия 5.1.0-beta.3).**  
 > GeDefense Titan и Linux Security Fabric находятся в активной разработке.
 > Бета предназначена только для тестовых и квалификационных хостов.
 > Архитектура проверяется автоматическими release-gates, но публичная
@@ -475,17 +487,17 @@ Observe ──→ Canary ──→ Enforce
 
 ```bash
 # Загрузить инсталлятор
-wget https://github.com/visiongaiatechnology/gedefense/releases/download/v5.1.0-beta.2/GeDefense-5.1.0-beta.2-OneClick.run
+wget https://github.com/visiongaiatechnology/gedefense/releases/download/v5.1.0-beta.3/VGT_GeDefense_Beta_v5_5.1.0-beta.3_OneClick.run
 
 # Проверить SHA-256
-sha256sum --check GeDefense-5.1.0-beta.2-OneClick.run.sha256
+sha256sum --check VGT_GeDefense_Beta_v5_5.1.0-beta.3_OneClick.run.sha256
 
 # Установить (требуются права root)
-chmod 700 GeDefense-5.1.0-beta.2-OneClick.run
-sudo ./GeDefense-5.1.0-beta.2-OneClick.run
+chmod 700 VGT_GeDefense_Beta_v5_5.1.0-beta.3_OneClick.run
+sudo ./VGT_GeDefense_Beta_v5_5.1.0-beta.3_OneClick.run
 ```
 
-> **Доступность инсталлятора:** Официальные автономные установочные ассеты v5.1.0-beta.2 (`GeDefense-5.1.0-beta.2-OneClick.run`) проверены и опубликованы в GitHub Releases.
+> **Доступность инсталлятора:** Официальные автономные установочные ассеты v5.1.0-beta.3 (`VGT_GeDefense_Beta_v5_5.1.0-beta.3_OneClick.run`) проверены и опубликованы в GitHub Releases.
 
 > Инсталлятор и контрольные суммы публикуются только после успешного прохождения всех этапов GitHub CI и квалификационных проверок целевого хоста. Никогда не запускайте непроверенные файлы RUN.
 
@@ -519,7 +531,7 @@ sudo ./GeDefense-5.1.0-beta.2-OneClick.run
 
 ---
 
-## 🚧 Известные ограничения (5.1.0-beta.2)
+## 🚧 Известные ограничения (5.1.0-beta.3)
 
 - Отсутствие поддержки Swarm / Mesh
 - Отсутствие разгрузки QUIC
@@ -801,6 +813,6 @@ sudo python3 scripts/update-geoip-db.py /var/lib/vgt/gedefense/geoip.csv
 
 [![VGT](https://img.shields.io/badge/VisionGaia-Technology-cyan?style=for-the-badge)](https://visiongaiatechnology.de)
 
-*VGT GeDefense 5.1.0-beta.2 — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
+*VGT GeDefense 5.1.0-beta.3 — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
 
 </div>

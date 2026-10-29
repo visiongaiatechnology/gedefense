@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"net/netip"
@@ -1071,6 +1072,18 @@ func NewFeedManager(cfg FeedConfig, stateDir ...string) *FeedManager {
 		// Fail closed instead of silently dropping an invalid trust anchor: an
 		// unparseable key means no feed can be verified.
 		signingKeys = nil
+	}
+	// Self-heal the documented bootstrap case: local signing is explicitly
+	// enabled, the operator key exists, but the public key was not yet pinned.
+	// This remains opt-in and rotation-safe (a changed key with an old marker
+	// fails closed). The explicit config pin is still preferred.
+	if len(signingKeys) == 0 {
+		if healedKey, healed, healErr := selfHealFeedSigningPin(cfg, dir); healErr != nil {
+			log.Printf("feed signing self-heal refused; feeds fail closed: %v", healErr)
+		} else if healed {
+			signingKeys = []ed25519.PublicKey{healedKey}
+			log.Printf("feed signing self-healed: pinned local operator key %s because feeds.local_signing is enabled and no trust anchor was provisioned", feedSigningFingerprint(healedKey))
+		}
 	}
 
 	mgr := &FeedManager{
@@ -2176,7 +2189,7 @@ func (m *FeedManager) fetchFeedRawOnce(ctx context.Context, src ThreatFeedSource
 	if err != nil {
 		return nil, "", err
 	}
-	req.Header.Set("User-Agent", "VGT-GeDefense/5.1.0-beta.2 sovereign-threat-intel")
+	req.Header.Set("User-Agent", "VGT-GeDefense/5.1.0-beta.3 sovereign-threat-intel")
 	req.Header.Set("Accept", "text/plain, application/json, */*")
 
 	resp, err := m.client.Do(req)
