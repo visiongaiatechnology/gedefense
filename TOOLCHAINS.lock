@@ -1,4 +1,4 @@
-Go release validation = 1.27.3
+Go release validation = 1.27.4
 Node.js syntax validation = 22.16.0
 Gateway native password library = libargon2.so.1
 Rust stable = 1.97.1

@@ -452,7 +452,7 @@ Rust Core **未提供任何通用的系统 Shell、文件系统或 Sysctl 执行
 
 | 工具链组件 | 锁定版本 |
 |---|---|
-| **Go** | 1.27.3 |
+| **Go** | 1.27.4 |
 | **Rust Core** | 1.97.1 |
 | **Rust eBPF** | nightly-2026-07-16 |
 | **Rust 标准源码组件** | rust-src |
@@ -739,7 +739,7 @@ sudo ./VGT_GeDefense_Beta_v5_5.2.0_OneClick.run
 
 - 专用系统组 `gedefense-l7`，通过 `systemd-tmpfiles` 创建受保护目录 `/run/vgt-gedefense-l7`（权限 `0750`）。
 - 套接字权限配置为 `0660`，启用内核级凭据核验（`SO_PEERCRED`）。
-- 锁定 Go 1.27.3 工具链，并通过 AST 静态安全审计验证。
+- 锁定 Go 1.27.4 工具链，并通过 AST 静态安全审计验证。
 - CI 持续集成中包含 3 套高强度模糊测试（Fuzzing）。
 
 ### v3.0.0-beta.1 — 通用 Linux 原生集成

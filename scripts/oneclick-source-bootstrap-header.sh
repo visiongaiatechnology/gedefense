@@ -5,8 +5,8 @@ umask 0077
 
 readonly PRODUCT_VERSION="5.2.0"
 readonly PAYLOAD_SHA256="__SOURCE_PAYLOAD_SHA256__"
-readonly GO_VERSION="1.27.3"
-readonly GO_LINUX_AMD64_SHA256="65efbc80fdc1fa2cd2631cad5b481777a68e8725f34e89f50fc6ac714e379b40"
+readonly GO_VERSION="1.27.4"
+readonly GO_LINUX_AMD64_SHA256="7226736c2339719cda28fbf3a54d71aa63bcefe376e98cef00034268dab24840"
 readonly GO_URL="https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz"
 readonly SELF="$(readlink -f -- "${BASH_SOURCE[0]}")"
 # Rendered by scripts/render-installer-header.py. Unfilled placeholders fail
@@ -275,15 +275,15 @@ install_bootstrap_dependencies(){
   if have apt-get; then
     export DEBIAN_FRONTEND=noninteractive
     apt-get update
-    apt-get install -y ca-certificates curl build-essential libargon2-1 python3 tar gzip coreutils
+    apt-get install -y ca-certificates curl build-essential libargon2-1 libargon2-dev python3 tar gzip coreutils
   elif have dnf; then
-    dnf install -y ca-certificates curl gcc gcc-c++ make libargon2 python3 tar gzip coreutils
+    dnf install -y ca-certificates curl gcc gcc-c++ make libargon2 libargon2-devel python3 tar gzip coreutils
   elif have yum; then
-    yum install -y ca-certificates curl gcc gcc-c++ make libargon2 python3 tar gzip coreutils
+    yum install -y ca-certificates curl gcc gcc-c++ make libargon2 libargon2-devel python3 tar gzip coreutils
   elif have pacman; then
-    pacman -Sy --needed --noconfirm ca-certificates curl base-devel argon2 python tar gzip coreutils
+    pacman -Syu --needed --noconfirm ca-certificates curl base-devel argon2 python tar gzip coreutils
   elif have zypper; then
-    zypper --non-interactive install ca-certificates curl gcc gcc-c++ make libargon2-1 python3 tar gzip coreutils
+    zypper --non-interactive install ca-certificates curl gcc gcc-c++ make libargon2-1 libargon2-devel python3 tar gzip coreutils
   else
     fail "No supported package manager found (APT/DNF/YUM/pacman/Zypper)."
   fi

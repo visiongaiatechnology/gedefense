@@ -518,7 +518,7 @@ Ist die Gaia Cells-Laufzeit **nicht vorhanden**, meldet der Adapter `runtime_not
 
 | Komponente | Version |
 |---|---|
-| **Go** | 1.27.3 |
+| **Go** | 1.27.4 |
 | **Rust Core** | 1.97.1 |
 | **Rust eBPF** | nightly-2026-07-16 |
 | **Rust-Komponente** | rust-src |
@@ -803,7 +803,7 @@ Eine Fehlerbehebungsversion. Sie bringt kein neues Teilsystem; sie bringt die vo
 
 - Dedizierte Systemgruppe `gedefense-l7` und Laufzeitverzeichnis `/run/vgt-gedefense-l7` (Modus `0750`) via `systemd-tmpfiles`.
 - Unix-Sockets mit Modus `0660` und authentifizierten Peer-Credentials (`SO_PEERCRED`).
-- Gepinnte Go 1.27.3 Release-Toolchain, verifiziert durch AST-Sicherheitsaudit.
+- Gepinnte Go 1.27.4 Release-Toolchain, verifiziert durch AST-Sicherheitsaudit.
 - 3 neue Fuzzing-Testsuiten in CI zur Verifikation von Normalisierer-Sicherheit, Response-Byte-Erhaltung und Upstream-Jail.
 
 ### v3.0.0-beta.1 — Universelle Linux-Integration

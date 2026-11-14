@@ -3,7 +3,7 @@
 ## Go Control Plane
 
 ```text
-Go 1.27.3
+Go 1.27.4
 CGO_ENABLED=0
 ```
 
@@ -14,7 +14,7 @@ The native L7/AppSec plane, Unix-socket inspection API, inline reverse-proxy pat
 ## HTTPS Gateway and Argon2id
 
 ```text
-Go 1.27.3
+Go 1.27.4
 CGO_ENABLED=1
 libargon2.so.1
 ```

@@ -303,7 +303,7 @@ Toolchain-Pins:
 
 | Komponente | Version |
 |---|---|
-| Go | 1.27.3 |
+| Go | 1.27.4 |
 | Rust Core | 1.97.1 |
 | Rust eBPF | nightly-2026-07-16 + `rust-src` |
 | bpf-linker | 0.10.3 |

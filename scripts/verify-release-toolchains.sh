@@ -97,7 +97,7 @@ fi
 
 EXPECTED_GO=$(lock_value 'Go release validation')
 EXPECTED_NODE=$(lock_value 'Node.js syntax validation')
-GO_SECURITY_FLOOR=${GEDEFENSE_GO_SECURITY_FLOOR:-1.27.3}
+GO_SECURITY_FLOOR=${GEDEFENSE_GO_SECURITY_FLOOR:-1.27.4}
 [[ $EXPECTED_GO =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "invalid pinned Go version: $EXPECTED_GO" >&2; exit 1; }
 [[ $EXPECTED_NODE =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "invalid pinned Node.js version: $EXPECTED_NODE" >&2; exit 1; }
 

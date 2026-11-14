@@ -219,7 +219,7 @@ func strictManifestBytes(path string) ([]byte, error) {
 
 func expectedReleaseToolchains() map[string]string {
 	return map[string]string{
-		"go": "go1.27.3", "node": "v22.16.0", "rust": "1.97.1",
+		"go": "go1.27.4", "node": "v22.16.0", "rust": "1.97.1",
 		"rust-ebpf": "nightly-2026-07-16", "bpf-linker": "0.10.3",
 	}
 }

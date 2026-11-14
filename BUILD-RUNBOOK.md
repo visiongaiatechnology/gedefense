@@ -8,7 +8,7 @@ make test-race
 make go gateway
 ```
 
-Validated release environment: Go 1.27.3 and Node.js 22.16.0.
+Validated release environment: Go 1.27.4 and Node.js 22.16.0.
 
 ## Rust/XDP target build
 

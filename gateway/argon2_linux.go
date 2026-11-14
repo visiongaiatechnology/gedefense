@@ -3,7 +3,8 @@
 package main
 
 /*
-#cgo LDFLAGS: -l:libargon2.so.1
+// Runtime linkage resolves SONAME libargon2.so.1 via -largon2 (Go 1.27.4+ cgo flag allowlist).
+#cgo LDFLAGS: -largon2
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>

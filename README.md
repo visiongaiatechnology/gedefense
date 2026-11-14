@@ -520,7 +520,7 @@ If the Gaia Cells runtime is **not present**, the adapter reports `runtime_not_i
 
 | Component | Version |
 |---|---|
-| **Go** | 1.27.3 |
+| **Go** | 1.27.4 |
 | **Rust Core** | 1.97.1 |
 | **Rust eBPF** | nightly-2026-07-16 |
 | **Rust Component** | rust-src |
@@ -797,7 +797,7 @@ A fix release. It introduces no new subsystem; it makes the ones already present
 
 - Dedicated system group `gedefense-l7` and pre-provisioned runtime directory `/run/vgt-gedefense-l7` (mode `0750`) via `systemd-tmpfiles`.
 - Unix sockets created with mode `0660` and authenticated peer credentials (`SO_PEERCRED`).
-- Pinned Go 1.27.3 release toolchain verified by AST security audit.
+- Pinned Go 1.27.4 release toolchain verified by AST security audit.
 - 3 new continuous fuzzing test suites in CI verifying normalizer safety, response byte preservation, and upstream jail confinement.
 
 ### v3.0.0-beta.1 — Universal Linux Integration
