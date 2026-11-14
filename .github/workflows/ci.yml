@@ -155,7 +155,7 @@ jobs:
             bootstrap: dnf install -y bash python3 ca-certificates curl openssl polkit desktop-file-utils
           - name: arch
             image: archlinux/archlinux@sha256:be98153cc5dfcde238e9caf66b6abce37abeee7202624c3ca66edc883b3b508c
-            bootstrap: pacman -Sy --needed --noconfirm bash python ca-certificates curl openssl polkit desktop-file-utils
+            bootstrap: pacman -Syu --needed --noconfirm bash python ca-certificates curl openssl polkit desktop-file-utils
           - name: opensuse
             image: opensuse/tumbleweed@sha256:d833ad1f857a057030cdc83b5ca77fdfdce9ae109e8891bf5b47e5f591725c66
             bootstrap: zypper --non-interactive refresh && zypper --non-interactive install bash python3 ca-certificates curl openssl polkit pkexec desktop-file-utils

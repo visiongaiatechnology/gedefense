@@ -95,3 +95,12 @@ func TestReleaseManifestRejectsTrailingDataAndWritableTrustKey(t *testing.T) {
 		t.Fatal("group/world-writable trusted public key was accepted")
 	}
 }
+
+func TestReleaseManifestChannelMatchesVersionSemantics(t *testing.T) {
+	if got := releaseManifestChannelForVersion("5.1.0-beta.3"); got != "beta" {
+		t.Fatalf("channel(5.1.0-beta.3) = %q, want beta", got)
+	}
+	if got := releaseManifestChannelForVersion("5.2.0"); got != "stable" {
+		t.Fatalf("channel(5.2.0) = %q, want stable", got)
+	}
+}

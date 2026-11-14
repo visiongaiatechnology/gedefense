@@ -80,6 +80,17 @@ func fileSHA256(path string) (string, int64, error) {
 	return hex.EncodeToString(hash.Sum(nil)), info.Size(), nil
 }
 
+func releaseManifestChannelForVersion(releaseVersion string) string {
+	if strings.Contains(releaseVersion, "-") {
+		return "beta"
+	}
+	return "stable"
+}
+
+func releaseManifestChannel() string {
+	return releaseManifestChannelForVersion(version)
+}
+
 func buildReleaseEnvelope(dir string) (ReleaseManifestEnvelope, error) {
 	created, err := releaseBuildTime()
 	if err != nil {
@@ -114,7 +125,7 @@ func buildReleaseEnvelope(dir string) (ReleaseManifestEnvelope, error) {
 		}
 	}
 	return ReleaseManifestEnvelope{
-		Schema: "vgt.gedefense.release.v1", Product: "VGT GeDefense", Version: version, Channel: "beta", CreatedAt: created,
+		Schema: "vgt.gedefense.release.v1", Product: "VGT GeDefense", Version: version, Channel: releaseManifestChannel(), CreatedAt: created,
 		Toolchains: expectedReleaseToolchains(), Artifacts: artifacts,
 	}, nil
 }
@@ -214,7 +225,7 @@ func expectedReleaseToolchains() map[string]string {
 }
 
 func validateReleaseEnvelope(envelope ReleaseManifestEnvelope) error {
-	if envelope.Schema != "vgt.gedefense.release.v1" || envelope.Product != "VGT GeDefense" || envelope.Channel != "beta" {
+	if envelope.Schema != "vgt.gedefense.release.v1" || envelope.Product != "VGT GeDefense" || envelope.Channel != releaseManifestChannel() {
 		return errors.New("unsupported release manifest")
 	}
 	if envelope.Version != version {
