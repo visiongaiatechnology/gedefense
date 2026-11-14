@@ -295,7 +295,10 @@ func (s *SettingsStore) load() error {
 	}
 	legacy := false
 	if s.crypto != nil {
-		data, legacy, err = s.crypto.Decrypt(s.path, "runtime-settings", data, nil)
+		// Explicit migration read: the document MAC authenticates the settings independently of
+		// the envelope, so a plaintext document written before the storage key existed can be
+		// upgraded. The strict Decrypt is used everywhere else.
+		data, legacy, err = s.crypto.DecryptForMigration(s.path, "runtime-settings", data, nil)
 		if err != nil {
 			return fmt.Errorf("runtime settings decrypt: %w", err)
 		}
@@ -333,24 +336,31 @@ func (s *SettingsStore) load() error {
 	if !validWire && !validLegacy {
 		return errors.New("runtime settings authentication failed")
 	}
-	if document.HistoryMAC != "" {
-		expectedHistory, err := s.macHistory(document.History)
-		if err != nil {
-			return err
-		}
-		providedHistory, err := hex.DecodeString(document.HistoryMAC)
-		if err != nil {
-			return errors.New("runtime settings history authentication failed")
-		}
-		legacyHistory, err := s.macHistory(cloneRuntimeSettingsHistory(document.History))
-		if err != nil {
-			return err
-		}
-		validWire := hmac.Equal(expectedHistory, providedHistory)
-		validLegacy := hmac.Equal(legacyHistory, providedHistory)
-		if !validWire && !validLegacy {
-			return errors.New("runtime settings history authentication failed")
-		}
+	// The history is the rollback surface: restoring an entry from it changes the operator's
+	// configuration. It used to be authenticated only when the writer supplied a MAC, so a
+	// document with an empty HistoryMAC loaded without checking the history at all. An attacker
+	// with write access to the state file could plant settings that an operator rollback would
+	// later activate. Every writer of this format emits a history MAC, so a missing one is an
+	// integrity failure and never a reason to skip the check.
+	if document.HistoryMAC == "" {
+		return errors.New("runtime settings history authentication failed: history MAC is missing")
+	}
+	expectedHistory, err := s.macHistory(document.History)
+	if err != nil {
+		return err
+	}
+	providedHistory, err := hex.DecodeString(document.HistoryMAC)
+	if err != nil {
+		return errors.New("runtime settings history authentication failed")
+	}
+	legacyHistory, err := s.macHistory(cloneRuntimeSettingsHistory(document.History))
+	if err != nil {
+		return err
+	}
+	validHistory := hmac.Equal(expectedHistory, providedHistory)
+	validLegacyHistory := hmac.Equal(legacyHistory, providedHistory)
+	if !validHistory && !validLegacyHistory {
+		return errors.New("runtime settings history authentication failed")
 	}
 	upgraded := upgradeRuntimeSettings(&document.Settings, s.defaults)
 	for i := range document.History {

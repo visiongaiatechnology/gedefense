@@ -124,7 +124,10 @@ func loadOrCreatePolicyKey(privatePath, publicPath string, storage *StorageCiphe
 	if err == nil {
 		legacy := false
 		if storage != nil {
-			privRaw, legacy, err = storage.Decrypt(privatePath, "policy-signing-key", privRaw, nil)
+			// Explicit migration read: the policy document is Ed25519-signed against the pinned
+			// public key, so migrating the key file of a pre-encryption installation does not
+			// make the policy trust decision depend on unauthenticated bytes.
+			privRaw, legacy, err = storage.DecryptForMigration(privatePath, "policy-signing-key", privRaw, nil)
 			if err != nil {
 				return nil, nil, fmt.Errorf("policy private key decrypt: %w", err)
 			}
@@ -444,9 +447,15 @@ func (p *PolicyStore) readPersistedFloor() (uint64, bool, error) {
 		return 0, false, err
 	}
 	if p.crypto != nil {
-		plain, _, decryptErr := p.crypto.Decrypt(path, "policy-generation-floor", data, nil)
+		// Strict read: the generation floor is the anti-rollback anchor. Accepting a plaintext
+		// copy here would let a writer with state-directory access lower it (and replay an old
+		// signed policy), so a document that is not an authenticated envelope is an error.
+		plain, wasLegacy, decryptErr := p.crypto.Decrypt(path, "policy-generation-floor", data, nil)
 		if decryptErr != nil {
 			return 0, true, decryptErr
+		}
+		if wasLegacy {
+			return 0, true, errors.New("policy generation floor is not authenticated")
 		}
 		data = plain
 	}
@@ -507,7 +516,10 @@ func (p *PolicyStore) encodeDocumentFor(path, purpose string, doc PolicyDocument
 func (p *PolicyStore) decodeDocumentFrom(path, purpose string, data []byte) (PolicyDocument, bool, error) {
 	legacy := false
 	if p.crypto != nil {
-		plain, wasLegacy, err := p.crypto.Decrypt(path, purpose, data, nil)
+		// Explicit migration read: the document is Ed25519-signed, so the encryption envelope
+		// only adds confidentiality here. The verified signature decides whether the content is
+		// trusted; a pre-encryption document is re-written encrypted after verification.
+		plain, wasLegacy, err := p.crypto.DecryptForMigration(path, purpose, data, nil)
 		if err != nil {
 			return PolicyDocument{}, false, err
 		}

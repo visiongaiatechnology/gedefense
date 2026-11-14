@@ -107,8 +107,19 @@ func l7ShardIndex(key string) uint32 {
 	return hash % l7LimiterShards
 }
 
+// Static-asset budget limits. Static reads are not exempt from rate limiting
+// (FIND-021): they draw from a separate, higher but finite per-IP bucket. The
+// multiplier keeps a media-heavy admin page working; the absolute ceiling keeps
+// "higher" from meaning "unlimited" even with an extreme operator configuration.
+const (
+	l7StaticAssetBudgetFactor = 8
+	l7StaticAssetRateCeiling  = 6_000 // requests per minute, per client
+	l7StaticAssetBurstCeiling = 1_000
+)
+
 type L7RateLimiter struct {
 	client          *l7ShardedLimiter
+	static          *l7ShardedLimiter
 	sensitive       *l7ShardedLimiter
 	sensitiveGlobal *l7ShardedLimiter
 }
@@ -120,6 +131,7 @@ func NewL7RateLimiter(cfg L7Config) *L7RateLimiter {
 func newL7RateLimiterWithRuntime(cfg L7Config) *L7RateLimiter {
 	return &L7RateLimiter{
 		client:          newL7ShardedLimiter(cfg.MaxTrackedClients),
+		static:          newL7ShardedLimiter(cfg.MaxTrackedClients),
 		sensitive:       newL7ShardedLimiter(cfg.MaxTrackedClients),
 		sensitiveGlobal: newL7ShardedLimiter(cfg.MaxTrackedClients),
 	}
@@ -149,25 +161,27 @@ func (l *L7RateLimiter) evaluatePolicyWithBudget(snapshot *l7RuntimeSnapshot, re
 		return true, ""
 	}
 	cfg := snapshot.cfg
-	// Static assets and the loader endpoints of the WordPress admin page are not
-	// attack-shaped requests. Counting every image, stylesheet and script against
-	// the same 100-request burst that protects dynamic endpoints made a normal
-	// media-heavy admin page exhaust the bucket before its preview/save requests
-	// were sent. Keep the client limiter for state-changing and dynamic routes;
-	// static reads have their own transport-level limits.
-	if l7ClientRateExempt(method, path) {
-		return true, ""
-	}
 	clientKey := remoteIP + "|" + strings.ToLower(host)
+	// Every request consumes a token from exactly one finite bucket. Static reads
+	// use a separate, higher per-IP budget instead of the historical blanket
+	// exemption; dynamic routes and dynamic-looking suffixes always use the
+	// normal client budget.
 	if !bypassClient {
-		rate := cfg.ClientRatePerMinute
-		burst := cfg.ClientRateBurst
-		if clientRatePerMinute > 0 && clientRateBurst > 0 {
-			rate = clientRatePerMinute
-			burst = clientRateBurst
-		}
-		if !l.client.Allow(clientKey, l7Rate(rate), float64(burst), now) {
-			return false, "client"
+		if l7StaticAssetRequest(method, path) {
+			staticRate, staticBurst := l7StaticAssetBudget(cfg.ClientRatePerMinute, cfg.ClientRateBurst)
+			if !l.static.Allow(clientKey, l7Rate(staticRate), float64(staticBurst), now) {
+				return false, "client-static"
+			}
+		} else {
+			rate := cfg.ClientRatePerMinute
+			burst := cfg.ClientRateBurst
+			if clientRatePerMinute > 0 && clientRateBurst > 0 {
+				rate = clientRatePerMinute
+				burst = clientRateBurst
+			}
+			if !l.client.Allow(clientKey, l7Rate(rate), float64(burst), now) {
+				return false, "client"
+			}
 		}
 	}
 	if snapshot.sensitivePath(path) {
@@ -183,11 +197,39 @@ func (l *L7RateLimiter) evaluatePolicyWithBudget(snapshot *l7RuntimeSnapshot, re
 	return true, ""
 }
 
-// l7ClientRateExempt reports whether a request is a read-only static asset or a
-// WordPress admin loader endpoint whose per-request count must not consume the
-// dynamic-client budget. The decision is deliberately narrow: POST/PUT/PATCH/
-// DELETE and dynamic HTML/API reads still pass through the limiter.
-func l7ClientRateExempt(method, requestURI string) bool {
+// l7StaticAssetBudget turns the dynamic client budget into the higher but
+// finite static-asset budget. The result is positive and capped, so no
+// configuration can turn it back into an exemption.
+func l7StaticAssetBudget(baseRate, baseBurst int) (int, int) {
+	rate := baseRate * l7StaticAssetBudgetFactor
+	burst := baseBurst * l7StaticAssetBudgetFactor
+	if baseRate <= 0 || rate < 1 {
+		rate = 1
+	}
+	if baseBurst <= 0 || burst < 1 {
+		burst = 1
+	}
+	if rate > l7StaticAssetRateCeiling {
+		rate = l7StaticAssetRateCeiling
+	}
+	if burst > l7StaticAssetBurstCeiling {
+		burst = l7StaticAssetBurstCeiling
+	}
+	return rate, burst
+}
+
+// l7StaticAssetRequest classifies one request for the bounded static-asset
+// budget. The classification is deliberately narrow (FIND-021):
+//
+//   - only GET/HEAD, because a state-changing method is never a static read;
+//   - the path must carry a static file extension, so "/storage/evil" is not a
+//     static asset merely because it lives under a storage prefix;
+//   - the path must live under a known static content prefix (or be a
+//     root-level single-segment file), so an application route such as
+//     "/api/user.css" cannot borrow the static budget with a suffix;
+//   - dynamic server-side routes (.php/.cgi/...) never qualify even when they
+//     look static, because they are executed, not read from disk.
+func l7StaticAssetRequest(method, requestURI string) bool {
 	switch method {
 	case "GET", "HEAD":
 	default:
@@ -197,23 +239,51 @@ func l7ClientRateExempt(method, requestURI string) bool {
 	if i := strings.IndexByte(path, '?'); i >= 0 {
 		path = path[:i]
 	}
+	if path == "" || path[0] != '/' {
+		return false
+	}
 	lower := strings.ToLower(path)
-	// Do not exempt dynamic PHP/CGI paths merely because they sit under a
-	// static-looking prefix; only actual static file extensions qualify.
-	dynamic := strings.HasSuffix(lower, ".php") || strings.HasSuffix(lower, ".phtml") ||
-		strings.HasSuffix(lower, ".cgi") || strings.HasSuffix(lower, ".pl")
-	for _, prefix := range []string{"/storage/", "/wp-content/", "/wp-includes/"} {
-		if strings.HasPrefix(lower, prefix) && !dynamic {
+	if l7DynamicRoutePath(lower) {
+		return false
+	}
+	if !l7StaticFileExtension(lower) {
+		return false
+	}
+	for _, prefix := range []string{"/storage/", "/wp-content/", "/wp-includes/", "/assets/", "/static/", "/media/", "/uploads/"} {
+		if strings.HasPrefix(lower, prefix) {
 			return true
 		}
 	}
-	if strings.HasPrefix(lower, "/wp-admin/") &&
-		(lower == "/wp-admin/load-styles.php" || lower == "/wp-admin/load-scripts.php") {
-		return true
-	}
-	switch strings.ToLower(path[strings.LastIndexByte(path, '.')+1:]) {
-	case "css", "js", "mjs", "map", "png", "jpg", "jpeg", "gif", "svg", "webp", "avif", "ico", "woff", "woff2", "ttf", "otf", "eot":
-		return true
+	// A single path segment with a static extension (for example /favicon.ico or
+	// /robots.txt) is a root-level static file. Application routes have at least
+	// two segments and therefore never match.
+	return strings.Count(strings.TrimPrefix(lower, "/"), "/") == 0
+}
+
+// l7DynamicRoutePath reports whether the path is served by an executable route
+// rather than read from disk. Such paths never qualify for the static budget.
+func l7DynamicRoutePath(lower string) bool {
+	for _, suffix := range []string{".php", ".phtml", ".php3", ".php4", ".php5", ".php7", ".phar", ".cgi", ".pl", ".py", ".rb", ".jsp", ".jspx", ".asp", ".aspx", ".do", ".action"} {
+		if strings.HasSuffix(lower, suffix) {
+			return true
+		}
 	}
 	return false
+}
+
+// l7StaticFileExtension lists the file extensions the static budget may cover.
+// The list is closed on purpose: an unknown suffix keeps the normal client
+// budget.
+func l7StaticFileExtension(lower string) bool {
+	dot := strings.LastIndexByte(lower, '.')
+	if dot < 0 || dot < strings.LastIndexByte(lower, '/') {
+		return false
+	}
+	switch lower[dot+1:] {
+	case "css", "js", "mjs", "map", "png", "jpg", "jpeg", "gif", "svg", "webp", "avif", "ico",
+		"woff", "woff2", "ttf", "otf", "eot", "bmp", "txt", "xml", "json", "pdf", "mp4", "webm":
+		return true
+	default:
+		return false
+	}
 }

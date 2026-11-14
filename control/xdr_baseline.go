@@ -78,6 +78,35 @@ func isProductArtifact(exe string) bool {
 	return false
 }
 
+// ProductArtifactMismatch reports whether exe is one of this installation's own components
+// whose bytes no longer match the approved baseline.
+//
+// It returns the approved and observed digests so the caller can decide whether a verified,
+// signed update window covers the change. The comparison itself does not know that: both an
+// approved update and an attacker's replacement change the bytes, which is why the decision
+// belongs to the update path and not to this digest check.
+func (b *XDRBaseline) ProductArtifactMismatch(exe string) (expected, observed string, mismatch bool) {
+	if b == nil {
+		return "", "", false
+	}
+	resolved := resolveBaselinePath(strings.TrimSuffix(strings.TrimSpace(exe), " (deleted)"))
+	if !isProductArtifact(resolved) {
+		return "", "", false
+	}
+	c, ok := b.compiled[resolved]
+	if !ok || c.profile.SHA256 == "" {
+		return "", "", false
+	}
+	digest, err := hashFile(resolved)
+	if err != nil {
+		return c.profile.SHA256, "", true
+	}
+	if strings.EqualFold(digest, c.profile.SHA256) {
+		return c.profile.SHA256, digest, false
+	}
+	return c.profile.SHA256, digest, true
+}
+
 type compiledBaseline struct {
 	profile BaselineProfile
 	parents map[string]struct{}
@@ -150,25 +179,22 @@ func (b *XDRBaseline) Evaluate(p ProcessSample, conns []NetConnection) []RuleMat
 	if c.profile.SHA256 != "" {
 		h, err := hashFile(exe)
 		if err != nil || !strings.EqualFold(h, c.profile.SHA256) {
-			// A digest mismatch on one of GeDefense's own components is reported but
-			// never acted on.
+			// A digest mismatch on one of GeDefense's own components is a tamper finding,
+			// not a deployment.
 			//
-			// The check cannot tell an operator's approved update from an attacker's
-			// replacement: both change the bytes. The response engine could, and did -
-			// over a hundred incidents record this product freezing its own gateway. That
-			// is worse than an outage, because it is one an attacker can cause: writing
-			// to a single file under /opt/vgt/gedefense/ makes the platform disable
-			// itself, and the operator loses the console that would have told them why.
-			//
-			// AlertOnly keeps the detection at full severity and removes the finding from
-			// the response score, so the incident is recorded and the decision is the
-			// operator's. Anything else in the baseline - a customer's own binaries - is
-			// unaffected and still carries the full response.
+			// It used to be reported as AlertOnly with no response, because the check cannot
+			// tell an approved update from a replacement. That left a swap of the product's
+			// own gateway without degradation, so the change an attacker most wants to make
+			// produced the quietest record in the ledger. The decision now belongs to the
+			// update path: the only sanctioned way to replace an own component is a verified,
+			// signed package-update window (XDREngine.BeginSignedUpdateWindow), and every
+			// other mismatch becomes XDR.SELF_TAMPER with a release-blocking degradation.
+			// Kill eligibility stays off because terminating the product's own already-running
+			// process is not a repair - the correct response is the fail-closed degradation.
 			out = append(out, RuleMatch{
 				ID: "BASELINE.HASH_MISMATCH", Category: "integrity", Score: 120,
 				Summary:      "Executable digest differs from the approved baseline",
 				KillEligible: !isProductArtifact(exe),
-				AlertOnly:    isProductArtifact(exe),
 			})
 		}
 	}

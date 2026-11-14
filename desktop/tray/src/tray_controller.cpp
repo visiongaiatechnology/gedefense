@@ -10,6 +10,7 @@
 #include "status_client.h"
 #include "status_popup.h"
 #include "theme.h"
+#include "ui_text.h"
 
 #include <QAction>
 #include <QFileInfo>
@@ -227,7 +228,13 @@ void TrayController::onConsoleLaunchFailed(const QString& reason)
     {
         return;
     }
-    m_tray->showMessage(tr("Konsole nicht verfügbar"), reason, QSystemTrayIcon::Warning, kTrayMessageDurationMs);
+    // The notification body may be interpreted as markup by the desktop's
+    // notification server, so the reason string is escaped before it leaves the
+    // process (ui_text.h).
+    m_tray->showMessage(ui_text::plainNotificationText(tr("Konsole nicht verfügbar")),
+                        ui_text::plainNotificationText(reason),
+                        QSystemTrayIcon::Warning,
+                        kTrayMessageDurationMs);
 }
 
 void TrayController::updatePresentation()
@@ -254,7 +261,11 @@ void TrayController::updatePresentation()
     {
         tooltipParts.append(tr("Daten veraltet"));
     }
-    m_tray->setToolTip(tooltipParts.join(QStringLiteral(" · ")));
+    // The tray tooltip is a rich-text sink. `nodeName` and `m_lastReason` are
+    // dynamic (the node name comes from the control plane), so the assembled
+    // tooltip is escaped as one text node; static labels are escaped as well so
+    // a translation cannot inject markup either.
+    m_tray->setToolTip(ui_text::plainTooltipText(tooltipParts.join(QStringLiteral(" · "))));
 
     if (m_popup != nullptr)
     {

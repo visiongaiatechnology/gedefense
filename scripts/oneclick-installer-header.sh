@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# VGT GeDefense 5.1.0-beta.3 Universal Linux One-Click Installer
+# VGT GeDefense 5.2.0 Universal Linux One-Click Installer
 set -Eeuo pipefail
 umask 0077
 
-readonly SETUP_VERSION="5.1.0-beta.3"
-readonly PRODUCT_VERSION="5.1.0-beta.3"
+readonly SETUP_VERSION="5.2.0"
+readonly PRODUCT_VERSION="5.2.0"
 readonly PAYLOAD_SHA256="__PAYLOAD_SHA256__"
 readonly CONTROL_SHA256="__CONTROL_SHA256__"
 readonly ACCESS_SHA256="__ACCESS_SHA256__"
@@ -261,9 +261,23 @@ verify_release_payload(){
 
 persist_release_floor(){
   [[ -n ${NEXT_FLOOR:-} ]] || fail "Release-Floor ist nicht bestimmt; Signaturprüfung wurde übersprungen."
-  install -d -o root -g root -m 0755 "$STATE"
+  # FIND-003: never re-create or reset $STATE here. ensure_user_and_dirs sets the
+  # contract 0710 gedefense:gedefense so the unprivileged control plane can traverse
+  # it; a root:root 0755 reset at the end of the installation silently revoked that
+  # contract. Assert the expected state instead of chmod/chown-ing it back.
+  [[ -d $STATE && ! -L $STATE ]] || fail "Runtime-State-Verzeichnis fehlt: $STATE"
+  local state_perms
+  state_perms=$(stat -c '%U:%G:%a' "$STATE")
+  # Two contracts are valid: the installer-owned 0710 gedefense:gedefense tree and
+  # the packaged systemd-tmpfiles contract 1770 root:gedefense (root-owned sticky
+  # state boundary; the gedefense group keeps rwx). tmpfiles runs at boot and must
+  # not be fought by a later upgrade, so accept the packaged state as well.
+  case $state_perms in
+    'gedefense:gedefense:710'|'root:gedefense:1770') ;;
+    *) fail "Runtime-State-Rechte unerwartet ($state_perms); erwartet gedefense:gedefense:710 oder root:gedefense:1770." ;;
+  esac
   python3 - "$FLOOR_FILE" "$NEXT_FLOOR" <<'PY'
-import json, os, pathlib, sys, time
+import json, os, pathlib, sys, tempfile, time
 path, highest = sys.argv[1:]
 document = {
     "schema": "vgt.gedefense.release-floor.v1",
@@ -271,13 +285,27 @@ document = {
     "updated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
 }
 target = pathlib.Path(path)
-temporary = target.with_name(target.name + f".tmp.{os.getpid()}")
-temporary.write_text(json.dumps(document, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-os.chmod(temporary, 0o600)
-os.replace(temporary, target)
+# O_EXCL temp file in the target directory (no predictable ".tmp.<pid>" name and
+# no symlink following), 0600 from creation, atomically renamed into place.
+handle, temporary = tempfile.mkstemp(prefix=target.name + ".tmp.", dir=str(target.parent))
+try:
+    os.fchmod(handle, 0o600)
+    with os.fdopen(handle, "w", encoding="utf-8") as stream:
+        stream.write(json.dumps(document, indent=2, sort_keys=True) + "\n")
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.replace(temporary, target)
+except BaseException:
+    try:
+        os.unlink(temporary)
+    except OSError:
+        pass
+    raise
 PY
-  chown root:root "$FLOOR_FILE" 2>/dev/null || true
+  chown root:root "$FLOOR_FILE"
   chmod 0600 "$FLOOR_FILE"
+  [[ $(stat -c '%U:%G:%a' "$FLOOR_FILE") == 'root:root:600' ]] \
+    || fail "Release-Floor-Datei hat unerwartete Rechte: $(stat -c '%U:%G:%a' "$FLOOR_FILE")."
   log "Release-Floor persistiert: $NEXT_FLOOR"
 }
 
@@ -302,7 +330,11 @@ platform_check(){
 }
 
 install_build_dependencies(){
-  log "Prüfe Build- und BPF-Werkzeuge."
+  # FIND-002: this runs only AFTER release_trust_check verified the signed release
+  # index and extract_and_verify_payload bound the payload to it. The packages
+  # themselves come from the distribution's signed package repositories; the
+  # installer performs no ad-hoc `curl | sh` downloads of executable code.
+  log "Signaturprüfung erfolgreich; installiere Build-Abhängigkeiten aus den Distributions-Repositories."
   if have apt-get; then
     export DEBIAN_FRONTEND=noninteractive
     apt-get update >>"$LOG_FILE" 2>&1
@@ -321,39 +353,69 @@ install_build_dependencies(){
   for cmd in curl python3 tar sha256sum ip clang systemctl systemd-analyze; do have "$cmd" || fail "Werkzeug fehlt: $cmd"; done
 }
 
-extract_payload(){
+extract_and_verify_payload(){
   WORK=$(mktemp -d /var/tmp/vgt-gedefense-beta2.XXXXXX)
+  chmod 0700 "$WORK"
   local line archive actual
   line=$(awk '/^__VGT_PAYLOAD_BELOW__$/{print NR+1; exit}' "$SELF")
   [[ $line =~ ^[0-9]+$ ]] || fail "Payload-Marker fehlt."
+  # FIND-001/FIND-002: buffer the appended payload into a private 0600 file and
+  # verify SHA-256 plus the Ed25519-signed release index binding BEFORE a single
+  # byte is extracted. The signed index was already verified in release_trust_check.
   archive="$WORK/payload.tar.gz"
-  tail -n +"$line" "$SELF" > "$archive"
+  (umask 0077; tail -n +"$line" "$SELF" > "$archive")
+  chmod 0600 "$archive"
   actual=$(sha256sum "$archive" | awk '{print $1}')
   [[ $actual == "$PAYLOAD_SHA256" ]] || fail "Payload-Prüfsumme stimmt nicht."
-  mkdir "$WORK/payload"
+  if [[ $EFFECTIVE_TRUST_MODE == "prebuilt" ]]; then
+    python3 "$TRUST_WORK/release-verifier.py" verify-index \
+      --index "$TRUST_WORK/release-index.signed.json" --pubkey "$RELEASE_PUBKEY_HEX" \
+      --expected-version "$PRODUCT_VERSION" \
+      --artifact-file "payload.tar.gz=$archive" >/dev/null \
+      || fail "Payload ist nicht durch den signierten Release-Index gedeckt."
+    log "Payload-SHA-256 und Ed25519-Signatur des signierten Release-Index vor der Extraktion verifiziert."
+  else
+    log "Quell-basierter Trust-Modus: Payload-SHA-256 geprüft; die Signaturbindung erfolgte über den signierten Quell-Payload des Bootstraps."
+  fi
+  mkdir -m 0700 "$WORK/payload"
+  # Validate every tar member (path escape, symlinks, hardlinks, devices) before
+  # extraction and then extract with GNU tar protections so that payload metadata
+  # can never override host ownership/permissions.
   python3 - "$archive" "$WORK/payload" <<'PY'
 import pathlib, sys, tarfile
 archive, dst = sys.argv[1:]
 root = pathlib.Path(dst).resolve()
 with tarfile.open(archive, 'r:gz') as tf:
-    for member in tf.getmembers():
+    members = tf.getmembers()
+    if not members:
+        raise SystemExit('empty payload')
+    for member in members:
         p = pathlib.PurePosixPath(member.name)
         if p.is_absolute() or '..' in p.parts or member.issym() or member.islnk() or member.isdev():
-            raise SystemExit('unsafe payload member')
+            raise SystemExit('unsafe payload member: %s' % member.name)
         target = (root / pathlib.Path(*p.parts)).resolve()
         if target != root and root not in target.parents:
-            raise SystemExit('payload path escape')
-    tf.extractall(root)
+            raise SystemExit('payload path escape: %s' % member.name)
 PY
+  tar --no-same-owner --no-same-permissions --no-overwrite-dir -xzf "$archive" -C "$WORK/payload" \
+    || fail "Payload-Extraktion fehlgeschlagen."
   PAYLOAD="$WORK/payload"
+  [[ -f "$PAYLOAD/bin/gedefense-control" && ! -L "$PAYLOAD/bin/gedefense-control" ]] || fail "Control-Binary fehlt im Payload."
+  [[ -f "$PAYLOAD/bin/gedefense-access" && ! -L "$PAYLOAD/bin/gedefense-access" ]] || fail "Gateway-Binary fehlt im Payload."
   [[ $(sha256sum "$PAYLOAD/bin/gedefense-control" | awk '{print $1}') == "$CONTROL_SHA256" ]] || fail "Control-Binary ist beschädigt."
   [[ $(sha256sum "$PAYLOAD/bin/gedefense-access" | awk '{print $1}') == "$ACCESS_SHA256" ]] || fail "Gateway-Binary ist beschädigt."
+  verify_release_payload
+}
+
+validate_payload_binaries(){
+  # Executed only after install_build_dependencies provided the pinned
+  # distribution runtime libraries, and always after the cryptographic payload
+  # verification above - never as a substitute for it.
+  chmod 0755 "$PAYLOAD/bin/gedefense-control" "$PAYLOAD/bin/gedefense-access"
   ldd "$PAYLOAD/bin/gedefense-access" 2>/dev/null | grep -q 'libargon2.so.1' || fail "Gateway benötigt libargon2.so.1."
   ! ldd "$PAYLOAD/bin/gedefense-access" 2>/dev/null | grep -q 'not found' || fail "Gateway-Runtimebibliothek fehlt."
-  chmod 0755 "$PAYLOAD/bin/gedefense-control" "$PAYLOAD/bin/gedefense-access"
   [[ $("$PAYLOAD/bin/gedefense-control" --version) == "$PRODUCT_VERSION" ]] || fail "Control-Version ist falsch."
   [[ $("$PAYLOAD/bin/gedefense-access" --version) == "${PRODUCT_VERSION}-access" ]] || fail "Gateway-Version ist falsch."
-  verify_release_payload
 }
 
 detect_interface(){
@@ -453,8 +515,13 @@ create_password_record(){
     read -r -s -p "Passwort wiederholen: " second; printf '\n'
     [[ $first == "$second" ]] || { log "Passwörter stimmen nicht überein."; continue; }
     (( ${#first} >= 14 && ${#first} <= 128 )) || { log "Passwort muss 14 bis 128 Zeichen lang sein."; continue; }
-    tmp="${PASSWORD_FILE}.tmp.$$"
-    printf '%s\n' "$first" | "$PAYLOAD/bin/gedefense-access" --hash-password-stdin > "$tmp"
+    # FIND-003: no shell redirection into a predictable PID-based temp path; the
+    # record is written to an O_EXCL mktemp file with 0600, chowned, then renamed atomically.
+    tmp=$(mktemp -- "${PASSWORD_FILE}.new.XXXXXXXX")
+    if ! printf '%s\n' "$first" | "$PAYLOAD/bin/gedefense-access" --hash-password-stdin > "$tmp"; then
+      rm -f -- "$tmp"
+      fail "Dashboard-Passwort konnte nicht gehasht werden."
+    fi
     chown gedefense-access:gedefense-access "$tmp"; chmod 0600 "$tmp"
     mv -fT -- "$tmp" "$PASSWORD_FILE"
     unset first second
@@ -462,15 +529,53 @@ create_password_record(){
     break
   done
 }
-ensure_user_and_dirs(){
+# FIND-002: every service identity is created/validated with systemd-sysusers
+# (the packaged source of truth, packaging/sysusers/vgt-gedefense.conf) BEFORE any
+# install -o/chown references it. groupadd/useradd are only a fallback for hosts
+# without systemd-sysusers; the accounts are re-asserted afterwards either way.
+ensure_service_accounts(){
+  local candidate nologin="" sysusers_conf
+  for candidate in /usr/sbin/nologin /sbin/nologin /usr/bin/nologin /bin/false; do
+    if [[ -x $candidate ]]; then nologin=$candidate; break; fi
+  done
+  [[ -n $nologin ]] || fail "Keine nologin/false-Shell gefunden; Dienstkonten können nicht sicher angelegt werden."
+  if have systemd-sysusers; then
+    sysusers_conf=$(mktemp "${TMPDIR:-/tmp}/vgt-gedefense-sysusers.XXXXXX")
+    chmod 0600 "$sysusers_conf"
+    cat > "$sysusers_conf" <<EOF
+g gedefense - -
+g gedefense-l7 - -
+g gedefense-access - -
+u gedefense - "VGT GeDefense control plane" /var/lib/vgt/gedefense ${nologin}
+u gedefense-access - "VGT GeDefense HTTPS gateway" /var/lib/vgt/gedefense-access ${nologin}
+EOF
+    if systemd-sysusers "$sysusers_conf" >>"$LOG_FILE" 2>&1; then
+      log "Dienstkonten über systemd-sysusers angelegt/abgeglichen."
+    else
+      log "systemd-sysusers fehlgeschlagen; Fallback auf groupadd/useradd."
+    fi
+    rm -f -- "$sysusers_conf"
+  fi
   getent group gedefense >/dev/null 2>&1 || groupadd --system gedefense
   getent group gedefense-l7 >/dev/null 2>&1 || groupadd --system gedefense-l7
-  id gedefense >/dev/null 2>&1 || useradd --system --gid gedefense --home-dir "$STATE" --shell /usr/sbin/nologin gedefense
+  getent group gedefense-access >/dev/null 2>&1 || groupadd --system gedefense-access
+  id gedefense >/dev/null 2>&1 || useradd --system --gid gedefense --home-dir "$STATE" --shell "$nologin" gedefense
+  id gedefense-access >/dev/null 2>&1 || useradd --system --gid gedefense-access --home-dir "$ACCESS_STATE_PARENT" --shell "$nologin" gedefense-access
+  id gedefense >/dev/null 2>&1 || fail "Dienstkonto gedefense fehlt nach der Anlage."
+  id gedefense-access >/dev/null 2>&1 || fail "Dienstkonto gedefense-access fehlt nach der Anlage."
+}
+
+ensure_user_and_dirs(){
+  ensure_service_accounts
   install -d -o root -g root -m 0755 /opt /opt/vgt "$BASE" "$RELEASES"
   # The root core deliberately runs without CAP_DAC_OVERRIDE and with
   # Group=gedefense. 0710 lets that group traverse only to the root-owned
   # 0700 quarantine vault while preserving private directory listings.
-  install -d -o gedefense -g gedefense -m 0710 "$STATE"
+  # An existing tree keeps the packaged tmpfiles contract (1770 root:gedefense);
+  # re-applying 0710 on every upgrade would silently revoke the sticky boundary.
+  if [[ ! -d $STATE ]]; then
+    install -d -o gedefense -g gedefense -m 0710 "$STATE"
+  fi
   # Gateway credentials/TLS are prepared before install_units runs. Create the
   # separated gateway directories early with their exact final ownership.
   install -d -o gedefense -g gedefense-access -m 0750 "$ACCESS_STATE_PARENT"
@@ -481,8 +586,10 @@ ensure_user_and_dirs(){
   [[ $(stat -c '%U:%G:%a' "$STATE/canaries") == 'root:gedefense:750' ]] ||
     fail "Canary-Verzeichnisrechte konnten nicht sicher gesetzt werden."
   install -d -o gedefense -g gedefense-l7 -m 0750 "$L7_RUNTIME_DIR"
-  [[ $(stat -c '%U:%G:%a' "$STATE") == 'gedefense:gedefense:710' ]] ||
-    fail "Runtime-State-Rechte konnten nicht sicher gesetzt werden."
+  case $(stat -c '%U:%G:%a' "$STATE") in
+    'gedefense:gedefense:710'|'root:gedefense:1770') ;;
+    *) fail "Runtime-State-Rechte konnten nicht sicher gesetzt werden." ;;
+  esac
   [[ $(stat -c '%U:%G:%a' "$QUARANTINE_DIR") == 'root:gedefense:700' ]] ||
     fail "Quarantäne-Vault-Rechte konnten nicht sicher gesetzt werden."
   [[ $(stat -c '%U:%G:%a' "$QUARANTINE_OBJECT_DIR") == 'root:gedefense:700' ]] ||
@@ -492,10 +599,16 @@ ensure_user_and_dirs(){
 }
 
 ensure_raw_key(){
-  local path=$1 bytes=$2 owner=${3:-gedefense}
+  local path=$1 bytes=$2 owner=${3:-gedefense} tmp
+  # FIND-003: generate into an O_EXCL mktemp file (umask 0077 => 0600), set owner
+  # and mode there, then rename atomically. No direct ">" redirection into the
+  # final secret path and no predictable PID-based temp name.
   if [[ ! -f $path || -L $path || $(stat -c %s "$path" 2>/dev/null || echo 0) -ne $bytes ]]; then
-    [[ -e $path ]] && mv -f -- "$path" "${path}.invalid.$(date +%s)" || true
-    head -c "$bytes" /dev/urandom > "$path"
+    [[ -e $path || -L $path ]] && mv -f -- "$path" "${path}.invalid.$(date +%s)" || true
+    tmp=$(mktemp -- "${path}.new.XXXXXXXX")
+    head -c "$bytes" /dev/urandom > "$tmp"
+    chown "$owner:$owner" "$tmp"; chmod 0600 "$tmp"
+    mv -fT -- "$tmp" "$path"
   fi
   chown "$owner:$owner" "$path"; chmod 0600 "$path"
   [[ $(stat -c '%U:%G:%a' "$path") == "$owner:$owner:600" ]] || fail "Schlüsselrechte für $path konnten nicht gesetzt werden."
@@ -506,10 +619,16 @@ ensure_raw_key(){
 # sandboxed services can traverse the parent path without DAC-bypass powers.
 # Exact root:gedefense 0640 avoids broad CAP_DAC_OVERRIDE/CAP_DAC_READ_SEARCH.
 ensure_core_ipc_key(){
-  local path=$CORE_KEY_FILE
+  local path=$CORE_KEY_FILE tmp
+  # FIND-003: atomic mktemp+rename instead of redirecting random bytes directly
+  # into the final root:gedefense key path.
   if [[ ! -f $path || -L $path || $(stat -c %s "$path" 2>/dev/null || echo 0) -ne 32 ]]; then
-    [[ -e $path ]] && mv -f -- "$path" "${path}.invalid.$(date +%s)" || true
-    head -c 32 /dev/urandom > "$path"
+    [[ -e $path || -L $path ]] && mv -f -- "$path" "${path}.invalid.$(date +%s)" || true
+    tmp=$(mktemp -- "${path}.new.XXXXXXXX")
+    head -c 32 /dev/urandom > "$tmp"
+    chown root:gedefense "$tmp"
+    chmod 0640 "$tmp"
+    mv -fT -- "$tmp" "$path"
   fi
   chown root:gedefense "$path"
   chmod 0640 "$path"
@@ -518,10 +637,16 @@ ensure_core_ipc_key(){
 }
 
 ensure_storage_key(){
-  local path=$STORAGE_KEY_FILE
+  local path=$STORAGE_KEY_FILE tmp
+  # FIND-003: atomic mktemp+rename instead of redirecting random bytes directly
+  # into the final root:gedefense key path.
   if [[ ! -f $path || -L $path || $(stat -c %s "$path" 2>/dev/null || echo 0) -ne 32 ]]; then
-    [[ -e $path ]] && mv -f -- "$path" "${path}.invalid.$(date +%s)" || true
-    head -c 32 /dev/urandom > "$path"
+    [[ -e $path || -L $path ]] && mv -f -- "$path" "${path}.invalid.$(date +%s)" || true
+    tmp=$(mktemp -- "${path}.new.XXXXXXXX")
+    head -c 32 /dev/urandom > "$tmp"
+    chown root:gedefense "$tmp"
+    chmod 0640 "$tmp"
+    mv -fT -- "$tmp" "$path"
   fi
   chown root:gedefense "$path"
   chmod 0640 "$path"
@@ -530,18 +655,28 @@ ensure_storage_key(){
 }
 
 ensure_token(){
+  local tmp
   if [[ ! -f $TOKEN_FILE || -L $TOKEN_FILE ]] || ! python3 - "$TOKEN_FILE" <<'PY' >/dev/null 2>&1
 import base64, pathlib, sys
 raw=pathlib.Path(sys.argv[1]).read_text().strip(); pad='='*((4-len(raw)%4)%4)
 assert len(base64.urlsafe_b64decode(raw+pad))==32
 PY
   then
-    python3 - "$TOKEN_FILE" <<'PY'
+    # FIND-003: create the secret in a 0600 mktemp file and rename it into place.
+    tmp=$(mktemp -- "${TOKEN_FILE}.new.XXXXXXXX")
+    if ! python3 - "$tmp" <<'PY'
 import base64, pathlib, secrets, sys
 pathlib.Path(sys.argv[1]).write_text(base64.urlsafe_b64encode(secrets.token_bytes(32)).decode().rstrip('=')+'\n')
 PY
+    then
+      rm -f -- "$tmp"
+      fail "Gateway-Token konnte nicht erzeugt werden."
+    fi
+    chown gedefense:gedefense "$tmp"; chmod 0600 "$tmp"
+    mv -fT -- "$tmp" "$TOKEN_FILE"
   fi
   chown gedefense:gedefense "$TOKEN_FILE"; chmod 0600 "$TOKEN_FILE"
+  [[ $(stat -c '%U:%G:%a' "$TOKEN_FILE") == 'gedefense:gedefense:600' ]] || fail "Gateway-Token-Rechte konnten nicht gesetzt werden."
 }
 
 prepare_secrets(){
@@ -566,17 +701,24 @@ prepare_secrets(){
 install_rust_toolchains(){
   export RUSTUP_HOME=${RUSTUP_HOME:-/root/.rustup}
   export CARGO_HOME=${CARGO_HOME:-/root/.cargo}
-  if ! have rustup; then
-    log "Installiere minimale Rust-Toolchain."
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal >>"$LOG_FILE" 2>&1
-  fi
   export PATH="$CARGO_HOME/bin:$PATH"
-  rustup toolchain install "$RUST_STABLE_TOOLCHAIN" --profile minimal >>"$LOG_FILE" 2>&1
-  rustup toolchain install "$RUST_NIGHTLY_TOOLCHAIN" --profile minimal --component rust-src >>"$LOG_FILE" 2>&1
-  if ! have bpf-linker || [[ $(bpf-linker --version 2>/dev/null | awk '{print $2}') != "$BPF_LINKER_VERSION" ]]; then
-    log "Installiere bpf-linker ${BPF_LINKER_VERSION}."
-    cargo +"$RUST_STABLE_TOOLCHAIN" install bpf-linker --version "$BPF_LINKER_VERSION" --locked --force >>"$LOG_FILE" 2>&1
-  fi
+  # FIND-002: the installer never downloads executable toolchains or crates from
+  # the network (`curl | sh`, `cargo install` are removed). The pinned Rust
+  # toolchains, rust-src and bpf-linker must come from the signed release or an
+  # offline toolchain archive pinned in TOOLCHAINS.lock; otherwise fail closed
+  # with an explicit operator instruction instead of executing remote code.
+  have rustup \
+    || fail "rustup fehlt. Der Installer lädt keine Toolchains aus dem Netz: Rust ${RUST_STABLE_TOOLCHAIN}, ${RUST_NIGHTLY_TOOLCHAIN} (mit rust-src) und bpf-linker ${BPF_LINKER_VERSION} aus dem signierten Release-/Offline-Toolchain-Archiv installieren (TOOLCHAINS.lock) und erneut starten."
+  rustc +"$RUST_STABLE_TOOLCHAIN" --version >/dev/null 2>&1 \
+    || fail "Rust-Toolchain ${RUST_STABLE_TOOLCHAIN} fehlt (gepinnte Offline-/Release-Toolchain erforderlich)."
+  rustc +"$RUST_NIGHTLY_TOOLCHAIN" --version >/dev/null 2>&1 \
+    || fail "Rust-Toolchain ${RUST_NIGHTLY_TOOLCHAIN} fehlt (gepinnte Offline-/Release-Toolchain erforderlich)."
+  rustup component list --toolchain "$RUST_NIGHTLY_TOOLCHAIN" --installed 2>/dev/null | grep -qx 'rust-src' \
+    || fail "rust-src für ${RUST_NIGHTLY_TOOLCHAIN} fehlt (rust-src aus der gepinnten Toolchain-Installation erforderlich)."
+  have bpf-linker \
+    || fail "bpf-linker fehlt. bpf-linker ${BPF_LINKER_VERSION} aus dem signierten Release-/Offline-Toolchain-Archiv installieren (kein cargo install im Installer)."
+  [[ $(bpf-linker --version 2>/dev/null | awk '{print $2}') == "$BPF_LINKER_VERSION" ]] \
+    || fail "bpf-linker ${BPF_LINKER_VERSION} erforderlich (gepinnt in TOOLCHAINS.lock); installierte Version ist $(bpf-linker --version 2>/dev/null || echo unbekannt)."
   rustc +"$RUST_STABLE_TOOLCHAIN" --version | tee -a "$LOG_FILE"
   rustc +"$RUST_NIGHTLY_TOOLCHAIN" --version | tee -a "$LOG_FILE"
   bpf-linker --version | tee -a "$LOG_FILE"
@@ -589,6 +731,9 @@ build_rust_stack(){
   export RUSTUP_HOME=${RUSTUP_HOME:-/root/.rustup}
   export CARGO_HOME=${CARGO_HOME:-/root/.cargo}
   export PATH="$CARGO_HOME/bin:$PATH"
+  # FIND-002: every cargo invocation is --locked, so crate downloads are integrity
+  # pinned by the Cargo.lock that is itself covered by the signed release payload
+  # (the lock file is not re-generated and no unpinned version can be pulled in).
   log "Kompiliere Rust eBPF/XDP für den Zielkernel. Das kann einige Minuten dauern."
   [[ -f "$BUILD_ROOT/rust/Cargo.lock" ]] || fail "Gepinntes Rust Cargo.lock fehlt."
   cargo +"$RUST_NIGHTLY_TOOLCHAIN" build --locked --manifest-path "$BUILD_ROOT/rust/Cargo.toml" -p gedefense-ebpf --release --target bpfel-unknown-none -Z build-std=core >>"$LOG_FILE" 2>&1
@@ -689,7 +834,14 @@ generate_tls(){
     tls_identity_compatible || fail "Neu erzeugte TLS-IdentitÃ¤t ist ungÃ¼ltig."
   fi
   chown root:gedefense "$CERT_FILE"; chmod 0644 "$CERT_FILE"
-  chown gedefense:gedefense "$TLS_KEY_FILE"; chmod 0600 "$TLS_KEY_FILE"
+  # FIND-003: the TLS private key is root-only 0600. The gateway runs as
+  # gedefense-access and receives it as a systemd LoadCredential; neither the
+  # control-plane account nor the gateway account may read the canonical file.
+  chown root:root "$TLS_KEY_FILE"; chmod 0600 "$TLS_KEY_FILE"
+  [[ $(stat -c '%U:%G:%a' "$TLS_KEY_FILE") == 'root:root:600' ]] \
+    || fail "TLS-Key-Rechte konnten nicht auf root:root:600 gesetzt werden."
+  [[ $(stat -c '%U:%G:%a' "$CERT_FILE") == 'root:gedefense:644' ]] \
+    || fail "TLS-Zertifikatsrechte konnten nicht auf root:gedefense:644 gesetzt werden."
 }
 backup_activation_state(){
   BACKUP_DIR="$WORK/activation-backup"
@@ -754,14 +906,15 @@ install_units(){
   # The whole point of the separation: the internet-facing account must not reach the trust root. If any
   # of these reads succeeds, the separation is broken and the gateway can sign core commands or decrypt
   # the evidence store. su is used instead of sudo because it is present on a minimal target.
-  if id -u gedefense-access >/dev/null 2>&1; then
-    for secret in "$CORE_KEY_FILE" "$STORAGE_KEY_FILE" "$POLICY_PRIVATE_KEY_FILE" "$XDR_KEY_FILE" "$RUNTIME_KEY_FILE"; do
-      if [[ -n $secret ]] && su -s /bin/sh gedefense-access -c "test -r '$secret'" 2>/dev/null; then
-        fail "Trennungsprüfung: gedefense-access kann $secret lesen - die Diensttrennung ist unwirksam."
-      fi
-    done
-    log "Trennungsprüfung: gedefense-access erreicht die Vertrauenswurzel nicht."
-  fi
+  # FIND-002: the account is created in ensure_service_accounts; a missing account is a hard failure
+  # instead of silently skipping the separation proof.
+  id -u gedefense-access >/dev/null 2>&1 || fail "Dienstkonto gedefense-access fehlt; Diensttrennung kann nicht geprüft werden."
+  for secret in "$CORE_KEY_FILE" "$STORAGE_KEY_FILE" "$POLICY_PRIVATE_KEY_FILE" "$XDR_KEY_FILE" "$RUNTIME_KEY_FILE"; do
+    if [[ -n $secret ]] && su -s /bin/sh gedefense-access -c "test -r '$secret'" 2>/dev/null; then
+      fail "Trennungsprüfung: gedefense-access kann $secret lesen - die Diensttrennung ist unwirksam."
+    fi
+  done
+  log "Trennungsprüfung: gedefense-access erreicht die Vertrauenswurzel nicht."
   sed -e "s#@RELEASE@#/opt/vgt/gedefense/current#g" -e "s#@PUBLIC_PORT@#${PUBLIC_PORT}#g" -e "s#@PUBLIC_HOST@#${PUBLIC_HOST}:${PUBLIC_PORT}#g" "$PAYLOAD/systemd/gedefense-access.service.in" > /etc/systemd/system/gedefense-access.service
   chmod 0644 /etc/systemd/system/gedefense-core.service /etc/systemd/system/gedefense-access.service
 }
@@ -891,10 +1044,14 @@ archive_old_latch(){
 main(){
   parse_args "$@"
   log "VGT GeDefense ${PRODUCT_VERSION} Full-Stack Installation startet."
-  platform_check
-  install_build_dependencies
+  # FIND-002: the signed release index (Ed25519) and the anti-rollback guard are
+  # verified as the very FIRST action. No package manager, no filesystem mutation
+  # and no network download may run before the release identity is trusted.
   release_trust_check
-  extract_payload
+  platform_check
+  extract_and_verify_payload
+  install_build_dependencies
+  validate_payload_binaries
   detect_interface
   collect_access_settings
   ensure_user_and_dirs

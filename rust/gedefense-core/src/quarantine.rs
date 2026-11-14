@@ -31,6 +31,12 @@ const MAX_FILE_BYTES: u64 = 256 * 1024 * 1024;
 const RESOLVE_NO_MAGICLINKS: u64 = 0x02;
 const RESOLVE_NO_SYMLINKS: u64 = 0x04;
 const RENAME_NOREPLACE: u32 = 1;
+// A quarantined file is restored as data, never as a privilege boundary: the
+// captured SUID (04000) and SGID (02000) bits are dropped unconditionally even
+// though the identity records them, so a restore can never reinstall a setuid
+// payload. The temporary restore file is created 0600 and only reaches the final
+// destination after verification.
+const RESTORE_MODE_MASK: u32 = 0o777;
 
 #[repr(C)]
 struct OpenHow {
@@ -250,18 +256,17 @@ impl QuarantineBroker {
             output.sync_all()?;
             drop(output);
             self.encrypt_staged(object_dir.as_raw_fd(), &temporary_name, object_id, expected)?;
-            let _ = unlink_at(object_dir.as_raw_fd(), &temporary_name);
+            // FIND-035: the plaintext copy inside the vault must be gone before
+            // the transaction may report success; a silent unlink failure would
+            // leave an unmanaged cleartext duplicate behind.
+            unlink_at(object_dir.as_raw_fd(), &temporary_name)?;
             let _ = sync_directory(&self.object_dir);
-            match unlink_at(parent_fd, basename) {
-                Ok(()) => {
-                    let _ = sync_fd(parent_fd);
-                }
-                Err(error) => {
-                    eprintln!(
-                        "GeDefense quarantine stored a verified vault copy; source stays in place because its backing store is read-only (sandbox): {error}"
-                    );
-                }
-            }
+            // FIND-035: the encrypted vault object is only a quarantine when the
+            // source is verifiably gone. The previous code logged an unlink
+            // failure and still answered Ok, so the control plane believed the
+            // malware had been removed while it still sat in place. Any failure
+            // here aborts and rolls the vault object back.
+            remove_source_after_verified_copy(parent_fd, basename)?;
             Ok(expected.encode())
         })();
         if result.is_err() {
@@ -351,8 +356,9 @@ impl QuarantineBroker {
                 if ownership != 0 {
                     return Err(std::io::Error::last_os_error().into());
                 }
+                let restore_mode = restored_mode(expected.mode);
                 let permissions =
-                    unsafe { libc::fchmod(output.as_raw_fd(), expected.mode as libc::mode_t) };
+                    unsafe { libc::fchmod(output.as_raw_fd(), restore_mode as libc::mode_t) };
                 if permissions != 0 {
                     return Err(std::io::Error::last_os_error().into());
                 }
@@ -629,20 +635,39 @@ fn open_parent_and_name(path: &Path) -> Result<(OwnedFd, CString), BoxError> {
     Ok((parent_fd, CString::new(basename)?))
 }
 
+// FIND-035: a restore must never reproduce setuid/setgid (or sticky) bits from
+// the stored identity. Only the ordinary permission bits are restored.
+fn restored_mode(mode: u32) -> u32 {
+    mode & RESTORE_MODE_MASK
+}
+
 fn open_regular_at(parent_fd: RawFd, name: &CStr) -> Result<OwnedFd, BoxError> {
+    // O_NONBLOCK is the FIFO fix: a user-planted FIFO in the destination
+    // directory made openat block forever on the single-threaded IPC loop. With
+    // O_NONBLOCK the open returns at once and the type check below refuses it;
+    // for a regular file O_NONBLOCK has no effect on reads.
     let descriptor = unsafe {
         libc::openat(
             parent_fd,
             name.as_ptr(),
-            libc::O_RDONLY | libc::O_CLOEXEC | libc::O_NOFOLLOW,
+            libc::O_RDONLY | libc::O_CLOEXEC | libc::O_NOFOLLOW | libc::O_NONBLOCK,
         )
     };
     if descriptor < 0 {
         return Err(std::io::Error::last_os_error().into());
     }
     let fd = unsafe { OwnedFd::from_raw_fd(descriptor) };
-    let metadata = File::from(fd.try_clone()?).metadata()?;
-    if !metadata.is_file() || metadata.file_type().is_symlink() || metadata.len() > MAX_FILE_BYTES {
+    // fstat on the already opened descriptor: the target must be a regular file.
+    // Symlinks are already refused by O_NOFOLLOW (ELOOP); FIFOs, sockets and
+    // devices are refused here before any read can block.
+    let mut stat: libc::stat = unsafe { std::mem::zeroed() };
+    if unsafe { libc::fstat(fd.as_raw_fd(), &mut stat) } != 0 {
+        return Err(std::io::Error::last_os_error().into());
+    }
+    if stat.st_mode & libc::S_IFMT != libc::S_IFREG
+        || stat.st_size < 0
+        || stat.st_size as u64 > MAX_FILE_BYTES
+    {
         return Err("quarantine source must be a bounded regular file".into());
     }
     Ok(fd)
@@ -752,6 +777,25 @@ fn unlink_at(parent_fd: RawFd, name: &CStr) -> Result<(), BoxError> {
     let result = unsafe { libc::unlinkat(parent_fd, name.as_ptr(), 0) };
     if result != 0 {
         return Err(std::io::Error::last_os_error().into());
+    }
+    Ok(())
+}
+
+// FIND-035: removal of the captured source is the commit point of a copy-only
+// quarantine. Its failure is a failed quarantine, not a benign degradation: the
+// caller aborts the transaction and the control plane must not record success
+// while the malware is still at its original path.
+fn remove_source_after_verified_copy(parent_fd: RawFd, basename: &CStr) -> Result<(), BoxError> {
+    if let Err(error) = unlink_at(parent_fd, basename) {
+        return Err(std::io::Error::other(format!(
+            "quarantine source could not be removed after a verified copy: {error}"
+        ))
+        .into());
+    }
+    if let Err(error) = sync_fd(parent_fd) {
+        // The source is already gone, so the quarantine itself is complete; only
+        // the durability of the directory entry removal is degraded.
+        eprintln!("GeDefense quarantine source removal was not durable: {error}");
     }
     Ok(())
 }
@@ -1149,6 +1193,178 @@ mod tests {
             "failed restore left staging files: {leftovers:?}"
         );
 
+        fs::remove_dir_all(&root).expect("test cleanup");
+    }
+
+    // FIND-035: captured SUID/SGID bits are never restored.
+    #[test]
+    fn restored_mode_masks_suid_sgid_and_sticky() {
+        assert_eq!(restored_mode(0o4755), 0o755);
+        assert_eq!(restored_mode(0o2755), 0o755);
+        assert_eq!(restored_mode(0o6755), 0o755);
+        assert_eq!(restored_mode(0o1655), 0o655);
+        assert_eq!(restored_mode(0o640), 0o640);
+        assert_eq!(restored_mode(0o7777), 0o777);
+    }
+
+    #[test]
+    fn restore_drops_the_suid_bit_of_a_quarantined_file() {
+        let root = test_root("restore-suid");
+        let source_dir = root.join("source");
+        let object_dir = root.join("vault");
+        fs::create_dir_all(&source_dir).expect("source directory");
+        let source = source_dir.join("setuid.bin");
+        fs::write(&source, b"setuid payload").expect("source write");
+        fs::set_permissions(&source, fs::Permissions::from_mode(0o4755)).expect("source mode");
+        let broker =
+            QuarantineBroker::new(object_dir.to_str().expect("object directory"), &[0x77; 32])
+                .expect("broker");
+        let encoded_path = path_token(&source);
+        let identity =
+            identity_from_token(&broker.inspect_token(&encoded_path).expect("inspect source"));
+        assert_eq!(
+            identity.mode & 0o7777,
+            0o4755,
+            "the identity records the captured SUID bit"
+        );
+        let object_id = "QV-0011223344556677";
+        broker
+            .quarantine_token(&encoded_path, object_id, &identity)
+            .expect("quarantine");
+        assert!(!source.exists());
+        broker
+            .restore_token(&encoded_path, object_id, &identity)
+            .expect("restore");
+        let mode = fs::metadata(&source).expect("restored metadata").mode() & 0o7777;
+        assert_eq!(mode, 0o755, "restore must drop SUID/SGID bits");
+        assert_eq!(mode & 0o7000, 0, "no privilege bits may survive a restore");
+
+        fs::remove_dir_all(&root).expect("test cleanup");
+    }
+
+    // FIND-035: a FIFO planted at the quarantine source name must be refused
+    // immediately instead of blocking the single-threaded IPC loop forever.
+    #[test]
+    fn open_regular_at_returns_immediately_for_a_fifo() {
+        let root = test_root("fifo-open");
+        let parent = File::open(&root).expect("parent directory");
+        let fifo = root.join("threat.fifo");
+        let fifo_c = CString::new(fifo.as_os_str().as_bytes()).expect("fifo path");
+        assert_eq!(unsafe { libc::mkfifo(fifo_c.as_ptr(), 0o600) }, 0, "mkfifo");
+        let name = CString::new("threat.fifo").expect("fifo name");
+        let started = std::time::Instant::now();
+        let result = open_regular_at(parent.as_raw_fd(), &name);
+        assert!(result.is_err(), "a FIFO must not be accepted as a source");
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(2),
+            "open_regular_at blocked on a FIFO"
+        );
+
+        // A directory and a symlink are not regular files either.
+        fs::create_dir(root.join("directory")).expect("directory fixture");
+        let directory = CString::new("directory").expect("directory name");
+        assert!(open_regular_at(parent.as_raw_fd(), &directory).is_err());
+        let target = root.join("target.bin");
+        fs::write(&target, b"target").expect("symlink target");
+        std::os::unix::fs::symlink(&target, root.join("linked.bin")).expect("symlink fixture");
+        let link = CString::new("linked.bin").expect("symlink name");
+        assert!(open_regular_at(parent.as_raw_fd(), &link).is_err());
+
+        fs::remove_dir_all(&root).expect("test cleanup");
+    }
+
+    #[test]
+    fn unlink_at_propagates_missing_and_directory_failures() {
+        let root = test_root("unlink-errors");
+        let parent = File::open(&root).expect("parent directory");
+        let missing = CString::new("missing.bin").expect("missing name");
+        assert!(unlink_at(parent.as_raw_fd(), &missing).is_err());
+        fs::create_dir(root.join("subdir")).expect("directory fixture");
+        let directory = CString::new("subdir").expect("directory name");
+        let error: BoxError = unlink_at(parent.as_raw_fd(), &directory)
+            .expect_err("unlinkat on a directory must not report success");
+        assert!(!error.to_string().is_empty(), "{error}");
+        assert!(root.join("subdir").exists());
+        fs::remove_dir_all(&root).expect("test cleanup");
+    }
+
+    // FIND-035: the source removal is the commit point of the copy fallback.
+    // This test runs in an unprivileged child process when the harness is root,
+    // because root's CAP_DAC_OVERRIDE would unlink inside a read-only directory
+    // and hide the defect.
+    #[test]
+    fn copy_quarantine_aborts_when_the_source_cannot_be_removed() {
+        if std::env::var_os("GEDEFENSE_QUARANTINE_READONLY_CHILD").is_some() {
+            copy_quarantine_aborts_when_the_source_cannot_be_removed_inner();
+            return;
+        }
+        if unsafe { libc::geteuid() } == 0 {
+            use std::os::unix::process::CommandExt;
+            let exe = std::env::current_exe().expect("test binary");
+            let mut command = std::process::Command::new(exe);
+            command.args([
+                "--exact",
+                "copy_quarantine_aborts_when_the_source_cannot_be_removed",
+                "--nocapture",
+            ]);
+            command.env("GEDEFENSE_QUARANTINE_READONLY_CHILD", "1");
+            unsafe {
+                command.pre_exec(|| {
+                    if libc::setgid(65534) != 0 || libc::setuid(65534) != 0 {
+                        return Err(std::io::Error::last_os_error());
+                    }
+                    Ok(())
+                });
+            }
+            let status = command.status().expect("unprivileged child test process");
+            assert!(status.success(), "unprivileged child test failed: {status}");
+            return;
+        }
+        copy_quarantine_aborts_when_the_source_cannot_be_removed_inner();
+    }
+
+    fn copy_quarantine_aborts_when_the_source_cannot_be_removed_inner() {
+        let root = test_root("copy-abort");
+        let source_dir = root.join("source");
+        let object_dir = root.join("vault");
+        fs::create_dir_all(&source_dir).expect("source directory");
+        let source = source_dir.join("threat.bin");
+        fs::write(&source, b"copy-abort payload").expect("source write");
+        let broker =
+            QuarantineBroker::new(object_dir.to_str().expect("object directory"), &[0x66; 32])
+                .expect("broker");
+        let (parent, basename) = open_parent_and_name(&source).expect("parent descriptor");
+        let identity = inspect_at(parent.as_raw_fd(), &basename).expect("identity");
+        // Readable but not writable: the vault copy succeeds, unlink of the
+        // source fails with EACCES.
+        fs::set_permissions(&source_dir, fs::Permissions::from_mode(0o555))
+            .expect("read-only source directory");
+        let object_id = "QV-0123456789abcdef";
+        let error = broker
+            .copy_quarantine(parent.as_raw_fd(), &basename, object_id, &identity)
+            .expect_err("an unremovable source must fail the quarantine");
+        assert!(
+            error.to_string().contains("could not be removed"),
+            "{error}"
+        );
+        assert!(source.exists(), "the source must remain at its path");
+        assert!(
+            !object_dir.join(format!("{object_id}.qv")).exists(),
+            "the vault object must be rolled back"
+        );
+        let leftovers: Vec<String> = fs::read_dir(&object_dir)
+            .expect("vault listing")
+            .map(|entry| {
+                entry
+                    .expect("vault entry")
+                    .file_name()
+                    .to_string_lossy()
+                    .into_owned()
+            })
+            .collect();
+        assert!(leftovers.is_empty(), "vault leftovers: {leftovers:?}");
+        fs::set_permissions(&source_dir, fs::Permissions::from_mode(0o755))
+            .expect("restore directory mode");
         fs::remove_dir_all(&root).expect("test cleanup");
     }
 }

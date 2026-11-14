@@ -562,9 +562,13 @@ func normalizeTLSAllowedPattern(pattern string) (string, error) {
 	return normalized, nil
 }
 
+// allowedTLSHostname reports whether host is inside the configured server scope.
+// An empty scope is NOT a wildcard: it returns false, and the callers publish an
+// explicit degraded policy state instead of silently accepting every SNI
+// (FIND-022). Only a configured allowlist can authorise a hostname.
 func allowedTLSHostname(allowed map[string]struct{}, host string) bool {
 	if len(allowed) == 0 {
-		return true
+		return false
 	}
 	host = normalizeTLSHostname(host)
 	if _, ok := allowed[host]; ok {
@@ -579,6 +583,23 @@ func allowedTLSHostname(allowed map[string]struct{}, host string) bool {
 		}
 	}
 	return false
+}
+
+// tlsPolicyUnconfiguredState is the explicit, operator-visible condition for an
+// enabled TLS inspector without a configured server scope. It replaces the
+// former silent "everything is allowed" behaviour of allowedTLSHostname.
+const tlsPolicyUnconfiguredState = "UNCONFIGURED_DEGRADED"
+
+// tlsAllowedDomainsPolicyProblem names the degraded policy state (or "" when the
+// policy is configured). It is published into L7Status.TLSLastError so the
+// silent deactivation of the SNI/Host spoof checks becomes visible, and it is
+// also attached to ClientHello findings.
+func tlsAllowedDomainsPolicyProblem(cfg L7Config) string {
+	if !cfg.TLSEnabled || len(cfg.TLSAllowedDomains) > 0 {
+		return ""
+	}
+	return "TLS allowed-domain policy is " + tlsPolicyUnconfiguredState +
+		": no server scope is configured, so SNI and Host correlation cannot decide whether a request is in scope (checks remain fail-closed, not silently bypassed)"
 }
 
 func (e *TLSSecurityEngine) ensureBehaviorLocked(clientIP string, now time.Time) *TLSBehaviorState {
@@ -675,6 +696,17 @@ func (e *TLSSecurityEngine) InspectHandshakeDetailed(clientIP string, payload []
 			RuleID: "TLS.SNI.INVALID", Category: "protocol_anomaly", Severity: "medium",
 			Score: 60, Confidence: 95, Location: "tls.client_hello.sni", Summary: fmt.Sprintf("IP literal presented in TLS SNI: %s", summary.SNI),
 		})
+	} else if len(e.allowedDomains) == 0 {
+		// No server scope is configured: naming the SNI foreign would be as wrong
+		// as silently allowing it. The explicit degraded finding makes the missing
+		// policy visible without escalating a default installation into findings
+		// that can authorise blocks (FIND-022).
+		findings = append(findings, L7Finding{
+			RuleID: "TLS.SNI.ALLOWLIST_UNCONFIGURED", Category: "configuration", Severity: "low",
+			Score: 20, Confidence: 100, Location: "tls.client_hello.sni",
+			Summary: "TLS SNI allowlist is " + tlsPolicyUnconfiguredState +
+				": the requested domain cannot be validated against a configured server scope",
+		})
 	} else if !allowedTLSHostname(e.allowedDomains, summary.SNI) {
 		sniViolation = true
 		findings = append(findings, L7Finding{
@@ -744,7 +776,17 @@ func (e *TLSSecurityEngine) RecordHTTPRequestForHost(clientIP, host string, now 
 	if host == "" || state.LastSNI == "" || now.Sub(state.LastTLS) > tlsHostCorrelationWindow {
 		return nil
 	}
-	if state.LastSNI == host || (allowedTLSHostname(e.allowedDomains, state.LastSNI) && allowedTLSHostname(e.allowedDomains, host)) {
+	if state.LastSNI == host {
+		return nil
+	}
+	if len(e.allowedDomains) == 0 {
+		// A missing server scope is a published degraded policy state, not a
+		// license to report (or to suppress silently) a host mismatch. No
+		// accusation is derived from a policy that was never configured; the
+		// operator sees UNCONFIGURED_DEGRADED in the TLS status beside it.
+		return nil
+	}
+	if allowedTLSHostname(e.allowedDomains, state.LastSNI) && allowedTLSHostname(e.allowedDomains, host) {
 		return nil
 	}
 	return []L7Finding{{

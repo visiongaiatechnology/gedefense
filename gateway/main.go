@@ -30,7 +30,7 @@ import (
 	"time"
 )
 
-const version = "5.1.0-beta.3-access"
+const version = "5.2.0-access"
 const cookieName = "__Host-vgt_gedefense_session"
 const csrfCookieName = "vgt_gedefense_login_csrf"
 
@@ -95,6 +95,7 @@ var (
 	generateCertFlag     = flag.Bool("generate-self-signed", false, "generate a self-signed certificate and exit")
 	selfTestFlag         = flag.Bool("self-test-backend", false, "verify authenticated backend access and exit")
 	hashPasswordFlag     = flag.Bool("hash-password-stdin", false, "read a password from stdin and print an Argon2id record")
+	verifyPasswordFlag   = flag.Bool("verify-password-stdin", false, "verify a password from stdin against the record and exit")
 )
 
 type passwordRecord struct {
@@ -118,6 +119,150 @@ type limiter struct {
 	// failures is a bounded global ring of recent failed attempts. It does not lock
 	// anyone out; it only lets the failure handler slow down a distributed flood.
 	failures []time.Time
+}
+
+// FIND-010 (VGT-AUDIT-20261114-GD51): password verification is memory-hard. One
+// Argon2id call allocates 64 MiB (gateway/argon2_linux.go), so an unauthenticated
+// flood of sign-in attempts used to start one such allocation per request and could
+// exhaust the node before a single credential was checked. Every pre-authentication
+// verification now takes a slot from one process-wide budget, and a per-source
+// in-flight reservation is recorded before any KDF memory is touched. Waiting is
+// bounded by the request context and by kdfQueueTimeout; a refused sign-in is
+// answered with 429/503 and Retry-After and never reaches the memory-hard path.
+const (
+	maxConcurrentKDF            = 4
+	maxConcurrentKDFPerIdentity = 2
+	maxKDFIdentities            = 1024
+	kdfQueueTimeout             = 2 * time.Second
+)
+
+var (
+	errKDFOverloaded   = errors.New("password verification capacity exhausted")
+	errKDFIdentityBusy = errors.New("too many concurrent sign-ins from this source")
+)
+
+type kdfGate struct {
+	slots          chan struct{}
+	mu             sync.Mutex
+	active         map[string]int
+	maxIdentities  int
+	maxPerIdentity int
+	queueTimeout   time.Duration
+	inFlight       int
+	maxObserved    int
+}
+
+func newKDFGate(limit int) *kdfGate {
+	if limit <= 0 {
+		limit = maxConcurrentKDF
+	}
+	return &kdfGate{
+		slots:          make(chan struct{}, limit),
+		active:         make(map[string]int),
+		maxIdentities:  maxKDFIdentities,
+		maxPerIdentity: maxConcurrentKDFPerIdentity,
+		queueTimeout:   kdfQueueTimeout,
+	}
+}
+
+func (g *gateway) ensureKDF() {
+	g.kdfOnce.Do(func() {
+		if g.kdf == nil {
+			g.kdf = newKDFGate(maxConcurrentKDF)
+		}
+	})
+}
+
+// reserve records the per-identity in-flight attempt before any KDF work starts.
+// The map only holds identities that are currently waiting for or running a
+// verification, so a distributed flood cannot grow it without bound.
+func (k *kdfGate) reserve(identity string) error {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	if k.active[identity] >= k.maxPerIdentity {
+		return errKDFIdentityBusy
+	}
+	if k.active[identity] == 0 && len(k.active) >= k.maxIdentities {
+		return errKDFOverloaded
+	}
+	k.active[identity]++
+	return nil
+}
+
+func (k *kdfGate) releaseIdentity(identity string) {
+	k.mu.Lock()
+	if n := k.active[identity]; n <= 1 {
+		delete(k.active, identity)
+	} else {
+		k.active[identity] = n - 1
+	}
+	k.mu.Unlock()
+}
+
+// acquire reserves the identity, then waits for one of the global KDF slots.
+// The returned release function is idempotent so a deferred release can never
+// return the same slot twice.
+func (k *kdfGate) acquire(ctx context.Context, identity string) (func(), error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if err := k.reserve(identity); err != nil {
+		return nil, err
+	}
+	wait := k.queueTimeout
+	if wait <= 0 {
+		select {
+		case k.slots <- struct{}{}:
+			return k.enter(identity), nil
+		default:
+			k.releaseIdentity(identity)
+			return nil, errKDFOverloaded
+		}
+	}
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
+	select {
+	case k.slots <- struct{}{}:
+		return k.enter(identity), nil
+	case <-ctx.Done():
+		k.releaseIdentity(identity)
+		return nil, ctx.Err()
+	case <-timer.C:
+		k.releaseIdentity(identity)
+		return nil, errKDFOverloaded
+	}
+}
+
+func (k *kdfGate) enter(identity string) func() {
+	k.mu.Lock()
+	k.inFlight++
+	if k.inFlight > k.maxObserved {
+		k.maxObserved = k.inFlight
+	}
+	k.mu.Unlock()
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			<-k.slots
+			k.mu.Lock()
+			if k.inFlight > 0 {
+				k.inFlight--
+			}
+			k.mu.Unlock()
+			k.releaseIdentity(identity)
+		})
+	}
+}
+
+// stats reports the current and high-water number of concurrent verifications.
+// The high-water mark is what the backpressure regression test asserts on.
+func (k *kdfGate) stats() (inFlight, maxObserved int) {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	return k.inFlight, k.maxObserved
 }
 
 func newLimiter() *limiter {
@@ -220,6 +365,10 @@ type gateway struct {
 	backendToken string
 	proxy        *httputil.ReverseProxy
 	limiter      *limiter
+	// FIND-010: one process-wide admission gate in front of the memory-hard
+	// password KDF. It is created lazily so gateway literals in tests keep working.
+	kdf     *kdfGate
+	kdfOnce sync.Once
 	// sessions is the server-side registry that makes logout/revocation/idle timeouts
 	// effective (F-09). It is created lazily so tests that build a gateway literal keep
 	// working.
@@ -261,6 +410,30 @@ func main() {
 	}
 	if *showVersionFlag {
 		fmt.Println(version)
+		return
+	}
+	if *verifyPasswordFlag {
+		// FIND-009: the privileged set-password helper uses this non-interactive
+		// verification path to bind a password change to the current operator
+		// credential before it overwrites the record. Only a generic verdict is
+		// written; neither the password nor the record is echoed.
+		password, err := io.ReadAll(io.LimitReader(os.Stdin, 1025))
+		if err != nil {
+			log.Fatal(err)
+		}
+		password = []byte(strings.TrimRight(string(password), "\r\n"))
+		record, err := loadPasswordRecord(*passwordFileFlag)
+		if err != nil {
+			zero(password)
+			fmt.Fprintln(os.Stderr, "password record is unavailable")
+			os.Exit(1)
+		}
+		verified := verifyPassword(password, record)
+		zero(password)
+		if !verified {
+			fmt.Fprintln(os.Stderr, "password verification failed")
+			os.Exit(1)
+		}
 		return
 	}
 	if *publicHostFlag == "" {
@@ -344,21 +517,7 @@ func main() {
 		return
 	}
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /gateway/livez", g.livez)
-	mux.HandleFunc("GET /gateway/version", g.version)
-	mux.HandleFunc("GET /gateway/session", g.sessionStatus)
-	mux.HandleFunc("POST /gateway/session/rotate", g.rotateSession)
-	mux.HandleFunc("POST /gateway/session/revoke-all", g.revokeAllSessions)
-	// The mark is served before authentication because the login page needs it. It is a
-	// static embedded image with no user input in its path, so there is nothing to
-	// validate and nothing it can disclose.
-	mux.HandleFunc("GET /gateway/logo.png", g.logo)
-	mux.HandleFunc("GET /gateway/sirdu.png", g.mascot)
-	mux.HandleFunc("GET /login", g.loginPage)
-	mux.HandleFunc("POST /login", g.login)
-	mux.HandleFunc("POST /logout", g.logout)
-	mux.HandleFunc("/", g.protectedProxy)
+	mux := g.routes()
 
 	server := &http.Server{
 		Addr:              *listenFlag,
@@ -384,6 +543,41 @@ func main() {
 	if err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatal(err)
 	}
+}
+
+// routes builds the public gateway mux. There is deliberately no anonymous
+// build/version surface (FIND-012): /gateway/livez answers only whether the process
+// is up and carries no build metadata, and every other path except the branded
+// sign-in page and its two static marks is resolved by the server-side session gate
+// (or proxied behind it). The retired build path is answered as a plain not-found so
+// no client can obtain a 200 or a version string from it.
+func (g *gateway) routes() *http.ServeMux {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /gateway/livez", g.livez)
+	// FIND-012: explicit removal marker for the retired anonymous build path. It only
+	// ever produces a plain 404 - the same answer as any other unknown path - and
+	// never a version string.
+	mux.HandleFunc("GET /gateway/version", g.removed)
+	mux.HandleFunc("GET /gateway/session", g.sessionStatus)
+	mux.HandleFunc("POST /gateway/session/rotate", g.rotateSession)
+	mux.HandleFunc("POST /gateway/session/revoke-all", g.revokeAllSessions)
+	// The mark is served before authentication because the login page needs it. It is a
+	// static embedded image with no user input in its path, so there is nothing to
+	// validate and nothing it can disclose.
+	mux.HandleFunc("GET /gateway/logo.png", g.logo)
+	mux.HandleFunc("GET /gateway/sirdu.png", g.mascot)
+	mux.HandleFunc("GET /login", g.loginPage)
+	mux.HandleFunc("POST /login", g.login)
+	mux.HandleFunc("POST /logout", g.logout)
+	mux.HandleFunc("/", g.protectedProxy)
+	return mux
+}
+
+// removed answers a retired endpoint without revealing anything about the build or
+// the host. It is intentionally not a redirect: an anonymous client learns only that
+// this path does not exist.
+func (g *gateway) removed(w http.ResponseWriter, r *http.Request) {
+	http.NotFound(w, r)
 }
 
 func (g *gateway) newProxy() *httputil.ReverseProxy {
@@ -558,7 +752,6 @@ func (g *gateway) livez(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	fmt.Fprintln(w, `{"ok":true}`)
 }
-func (g *gateway) version(w http.ResponseWriter, _ *http.Request) { fmt.Fprintln(w, version) }
 
 // loginCopy carries every operator-visible string. The attested facts are part of it
 // because they are content, not decoration: each one is something this gateway can prove
@@ -867,7 +1060,22 @@ func (g *gateway) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	password := []byte(r.Form.Get("password"))
-	ok := verifyPassword(password, g.password)
+	ok, kdfErr := g.verifyPasswordGated(r.Context(), ip, password)
+	if kdfErr != nil {
+		zero(password)
+		if errors.Is(kdfErr, context.Canceled) || errors.Is(kdfErr, context.DeadlineExceeded) {
+			// The client is already gone; the gate has released its reservation.
+			return
+		}
+		status := http.StatusServiceUnavailable
+		if errors.Is(kdfErr, errKDFIdentityBusy) {
+			status = http.StatusTooManyRequests
+		}
+		log.Printf("login deferred: password verification admission rejected remote=%q reason=%q", ip, kdfErr)
+		w.Header().Set("Retry-After", "2")
+		http.Error(w, "sign-in verification capacity is saturated; retry shortly", status)
+		return
+	}
 	if !ok {
 		zero(password)
 		g.limiter.fail(ip, now)
@@ -1191,6 +1399,20 @@ func decodeBase64(value string) ([]byte, error) {
 		return out, nil
 	}
 	return base64.StdEncoding.DecodeString(value)
+}
+
+// verifyPasswordGated is the only pre-authentication entry point to the memory-hard
+// password verification: it reserves a process-wide KDF slot and a per-source in-flight
+// reservation before the 64 MiB Argon2id allocation happens (FIND-010). A non-nil error
+// means the attempt was never verified and the caller must answer with backpressure.
+func (g *gateway) verifyPasswordGated(ctx context.Context, identity string, password []byte) (bool, error) {
+	g.ensureKDF()
+	release, err := g.kdf.acquire(ctx, identity)
+	if err != nil {
+		return false, err
+	}
+	defer release()
+	return verifyPassword(password, g.password), nil
 }
 
 func verifyPassword(password []byte, rec passwordRecord) bool {

@@ -7,8 +7,8 @@
 ### Linux Security Fabric - Your Entenprise System
 
 [![License](https://img.shields.io/badge/License-AGPL--3.0--only-blue?style=for-the-badge)](https://www.gnu.org/licenses/agpl-3.0)
-[![Version](https://img.shields.io/badge/Version-5.1.0--beta.3-orange?style=for-the-badge)](#)
-[![Status](https://img.shields.io/badge/Status-Release_v5.1.0--beta.3-yellow?style=for-the-badge)](#)
+[![Version](https://img.shields.io/badge/Version-5.2.0-orange?style=for-the-badge)](#)
+[![Status](https://img.shields.io/badge/Status-Release_v5.2.0-yellow?style=for-the-badge)](#)
 [![Installer](https://img.shields.io/badge/Installer-Universal_Linux-green?style=for-the-badge)](#-schnellstart)
 [![Platform](https://img.shields.io/badge/Platform-Linux_x86__64-lightgrey?style=for-the-badge&logo=linux)](#)
 [![Data Plane](https://img.shields.io/badge/Data_Plane-Rust_eBPF%2FXDP-red?style=for-the-badge&logo=rust)](#-architektur)
@@ -28,14 +28,21 @@
 🌐 **Languages / Sprachen / Языки / 语言:**  
 [English](README.md) · **Deutsch** · [Русский](README.ru.md) · [中文 (简体)](README.zh.md)
 
+<br />
+
+⬇️ **Direkt-Installer (v5.2.0):**  
+[**OneClick-Installer (`.run`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v5.2.0/VGT_GeDefense_Beta_v5_5.2.0_OneClick.run) · [`.sha256`](https://github.com/visiongaiatechnology/gedefense/releases/download/v5.2.0/VGT_GeDefense_Beta_v5_5.2.0_OneClick.run.sha256) · [**Desktop-Tray (`.run`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v5.2.0/GeDefense-5.2.0-Desktop-OneClick.run) · [`.sha256`](https://github.com/visiongaiatechnology/gedefense/releases/download/v5.2.0/GeDefense-5.2.0-Desktop-OneClick.run.sha256) · [**Quellarchiv (`.zip`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v5.2.0/VGT_GeDefense_Beta_v5_5.2.0_Source.zip) · [**Release v5.2.0**](https://github.com/visiongaiatechnology/gedefense/releases/tag/v5.2.0) · [Schnellstart](#-schnellstart)
+
 </div>
 
-> **Update 5.1.0-beta.3 (29.10.2026) — Feed-Self-Healing, CVE-Abwehr & signierter Release**
+> **Update 5.2.0 (14.11.2026) — Security Release**
+>
+> - **Sicherheits-Release:** Das unabhängige Tiefenaudit VGT-AUDIT-20261114-GD51 meldete 36 Findings in sechs Angriffsketten und blockierte das Release-Gate von 5.1.0-beta.3; 5.2.0 behebt alle 36 Findings in Installer/Supply-Chain, Boot-Attestierung, Gateway/Auth, Policy/Forensik/Storage, API/L7, Feeds/Airlock, Selbstschutz, Desktop-Tray, Rust-Core und eBPF. Details in `CHANGELOG.md` und `RELEASE-NOTES.md`.
 >
 > - **Selbstheilender Threat-Intelligence-Feed:** Ein fehlender Feed-Signatur-Trust-Anchor wird aus dem opt-in lokalen Operator-Key über einen rotationssicheren Marker gebootstrappt; abgelaufene Manifeste werden neu signiert. Ein rotierter Key mit altem Marker bleibt fail-closed.
 > - **CVE-2026-98432 / CVE-2026-99999:** verwaltete User-Namespace- und MPTCP-Gegenmaßnahmen sind aktiv gehalten; die Kernel-Exposition bleibt sichtbar, bis der Ubuntu-Kernel-Fix installiert ist.
 > - **Mitigation-Guard:** berechtigungslimitierte Probes werden jetzt als UNOBSERVED ausgewiesen statt still übersprungen und lösen keinen falschen Auto-Revert mehr aus.
-> - **Signierter Release:** 5.1.0-beta.3 erscheint als signierter OneClick-Installer und reproduzierbares Quellarchiv.
+> - **Signierter Release:** 5.2.0 erscheint als signierter OneClick-Installer und reproduzierbares Quellarchiv.
 
 
 <img width="1536" height="1024" alt="GeDefense_ Real Security, Many Feathers" src="https://github.com/user-attachments/assets/dc56735e-b2b2-45c9-a363-97554a92ae0a" />
@@ -73,7 +80,7 @@ Sicherheits-Hotfix für 5.1.0-beta.1. **Vor dem Exponieren der Bridge ist das Up
 ---
 
 > [!WARNING]
-> **ÖFFENTLICHE BETA — KEIN PRODUKTIONSRELEASE (Version 5.1.0-beta.3).**  
+> **ÖFFENTLICHE BETA — KEIN PRODUKTIONSRELEASE (Version 5.2.0).**  
 > GeDefense Titan und das Linux-Security-Fabric befinden sich in aktiver
 > Entwicklung. Diese Beta ist ausschließlich für Test- und Qualifizierungshosts
 > bestimmt. Die Kernarchitektur wird durch automatisierte Release-Gates geprüft,
@@ -549,17 +556,17 @@ Ist die Gaia Cells-Laufzeit **nicht vorhanden**, meldet der Adapter `runtime_not
 
 ```bash
 # Installer herunterladen
-wget https://github.com/visiongaiatechnology/gedefense/releases/download/v5.1.0-beta.3/VGT_GeDefense_Beta_v5_5.1.0-beta.3_OneClick.run
+wget https://github.com/visiongaiatechnology/gedefense/releases/download/v5.2.0/VGT_GeDefense_Beta_v5_5.2.0_OneClick.run
 
 # SHA-256 verifizieren
-sha256sum --check VGT_GeDefense_Beta_v5_5.1.0-beta.3_OneClick.run.sha256
+sha256sum --check VGT_GeDefense_Beta_v5_5.2.0_OneClick.run.sha256
 
 # Installieren (Root erforderlich)
-chmod 700 VGT_GeDefense_Beta_v5_5.1.0-beta.3_OneClick.run
-sudo ./VGT_GeDefense_Beta_v5_5.1.0-beta.3_OneClick.run
+chmod 700 VGT_GeDefense_Beta_v5_5.2.0_OneClick.run
+sudo ./VGT_GeDefense_Beta_v5_5.2.0_OneClick.run
 ```
 
-> **Installer-Verfügbarkeit:** Die offiziellen v5.1.0-beta.3 Self-Contained-Installer-Assets (`VGT_GeDefense_Beta_v5_5.1.0-beta.3_OneClick.run`) sind verifiziert und im GitHub Release bereitgestellt.
+> **Installer-Verfügbarkeit:** Die offiziellen v5.2.0 Self-Contained-Installer-Assets (`VGT_GeDefense_Beta_v5_5.2.0_OneClick.run`) werden mit dem signierten GitHub Release bereitgestellt.
 
 > Der Installer und die Prüfsumme werden erst veröffentlicht, nachdem alle GitHub-CI- und konkreten Linux-Host-Qualifikations-Gates bestanden wurden. Führe niemals eine nicht verifizierte RUN-Datei aus.
 
@@ -593,7 +600,7 @@ Die Firewall-Regel für den HTTPS-Gateway-Port (TCP 9843) kann während der Inst
 
 ---
 
-## 🚧 Bekannte Einschränkungen (5.1.0-beta.3)
+## 🚧 Bekannte Einschränkungen (5.2.0)
 
 - Keine Swarm- / Mesh-Unterstützung
 - Kein QUIC-Offloading
@@ -654,7 +661,7 @@ Eine Härtungsversion. Sie entfernt die Wege, auf denen die Plattform ihren eige
   * **Ein erfolgreicher Verifikationslauf löscht den Grund, den er ersetzt hat.** Gründe waren einseitig: nur eine Rotation oder eine Betreiber-Wiederherstellung entfernte sie, sodass ein transienter Fehler XDR degradiert ließ — und die automatische Antwort pausiert — bis jemand die Kontrollplane neu startete.
   * **Ein Deployment des Betreibers gilt nicht mehr als Eindringen.** Der Austausch einer eigenen Komponente degradierte XDR und pausierte die automatische Antwort; jeder ausgelieferte Fix schaltete damit stillschweigend einen Teil des Schutzes ab. Jetzt ist es ein Ereignis hoher Schwere ohne Reaktion; Fremdobjekte behalten die volle Antwort.
   * **Die Wiederherstellung des Incident-Ledgers verlangt nicht mehr, den Schutz aufzugeben** — unter Beibehaltung war das unerreichbar; das Ledger ließ sich nur reparieren, indem man zuvor den Host entwaffnete, dessen Schutz es erhalten soll.
-  * **Der Rust-Kern toleriert ein widersprüchliches Aggregat.** Ein Datensatz, dessen TCP-Label seinen Zählern widerspricht, wird mit neutralisiertem Protokoll und unveränderten Zählern behalten; ein weiterhin undekodierbarer Datensatz wird übersprungen und benannt, statt den Drain abzubrechen; nur ein Batch, in dem viele Sätze undekodierbar sind — die Signatur eines falschen Wire-Formats — wird als Fehler gemeldet.
+  * **Der Rust-Kern behält ein TCP-Label nur für ein konsistentes Aggregat.** Ein homogenes TCP-Batch behält sein `protocol`/`tcp_flags` und seine exakten Zähler — ein großes ACK- oder SYN-Batch wird nicht mehr als Widerspruch missverstanden. Ein Batch, der TCP mit Nicht-TCP-Paketen mischt, wird mit dem expliziten Neutral-Marker (`protocol = 0`, `tcp_flags = 0`) und exakten Zählern emittiert, statt das Label des auslösenden Pakets zu erben. Ein Datensatz, der der Batch-Länge widerspricht, wird verworfen und als verlorener Sample gezählt (mit Drain-Alarm, sobald zu viele auflaufen), nie in ein neutrales Label umgeschrieben. Der eBPF-Produzent flusht höchstens 255 Pakete pro Batch (das Wire-Feld `attempt_count` ist ein `u8`), und sein LSM-Walk deckt die vollständige cgroup-v2-Ahnenkette ab der Wurzel ab, sodass eine auf einer Gaia-Cell-Cgroup installierte Policy auch nachgelagerte Leaf-Cgroups erfasst. Siehe `rust/gedefense-common/src/lib.rs` (Wire-Decoder) und `rust/gedefense-ebpf/src/main.rs` (Produzent).
 * **Ledger-Aufbewahrung:**
   * **Beide Forensik-Ledger rotieren, statt sich zu füllen.** Das Erreichen des Budgets stoppte die Aufzeichnung, degradierte XDR und pausierte die automatische Antwort, bis ein Betreiber das Segment von Hand archivierte — zweimal an einem Tag auf einem Produktionshost. Bei neunzig Prozent wird die versiegelte Kette mit einem Manifest archiviert, das Größen, Digests, Sequenz, Head-Hash und Prüfumfang trägt, und eine frische Kette beginnt.
   * **Die Rotation übersteht einen Absturz.** Sie kopiert, bevor sie ersetzt; ein unterbrochener Lauf wird beim nächsten Start aus einer Rotationsmarkierung vervollständigt, und eine Markierung, deren Manifest nicht passt, wird abgelehnt statt geglaubt.
@@ -900,6 +907,6 @@ Die Karte verwendet **jsVectorMap 1.7.0** (MIT, Copyright © 2020 Mustafa Omar; 
 
 [![VGT](https://img.shields.io/badge/VisionGaia-Technology-cyan?style=for-the-badge)](https://visiongaiatechnology.de)
 
-*VGT GeDefense 5.1.0-beta.3 — Universelles Linux Sicherheitsgewebe // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidenz-Ledger // AES-256-GCM verschlüsselter Vault // Reversible Härtung // AstraeaOS-nativer Adapter // Getrennte Vertrauensdomänen // Keine Cloud-Control-Plane // AGPL-3.0-only // Linux x86_64*
+*VGT GeDefense 5.2.0 — Universelles Linux Sicherheitsgewebe // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidenz-Ledger // AES-256-GCM verschlüsselter Vault // Reversible Härtung // AstraeaOS-nativer Adapter // Getrennte Vertrauensdomänen // Keine Cloud-Control-Plane // AGPL-3.0-only // Linux x86_64*
 
 </div>

@@ -141,7 +141,11 @@ func (c *HardeningCollector) Collect(snapshot Snapshot, boot BootTrustReport) Ha
 		bootPostureCheck(boot, "kernel-lockdown", "boot.lockdown", "boot", "Kernel lockdown", 7, "Enable kernel lockdown in integrity or confidentiality mode."),
 		bootPostureCheck(boot, "tpm", "crypto.tpm", "encryption", "Trusted Platform Module", 4, "Enable TPM 2.0 for measured boot and sealed-key support."),
 		c.firewallCheck(),
-		statePostureCheck("integrity.fim", "integrity", "File Integrity Monitoring", 8, snapshot.FIM.Enabled, snapshot.FIM.Health == "HEALTHY", snapshot.FIM.Health, "Create and continuously verify the encrypted FIM baseline."),
+		// The FIM health string is produced by fim.go; this check consumes the single source of
+		// truth (fimIntegrityVerified) instead of comparing a second literal, because the two
+		// spellings drifted ("HEALTHY" vs "VERIFIED") and a fully verified baseline was scored as
+		// unprotected on every posture evaluation.
+		statePostureCheck("integrity.fim", "integrity", "File Integrity Monitoring", 8, snapshot.FIM.Enabled, fimIntegrityVerified(snapshot.FIM.Health), snapshot.FIM.Health, "Create and continuously verify the encrypted FIM baseline."),
 		statePostureCheck("integrity.evidence", "integrity", "Signed Evidence Ledger", 8, snapshot.Evidence.Enabled, snapshot.Evidence.Healthy, evidenceHealth(snapshot.Evidence), "Restore the encrypted and signed evidence ledger before mutations."),
 	}
 	return summarizeHardening(c.now(), checks, defaultHardeningThresholds())

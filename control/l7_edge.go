@@ -203,7 +203,19 @@ func (s *L7EdgeService) handle(w http.ResponseWriter, r *http.Request) {
 		writeL7EdgeJSON(w, http.StatusServiceUnavailable, "request inspection busy")
 		return
 	}
-	defer s.engine.releaseAdmission()
+	// FIND-020: the admission slot bounds the inspection engine, not the upstream
+	// round-trip. Holding it through s.proxy.ServeHTTP let one slow upstream exhaust
+	// every slot, after which unrelated requests were refused before inspection even
+	// started. It is therefore released at the end of inspection; the guarded
+	// release also keeps every early return below from leaking a slot.
+	admissionHeld := true
+	releaseAdmission := func() {
+		if admissionHeld {
+			admissionHeld = false
+			s.engine.releaseAdmission()
+		}
+	}
+	defer releaseAdmission()
 	clientIP := net.ParseIP(strings.TrimSpace(r.Header.Get(l7EdgeClientIPHeader)))
 	if clientIP == nil || clientIP.IsUnspecified() {
 		writeL7EdgeJSON(w, http.StatusBadRequest, "invalid proxy metadata")
@@ -233,6 +245,9 @@ func (s *L7EdgeService) handle(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), time.Duration(s.cfg.RequestTimeoutMillis)*time.Millisecond)
 	response, normalized, inspectErr := s.engine.InspectRaw(ctx, inspection, rawBody)
 	cancel()
+	// Inspection is done: free the engine slot before the request is forwarded, so a
+	// slow upstream cannot stall inspection of any other request.
+	releaseAdmission()
 	if inspectErr != nil {
 		writeL7EdgeJSON(w, l7EdgeInspectionErrorStatus(inspectErr), "request inspection rejected")
 		return

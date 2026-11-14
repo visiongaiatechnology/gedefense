@@ -164,20 +164,25 @@ func (e *TransactionEngine) load() error {
 	if err != nil {
 		return err
 	}
+	// The transaction store has no independent payload authentication: PreviewHash is an unkeyed
+	// SHA-256 digest that any writer can recompute, not a MAC, and there is no signature over the
+	// records. The encrypted envelope is therefore the only authenticity anchor, so the strict
+	// Decrypt is used and DecryptForMigration is deliberately not: a plaintext history cannot be
+	// authenticated and migrating it would accept forged transaction records - the silent downgrade
+	// FIND-015 closed. Unencrypted transaction history is refused hard.
+	plaintext, _, err := e.storage.Decrypt(e.path, transactionPurpose, raw, nil)
+	if err != nil {
+		if errors.Is(err, errStoragePlaintext) {
+			return fmt.Errorf("unencrypted transaction history refused: the transaction store carries no independent payload authentication, so a plaintext legacy store cannot be migrated safely: %w", err)
+		}
+		return fmt.Errorf("transaction store authentication failed: %w", err)
+	}
+	// The envelope is authenticated now; read its sequence to bind it to the store revision.
 	envelope, err := decodeEncryptedStorageEnvelope(bytes.TrimSpace(raw))
 	if err != nil {
 		return fmt.Errorf("transaction store envelope: %w", err)
 	}
 	expectedSequence := envelope.Sequence
-	plaintext, legacy, err := e.storage.Decrypt(
-		e.path, transactionPurpose, raw, &expectedSequence,
-	)
-	if err != nil {
-		return fmt.Errorf("transaction store authentication failed: %w", err)
-	}
-	if legacy {
-		return errors.New("unencrypted transaction history is rejected")
-	}
 	store, err := decodeTransactionStore(plaintext)
 	if err != nil {
 		return err

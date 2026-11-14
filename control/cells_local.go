@@ -26,6 +26,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -82,7 +83,7 @@ func (r localCellRegistry) entries() ([]localCellEntry, error) {
 		if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 			return nil, errors.New("local cell directory is not a regular directory")
 		}
-		cell, err := localCellIdentity(entry.Name(), now)
+		cell, err := localCellIdentity(entry.Name(), dir, now)
 		if err != nil {
 			return nil, err
 		}
@@ -166,16 +167,21 @@ func (r localCellRegistry) action(command, uuid string, generation uint64, cgrou
 }
 
 // localCellIdentity derives the stable, contract-valid identity for one local
-// cell. UUID, generation and cgroup id are deterministic functions of the
+// cell. UUID, generation and policy digest are deterministic functions of the
 // directory name, so two registries on the same host agree and a forged
-// identifier cannot address another cell.
-func localCellIdentity(name string, now time.Time) (GaiaCell, error) {
+// identifier cannot address another cell. The cgroup id is the real kernel
+// identity whenever it is observable: in the unified cgroup v2 hierarchy the
+// kernfs inode number of the cell directory is the cgroup id the kernel and BPF
+// use, and it stays stable across listings (FIND-031). Only where the inode
+// cannot be read does the deterministic name hash remain as a documented stable
+// substitute. ObservedAt is a per-listing observation timestamp and is
+// deliberately not part of the cell identity.
+func localCellIdentity(name, dir string, now time.Time) (GaiaCell, error) {
 	if !validLocalCellName(name) {
 		return GaiaCell{}, errors.New("local cell name is invalid")
 	}
 	identity := sha256.Sum256([]byte("vgt-gedefense-local-cell:" + name))
 	policy := sha256.Sum256([]byte("vgt-gedefense-local-cell-policy:" + name))
-	cgroup := sha256.Sum256([]byte("vgt-gedefense-local-cell-cgroup:" + name))
 	uuid := fmt.Sprintf("%x-%x-%x-%x-%x",
 		identity[0:4], identity[4:6], identity[6:8], identity[8:10], identity[10:16])
 	// Generation is a deterministic identity token, not a clock reading: it must
@@ -185,18 +191,34 @@ func localCellIdentity(name string, now time.Time) (GaiaCell, error) {
 	if generation == 0 {
 		generation = 1
 	}
-	cgroupID := binary.BigEndian.Uint64(cgroup[:8])
-	if cgroupID == 0 {
-		cgroupID = 1
-	}
 	return GaiaCell{
 		Version: cellIdentityVersion, UUID: uuid, Label: name,
 		Profile: "local", Class: "workspace",
 		CgroupPath: filepath.ToSlash(filepath.Join(localCellsLogicalRoot, name)),
-		CgroupID:   cgroupID, PolicyDigest: hex.EncodeToString(policy[:]),
+		CgroupID:   localCellCgroupID(name, dir), PolicyDigest: hex.EncodeToString(policy[:]),
 		Generation: generation, State: "running", NetworkState: "none",
 		ObservedAt: now,
 	}, nil
+}
+
+// localCellCgroupID resolves the real kernel cgroup id of one local cell
+// directory. On cgroup v2 the kernfs inode number is the identity the kernel and
+// BPF see; using it keeps the local registry, the transaction identity check and
+// the kernel action on the same immutable value (FIND-031). The deterministic
+// hash remains only as a documented fallback for hosts where the inode cannot be
+// observed, e.g. a build host without cgroup v2 mounted.
+func localCellCgroupID(name, dir string) uint64 {
+	if info, err := os.Lstat(dir); err == nil && info.Mode()&os.ModeSymlink == 0 {
+		if stat, ok := info.Sys().(*syscall.Stat_t); ok && stat.Ino != 0 {
+			return uint64(stat.Ino)
+		}
+	}
+	cgroup := sha256.Sum256([]byte("vgt-gedefense-local-cell-cgroup:" + name))
+	cgroupID := binary.BigEndian.Uint64(cgroup[:8])
+	if cgroupID == 0 {
+		cgroupID = 1
+	}
+	return cgroupID
 }
 
 func validLocalCellName(name string) bool {

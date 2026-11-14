@@ -474,9 +474,14 @@ if [[ ! -x $ACCESS_BIN ]]; then
   fail "GeDefense access binary is not installed: $ACCESS_BIN"
 fi
 
+# FIND-007: /etc/vgt/gedefense/secrets is 0750, not 0700. The control plane runs
+# as the CONTROL_GROUP user and must traverse this directory to read the
+# 0640 root:CONTROL_GROUP key files; 0700 made every preflight fail with EACCES.
+# Source of truth: packaging/tmpfiles/vgt-gedefense.conf (asserted by
+# packaging/tests/install-smoke.sh).
 for directory in \
   "/etc/vgt/gedefense:0750:root:${CONTROL_GROUP}" \
-  "/etc/vgt/gedefense/secrets:0700:root:${CONTROL_GROUP}" \
+  "/etc/vgt/gedefense/secrets:0750:root:${CONTROL_GROUP}" \
   "/etc/vgt/gedefense/tls:0750:root:${CONTROL_GROUP}" \
   "/etc/vgt/gedefense-access:0750:${ACCESS_USER}:${ACCESS_GROUP}" \
   "/var/lib/vgt:0755:root:root" \

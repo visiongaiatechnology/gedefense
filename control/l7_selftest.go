@@ -255,7 +255,10 @@ func (s *L7Service) probeProducer(ctx context.Context, socket string, result L7S
 		return result
 	}
 	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("X-Gedefense-Self-Test", "1")
+	// FIND-022: the reserved self-test path is admitted only for a request that
+	// carries the process-local ephemeral token. The probe runs in this process,
+	// so it can present the token; a same-UID bystander cannot guess it.
+	request.Header.Set(l7SelfTestHeaderName, l7SelfTestHeaderValue())
 
 	response, err := client.Do(request)
 	result.LatencyMillis = time.Since(started).Milliseconds()
@@ -331,7 +334,9 @@ func (s *L7Service) probeInline(ctx context.Context, result L7SelfTestResult) L7
 	request.Header.Set("User-Agent", "GeDefense-SelfTest")
 	request.Header.Set("X-Gedefense-Client-Ip", "127.0.0.1")
 	request.Header.Set("X-Gedefense-Original-Scheme", "https")
-	request.Header.Set("X-Gedefense-Self-Test", "1")
+	// FIND-022: present the process-local ephemeral self-test token instead of the
+	// former fixed header value that any same-UID process could replay.
+	request.Header.Set(l7SelfTestHeaderName, l7SelfTestHeaderValue())
 
 	response, err := client.Do(request)
 	result.LatencyMillis = time.Since(started).Milliseconds()

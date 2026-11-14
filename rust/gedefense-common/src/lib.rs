@@ -11,6 +11,7 @@ pub const NETWORK_FAMILY_V6: u8 = 6;
 pub const CELL_LSM_DENY_NON_UNIX_SOCKET: u8 = 1;
 pub const CANARY_PATH_BYTES: usize = 64;
 pub const INGRESS_EVENT_WIRE_BYTES: usize = 64;
+pub const NETWORK_PROTOCOL_TCP: u8 = 6;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -55,7 +56,9 @@ pub struct IngressEvent {
     pub protocol: u8,
     pub tcp_flags: u8,
     /// Exact connection/activity attempts represented by this bounded sample.
-    /// The eBPF producer emits at most 16 packets per aggregate, so u8 is ample.
+    /// The eBPF producer flushes an aggregate before it can exceed `u8::MAX`
+    /// packets, so this field is exact and is never silently clamped. A wider
+    /// wire field (u16/u32) requires changing the userspace decoders first.
     pub attempt_count: u8,
     pub src_port: u16,
     pub dst_port: u16,
@@ -77,6 +80,26 @@ pub struct IngressEvent {
 /// native endian just like the in-memory `repr(C)` structure emitted through
 /// the BPF ring buffer. The explicit decoder keeps the trust boundary bounded
 /// and prevents the userspace reader from scattering unchecked byte offsets.
+///
+/// Producer contract checked here:
+/// * `packets` is the batch length; no counter may exceed it.
+/// * `syn_count` (SYN without ACK) and `ack_count` (ACK set) are disjoint
+///   packet classes, so their sum cannot exceed `packets`.
+/// * A TCP label only describes a homogeneous TCP batch. Such a batch keeps
+///   `attempt_count == syn_count` (every TCP packet contributes its SYN
+///   attempt flag, every other protocol contributes one attempt) and its
+///   counters are never clamped, because the producer flushes before a batch
+///   can exceed `u8::MAX` packets.
+/// * Aggregates that mix TCP with non-TCP packets, and counters carried over a
+///   window/port boundary, use the explicit neutral marker `protocol == 0`
+///   with `tcp_flags == 0` instead of borrowing an unrelated packet's label.
+///
+/// A record that contradicts this contract cannot be repaired without guessing.
+/// The decoder therefore rejects it (`None`); the core skips the sample and
+/// raises its drain-level alarm once too many samples are rejected. It must
+/// never neutralise `protocol`/`tcp_flags` in place: that is exactly how a
+/// saturated `attempt_count` used to erase the TCP label of a genuine SYN
+/// batch, which hid corruption instead of reporting it.
 pub fn decode_ingress_event(bytes: &[u8]) -> Option<IngressEvent> {
     if bytes.len() != INGRESS_EVENT_WIRE_BYTES {
         return None;
@@ -98,35 +121,36 @@ pub fn decode_ingress_event(bytes: &[u8]) -> Option<IngressEvent> {
     let source: [u8; NETWORK_ADDRESS_BYTES] = bytes[32..48].try_into().ok()?;
     let destination: [u8; NETWORK_ADDRESS_BYTES] = bytes[48..64].try_into().ok()?;
 
-    // Structurally impossible records are corruption and are still refused: a family the
-    // producer cannot emit, no packets at all, counters larger than the packets they describe,
-    // or a missing kernel second.
+    // Structurally impossible records are corruption and are refused: a family the
+    // producer cannot emit, no packets at all, counters larger than the packets they
+    // describe, disjoint flag classes that cannot fit into the batch, or a missing
+    // kernel second.
     if !matches!(family, NETWORK_FAMILY_V4 | NETWORK_FAMILY_V6)
         || packets == 0
         || syn_count > packets
         || ack_count > packets
+        || syn_count.saturating_add(ack_count) > packets
         || u32::from(attempt_count) > packets
         || window_epoch_sec == 0
     {
         return None;
     }
 
-    // A TCP label whose counters cannot belong to TCP means the label is wrong, not the channel.
-    //
-    // The producer keeps one counter set per source and labels the aggregate with the protocol
-    // of the packet that flushed it, so a source that sent UDP and TCP inside the same window
-    // yields attempt_count > syn_count under a TCP label. Refusing that record made the core
-    // treat the whole drain as failed, and the control plane reads a failed drain as a lost
-    // kernel hook: the mandatory ingress sensor was declared degraded and the release gate
-    // emptied the kernel blocklist, which left a production host unprotected for twenty hours.
-    // The same sample can be produced on purpose. The label is what cannot be trusted, so the
-    // record is kept with the protocol neutralised - exactly how the producer already treats its
-    // carry-over flushes - and the counters stay untouched.
-    let (protocol, tcp_flags) = if protocol == 6 && u32::from(attempt_count) != syn_count {
-        (0, 0)
-    } else {
-        (protocol, tcp_flags)
-    };
+    // A TCP label that contradicts its own attempt counter cannot describe a
+    // homogeneous TCP batch. This is exactly the shape a clamped counter produced
+    // (packets/syn_count above u8::MAX, attempt_count saturating at 255), so the
+    // record is rejected instead of being rewritten into a neutral label: the
+    // userspace consumer sees a counted sample loss and a drain alarm rather than
+    // silently losing the TCP flags of the whole aggregate.
+    if protocol == NETWORK_PROTOCOL_TCP && u32::from(attempt_count) != syn_count {
+        return None;
+    }
+    // TCP flags exist only for TCP packets; any other label carrying them is
+    // mislabelled or corrupted. Keep the record out instead of guessing which
+    // part of it is wrong.
+    if protocol != NETWORK_PROTOCOL_TCP && tcp_flags != 0 {
+        return None;
+    }
 
     Some(IngressEvent {
         family,
@@ -227,29 +251,46 @@ mod tests {
         }
     }
 
+    /// Encodes an IPv4 ingress wire record with valid ports, epoch, source and
+    /// destination. Tests only vary the fields under test.
+    fn encode_ingress_wire(
+        protocol: u8,
+        tcp_flags: u8,
+        attempt_count: u8,
+        packets: u32,
+        packet_bytes: u32,
+        syn_count: u32,
+        ack_count: u32,
+    ) -> [u8; INGRESS_EVENT_WIRE_BYTES] {
+        let mut raw = [0u8; INGRESS_EVENT_WIRE_BYTES];
+        raw[0] = NETWORK_FAMILY_V4;
+        raw[1] = protocol;
+        raw[2] = tcp_flags;
+        raw[3] = attempt_count;
+        raw[4..6].copy_from_slice(&54321u16.to_ne_bytes());
+        raw[6..8].copy_from_slice(&443u16.to_ne_bytes());
+        raw[8..12].copy_from_slice(&packets.to_ne_bytes());
+        raw[12..16].copy_from_slice(&packet_bytes.to_ne_bytes());
+        raw[16..20].copy_from_slice(&syn_count.to_ne_bytes());
+        raw[20..24].copy_from_slice(&ack_count.to_ne_bytes());
+        raw[24..32].copy_from_slice(&12345u64.to_ne_bytes());
+        raw[32..36].copy_from_slice(&[203, 0, 113, 9]);
+        raw[48..52].copy_from_slice(&[192, 0, 2, 10]);
+        raw
+    }
+
     #[test]
     fn ingress_event_wire_decoder_accepts_valid_ipv4_sample() {
         assert_eq!(
             core::mem::size_of::<IngressEvent>(),
             INGRESS_EVENT_WIRE_BYTES
         );
-        let mut raw = [0u8; INGRESS_EVENT_WIRE_BYTES];
-        raw[0] = NETWORK_FAMILY_V4;
-        raw[1] = 6;
-        raw[2] = 0x02;
-        raw[3] = 2;
-        raw[4..6].copy_from_slice(&54321u16.to_ne_bytes());
-        raw[6..8].copy_from_slice(&443u16.to_ne_bytes());
-        raw[8..12].copy_from_slice(&3u32.to_ne_bytes());
-        raw[12..16].copy_from_slice(&180u32.to_ne_bytes());
-        raw[16..20].copy_from_slice(&2u32.to_ne_bytes());
-        raw[20..24].copy_from_slice(&1u32.to_ne_bytes());
-        raw[24..32].copy_from_slice(&12345u64.to_ne_bytes());
-        raw[32..36].copy_from_slice(&[203, 0, 113, 9]);
-        raw[48..52].copy_from_slice(&[192, 0, 2, 10]);
+        let raw = encode_ingress_wire(6, 0x02, 2, 3, 180, 2, 1);
 
         let event = decode_ingress_event(&raw).expect("valid ingress event");
         assert_eq!(event.family, NETWORK_FAMILY_V4);
+        assert_eq!(event.protocol, NETWORK_PROTOCOL_TCP);
+        assert_eq!(event.tcp_flags, 0x02);
         assert_eq!(event.dst_port, 443);
         assert_eq!(event.packets, 3);
         assert_eq!(event.bytes, 180);
@@ -262,58 +303,87 @@ mod tests {
 
     #[test]
     fn ingress_event_wire_decoder_rejects_invalid_metadata() {
-        let mut raw = [0u8; INGRESS_EVENT_WIRE_BYTES];
+        let mut raw = encode_ingress_wire(6, 0x02, 1, 1, 60, 1, 0);
+        // AF_UNSPEC-like family: the producer only labels IPv4/IPv6 batches.
+        raw[0] = 0;
+        assert!(decode_ingress_event(&raw).is_none());
+
         raw[0] = NETWORK_FAMILY_V6;
-        raw[8..12].copy_from_slice(&1u32.to_ne_bytes());
+        // Counters that contradict the batch length are refused.
         raw[16..20].copy_from_slice(&2u32.to_ne_bytes());
-        raw[24..32].copy_from_slice(&1u64.to_ne_bytes());
         assert!(decode_ingress_event(&raw).is_none());
 
         raw[16..20].copy_from_slice(&0u32.to_ne_bytes());
+        // A batch length of zero is impossible.
         raw[8..12].copy_from_slice(&0u32.to_ne_bytes());
         assert!(decode_ingress_event(&raw).is_none());
     }
 
     #[test]
-    fn ingress_event_wire_decoder_neutralises_an_inconsistent_tcp_label() {
-        // A mixed-protocol aggregate labelled TCP: attempt_count exceeds syn_count, which no
-        // pure TCP window can produce. The sample is kept with a neutral protocol instead of
-        // being refused, because refusing one sample aborted the whole drain in the core.
-        let mut raw = [0u8; INGRESS_EVENT_WIRE_BYTES];
-        raw[0] = NETWORK_FAMILY_V4;
-        raw[1] = 6;
-        raw[2] = 0x02;
-        raw[3] = 5;
-        raw[8..12].copy_from_slice(&5u32.to_ne_bytes());
-        raw[12..16].copy_from_slice(&300u32.to_ne_bytes());
-        raw[16..20].copy_from_slice(&1u32.to_ne_bytes());
-        raw[20..24].copy_from_slice(&1u32.to_ne_bytes());
-        raw[24..32].copy_from_slice(&99u64.to_ne_bytes());
-        raw[32..36].copy_from_slice(&[203, 0, 113, 10]);
+    fn ingress_event_wire_decoder_keeps_the_tcp_label_of_a_large_ack_batch() {
+        // More than u8::MAX packets is representable because every counter
+        // (attempt_count here is zero) fits the wire fields. The decoder must keep
+        // the TCP label instead of neutralising it; a batch size alone is not a
+        // contradiction.
+        let raw = encode_ingress_wire(6, 0x10, 0, 300, 19_200, 0, 300);
+        let event = decode_ingress_event(&raw).expect("a consistent large batch is valid");
+        assert_eq!(event.protocol, NETWORK_PROTOCOL_TCP);
+        assert_eq!(event.tcp_flags, 0x10);
+        assert_eq!(event.packets, 300);
+        assert_eq!(event.attempt_count, 0);
+        assert_eq!(event.ack_count, 300);
+    }
 
-        let event =
-            decode_ingress_event(&raw).expect("an inconsistent label must not discard the sample");
+    #[test]
+    fn ingress_event_wire_decoder_keeps_the_tcp_label_of_a_full_syn_batch() {
+        // The producer flushes at exactly 255 packets, so a full SYN batch keeps
+        // attempt_count == syn_count == u8::MAX and its label stays intact.
+        let raw = encode_ingress_wire(6, 0x02, u8::MAX, 255, 15_300, 255, 0);
+        let event = decode_ingress_event(&raw).expect("a full SYN batch is valid");
+        assert_eq!(event.protocol, NETWORK_PROTOCOL_TCP);
+        assert_eq!(event.tcp_flags, 0x02);
+        assert_eq!(event.attempt_count, u8::MAX);
+        assert_eq!(event.syn_count, 255);
+    }
+
+    #[test]
+    fn ingress_event_wire_decoder_rejects_a_saturated_attempt_counter() {
+        // Regression for the silent flag loss: a large SYN batch whose attempt_count
+        // was clamped to u8::MAX no longer matches syn_count. The old decoder rewrote
+        // this record to protocol 0 / tcp_flags 0 and the TCP flags of the whole
+        // aggregate disappeared without any visible error. The record is refused now;
+        // the core counts it as a rejected sample and alarms when it keeps happening.
+        let raw = encode_ingress_wire(6, 0x02, u8::MAX, 8192, 524_288, 8192, 0);
+        assert!(decode_ingress_event(&raw).is_none());
+    }
+
+    #[test]
+    fn ingress_event_wire_decoder_accepts_the_explicit_neutral_batch_marker() {
+        // Mixed TCP/UDP aggregates are emitted with the documented neutral marker
+        // (protocol 0, tcp_flags 0) and exact counters, never by zeroing a TCP label.
+        let raw = encode_ingress_wire(0, 0, 9, 9, 900, 7, 0);
+        let event = decode_ingress_event(&raw).expect("the neutral marker is valid");
         assert_eq!(event.protocol, 0);
         assert_eq!(event.tcp_flags, 0);
-        assert_eq!(event.attempt_count, 5);
-        assert_eq!(event.syn_count, 1);
-        assert_eq!(event.packets, 5);
-        assert_eq!(event.bytes, 300);
+        assert_eq!(event.attempt_count, 9);
+        assert_eq!(event.syn_count, 7);
+        assert_eq!(event.packets, 9);
+    }
+
+    #[test]
+    fn ingress_event_wire_decoder_rejects_tcp_flags_under_a_non_tcp_label() {
+        let raw = encode_ingress_wire(17, 0x02, 1, 1, 64, 0, 0);
+        assert!(decode_ingress_event(&raw).is_none());
     }
 
     #[test]
     fn ingress_event_wire_decoder_rejects_counters_larger_than_the_packets() {
-        // This cannot be a labelling disagreement: the counters contradict the packet count.
-        let mut raw = [0u8; INGRESS_EVENT_WIRE_BYTES];
-        raw[0] = NETWORK_FAMILY_V4;
-        raw[1] = 6;
-        raw[8..12].copy_from_slice(&2u32.to_ne_bytes());
-        raw[16..20].copy_from_slice(&3u32.to_ne_bytes());
-        raw[24..32].copy_from_slice(&1u64.to_ne_bytes());
+        // Counters that contradict the batch length are corruption, not a label
+        // disagreement.
+        let raw = encode_ingress_wire(6, 0x02, 0, 2, 120, 3, 0);
         assert!(decode_ingress_event(&raw).is_none());
 
-        raw[8..12].copy_from_slice(&0u32.to_ne_bytes());
-        raw[16..20].copy_from_slice(&0u32.to_ne_bytes());
+        let raw = encode_ingress_wire(0, 0, 0, 3, 180, 2, 2);
         assert!(decode_ingress_event(&raw).is_none());
     }
 }

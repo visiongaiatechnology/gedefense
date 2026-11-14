@@ -45,7 +45,7 @@ func TestSettingsAcceptEarlierAuthenticatedEmptyListNormalization(t *testing.T) 
 			t.Fatal(err)
 		}
 	}
-	document := runtimeSettingsEnvelope{Schema: runtimeSettingsSchema, Settings: settings, MAC: hex.EncodeToString(legacyMAC)}
+	document := runtimeSettingsEnvelope{Schema: runtimeSettingsSchema, Settings: settings, MAC: hex.EncodeToString(legacyMAC), HistoryMAC: authenticatedHistoryMAC(t, signer)}
 	write(document)
 	if _, err := NewSettingsStore(path, keyPath, cfg); err != nil {
 		t.Fatalf("earlier writer's authenticated document rejected: %v", err)

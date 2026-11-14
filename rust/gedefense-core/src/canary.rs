@@ -68,6 +68,12 @@ const MARK_WAIT_ATTEMPTS: usize = 20;
 const MARK_WAIT_MILLIS: u64 = 50;
 const MANIFEST_NAME: &str = ".canary-manifest";
 const RENAME_NOREPLACE: u32 = 1;
+// FIND-036a: the wire field for the accessor UID is a uint32, so an attribution
+// that could not be resolved must not be encoded as 0 - the control plane treats
+// UID 0 as root/system and downgrades the incident. The all-ones value is not a
+// valid Linux UID and is documented as "unknown accessor"; downstream escalation
+// stays fail-closed (an unknown accessor is never treated as a system scanner).
+const CANARY_UID_UNKNOWN: u32 = u32::MAX;
 const VALID_TYPES: [&str; 4] = ["SSH_KEY", "CLOUD_CRED", "SHADOW_BAK", "DOTENV"];
 const VALID_MODES: [u32; 2] = [0o600, 0o640];
 
@@ -697,12 +703,12 @@ impl CanaryBroker {
             let records = self.records.lock().ok()?;
             records.get(path.as_path()).cloned()
         }?;
-        let mut stat: libc::stat = unsafe { std::mem::zeroed() };
-        let uid = if unsafe { libc::fstat(metadata.fd, &mut stat) } == 0 {
-            stat.st_uid
-        } else {
-            0
-        };
+        // FIND-036a: the fanotify event only names the accessing pid. A fstat on
+        // metadata.fd reports the UID of the decoy file itself (root), never the
+        // UID of the accessor, so every canary hit used to be attributed to UID 0
+        // and the control plane downgraded it to "system access". The accessor
+        // identity is read from /proc/<pid>/status instead.
+        let uid = accessor_uid(metadata.pid).unwrap_or(CANARY_UID_UNKNOWN);
         Some(CanaryEvent {
             pid: metadata.pid,
             uid,
@@ -1115,6 +1121,34 @@ fn strip_deleted_suffix(path: &Path) -> PathBuf {
     path.to_path_buf()
 }
 
+// FIND-036a: resolve the UID of the process the kernel named in the fanotify
+// event. /proc/<pid>/status carries the Uid: line as
+// "Uid: <real> <effective> <saved> <fs>"; the effective UID is the identity the
+// process acted with. Any unreadable or malformed status yields None so the
+// caller can attribute the event as unknown instead of guessing root.
+fn parse_uid_from_status(status: &str) -> Option<u32> {
+    let line = status.lines().find(|line| line.starts_with("Uid:"))?;
+    let fields: Vec<&str> = line.split_whitespace().collect();
+    if fields.len() != 5 || fields[0] != "Uid:" {
+        return None;
+    }
+    // Validate the whole line so a partially fabricated status is never trusted.
+    for field in &fields[1..5] {
+        field.parse::<u32>().ok()?;
+    }
+    fields[2].parse::<u32>().ok()
+}
+
+fn accessor_uid(pid: i32) -> Option<u32> {
+    if pid <= 0 {
+        return None;
+    }
+    let file = File::open(format!("/proc/{pid}/status")).ok()?;
+    let mut status = String::with_capacity(1024);
+    file.take(8192).read_to_string(&mut status).ok()?;
+    parse_uid_from_status(&status)
+}
+
 fn encode_event(event: &CanaryEvent) -> String {
     format!(
         "{}:{}:{}:{}:{}",
@@ -1371,5 +1405,98 @@ mod tests {
             strip_deleted_suffix(Path::new("/run/x")),
             PathBuf::from("/run/x")
         );
+    }
+
+    // FIND-036a: the accessor UID comes from the process, not from the decoy
+    // file's owner.
+    #[test]
+    fn accessor_uid_parsing_is_strict() {
+        assert_eq!(
+            parse_uid_from_status("Name:\tsleep\nUid:\t1000\t1001\t1002\t1003\n"),
+            Some(1001),
+            "the effective UID identifies the accessor"
+        );
+        assert_eq!(parse_uid_from_status("Uid:\t0\t0\t0\t0\n"), Some(0));
+        assert_eq!(parse_uid_from_status("Name:\tsleep\n"), None);
+        assert_eq!(parse_uid_from_status("Uid:\t1000\t\n"), None);
+        assert_eq!(parse_uid_from_status("Uid:\tx\ty\tz\tw\n"), None);
+        assert_eq!(parse_uid_from_status("Uid: 1000 1000 1000\n"), None);
+        assert_eq!(parse_uid_from_status(""), None);
+        assert_eq!(accessor_uid(-1), None);
+        assert_eq!(accessor_uid(0), None);
+        assert_eq!(accessor_uid(i32::MAX), None);
+    }
+
+    #[test]
+    fn current_process_uid_is_attributed_from_proc() {
+        let euid = unsafe { libc::geteuid() };
+        assert_eq!(
+            accessor_uid(std::process::id() as i32),
+            Some(euid),
+            "/proc/self/status must yield the effective UID"
+        );
+    }
+
+    fn spawn_uid_probe(target_uid: u32) -> Option<std::process::Child> {
+        use std::os::unix::process::CommandExt;
+        let mut command = std::process::Command::new("sleep");
+        command.arg("30");
+        if target_uid != unsafe { libc::geteuid() } {
+            unsafe {
+                command.pre_exec(move || {
+                    if libc::setgid(target_uid) != 0 || libc::setuid(target_uid) != 0 {
+                        return Err(std::io::Error::last_os_error());
+                    }
+                    Ok(())
+                });
+            }
+        }
+        command.spawn().ok()
+    }
+
+    // A real non-root process must be attributed with its own UID. When the
+    // harness happens to run as root the probe process is dropped to uid 65534
+    // so the assertion still exercises a non-root accessor.
+    #[test]
+    fn accessor_uid_attributes_a_non_root_process() {
+        let euid = unsafe { libc::geteuid() };
+        let target_uid = if euid == 0 { 65534 } else { euid };
+        let Some(mut child) = spawn_uid_probe(target_uid) else {
+            return;
+        };
+        let pid = child.id() as i32;
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        let mut attributed = None;
+        while std::time::Instant::now() < deadline {
+            if let Some(uid) = accessor_uid(pid) {
+                attributed = Some(uid);
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        let _ = child.kill();
+        let _ = child.wait();
+        let uid = attributed.expect("probe process UID could not be attributed");
+        assert_eq!(uid, target_uid, "attribution must follow /proc/<pid>/status");
+        assert_ne!(uid, CANARY_UID_UNKNOWN);
+        if target_uid != 0 {
+            assert_ne!(uid, 0, "a non-root accessor must not be attributed as root");
+        }
+    }
+
+    #[test]
+    fn unknown_uid_is_not_encoded_as_root() {
+        let event = CanaryEvent {
+            pid: 4242,
+            uid: CANARY_UID_UNKNOWN,
+            path: PathBuf::from("/var/lib/vgt/gedefense/canaries/.aws_credentials"),
+            canary_type: "CLOUD_CRED".to_owned(),
+            exec: false,
+        };
+        let encoded = encode_event(&event);
+        let fields: Vec<&str> = encoded.split(':').collect();
+        assert_eq!(fields[1], u32::MAX.to_string());
+        assert_ne!(fields[1], "0", "an unresolved accessor is never root");
+        assert_eq!(CANARY_UID_UNKNOWN, u32::MAX);
     }
 }

@@ -47,7 +47,7 @@ func TestHardeningPostureMeasuresLocalControlsWithoutLeakingBootSecrets(t *testi
 	now := time.Date(2026, 7, 29, 12, 0, 0, 0, time.UTC)
 	collector := newHardeningCollectorForTest(root, func() time.Time { return now })
 	snapshot := Snapshot{
-		FIM:      FIMStatus{Enabled: true, Health: "HEALTHY"},
+		FIM:      FIMStatus{Enabled: true, Health: fimHealthVerified},
 		Evidence: EvidenceStatus{Enabled: true, Healthy: true},
 	}
 	boot := BootTrustReport{Items: []BootTrustEvidence{
@@ -96,6 +96,46 @@ func TestHardeningControlSelectionBuildsDeterministicAllowlistedProfile(t *testi
 			t.Fatalf("invalid hardening selection accepted: %s", invalid)
 		}
 	}
+}
+
+// TestHardeningPostureConsumesTheFIMHealthContract is the FIND-030 regression test: the posture
+// compared against "HEALTHY", but the FIM engine publishes "VERIFIED", so a perfectly verified
+// baseline was scored as unprotected forever. The check has to follow the producer's single
+// source of truth.
+func TestHardeningPostureConsumesTheFIMHealthContract(t *testing.T) {
+	collector := newHardeningCollectorForTest(t.TempDir(), time.Now)
+	cases := []struct {
+		health string
+		state  string
+	}{
+		{fimHealthVerified, hardeningStateProtected},
+		{fimHealthPending, hardeningStatePartial},
+		{fimHealthTampered, hardeningStatePartial},
+		{"HEALTHY", hardeningStatePartial}, // the old literal is not the producer's contract
+	}
+	for _, tc := range cases {
+		posture := collector.Collect(Snapshot{FIM: FIMStatus{Enabled: true, Health: tc.health}}, BootTrustReport{})
+		check := postureCheck(t, posture, "integrity.fim")
+		if check.State != tc.state {
+			t.Errorf("FIM health %q produced state %s, want %s", tc.health, check.State, tc.state)
+		}
+	}
+	// A disabled FIM must not pass the check.
+	posture := collector.Collect(Snapshot{FIM: FIMStatus{Enabled: false, Health: fimHealthDisabled}}, BootTrustReport{})
+	if check := postureCheck(t, posture, "integrity.fim"); check.State != hardeningStateUnprotected {
+		t.Errorf("disabled FIM produced state %s, want %s", check.State, hardeningStateUnprotected)
+	}
+}
+
+func postureCheck(t *testing.T, posture HardeningPosture, id string) HardeningCheck {
+	t.Helper()
+	for _, check := range posture.Checks {
+		if check.ID == id {
+			return check
+		}
+	}
+	t.Fatalf("posture check %q missing", id)
+	return HardeningCheck{}
 }
 
 func TestHardeningPostureRefusesSymlinkEvidence(t *testing.T) {

@@ -32,16 +32,27 @@ import (
 // or attacker-written state file into a root sysctl change. The file carries no secret: a key
 // name, two values, the reason and a timestamp. It exists so an operator can see *why* the
 // platform holds a kernel value, not only that it does.
+//
+// Previous-value policy (FIND-029): the pre-mitigation value is captured before the write and
+// persisted with its attribution ("measured"). When the guard adopts a value that was already in
+// force - a missing state record, a restart that finds the value already closed, or a legacy
+// record that logged the non-value "unknown" - no trustworthy "before" measurement exists. Such a
+// record is persisted with an empty previous value and the explicit source "unattributed". The
+// restore path re-asserts it like any other record, but a rollback refuses to write a guessed
+// restore value and says so instead of inventing or logging an undefined state.
 
 const mitigationStatePath = "/var/lib/vgt/gedefense/kernel-mitigation.json"
 
 type persistedMitigation struct {
-	Key       string    `json:"key"`
-	Desired   string    `json:"desired"`
-	Previous  string    `json:"previous"`
-	Reason    string    `json:"reason"`
-	AppliedAt time.Time `json:"applied_at"`
-	// Signature is the Ed25519 signature over the canonical payload with this field empty.
+	Key      string `json:"key"`
+	Desired  string `json:"desired"`
+	Previous string `json:"previous"`
+	// PreviousSource is "measured" for a value read from the kernel before the write
+	// and "unattributed" when no trustworthy pre-mitigation value exists (FIND-029).
+	PreviousSource string    `json:"previous_source,omitempty"`
+	Reason         string    `json:"reason"`
+	AppliedAt      time.Time `json:"applied_at"`
+	// Signature is the keyed MAC over the canonical payload with this field empty.
 	Signature string `json:"signature_ed25519,omitempty"`
 }
 
@@ -58,9 +69,10 @@ func (g *MitigationGuard) statePath() string {
 	return mitigationStatePath
 }
 
-func (g *MitigationGuard) persist(key, desired, previous, reason string) {
+func (g *MitigationGuard) persist(key, desired, previous, previousSource, reason string) {
 	stored := persistedMitigation{
-		Key: key, Desired: desired, Previous: previous, Reason: reason, AppliedAt: g.now(),
+		Key: key, Desired: desired, Previous: previous, PreviousSource: previousSource,
+		Reason: reason, AppliedAt: g.now(),
 	}
 	payload, err := mitigationStatePayload(stored)
 	if err != nil {
@@ -214,9 +226,49 @@ func (g *MitigationGuard) Restore() error {
 		g.emit("critical", "kernel.mitigation_state_invalid", fmt.Sprintf("refusing mitigation state %s=%q; catalogue expects %q", stored.Key, stored.Desired, target.desired))
 		return errors.New("mitigation state value does not match the compiled catalogue")
 	}
-	if stored.Previous != "" && (!mitigationStateValuePattern.MatchString(stored.Previous) || len(stored.Previous) > 8) {
+	// Previous-value attribution (FIND-029). A measured value must stay inside the typed
+	// sysctl domain. The vulnerable build wrote the non-value "unknown" whenever it could
+	// not attribute a previous state; that legacy marker is migrated to an explicit
+	// "unattributed" record so an upgrade neither drops an in-force protection nor
+	// pretends a restore target exists. The rollback policy for unattributed records
+	// (refuse to write a guessed value) is enforced by Rollback.
+	previous := stored.Previous
+	previousSource := stored.PreviousSource
+	legacyUnknown := previous == "unknown"
+	if legacyUnknown {
+		previous = ""
+		if previousSource == "" {
+			previousSource = mitigationPreviousUnattributed
+		}
+	}
+	switch previousSource {
+	case "":
+		if previous != "" {
+			previousSource = mitigationPreviousMeasured
+		} else {
+			previousSource = mitigationPreviousUnattributed
+		}
+	case mitigationPreviousMeasured:
+		if previous == "" {
+			g.emit("critical", "kernel.mitigation_state_invalid", "refusing mitigation state that marks an empty value as measured")
+			return errors.New("mitigation state is missing its measured previous value")
+		}
+	case mitigationPreviousUnattributed:
+		if previous != "" {
+			g.emit("critical", "kernel.mitigation_state_invalid", "refusing mitigation state that marks a concrete value as unattributed")
+			return errors.New("mitigation state previous-value attribution is inconsistent")
+		}
+	default:
+		g.emit("critical", "kernel.mitigation_state_invalid", "refusing mitigation state with an unknown previous-value source: "+previousSource)
+		return errors.New("mitigation state previous-value source is invalid")
+	}
+	if previous != "" && (!mitigationStateValuePattern.MatchString(previous) || len(previous) > 8) {
 		g.emit("critical", "kernel.mitigation_state_invalid", "refusing mitigation state with a previous value outside the sysctl value domain")
 		return errors.New("mitigation state previous value is outside the accepted value domain")
+	}
+	if legacyUnknown {
+		g.emit("warning", "kernel.mitigation_state_previous_unattributed",
+			"the persisted mitigation recorded the undefined previous value \"unknown\"; it is restored as explicitly unattributed and will not be reverted to a guessed value")
 	}
 	if len(stored.Reason) > 240 || strings.ContainsAny(stored.Reason, "\x00\r\n") {
 		return errors.New("mitigation state reason is invalid")
@@ -230,8 +282,8 @@ func (g *MitigationGuard) Restore() error {
 	}
 	now := g.now()
 	record := &mitigationRecord{status: MitigationStatus{
-		State: mitigationStateWatching, Enabled: g.cfg.AutoMitigate, Control: "kernel.userns",
-		Key: stored.Key, Desired: stored.Desired, Previous: stored.Previous, Current: current,
+		State: mitigationStateWatching, Enabled: g.cfg.AutoMitigate, Control: target.control,
+		Key: stored.Key, Desired: stored.Desired, Previous: previous, PreviousSource: previousSource, Current: current,
 		Reason: "restored after restart: " + stored.Reason, AppliedAt: &now,
 	}}
 	deadline := now.Add(g.watch)
@@ -306,22 +358,29 @@ func (g *MitigationGuard) adoptInForce() error {
 				continue
 			}
 			now := g.now()
+			// The guard did not observe the write that closed this control: the value is
+			// already in force and the pre-adoption value is unknowable. Recording it as
+			// measured would be a lie and recording the literal "unknown" (the behaviour
+			// of vulnerable builds, FIND-029) would produce an unusable restore target.
+			// The explicit "unattributed" source documents the restore policy: the record
+			// is asserted on every interval and re-asserted after restarts, but a rollback
+			// will not write a guessed value.
+			reason := "adopted from the running kernel after a missing state record (advisory " + advisory.ID + "); pre-adoption value unattributed, rollback will not write a guessed value"
 			record := &mitigationRecord{
 				status: MitigationStatus{
 					State: mitigationStateStable, Enabled: g.cfg.AutoMitigate, Control: target.control,
-					Key: target.key, Desired: target.desired, Previous: "unknown", Current: current,
-					Reason:    "adopted from the running kernel after a missing state record (advisory " + advisory.ID + ")",
-					AppliedAt: &now, StableAt: &now,
+					Key: target.key, Desired: target.desired, Previous: "", PreviousSource: mitigationPreviousUnattributed,
+					Current: current, Reason: reason, AppliedAt: &now, StableAt: &now,
 				},
 				stable: true,
 			}
 			g.mu.Lock()
 			g.record = record
 			g.mu.Unlock()
-			g.persist(target.key, target.desired, "unknown", record.status.Reason)
+			g.persist(target.key, target.desired, "", mitigationPreviousUnattributed, reason)
 			g.startWatcher()
 			g.emit("high", "kernel.mitigation_adopted", fmt.Sprintf(
-				"The state record was missing but %s already holds %s; the guard adopted the running value and asserts it again.", target.key, target.desired))
+				"The state record was missing but %s already holds %s; the guard adopted the running value, asserts it again and marks the previous value as unattributed.", target.key, target.desired))
 			return nil
 		}
 	}

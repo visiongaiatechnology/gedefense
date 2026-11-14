@@ -1060,3 +1060,90 @@ func twoDigits(value int) string {
 func threeDigits(value int) string {
 	return string([]rune{'0' + rune(value/100), '0' + rune((value/10)%10), '0' + rune(value%10)})
 }
+
+// recordingTitanObserver fails a fixed number of times, then blocks until the
+// context is cancelled. It records when each sensor run started so a test can
+// measure the mandatory restart backoff (FIND-031).
+type recordingTitanObserver struct {
+	mu     sync.Mutex
+	starts []time.Time
+}
+
+func (o *recordingTitanObserver) Run(ctx context.Context, _ []string, _ chan<- titanObservation) error {
+	o.mu.Lock()
+	o.starts = append(o.starts, time.Now())
+	attempt := len(o.starts)
+	o.mu.Unlock()
+	if attempt >= 3 {
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	return errors.New("injected recoverable sensor failure")
+}
+
+func (o *recordingTitanObserver) started() []time.Time {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return append([]time.Time(nil), o.starts...)
+}
+
+// TestTitanSensorRestartBackoff is the FIND-031 regression: a recoverable sensor
+// failure must not make the Run loop spin. The retry delay is mandatory, above
+// 100ms on the first failure, growing for consecutive failures and capped.
+func TestTitanSensorRestartBackoff(t *testing.T) {
+	first := titanSensorRestartDelay(1, 0)
+	if first <= 100*time.Millisecond || first != titanSensorRestartBackoffBase {
+		t.Fatalf("first restart delay = %s, want the base delay above 100ms", first)
+	}
+	second := titanSensorRestartDelay(2, 0)
+	if second <= first {
+		t.Fatalf("restart delay does not grow: %s then %s", first, second)
+	}
+	if capped := titanSensorRestartDelay(64, 0); capped != titanSensorRestartBackoffMax {
+		t.Fatalf("restart delay is not capped: %s (cap %s)", capped, titanSensorRestartBackoffMax)
+	}
+	if jittered := titanSensorRestartDelay(1, titanSensorRestartBackoffBase); jittered <= titanSensorRestartBackoffBase ||
+		jittered > titanSensorRestartBackoffMax {
+		t.Fatalf("jitter moved the delay outside its bounds: %s", jittered)
+	}
+
+	rig := newTitanTestRig(t, nil)
+	observer := &recordingTitanObserver{}
+	engine, err := NewTitanEngine(rig.cfg, TitanDeps{
+		Version: titanTestVersion, DataRoot: rig.stateDir,
+		Observer: observer,
+		Evidence: rig.evidence.Record, Events: func(Event) {},
+		Now: func() time.Time { return rig.now },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { engine.Run(ctx); close(done) }()
+	deadline := time.Now().Add(8 * time.Second)
+	for time.Now().Before(deadline) && len(observer.started()) < 3 {
+		time.Sleep(5 * time.Millisecond)
+	}
+	starts := observer.started()
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("Titan Run did not stop after cancellation")
+	}
+	if len(starts) < 3 {
+		t.Fatalf("the sensor was restarted %d times, want at least 3 retries", len(starts))
+	}
+	firstGap := starts[1].Sub(starts[0])
+	secondGap := starts[2].Sub(starts[1])
+	if firstGap <= 100*time.Millisecond {
+		t.Fatalf("the first sensor retry was not backed off: %s", firstGap)
+	}
+	if secondGap <= firstGap {
+		t.Fatalf("the backoff did not grow for the second retry: %s then %s", firstGap, secondGap)
+	}
+	if !rig.evidence.hasKind("titan.sensor.restart_backoff") {
+		t.Fatal("the restart backoff was not evidenced")
+	}
+}

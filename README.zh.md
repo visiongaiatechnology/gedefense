@@ -7,8 +7,8 @@
 ### Linux Security Fabric - Your Entenprise System
 
 [![License](https://img.shields.io/badge/License-AGPL--3.0--only-blue?style=for-the-badge)](https://www.gnu.org/licenses/agpl-3.0)
-[![Version](https://img.shields.io/badge/Version-5.1.0--beta.3-orange?style=for-the-badge)](#)
-[![Status](https://img.shields.io/badge/Status-Release_v5.1.0--beta.3-yellow?style=for-the-badge)](#)
+[![Version](https://img.shields.io/badge/Version-5.2.0-orange?style=for-the-badge)](#)
+[![Status](https://img.shields.io/badge/Status-Release_v5.2.0-yellow?style=for-the-badge)](#)
 [![Installer](https://img.shields.io/badge/Installer-Universal_Linux-green?style=for-the-badge)](#-快速上手)
 [![Platform](https://img.shields.io/badge/Platform-Linux_x86__64-lightgrey?style=for-the-badge&logo=linux)](#)
 [![Data Plane](https://img.shields.io/badge/Data_Plane-Rust_eBPF%2FXDP-red?style=for-the-badge&logo=rust)](#-系统架构)
@@ -28,14 +28,21 @@
 🌐 **Languages / Sprachen / Языки / 语言:**  
 [English](README.md) · [Deutsch](README.de.md) · [Русский](README.ru.md) · **中文 (简体)**
 
+<br />
+
+⬇️ **安装程序直链下载 (v5.2.0):**  
+[**OneClick 安装程序 (`.run`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v5.2.0/VGT_GeDefense_Beta_v5_5.2.0_OneClick.run) · [`.sha256`](https://github.com/visiongaiatechnology/gedefense/releases/download/v5.2.0/VGT_GeDefense_Beta_v5_5.2.0_OneClick.run.sha256) · [**Desktop Tray (`.run`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v5.2.0/GeDefense-5.2.0-Desktop-OneClick.run) · [`.sha256`](https://github.com/visiongaiatechnology/gedefense/releases/download/v5.2.0/GeDefense-5.2.0-Desktop-OneClick.run.sha256) · [**源码归档 (`.zip`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v5.2.0/VGT_GeDefense_Beta_v5_5.2.0_Source.zip) · [**v5.2.0 发布页**](https://github.com/visiongaiatechnology/gedefense/releases/tag/v5.2.0) · [快速上手](#-快速上手)
+
 </div>
 
-> **更新 5.1.0-beta.3（2026-10-29）— 情报源自愈、CVE 响应与签名发布**
+> **更新 5.2.0（2026-11-14）— 安全发布**
+>
+> - **安全发布：** 独立深度审计 VGT-AUDIT-20261114-GD51 在 5.1.0-beta.3 中报告 36 项发现和 6 条攻击链，并阻断了 5.1.0-beta.3 的发布门禁；5.2.0 修复了安装器/供应链、启动证明、网关/认证、策略/取证/存储、API/L7、情报源/气闸、自我防护、桌面托盘、Rust 核心与 eBPF 中的全部 36 项发现。详见 `CHANGELOG.md` 和 `RELEASE-NOTES.md`。
 >
 > - **自愈式威胁情报源：** 缺失的 feed 签名 trust anchor 会通过 rotation-safe 标记从本地运维密钥（需显式启用）自举；过期 manifest 会重新签名。密钥轮换后旧标记仍然 fail-closed。
 > - **CVE-2026-98432 / CVE-2026-99999：** 受管的 user-namespace 与 MPTCP 对策持续保持生效；在安装 Ubuntu 内核修复前，内核暴露仍会明确显示。
 > - **Mitigation guard：** 权限受限的探测现在会明确标记为 UNOBSERVED，不再被静默跳过，也不会触发错误的自动回滚。
-> - **签名发布：** 5.1.0-beta.3 以签名 OneClick 安装器和可复现源码归档发布。
+> - **签名发布：** 5.2.0 以签名 OneClick 安装器和可复现源码归档发布。
 
 
 <img width="1536" height="1024" alt="GeDefense_ Real Security, Many Feathers" src="https://github.com/user-attachments/assets/dc56735e-b2b2-45c9-a363-97554a92ae0a" />
@@ -73,7 +80,7 @@ GeDefense 是一套本地优先的安全架构，覆盖 Linux、Windows、Androi
 ---
 
 > [!WARNING]
-> **公开测试版 — 不可用于生产环境（版本 5.1.0-beta.3）。**  
+> **公开测试版 — 不可用于生产环境（版本 5.2.0）。**  
 > GeDefense Titan 与 Linux Security Fabric 仍在积极开发中。此测试版仅适用于
 > 测试和资格验证主机。核心架构已由自动发布门禁验证，但公开 CA 发布真实性、
 > RFC3161 时间戳、吊销、外部锚定防回滚和 feed 签名密钥仍然缺失。请勿将此
@@ -483,17 +490,17 @@ Rust Core **未提供任何通用的系统 Shell、文件系统或 Sysctl 执行
 
 ```bash
 # 下载安装程序
-wget https://github.com/visiongaiatechnology/gedefense/releases/download/v5.1.0-beta.3/VGT_GeDefense_Beta_v5_5.1.0-beta.3_OneClick.run
+wget https://github.com/visiongaiatechnology/gedefense/releases/download/v5.2.0/VGT_GeDefense_Beta_v5_5.2.0_OneClick.run
 
 # 校验 SHA-256 完整性指纹
-sha256sum --check VGT_GeDefense_Beta_v5_5.1.0-beta.3_OneClick.run.sha256
+sha256sum --check VGT_GeDefense_Beta_v5_5.2.0_OneClick.run.sha256
 
 # 执行安装（需要 root 权限）
-chmod 700 VGT_GeDefense_Beta_v5_5.1.0-beta.3_OneClick.run
-sudo ./VGT_GeDefense_Beta_v5_5.1.0-beta.3_OneClick.run
+chmod 700 VGT_GeDefense_Beta_v5_5.2.0_OneClick.run
+sudo ./VGT_GeDefense_Beta_v5_5.2.0_OneClick.run
 ```
 
-> **安装程序可用性：** 官方 v5.1.0-beta.3 自包含安装程序（`VGT_GeDefense_Beta_v5_5.1.0-beta.3_OneClick.run`）已通过验证并发布于 GitHub Releases。
+> **安装程序可用性：** 官方 v5.2.0 自包含安装程序（`VGT_GeDefense_Beta_v5_5.2.0_OneClick.run`）将随签名的 GitHub Release 一同发布。
 
 > 安装包与校验和文件仅在通过全部 GitHub CI 测试及实体 Linux 节点验证后发布。切勿运行未经验签的 RUN 可执行文件。
 
@@ -527,7 +534,7 @@ sudo ./VGT_GeDefense_Beta_v5_5.1.0-beta.3_OneClick.run
 
 ---
 
-## 🚧 当前已知局限（5.1.0-beta.3）
+## 🚧 当前已知局限（5.2.0）
 
 - 暂未集成 Swarm / 集群网格（Mesh）支持
 - 暂不支持 QUIC 协议网络卸载
@@ -588,7 +595,7 @@ sudo ./VGT_GeDefense_Beta_v5_5.1.0-beta.3_OneClick.run
   * **成功的验证会清除它所取代的原因。** 原因此前是单向的：只有轮转或操作员恢复才能清除一个原因，因此一次瞬时故障会让 XDR 一直处于降级状态 - 并让主动响应一直处于暂停状态 - 直到有人重启控制平面。
   * **操作员的部署不再被当作入侵。** 替换 GeDefense 自身的一个组件此前会降级 XDR 并暂停主动响应，因此每发布一个修复都会悄然关掉一部分防护。现在它是一条高严重级别的记录，不附带任何响应；第三方对象仍保留完整反应。
   * **恢复事件账本不再要求放弃防护，** 而在保留状态下那原本无法达成 - 要修复该账本，先前只能解除那台主机的武装，而该账本存在的意义正是保全它的防护。
-  * **Rust 核心进程容忍不一致的聚合记录。** 一条其 TCP 标签与自身计数器相矛盾的记录会被保留，其协议被置为中性，计数器保持不变；一条仍然无法解码的记录会被跳过并点名，而不是中断排空；只有当一批中有大量数据记录无法解码时 - 那是线格式错误的确凿特征 - 才会被报告为故障。
+  * **Rust 核心进程只为一致的聚合保留 TCP 标签。** 同质的 TCP 批次保留其 `protocol`/`tcp_flags` 和精确计数器 — 大批量 ACK 或 SYN 不再被误判为矛盾。混合 TCP 与非 TCP 数据包的批次使用显式中性标记（`protocol = 0`、`tcp_flags = 0`）和精确计数器输出，而不再继承触发刷新的那个数据包的标签。与批次长度相矛盾的记录会被拒绝并计为丢失样本（当累积过多时触发排空告警），绝不会被改写为中性的标签。eBPF 生产者每个批次最多刷新 255 个数据包（wire 字段 `attempt_count` 为 `u8`），其 LSM 遍历覆盖从根开始的完整 cgroup-v2 祖先链，因此安装在 Gaia Cell cgroup 上的策略也会覆盖其后代叶子 cgroup。参见 `rust/gedefense-common/src/lib.rs`（wire 解码器）和 `rust/gedefense-ebpf/src/main.rs`（生产者）。
 * **账本保留：**
   * **两份取证账本都会轮转，而不是被填满。** 触及配额此前会停止记录、降级 XDR 并暂停主动响应，直到操作员手动归档该分段 - 在一台生产主机上一天之内发生了两次。现在达到百分之九十时，已密封的链条会连同清单一起归档，清单载明大小、摘要、序列、头部哈希与校验范围，随后开始一条全新的链条。
   * **轮转能经受崩溃。** 它先复制再替换，因此被中断的一轮会在下一次启动时依据轮转标记被补完；而一个其清单不匹配的标记会被拒绝，而不是被采信。
@@ -835,6 +842,6 @@ sudo python3 scripts/update-geoip-db.py /var/lib/vgt/gedefense/geoip.csv
 
 [![VGT](https://img.shields.io/badge/VisionGaia-Technology-cyan?style=for-the-badge)](https://visiongaiatechnology.de)
 
-*VGT GeDefense 5.1.0-beta.3 — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
+*VGT GeDefense 5.2.0 — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
 
 </div>

@@ -87,6 +87,24 @@ func (a *CellTransactionApplier) Preview(
 	return encoded, append(json.RawMessage(nil), encoded...), nil
 }
 
+// sameCellIdentity compares the immutable parts of a Gaia Cell identity. The
+// observation timestamp (ObservedAt) and the runtime state fields are not part
+// of the identity: ObservedAt is refreshed on every listing, so comparing whole
+// structs made every healthy transaction fail between preview and apply
+// (FIND-031). UUID, generation, the real kernel cgroup id (CgroupID) and the
+// policy digest are what must not change.
+func sameCellIdentity(left, right GaiaCell) bool {
+	return left.Version == right.Version &&
+		left.UUID == right.UUID &&
+		left.Label == right.Label &&
+		left.Profile == right.Profile &&
+		left.Class == right.Class &&
+		left.CgroupPath == right.CgroupPath &&
+		left.CgroupID == right.CgroupID &&
+		left.PolicyDigest == right.PolicyDigest &&
+		left.Generation == right.Generation
+}
+
 func (a *CellTransactionApplier) Apply(
 	planRaw json.RawMessage,
 	beforeRaw json.RawMessage,
@@ -96,13 +114,14 @@ func (a *CellTransactionApplier) Apply(
 		return nil, err
 	}
 	before, err := decodeCellIsolationPlan(beforeRaw)
-	if err != nil || before != plan {
+	if err != nil || before.Schema != plan.Schema || before.Action != plan.Action ||
+		!sameCellIdentity(before.Cell, plan.Cell) {
 		return nil, errors.New("Gaia Cell pre-state does not match the authorized plan")
 	}
 	current, err := a.findCell(
 		plan.Cell.UUID, plan.Cell.Generation, plan.Cell.CgroupID,
 	)
-	if err != nil || current != plan.Cell {
+	if err != nil || !sameCellIdentity(current, plan.Cell) {
 		return nil, errors.New("Gaia Cell identity changed after preview")
 	}
 	command, state, network := "", plan.Cell.State, plan.Cell.NetworkState

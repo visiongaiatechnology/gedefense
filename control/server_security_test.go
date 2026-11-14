@@ -232,12 +232,22 @@ func TestBoundedGuardsFailClosedAtCapacity(t *testing.T) {
 	if !limiter.Allow("one", now) {
 		t.Fatal("rate limiter did not admit an evicted identity again")
 	}
-	// The replay guard keeps its hard fail-closed capacity: a replay table overflow is not
-	// an availability trade-off but a signal that the request cannot be classified.
+	// The replay guard must not turn a full table into a global mutation lockout
+	// (FIND-019): it displaces the oldest identifier, keeps it in the retained
+	// table so a replay inside the window is still refused, and admits the new
+	// one. This is the availability half of the bounded-cache trade-off.
 	guard := NewReplayGuard(time.Hour)
 	guard.maxEntries = 2
-	if !guard.Claim("request_0000000000000001", now) || !guard.Claim("request_0000000000000002", now) || guard.Claim("request_0000000000000003", now) {
-		t.Fatal("replay guard capacity did not fail closed")
+	guard.maxRetained = 2
+	firstReplayID := "request_0000000000000001"
+	if !guard.Claim(firstReplayID, now) || !guard.Claim("request_0000000000000002", now) {
+		t.Fatal("replay guard refused an identifier below capacity")
+	}
+	if !guard.Claim("request_0000000000000003", now) {
+		t.Fatal("replay guard globally denied a new identifier when the table was full")
+	}
+	if guard.Claim(firstReplayID, now) {
+		t.Fatal("a displaced identifier inside the replay window was accepted as new")
 	}
 }
 

@@ -1,5 +1,134 @@
 # Release Notes
 
+## 5.2.0 — 2026-11-14 — Security Release
+
+This is the security release for the independent deep audit
+**VGT-AUDIT-20261114-GD51**. The audit reported 36 findings in six attack chains
+and blocked the 5.1.0-beta.3 release gate; 5.2.0 fixes all 36 findings. The
+release is deliberately fail-closed: several behaviors that previously
+continued silently now stop and name the condition.
+
+### Highlights
+
+- **Installer and supply chain:** the desktop and server OneClick installers
+  verify the Ed25519 release signature and the payload hash before extraction or
+  any state change; state and secret paths keep their documented ownership and
+  modes (atomic `0600` files); the release-toolchain gate, the SCA status, the
+  canonical signed GeoIP sidecar contract and the release-key rotation are
+  enforced.
+- **Boot attestation:** the boot-trust probe verifies the detached Ed25519
+  signature, the live TPM2 PCR values against the pinned policy key and the
+  signed fs-verity manifest instead of trusting the JSON document shape.
+- **Gateway and authentication:** step-up password change, a process-wide
+  Argon2id admission gate, no session-registry leak on rotation, and the
+  anonymous `/gateway/version` surface removed.
+- **Policy and forensics:** an unverifiable signed policy is quarantined
+  unmodified and never re-signed; blocker evaluation no longer disappears when
+  Auto-Degrade is off; strict storage AEAD/HistoryMAC; authenticated rotation
+  marker; consistent incremental ledger verification.
+- **API, L7, feeds and Airlock:** single-decode allowlist removal, a replay
+  guard that stays available without forgetting, bounded inline admission slots,
+  a finite static-asset rate budget, visible TLS-policy deactivation, the
+  ephemeral self-test token, an authenticated threat-intelligence state and a
+  staging-root-bound Airlock.
+- **Self-protection and response:** own-artifact mismatches are `XDR.SELF_TAMPER`
+  and release-blocking unless a signed update window covers the exact bytes;
+  RASP exemptions are bound to identity; behavior/FIM/mitigation postures and
+  response capacity no longer misreport or lock out.
+- **Desktop tray, Rust core and eBPF:** Qt rich-text injection is closed; the
+  scan socket, control socket, IPC timestamp window, quarantine commit point and
+  canary attribution are hardened; the eBPF producer keeps every wire counter
+  exact, uses the explicit neutral marker for mixed batches and walks the full
+  cgroup-v2 ancestry for LSM policies.
+
+### Behavior and breaking changes
+
+- An unverifiable startup policy is quarantined unmodified and is **not**
+  re-signed automatically. Promotion stays refused until an explicit operator
+  recovery re-establishes the signed policy via the documented `RETURN:OBSERVE`
+  transition.
+- Legacy plaintext operational histories/runtime settings are **refused**, not
+  migrated; strict AEAD/HistoryMAC is required.
+- Changing the gateway password requires the current password (step-up) and
+  interactive sudo/polkit re-authentication; the `NOPASSWD` rule for the helper
+  was removed.
+- An unauthenticated evidence-rotation marker from an older version is refused;
+  an interrupted rotation needs out-of-band verification/operator action.
+- External scripts using the former static L7 self-test header are rejected; the
+  reserved path requires the process-local ephemeral token.
+- `GET /gateway/version` returns 404. `/gateway/livez` remains the only anonymous
+  health answer and contains no build metadata.
+- Boot trust without the pinned keys and signed fs-verity manifest reports
+  `NOT_AVAILABLE`/`WARNING`, never a positive claim; a missing GeoIP sidecar
+  makes the resolver unavailable (fail-closed).
+- The eBPF object and the Rust core implement one wire contract (batch ≤ 255,
+  neutral marker `protocol = 0`) and must come from the same release.
+
+### Upgrade steps
+
+1. Back up the operational state directory and the signed policy document.
+   Do not delete a quarantined policy: the unmodified document and its forensic
+   copy are the evidence an operator recovery needs.
+2. Install 5.2.0 with the signed OneClick installer / signed source archive and
+   verify the asset hash and Ed25519 release signature first.
+3. Install the systemd units shipped with this release and run
+   `systemctl daemon-reload`. The units keep `ProtectSystem=strict`,
+   `ReadOnlyPaths` and only the documented `ReadWritePaths` (for example
+   `/run/gedefense`, `/run/vgt-gedefense-l7`, `/sys/fs/cgroup/vgt-cells`,
+   `/var/lib/vgt/gedefense`); do not widen the sandbox to work around a path.
+4. Deploy the Rust core and the eBPF object from this same release. A mixed
+   core/eBPF pair is refused or loses samples, because the wire contract
+   changed.
+5. **Boot-trust anchors:** on AstraeaOS, provision the pinned Ed25519
+   attestation/TPM public keys and the operator-signed fs-verity manifest under
+   `/usr/share/astraeaos/boot-trust/`, and enable the updated
+   `astraeaos-boot-attestation` producer that writes
+   `/run/astraeaos/boot-attestation.json` and its `.sig`. Without them boot
+   trust is reported as unavailable/warning. On non-AstraeaOS hosts boot trust
+   stays explicitly unavailable and is never presented as verified.
+6. **GeoIP:** after the upgrade, re-generate and re-sign the local dataset with
+   `sudo python3 scripts/update-geoip-db.py /var/lib/vgt/gedefense/geoip.csv` so
+   `geoip.csv.sha256` (canonical `vgt.gedefense.geoip-integrity.v1` JSON) and,
+   for signed deployments, `geoip.csv.sig` match the installed CSV. A copied
+   legacy CSV without a matching sidecar is refused.
+7. **Rotation marker migration:** if a rotation marker from a pre-5.2.0 start
+   exists and is unauthenticated, the start refuses it. Verify the sealed
+   archive/evidence chain out of band, then let the documented operator recovery
+   path finish or discard the pending rotation.
+8. **Operator recovery after policy tamper:** investigate the quarantined policy
+   document and its forensic copy, then re-establish the signed policy with the
+   explicit `RETURN:OBSERVE` transition. Automatic promotion remains blocked
+   while the quarantine is active.
+9. **Release toolchain host:** build/validate the release on a host with
+   **Node.js 22.16.0** and **Go 1.27.3** (Rust stable 1.97.1, eBPF nightly
+   `nightly-2026-07-16`, bpf-linker 0.10.3 per `TOOLCHAINS.lock`). Older host
+   toolchains are refused by the release gate.
+10. Run `scripts/tests/run_release_tests.sh` and the target-host qualification
+    gates; treat SKIP lines as "not executed", never as PASS.
+
+### Known residual risks
+
+- **Not testable in this offline environment (NOT_TESTED/BLOCKED):** live
+  TPM2/fTPM and fs-verity measurements, the target-kernel eBPF verifier/XDP
+  attachment, and the offline SCA scanners (scanner binaries/network not
+  available). These remain mandatory target-host qualification items and are not
+  claimed as verified here.
+- **Core and eBPF must ship together:** the batch limit/neutral-marker wire
+  contract changed; pairing a 5.2.0 core with an older eBPF object (or the
+  reverse) is unsupported.
+- **Quarantine under a read-only sandbox:** a file on a path the service may
+  read but not modify (`ProtectSystem=strict`, `ReadOnlyPaths`, read-only
+  mounts) cannot have its source removed. The quarantine transaction aborts
+  fail-closed with an explicit error instead of reporting success while the
+  object stays in place; an operator with write access is required.
+- **ReplayGuard capacity:** the bounded cache stays available under pressure,
+  but more than `maxEntries + maxRetained` distinct identifiers inside one
+  replay window can push the oldest fingerprint out of the retained table; the
+  residual is bounded by the window and the per-scope quota.
+- The 70 VGT-100 controls that were already `NOT_TESTED` remain open (see
+  `SECURITY.md` and `PRODUCTION-BETA-GATE.md`); this release does not claim full
+  VGT-100 coverage.
+
 ## 5.1.0-beta.3 — 2026-10-29 — Feed self-healing and CVE response
 
 This release makes the signed threat-intelligence feed recover itself from the bootstrap failure that previously required an operator:

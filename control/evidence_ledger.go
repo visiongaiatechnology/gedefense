@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"sync"
@@ -123,6 +124,10 @@ type EvidenceLedger struct {
 	// incrementalChunk bounds one background verification pass. It is a field rather than a
 	// constant so a test can exercise the chunking without writing tens of thousands of records.
 	incrementalChunk uint64
+	// generation is bumped whenever the live chain is replaced (rotation). It is the token a
+	// verification pass compares against after its walk, so a rotation that happened while the
+	// pass ran is told apart from damage: the pass must not quarantine a chain it never read.
+	generation uint64
 }
 
 func NewEvidenceLedger(path, keyPath, storageKeyPath, nodeName string, maxBytes int64) (*EvidenceLedger, error) {
@@ -368,6 +373,11 @@ type evidenceWalkBounds struct {
 	// PrevHash is the authenticated hash of record From-1, the anchor the first verified
 	// record has to link back to.
 	PrevHash string
+	// SnapshotSize, when positive, bounds the walk to the first SnapshotSize bytes of the
+	// ledger. That is the size captured under the ledger lock, so the walk sees exactly the
+	// records that existed when the checkpoint and the watermark were read - never a record
+	// that an append is still writing. Zero walks the whole file.
+	SnapshotSize int64
 }
 
 // verifyEvidenceChain walks the chain between the bounds and verifies every record inside them.
@@ -385,12 +395,22 @@ func verifyEvidenceChain(path string, publicKey ed25519.PublicKey, storage *Stor
 	if info.Size() < 0 || info.Size() > maxBytes {
 		return "", 0, nil, info.Size(), errors.New("evidence ledger exceeds its size budget")
 	}
+	if bounds.SnapshotSize > 0 && info.Size() < bounds.SnapshotSize {
+		// Append only grows the ledger; a file smaller than the captured snapshot was
+		// replaced, not appended to. The caller's generation check distinguishes rotation
+		// from tampering.
+		return "", 0, nil, info.Size(), errors.New("evidence ledger is smaller than the verified snapshot")
+	}
 	file, err := os.Open(path)
 	if err != nil {
 		return "", 0, nil, info.Size(), err
 	}
 	defer file.Close()
-	scanner := bufio.NewScanner(file)
+	var reader io.Reader = file
+	if bounds.SnapshotSize > 0 {
+		reader = io.LimitReader(file, bounds.SnapshotSize)
+	}
+	scanner := bufio.NewScanner(reader)
 	scanner.Buffer(make([]byte, 4096), 4<<20)
 	previous := bounds.PrevHash
 	var sequence uint64
@@ -477,10 +497,17 @@ func readEvidenceCheckpoint(path string, storage *StorageCipher) (evidenceCheckp
 		return evidenceCheckpoint{}, err
 	}
 	if storage != nil {
-		data, _, err = storage.Decrypt(path, "evidence-head", data, nil)
-		if err != nil {
-			return evidenceCheckpoint{}, err
+		// Strict read: the checkpoint is the authenticated anchor of the entire bounded
+		// verification, so a plaintext file with that name may never be treated as one. The
+		// cipher returns an error for a document that is not an envelope.
+		plain, wasLegacy, decryptErr := storage.Decrypt(path, "evidence-head", data, nil)
+		if decryptErr != nil {
+			return evidenceCheckpoint{}, decryptErr
 		}
+		if wasLegacy {
+			return evidenceCheckpoint{}, errors.New("evidence checkpoint is not authenticated")
+		}
+		data = plain
 	}
 	var checkpoint evidenceCheckpoint
 	decoder := json.NewDecoder(bytes.NewReader(data))
@@ -814,10 +841,15 @@ func verifyEvidenceCheckpoint(path string, sequence uint64, headHash string, sto
 		return err
 	}
 	if storage != nil {
-		data, _, err = storage.Decrypt(path, "evidence-head", data, nil)
-		if err != nil {
-			return err
+		// Strict read: a plaintext checkpoint is not the authenticated one the ledger wrote.
+		plain, wasLegacy, decryptErr := storage.Decrypt(path, "evidence-head", data, nil)
+		if decryptErr != nil {
+			return decryptErr
 		}
+		if wasLegacy {
+			return errors.New("evidence checkpoint is not authenticated")
+		}
+		data = plain
 	}
 	var checkpoint evidenceCheckpoint
 	decoder := json.NewDecoder(bytes.NewReader(data))
@@ -1012,8 +1044,10 @@ func (l *EvidenceLedger) Verify() error {
 		return err
 	}
 	if err := l.writeWatermark(evidenceWatermark{Version: evidenceRecordVersion, Sequence: sequence, HeadHash: head}); err != nil {
-		l.integrityErr = fmt.Errorf("evidence watermark: %w", err)
-		return l.integrityErr
+		// The walk just verified every record; only the durable coverage hint could not be
+		// written. Treating that as an integrity error quarantined a healthy chain because of a
+		// disk condition - a false-positive degradation. The next full walk retries the write.
+		log.Printf("evidence watermark commit failed after a full verification: %v", err)
 	}
 	l.markFullVerifiedLocked()
 	return nil
@@ -1049,17 +1083,14 @@ func (l *EvidenceLedger) readWatermark() (evidenceWatermark, error) {
 		return evidenceWatermark{}, err
 	}
 	if l.crypto != nil {
-		plaintext, legacy, err := l.crypto.Decrypt(l.watermarkPath(), "evidence-verified", data, nil)
-		if err != nil {
-			return evidenceWatermark{}, err
-		}
-		if legacy {
-			// An unencrypted watermark is a claim anyone with write access to the state
-			// directory can author, and honouring it would let them skip the verification of the
-			// entire history by naming a position near its end. The cipher reports legacy
-			// plaintext instead of failing, so the refusal has to be explicit: a watermark is
-			// either authenticated or it does not count.
-			return evidenceWatermark{}, errors.New("evidence watermark is not authenticated")
+		// Strict read: the cipher refuses a plaintext watermark outright. That matters because
+		// an unencrypted watermark is a claim anyone with write access to the state directory
+		// can author, and honouring it would let them skip the verification of the entire
+		// history by naming a position near its end. A refused watermark is treated like a
+		// missing one: the pass verifies from the beginning.
+		plaintext, _, decryptErr := l.crypto.Decrypt(l.watermarkPath(), "evidence-verified", data, nil)
+		if decryptErr != nil {
+			return evidenceWatermark{}, decryptErr
 		}
 		data = plaintext
 	}
@@ -1119,27 +1150,47 @@ func (l *EvidenceLedger) recordIntegrity(err error) error {
 // since the last pass - milliseconds once it has caught up - while every record is still
 // verified exactly once, in order, by one pass or another.
 //
-// The lock is held only to read the checkpoint and the watermark and to record the result. The
-// walk itself runs without it, so the append path is never blocked by verification.
+// The checkpoint, the watermark and the ledger size are read together under the ledger lock, so
+// an append cannot move them between the reads. The walk then runs on the captured size outside
+// the lock - the append path is never blocked, and the walk can never read a record an append is
+// still writing. A rotation that replaced the chain while the walk ran is recognized by the
+// generation token and is not treated as damage.
 func (l *EvidenceLedger) VerifyIncremental() error {
 	l.mu.Lock()
-	integrityErr := l.integrityErr
+	if l.integrityErr != nil {
+		err := l.integrityErr
+		l.mu.Unlock()
+		return err
+	}
 	maxBytes := l.effectiveMaxBytesLocked()
 	chunk := l.incrementalChunk
 	if chunk == 0 {
 		chunk = evidenceIncrementalChunkRecords
 	}
-	l.mu.Unlock()
-	if integrityErr != nil {
-		return integrityErr
-	}
+	generation := l.generation
+	sequence := l.sequence
+	headHash := l.headHash
+	snapshotSize := l.expectedSize
 
 	checkpoint, err := readEvidenceCheckpoint(l.headPath, l.crypto)
 	if err != nil {
+		l.mu.Unlock()
+		if errors.Is(err, os.ErrNotExist) && sequence == 0 && snapshotSize == 0 {
+			// An empty ledger has no checkpoint to authenticate yet. That is the normal state
+			// between construction and the first append, not an integrity failure.
+			return nil
+		}
 		return l.recordIntegrity(fmt.Errorf("evidence checkpoint: %w", err))
 	}
 	if checkpoint.Version != evidenceRecordVersion {
+		l.mu.Unlock()
 		return l.recordIntegrity(errors.New("evidence checkpoint has an unsupported version"))
+	}
+	if checkpoint.Sequence != sequence || checkpoint.HeadHash != headHash {
+		// The checkpoint on disk is not the one the trusted writer just sealed; the ledger lock
+		// rules out a concurrent append, so this is an external change.
+		l.mu.Unlock()
+		return l.recordIntegrity(errors.New("evidence checkpoint does not match the trusted writer state"))
 	}
 
 	from := uint64(1)
@@ -1148,10 +1199,16 @@ func (l *EvidenceLedger) VerifyIncremental() error {
 		from = mark.Sequence + 1
 		prev = mark.HeadHash
 	}
+	l.mu.Unlock()
+
 	if from > checkpoint.Sequence {
 		l.mu.Lock()
-		l.markFullVerifiedLocked()
-		l.mu.Unlock()
+		defer l.mu.Unlock()
+		// Only call the coverage complete if the chain that was just covered is still the live
+		// one; a rotation in the meantime already reset the coverage state.
+		if l.generation == generation {
+			l.markFullVerifiedLocked()
+		}
 		return nil
 	}
 	to := from + chunk - 1
@@ -1159,18 +1216,37 @@ func (l *EvidenceLedger) VerifyIncremental() error {
 		to = checkpoint.Sequence
 	}
 
-	head, sequence, _, _, err := verifyEvidenceChain(l.path, l.publicKey, l.crypto, maxBytes,
-		evidenceWalkBounds{From: from, To: to, PrevHash: prev})
+	head, walked, _, _, err := verifyEvidenceChain(l.path, l.publicKey, l.crypto, maxBytes,
+		evidenceWalkBounds{From: from, To: to, PrevHash: prev, SnapshotSize: snapshotSize})
 	if err != nil {
+		// A rotation replaces the ledger while the walk runs. That is a new chain, not evidence
+		// of damage, so it must not quarantine the ledger; the next pass covers the fresh chain.
+		l.mu.Lock()
+		rotated := l.generation != generation
+		l.mu.Unlock()
+		if rotated {
+			return nil
+		}
 		return l.recordIntegrity(err)
 	}
-	if sequence != to {
-		return l.recordIntegrity(fmt.Errorf("evidence ledger holds %d records, fewer than the verified range ends at", sequence))
-	}
+
 	l.mu.Lock()
-	if err := l.writeWatermark(evidenceWatermark{Version: evidenceRecordVersion, Sequence: to, HeadHash: head}); err != nil {
+	if l.generation != generation {
 		l.mu.Unlock()
-		return l.recordIntegrity(fmt.Errorf("evidence watermark: %w", err))
+		return nil
+	}
+	if walked != to {
+		l.mu.Unlock()
+		// Not a lock-held record: appended above the snapshot boundary. Reading fewer verified
+		// records than the captured checkpoint seals means the ledger shrank behind the writer.
+		return l.recordIntegrity(fmt.Errorf("evidence ledger holds %d records, fewer than the verified range ends at", walked))
+	}
+	if err := l.writeWatermark(evidenceWatermark{Version: evidenceRecordVersion, Sequence: to, HeadHash: head}); err != nil {
+		// A watermark is a durable coverage hint, not the chain's integrity: the records were
+		// verified just now. Failing the pass as an integrity error quarantined a healthy
+		// ledger because a file could not be written, and the whole following pass would have
+		// had to re-read the history from the start.
+		log.Printf("evidence watermark commit failed for range %d..%d: %v", from, to, err)
 	}
 	if to == checkpoint.Sequence {
 		l.markFullVerifiedLocked()

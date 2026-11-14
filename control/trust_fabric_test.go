@@ -2,7 +2,6 @@
 package main
 
 import (
-	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -66,9 +65,15 @@ func trustPayload(t *testing.T, module string, settings *SettingsStore, mutate f
 	return payload
 }
 
+// fabricBootID is a valid lower-case RFC 4122 UUID so it satisfies the signed
+// attestation contract while remaining a synthetic fixture value.
+const fabricBootID = "018f1f4e-3362-7d02-b6b9-1eebbc15f0a1"
+
 // bootTrustProbeFixture lays out a synthetic boot evidence tree under a temporary
-// root so the administrable requirements can be exercised without a real TPM.
-func bootTrustProbeFixture(t *testing.T, attestation any) (*BootTrustCollector, string) {
+// root so the administrable requirements can be exercised without a real TPM. A
+// non-nil attestationPCRs selection provisions the fully signed attestation
+// fixture (Ed25519 signature, live TPM PCR files and signed fs-verity manifest).
+func bootTrustProbeFixture(t *testing.T, attestationPCRs []int) (*BootTrustCollector, string) {
 	t.Helper()
 	root := t.TempDir()
 	write := func(relative string, data []byte) {
@@ -82,36 +87,15 @@ func bootTrustProbeFixture(t *testing.T, attestation any) (*BootTrustCollector, 
 	}
 	write("etc/os-release", []byte("ID=astraeaos\nNAME=\"AstraeaOS\"\nVERSION_ID=\"4.2\"\n"))
 	write("proc/cmdline", []byte("quiet init_on_alloc=1 init_on_free=1 randomize_kstack_offset=on module.sig_enforce=1\n"))
-	write("proc/sys/kernel/random/boot_id", []byte("boot-id-fixture\n"))
+	write("proc/sys/kernel/random/boot_id", []byte(fabricBootID+"\n"))
 	write("sys/firmware/efi/efivars/SecureBoot-8be4df61-93ca-11d2-aa0d-00e098032b8c",
 		append([]byte{0x06, 0x00, 0x00, 0x00}, 0x01))
 	write("sys/kernel/security/lockdown", []byte("none [integrity] confidentiality\n"))
-	if attestation != nil {
-		raw, err := json.Marshal(attestation)
-		if err != nil {
-			t.Fatal(err)
-		}
-		write("run/astraeaos/boot-attestation.json", raw)
+	if attestationPCRs != nil {
+		writeBootTrustAttestationEvidence(t, root, fabricBootID, time.Unix(1700000000, 0).UTC(), attestationPCRs)
 	}
 	collector := newBootTrustCollectorForTest(root, true, func() time.Time { return time.Unix(1700000000, 0).UTC() })
 	return collector, root
-}
-
-func attestationFor(pcrs []int) map[string]any {
-	digest := hex.EncodeToString(bytesOf(0x11))
-	return map[string]any{
-		"schema": "astraeaos.boot-attestation.v1", "status": "verified", "secure_boot": true,
-		"boot_id": "boot-id-fixture", "pcr_selection": pcrs,
-		"pcr_signature_sha256": digest, "pcr_public_key_sha256": digest, "pcr_readout": "base64-readout",
-	}
-}
-
-func bytesOf(value byte) []byte {
-	out := make([]byte, sha256.Size)
-	for index := range out {
-		out[index] = value
-	}
-	return out
 }
 
 func bootTrustItem(t *testing.T, report BootTrustReport, id string) BootTrustEvidence {
@@ -129,7 +113,7 @@ func bootTrustItem(t *testing.T, report BootTrustReport, id string) BootTrustEvi
 // selection is the authority: an attestation that matches the compiled-in default
 // is accepted, and the same document is rejected once the requirement narrows.
 func TestBootTrustPCRPolicyDecidesTheAttestationVerdict(t *testing.T) {
-	collector, _ := bootTrustProbeFixture(t, attestationFor([]int{0, 2, 4, 7, 9, 11, 12}))
+	collector, _ := bootTrustProbeFixture(t, []int{0, 2, 4, 7, 9, 11, 12})
 
 	report := collector.Collect()
 	if item := bootTrustItem(t, report, "measured-boot-attestation"); item.State != bootStateEnabled {
@@ -415,7 +399,7 @@ func TestFabricTrustDocumentWithoutNamespaceStillAuthenticates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	document := runtimeSettingsEnvelope{Schema: runtimeSettingsSchema, Settings: legacy, MAC: hex.EncodeToString(mac)}
+	document := runtimeSettingsEnvelope{Schema: runtimeSettingsSchema, Settings: legacy, MAC: hex.EncodeToString(mac), HistoryMAC: authenticatedHistoryMAC(t, seeded)}
 	data, err := json.MarshalIndent(document, "", "  ")
 	if err != nil {
 		t.Fatal(err)

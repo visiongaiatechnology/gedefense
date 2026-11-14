@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -245,6 +246,34 @@ func effectivePolicyTrustSettings(settings RuntimeSettings) PolicyTrustFabricSet
 	return defaultPolicyTrustFabricSettings()
 }
 
+// policyTrustViews publishes one immutable snapshot of the applied policy trust
+// settings per store. The requirement getters are called from two contexts:
+//
+//   - from PolicyStore.Load while the store write lock is held (where taking the
+//     lock again would deadlock), and
+//   - from lock-free readers that previously read p.trust directly and raced with
+//     ApplyPolicy (FIND-019).
+//
+// A dedicated snapshot table resolves both: writers publish the applied revision
+// while holding p.mu, readers load one coherent struct, and neither context needs
+// to re-enter the store lock. The table is keyed by the store pointer because the
+// store type is defined in policy.go; entries are only created once a store has
+// an administrable revision.
+var policyTrustViews sync.Map // map[*PolicyStore]PolicyTrustFabricSettings
+
+func publishPolicyTrustView(store *PolicyStore, settings PolicyTrustFabricSettings) {
+	policyTrustViews.Store(store, settings)
+}
+
+func loadPolicyTrustView(store *PolicyStore) (PolicyTrustFabricSettings, bool) {
+	view, ok := policyTrustViews.Load(store)
+	if !ok {
+		return PolicyTrustFabricSettings{}, false
+	}
+	settings, ok := view.(PolicyTrustFabricSettings)
+	return settings, ok
+}
+
 // ApplyPolicy republishes the administrable policy trust requirements. A raised
 // generation floor takes effect on the next load, so it can be used to pin a
 // known-good policy revision against a replayed older document.
@@ -264,6 +293,9 @@ func (p *PolicyStore) ApplyPolicy(settings PolicyTrustFabricSettings) error {
 	}
 	p.raiseFloorLocked(settings.MinimumGeneration)
 	p.trust = settings
+	// Published under the write lock: a reader observes either the previous or
+	// the new revision, never a torn mixture of fields.
+	publishPolicyTrustView(p, settings)
 	return nil
 }
 
@@ -280,15 +312,34 @@ func (p *PolicyStore) Policy() PolicyTrustFabricSettings {
 // requireSigned reports whether an unsigned or wrongly signed document must be
 // refused. The compiled-in bootstrap value seeds the first revision and the
 // Fabric namespace is authoritative afterwards.
+//
+// The getter must not take p.mu: PolicyStore.Load calls it while holding the
+// write lock. It reads the published snapshot instead, and falls back to the
+// immutable constructor value only before the first ApplyPolicy revision exists.
 func (p *PolicyStore) requireSigned() bool {
-	return p.trust.RequireSigned
+	if p == nil {
+		return true
+	}
+	if settings, ok := loadPolicyTrustView(p); ok {
+		return settings.RequireSigned
+	}
+	// NewPolicyStore seeds trust.RequireSigned from this immutable field, so the
+	// fallback is the exact constructor value rather than a wider default.
+	return p.cfg.RequireSigned
 }
 
 func (p *PolicyStore) maxStateBytes() int64 {
-	if p.trust.MaxStateBytes > 0 {
-		return p.trust.MaxStateBytes
+	if p == nil {
+		return 64 << 20
 	}
-	return 64 << 20
+	if settings, ok := loadPolicyTrustView(p); ok {
+		if settings.MaxStateBytes > 0 {
+			return settings.MaxStateBytes
+		}
+		return 64 << 20
+	}
+	// NewPolicyStore seeds the read bound from defaultPolicyTrustFabricSettings.
+	return int64(defaultPolicyTrustFabricSettings().MaxStateBytes)
 }
 
 // formatPCRSelection renders a PCR index list in the canonical ascending form

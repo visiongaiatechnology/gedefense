@@ -2,11 +2,15 @@
 package main
 
 import (
+	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 )
 
 type memoryTransactionApplier struct {
@@ -393,5 +397,119 @@ func TestSysctlProfileRollsBackRuntimeWhenPersistenceFails(t *testing.T) {
 	}
 	if core.persistent != "absent" {
 		t.Fatalf("persistent state changed after injected failure: %s", core.persistent)
+	}
+}
+
+// TestTransactionStoreRefusesUnauthenticatedLegacyPlaintext pins the FIND-015 follow-up decision
+// for the transaction store: it carries no independent payload authentication - PreviewHash is an
+// unkeyed SHA-256 digest that any writer can recompute, not a MAC - so a plaintext legacy history
+// has no authenticity anchor besides the storage envelope it lacks. The strict Decrypt therefore
+// stays and DecryptForMigration is not used; adopting plaintext would accept forged transaction
+// records, the silent downgrade FIND-015 closed. Structurally valid plaintext (with a matching
+// PreviewHash, to prove that digest is not authentication) must be refused hard.
+func TestTransactionStoreRefusesUnauthenticatedLegacyPlaintext(t *testing.T) {
+	applier := &memoryTransactionApplier{value: "before"}
+	_, path, storage := newTestTransactionEngine(
+		t, applier, func(EvidenceRecord) error { return nil },
+	)
+	plan := json.RawMessage(`{"value":"legacy-forged"}`)
+	before := json.RawMessage(`{"value":"before"}`)
+	legacy := transactionStore{
+		Schema: transactionSchema, Revision: 7,
+		Records: []SecurityTransaction{{
+			ID: "TX-0123456789abcdef", Type: "test.memory",
+			Summary: "Legacy preview", Reason: "legacy plaintext fixture",
+			Status: "previewed", CreatedAt: time.Unix(1_700_000_000, 0).UTC(),
+			Plan: plan, Before: before,
+			PreviewHash: transactionPreviewHash("test.memory", plan, before),
+		}},
+	}
+	legacyRaw, err := json.Marshal(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, legacyRaw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	engine, err := NewTransactionEngine(path, storage, func(EvidenceRecord) error { return nil }, applier)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status := engine.Status(10); status.Healthy {
+		t.Fatalf("an unauthenticated plaintext transaction history was accepted: %+v", status)
+	}
+	if engine.integrity == nil || !errors.Is(engine.integrity, errStoragePlaintext) {
+		t.Fatalf("plaintext transaction history was not refused by the strict storage reader: %v", engine.integrity)
+	}
+	if !strings.Contains(engine.integrity.Error(), "unencrypted transaction history refused") {
+		t.Fatalf("the refusal does not name the unauthenticated legacy document: %v", engine.integrity)
+	}
+	if _, err := engine.Preview(
+		"test.memory", "Another change", "must remain blocked",
+		json.RawMessage(`{"value":"after"}`),
+	); err == nil {
+		t.Fatal("a plaintext legacy transaction store accepted a new mutation")
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(after, legacyRaw) {
+		t.Fatal("the refused plaintext transaction history was rewritten instead of left alone")
+	}
+}
+
+// TestTransactionStoreTamperedCiphertextFailsClosed covers the other half of the fail-closed
+// contract: a store that is an envelope but whose authenticated bytes were modified must be
+// rejected by the AES-GCM tag, and the engine must block new mutations until an operator heals it.
+func TestTransactionStoreTamperedCiphertextFailsClosed(t *testing.T) {
+	applier := &memoryTransactionApplier{value: "before"}
+	engine, path, storage := newTestTransactionEngine(
+		t, applier, func(EvidenceRecord) error { return nil },
+	)
+	if _, err := engine.Preview(
+		"test.memory", "Change memory value", "tamper regression",
+		json.RawMessage(`{"value":"after"}`),
+	); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var envelope encryptedStorageEnvelope
+	if err := json.Unmarshal(raw, &envelope); err != nil {
+		t.Fatalf("persisted transaction store is not an envelope: %v", err)
+	}
+	ciphertext, err := base64.RawURLEncoding.DecodeString(envelope.Ciphertext)
+	if err != nil || len(ciphertext) == 0 {
+		t.Fatalf("persisted transaction store ciphertext is malformed: %v", err)
+	}
+	ciphertext[0] ^= 0x01
+	envelope.Ciphertext = base64.RawURLEncoding.EncodeToString(ciphertext)
+	tampered, err := json.Marshal(envelope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, tampered, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	reloaded, err := NewTransactionEngine(path, storage, func(EvidenceRecord) error { return nil }, applier)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status := reloaded.Status(10); status.Healthy {
+		t.Fatalf("tampered transaction history was accepted: %+v", status)
+	}
+	if reloaded.integrity == nil || !strings.Contains(reloaded.integrity.Error(), "authentication") {
+		t.Fatalf("tampered transaction history failed with the wrong error: %v", reloaded.integrity)
+	}
+	if _, err := reloaded.Preview(
+		"test.memory", "Another change", "must remain blocked",
+		json.RawMessage(`{"value":"other"}`),
+	); err == nil {
+		t.Fatal("a tampered transaction store accepted a new mutation")
 	}
 }

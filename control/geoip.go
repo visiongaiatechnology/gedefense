@@ -1,18 +1,21 @@
 package main
 
 import (
+	"bytes"
 	"crypto/ed25519"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/csv"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/netip"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -28,7 +31,23 @@ const (
 	geoCacheCapacity       = 4096
 	maxGeoIPSidecarBytes   = 512
 	maxGeoIPSignatureBytes = 8 << 10
+
+	// geoIPIntegritySchema is the canonical signed sidecar contract shared with
+	// scripts/update-geoip-db.py: canonical compact JSON, sorted keys, ASCII,
+	// no trailing newline. geoip.csv.sig is the Base64 Ed25519 signature over
+	// the exact bytes of that sidecar document.
+	geoIPIntegritySchema = "vgt.gedefense.geoip-integrity.v1"
 )
+
+// geoIPIntegrityDocument mirrors the producer's canonical JSON sidecar. The
+// field order below is the sorted key order the producer emits, so
+// encoding/json reproduces exactly the bytes the Ed25519 signature covers.
+type geoIPIntegrityDocument struct {
+	File   string `json:"file"`
+	Schema string `json:"schema"`
+	SHA256 string `json:"sha256"`
+	Size   int64  `json:"size"`
+}
 
 var geoSpecialUsePrefixes = mustGeoPrefixes(
 	// IPv4 special-use / non-public source space. Keep this deliberately
@@ -125,8 +144,10 @@ func NewGeoResolver(path string) *GeoResolver {
 
 // NewGeoResolverWithTrust optionally pins Ed25519 keys for the signed GeoIP
 // update gate. When keys are configured the loader requires a detached
-// geoip.csv.sig over the sidecar bytes; when the signature file exists without
-// configured keys the load fails closed instead of silently ignoring it.
+// geoip.csv.sig: Base64 Ed25519 over the exact bytes of the canonical
+// geoip.csv.sha256 JSON sidecar (which binds the dataset by SHA-256 and size).
+// When the signature file exists without configured keys the load fails closed
+// instead of silently ignoring it.
 func NewGeoResolverWithTrust(path string, updateSigningKeys []string) *GeoResolver {
 	keys := make([]ed25519.PublicKey, 0, len(updateSigningKeys))
 	for _, raw := range updateSigningKeys {
@@ -175,7 +196,7 @@ func (r *GeoResolver) Load(path string) error {
 	// F-24 / CHAIN-009: verify the shipped SHA-256 sidecar over the exact bytes
 	// that will be parsed. A missing or mismatching sidecar leaves the resolver
 	// unavailable (Loaded=false) instead of presenting unverified data.
-	if err := r.verifyGeoIPCIntegrity(f, path); err != nil {
+	if err := r.verifyGeoIPCIntegrity(f, path, info.Size()); err != nil {
 		return err
 	}
 	if _, err := f.Seek(0, io.SeekStart); err != nil {
@@ -282,7 +303,7 @@ func (r *GeoResolver) Load(path string) error {
 // verifyGeoIPCIntegrity authenticates the dataset against its sidecar and, if a
 // detached update signature is present or pinned keys are configured, verifies
 // the signed update gate.
-func (r *GeoResolver) verifyGeoIPCIntegrity(file *os.File, path string) (err error) {
+func (r *GeoResolver) verifyGeoIPCIntegrity(file *os.File, path string, datasetSize int64) (err error) {
 	sidecarPath := path + ".sha256"
 	info, statErr := os.Lstat(sidecarPath)
 	if statErr != nil {
@@ -295,13 +316,12 @@ func (r *GeoResolver) verifyGeoIPCIntegrity(file *os.File, path string) (err err
 	if err != nil {
 		return fmt.Errorf("geoip integrity sidecar read: %w", err)
 	}
-	fields := strings.Fields(string(sidecar))
-	if len(fields) == 0 || len(fields[0]) != 64 {
-		return errors.New("invalid geoip SHA-256 sidecar")
+	expected, declaredSize, err := parseGeoIPIntegritySidecar(sidecar, path)
+	if err != nil {
+		return err
 	}
-	expected, err := hex.DecodeString(fields[0])
-	if err != nil || len(expected) != sha256.Size {
-		return errors.New("invalid geoip SHA-256 sidecar")
+	if declaredSize != 0 && declaredSize != datasetSize {
+		return fmt.Errorf("geoip integrity sidecar declares %d bytes but the dataset has %d", declaredSize, datasetSize)
 	}
 	if _, err := file.Seek(0, io.SeekStart); err != nil {
 		return err
@@ -349,6 +369,62 @@ func (r *GeoResolver) verifyGeoIPCIntegrity(file *os.File, path string) (err err
 		return errors.New("geoip pinned update keys are configured but geoip.csv.sig is missing")
 	}
 	return nil
+}
+
+// parseGeoIPIntegritySidecar returns the expected SHA-256 of the dataset and,
+// for the canonical JSON form, the declared dataset size (0 for the legacy
+// form). Two formats are accepted:
+//
+//   - canonical JSON document (geoIPIntegritySchema) that binds `file`, the
+//     SHA-256 and the exact byte size. The bytes must be byte-identical to
+//     their own canonical serialization, because the Ed25519 signature covers
+//     exactly these bytes. This is the contract implemented by
+//     scripts/update-geoip-db.py;
+//   - legacy sha256sum line (`<64-hex>  geoip.csv`), kept readable so already
+//     installed datasets and unsigned deployments keep loading. New signed
+//     updates always use the canonical JSON form.
+func parseGeoIPIntegritySidecar(sidecar []byte, csvPath string) ([]byte, int64, error) {
+	if len(bytes.TrimSpace(sidecar)) == 0 {
+		return nil, 0, errors.New("invalid geoip SHA-256 sidecar")
+	}
+	if bytes.HasPrefix(bytes.TrimSpace(sidecar), []byte("{")) {
+		var document geoIPIntegrityDocument
+		decoder := json.NewDecoder(bytes.NewReader(sidecar))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&document); err != nil {
+			return nil, 0, fmt.Errorf("invalid canonical geoip integrity sidecar: %w", err)
+		}
+		if document.Schema != geoIPIntegritySchema {
+			return nil, 0, errors.New("geoip integrity sidecar schema mismatch")
+		}
+		if document.File != filepath.Base(csvPath) {
+			return nil, 0, errors.New("geoip integrity sidecar binds a different dataset file")
+		}
+		expected, err := hex.DecodeString(document.SHA256)
+		if err != nil || len(expected) != sha256.Size {
+			return nil, 0, errors.New("invalid geoip SHA-256 sidecar")
+		}
+		if document.Size <= 0 || document.Size > maxGeoIPCSVBytes {
+			return nil, 0, fmt.Errorf("geoip integrity sidecar size outside limit: %d", document.Size)
+		}
+		canonical, err := json.Marshal(document)
+		if err != nil {
+			return nil, 0, fmt.Errorf("geoip integrity sidecar canonicalization: %w", err)
+		}
+		if !bytes.Equal(canonical, sidecar) {
+			return nil, 0, errors.New("geoip integrity sidecar is not canonical JSON: dataset rejected")
+		}
+		return expected, document.Size, nil
+	}
+	fields := strings.Fields(string(sidecar))
+	if len(fields) == 0 || len(fields[0]) != 64 {
+		return nil, 0, errors.New("invalid geoip SHA-256 sidecar")
+	}
+	expected, err := hex.DecodeString(fields[0])
+	if err != nil || len(expected) != sha256.Size {
+		return nil, 0, errors.New("invalid geoip SHA-256 sidecar")
+	}
+	return expected, 0, nil
 }
 
 func sortedPrefixLengths(in map[int]struct{}) []int {

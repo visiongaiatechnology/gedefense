@@ -1,6 +1,6 @@
 {
   "schema": "vgt-gedefense-astraeaos-integration-v1",
-  "gedefense_version": "5.1.0-beta.3",
+  "gedefense_version": "5.2.0",
   "minimum_astraeaos_version": "0.1",
   "security_authority": "gedefense",
   "sentinel_runtime_mode": "migration-source-only",
@@ -9,7 +9,7 @@
   "universal_linux_integration": "implemented-v2-systemd-polkit-desktop",
   "supported_package_managers": ["apt", "dnf", "yum", "pacman", "zypper"],
   "capabilities": {
-    "boot_trust_evidence": "implemented",
+    "boot_trust_evidence": "implemented-signed-attestation-v2",
     "encrypted_signed_evidence_ledger": "implemented",
     "xdp_network_enforcement": "implemented",
     "bounded_xdr": "implemented",

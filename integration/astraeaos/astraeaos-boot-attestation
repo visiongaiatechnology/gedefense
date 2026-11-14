@@ -1,43 +1,149 @@
 #!/usr/bin/env bash
 # STATUS: DIAMANT VGT SUPREME
+#
+# AstraeaOS local boot attestation, schema astraeaos.boot-attestation.v2.
+#
+# FIND-008 (CRITICAL, CHAIN-001): the previous revision hashed the systemd TPM PCR
+# signature file and the fs-verity state JSON and then reported "verified". That
+# was a format sham, not an attestation. This revision performs real cryptographic
+# verification before it may ever publish status=verified:
+#
+#   1. TPM2 PCR policy: the systemd-measure JSON signature file
+#      (/run/systemd/tpm2-pcr-signature.json, a signed TPM2 PolicyPCR policy) is
+#      verified against the pinned PCR policy public key. The signed PolicyPCR
+#      digest is recomputed from the live kernel TPM sysfs PCR values (fallback:
+#      tpm2_pcrread) using the exact TPM/systemd algorithm; live values and the
+#      signed digest must match. Missing TPM hardware or trust anchors degrade the
+#      result, they never produce "verified".
+#   2. fs-verity: every file of the operator-signed fs-verity manifest is measured
+#      with the real kernel FS_IOC_MEASURE_VERITY ioctl and compared with the
+#      manifest. Missing fs-verity support, a missing manifest or any mismatch
+#      degrades the result; it never produces "verified".
+#   3. The published attestation document is canonical JSON plus a detached
+#      Ed25519 signature over its SHA-256 digest, made with the pinned signing key
+#      and self-verified against the pinned public key before publication.
+#
+# Fail-closed policy: any missing tool, trust anchor, hardware capability or any
+# mismatch yields DEGRADED/UNAVAILABLE, never "verified". No network access.
 set -Eeuo pipefail
 umask 0077
 
 readonly output_dir=/run/astraeaos
 readonly output_file="$output_dir/boot-attestation.json"
-readonly pcr_public=/usr/share/astraeaos/boot-trust/pcr-public.pem
-readonly signing_mode=/usr/share/astraeaos/boot-trust/signing-mode
-readonly pcr_signature=/run/systemd/tpm2-pcr-signature.json
-readonly efi_secure_boot=/sys/firmware/efi/efivars/SecureBoot-8be4df61-93ca-11d2-aa0d-00e098032b8c
+readonly output_signature="$output_dir/boot-attestation.sig"
 readonly command_line_root=/usr/share/astraeaos/boot-trust
+readonly signing_mode="$command_line_root/signing-mode"
+readonly efi_secure_boot=/sys/firmware/efi/efivars/SecureBoot-8be4df61-93ca-11d2-aa0d-00e098032b8c
+readonly tpm_public_key="$command_line_root/pcr-public.pem"
+readonly tpm_pcr_signature=/run/systemd/tpm2-pcr-signature.json
+readonly pcr_sysfs=/sys/class/tpm/tpm0/pcr-sha256
+readonly attestation_public_key="$command_line_root/attestation-public.pem"
+readonly attestation_private_key=/etc/astraeaos/boot-trust/attestation-signing.pem
+readonly fsverity_manifest="$command_line_root/fsverity-manifest.json"
+readonly fsverity_manifest_signature="$command_line_root/fsverity-manifest.json.sig"
+readonly fsverity_manifest_schema=astraeaos.fsverity-manifest.v1
+readonly -a pcr_selection=(0 2 4 7 9 11 12)
+readonly pcr_selection_text=0,2,4,7,9,11,12
+
+tmp_dir=
+cleanup() {
+  if [[ -n "$tmp_dir" && -d "$tmp_dir" ]]; then
+    rm -rf -- "$tmp_dir"
+  fi
+}
+trap cleanup EXIT
 
 die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
-need() { command -v "$1" >/dev/null 2>&1 || die "missing: $1"; }
+need() { command -v "$1" >/dev/null 2>&1 || die "missing required tool: $1"; }
+
+safe_regular() {
+  local path=$1
+  [[ -f "$path" && ! -L "$path" ]]
+}
+
+require_hex() {
+  [[ "$1" =~ ^[0-9a-f]{64}$ ]]
+}
+
+file_sha256() {
+  sha256sum -- "$1" | awk '{print $1}'
+}
+
+hex_to_bin() {
+  python3 -c 'import binascii, sys; open(sys.argv[2], "wb").write(binascii.unhexlify(sys.argv[1]))' "$1" "$2"
+}
+
+bin_to_hex() {
+  python3 -c 'import binascii, sys; print(binascii.hexlify(open(sys.argv[1], "rb").read()).decode())' "$1"
+}
+
+is_ed25519_public_key() {
+  openssl pkey -pubin -in "$1" -noout -text 2>/dev/null | grep -qi 'ED25519'
+}
+
+is_ed25519_private_key() {
+  openssl pkey -in "$1" -noout -text 2>/dev/null | grep -qi 'ED25519'
+}
+
+# ed25519_verify_digest <public-key-pem> <sha256-digest-hex> <signature-hex>
+ed25519_verify_digest() {
+  local public_key=$1 digest_hex=$2 signature_hex=$3
+  [[ "$digest_hex" =~ ^[0-9a-f]{64}$ ]] || return 1
+  [[ "$signature_hex" =~ ^[0-9a-f]{128}$ ]] || return 1
+  hex_to_bin "$digest_hex" "$tmp_dir/verify-digest.bin"
+  hex_to_bin "$signature_hex" "$tmp_dir/verify-signature.bin"
+  local result=1
+  if openssl pkeyutl -verify -pubin -inkey "$public_key" -rawin \
+    -in "$tmp_dir/verify-digest.bin" -sigfile "$tmp_dir/verify-signature.bin" >/dev/null 2>&1; then
+    result=0
+  fi
+  rm -f -- "$tmp_dir/verify-digest.bin" "$tmp_dir/verify-signature.bin"
+  return "$result"
+}
+
+# ed25519_sign_digest <private-key-pem> <sha256-digest-hex> -> prints signature hex
+ed25519_sign_digest() {
+  local private_key=$1 digest_hex=$2
+  [[ "$digest_hex" =~ ^[0-9a-f]{64}$ ]] || return 1
+  hex_to_bin "$digest_hex" "$tmp_dir/sign-digest.bin"
+  if ! openssl pkeyutl -sign -inkey "$private_key" -rawin \
+    -in "$tmp_dir/sign-digest.bin" -out "$tmp_dir/sign-signature.bin" >/dev/null 2>&1; then
+    return 1
+  fi
+  local signature_hex
+  signature_hex="$(bin_to_hex "$tmp_dir/sign-signature.bin")"
+  [[ "$signature_hex" =~ ^[0-9a-f]{128}$ ]] || return 1
+  printf '%s\n' "$signature_hex"
+}
+
 need python3
 need openssl
+tmp_dir="$(mktemp -d)"
 mkdir -p "$output_dir"
-chown root:gedefense "$output_dir"
-chmod 0750 "$output_dir"
 
-[[ -r "$pcr_public" && ! -L "$pcr_public" ]] || die "PCR public key is unavailable"
-[[ -r "$signing_mode" && ! -L "$signing_mode" ]] || die "Secure Boot signing mode is unavailable"
+# ---------------------------------------------------------------- boot identity
 
 actual_cmdline="$(tr -s '[:space:]' ' ' < /proc/cmdline | sed 's/^ //;s/ $//')"
-case " $actual_cmdline " in
-  *' astraeaos.mode=live '*)
-    boot_identity=live
-    expected_cmdline="$command_line_root/kernel-command-line-live"
-    ;;
-  *' astraeaos.mode=runtime '*' astraeaos.slot=A '*)
-    boot_identity=runtime-A
-    expected_cmdline="$command_line_root/kernel-command-line-A"
-    ;;
-  *' astraeaos.mode=runtime '*' astraeaos.slot=B '*)
-    boot_identity=runtime-B
-    expected_cmdline="$command_line_root/kernel-command-line-B"
-    ;;
-  *) die "kernel command line has no valid AstraeaOS boot identity" ;;
-esac
+astraeaos_mode=
+astraeaos_slot=
+for token in $actual_cmdline; do
+  case "$token" in
+    astraeaos.mode=*) astraeaos_mode=${token#astraeaos.mode=} ;;
+    astraeaos.slot=*) astraeaos_slot=${token#astraeaos.slot=} ;;
+  esac
+done
+if [[ "$astraeaos_mode" == live ]]; then
+  boot_identity=live
+  expected_cmdline="$command_line_root/kernel-command-line-live"
+elif [[ "$astraeaos_mode" == runtime && "$astraeaos_slot" == A ]]; then
+  boot_identity=runtime-A
+  expected_cmdline="$command_line_root/kernel-command-line-A"
+elif [[ "$astraeaos_mode" == runtime && "$astraeaos_slot" == B ]]; then
+  boot_identity=runtime-B
+  expected_cmdline="$command_line_root/kernel-command-line-B"
+else
+  die "kernel command line has no valid AstraeaOS boot identity"
+fi
 [[ -r "$expected_cmdline" && ! -L "$expected_cmdline" ]] || die "kernel command line policy is unavailable"
 policy_cmdline="$(tr -s '[:space:]' ' ' < "$expected_cmdline" | sed 's/^ //;s/ $//')"
 if [[ "$boot_identity" == live ]]; then
@@ -96,34 +202,9 @@ else
   [[ "$actual_cmdline" == "$policy_cmdline" ]] || die "runtime kernel command line differs from signed policy"
 fi
 
-filesystem_integrity_status=not-applicable
-filesystem_integrity_sha256=
-if [[ "$boot_identity" == runtime-* ]]; then
-  readonly fsverity_evidence=/run/astraeaos/fsverity-state.json
-  [[ -r "$fsverity_evidence" && ! -L "$fsverity_evidence" ]] || die "runtime fs-verity evidence is unavailable"
-  filesystem_integrity_sha256="$(python3 - "$fsverity_evidence" <<'PY'
-# STATUS: DIAMANT VGT SUPREME
-import hashlib
-import json
-import pathlib
-import sys
+[[ -r "$signing_mode" && ! -L "$signing_mode" ]] || die "Secure Boot signing mode is unavailable"
 
-path = pathlib.Path(sys.argv[1])
-raw = path.read_bytes()
-if len(raw) > 1024 * 1024:
-    raise SystemExit(1)
-value = json.loads(raw)
-if value.get("schema") != "astraeaos.fsverity-state.v1" or value.get("status") != "verified":
-    raise SystemExit(1)
-files = value.get("files")
-if not isinstance(files, list) or not files:
-    raise SystemExit(1)
-print(hashlib.sha256(raw).hexdigest())
-PY
-  )" || die "runtime fs-verity evidence is invalid"
-  [[ "$filesystem_integrity_sha256" =~ ^[0-9a-f]{64}$ ]] || die "runtime fs-verity evidence hash is invalid"
-  filesystem_integrity_status=verified
-fi
+# --------------------------------------------------------------- secure boot
 
 secure_boot=false
 if [[ -r "$efi_secure_boot" ]]; then
@@ -131,85 +212,539 @@ if [[ -r "$efi_secure_boot" ]]; then
   [[ "$secure_boot_byte" == 1 ]] && secure_boot=true
 fi
 
-attestation_status=verified
-hardware_attestation=verified
-attestation_reason=
-pcr_output=
-pcr_signature_sha256=
-if [[ -r "$pcr_signature" && ! -L "$pcr_signature" && ( -c /dev/tpmrm0 || -c /dev/tpm0 ) ]] && command -v tpm2_pcrread >/dev/null 2>&1; then
-  if ! pcr_output="$(tpm2_pcrread 'sha256:0,2,4,7,9,11,12' 2>&1)"; then
-    pcr_output=
+# ---------------------------------------------------------- freshness material
+
+boot_id="$(tr -d '[:space:]' < /proc/sys/kernel/random/boot_id)"
+[[ "$boot_id" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] || die "kernel boot id is invalid"
+generated_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+nonce="$(python3 -c 'import os; print(os.urandom(32).hex())')"
+[[ "$nonce" =~ ^[0-9a-f]{64}$ ]] || die "freshness nonce generation failed"
+boot_epoch="$(awk '/^btime /{print $2; exit}' /proc/stat)"
+[[ "$boot_epoch" =~ ^[0-9]+$ && "$boot_epoch" -gt 0 ]] || die "kernel boot epoch is unavailable"
+mode="$(tr -d '\r\n' < "$signing_mode")"
+
+# ------------------------------------------------------------ trust anchors
+
+attestation_keys_ready=false
+attestation_keys_reason=attestation-signing-unavailable
+if safe_regular "$attestation_public_key" && safe_regular "$attestation_private_key"; then
+  if is_ed25519_public_key "$attestation_public_key" && is_ed25519_private_key "$attestation_private_key"; then
+    private_mode="$(stat -c '%a' -- "$attestation_private_key" 2>/dev/null || printf '')"
+    if [[ "$private_mode" == 400 || "$private_mode" == 600 ]]; then
+      private_der_sha="$(openssl pkey -in "$attestation_private_key" -pubout -outform DER 2>/dev/null | sha256sum | awk '{print $1}')"
+      public_der_sha="$(openssl pkey -pubin -in "$attestation_public_key" -outform DER 2>/dev/null | sha256sum | awk '{print $1}')"
+      if [[ -n "$private_der_sha" && "$private_der_sha" == "$public_der_sha" ]]; then
+        attestation_keys_ready=true
+      else
+        attestation_keys_reason=attestation-keypair-mismatch
+      fi
+    else
+      attestation_keys_reason=attestation-signing-key-permissions-invalid
+    fi
+  else
+    attestation_keys_reason=attestation-signing-key-not-ed25519
   fi
 fi
 
-if [[ "$secure_boot" == true && -n "$pcr_output" && -r "$pcr_signature" && ! -L "$pcr_signature" ]]; then
-  pcr_signature_sha256="$(sha256sum "$pcr_signature" | awk '{print $1}')"
-else
-  if [[ "$boot_identity" == runtime-* ]]; then
-    [[ "$secure_boot" == true ]] || die "UEFI Secure Boot is disabled or unavailable"
-    [[ -r "$pcr_signature" && ! -L "$pcr_signature" ]] || die "UKI PCR signature is unavailable"
-    [[ -c /dev/tpmrm0 || -c /dev/tpm0 ]] || die "TPM2 device is unavailable"
-    [[ -n "$pcr_output" ]] || die "TPM2 PCR read failed"
-    die "runtime platform attestation failed"
+# --------------------------------------------------------- TPM2 PCR policy
+
+hardware_attestation=unavailable
+attestation_reason=platform-attestation-unavailable
+pcr_policy_json=null
+
+degrade_hardware() {
+  hardware_attestation=degraded
+  attestation_reason=$1
+  pcr_policy_json=null
+  return 1
+}
+
+# verify_tpm_attestation verifies the signed systemd-measure TPM2 PolicyPCR policy
+# against the pinned key and against the live kernel TPM PCR values. It never
+# claims success from the file format alone.
+verify_tpm_attestation() {
+  [[ "$secure_boot" == true ]] || { degrade_hardware secure-boot-disabled; return 1; }
+  [[ -c /dev/tpmrm0 || -c /dev/tpm0 ]] || { degrade_hardware tpm-device-unavailable; return 1; }
+  safe_regular "$tpm_pcr_signature" || { degrade_hardware tpm-pcr-policy-unavailable; return 1; }
+  safe_regular "$tpm_public_key" || { degrade_hardware tpm-pcr-public-key-unavailable; return 1; }
+  if ! openssl pkey -pubin -in "$tpm_public_key" -noout >/dev/null 2>&1; then
+    degrade_hardware tpm-pcr-public-key-invalid
+    return 1
   fi
+  local pcr_public_sha256
+  pcr_public_sha256="$(openssl pkey -pubin -in "$tpm_public_key" -outform DER | sha256sum | awk '{print $1}')"
+  require_hex "$pcr_public_sha256" || { degrade_hardware tpm-pcr-public-key-invalid; return 1; }
+
+  local parsed
+  if ! parsed="$(python3 - "$tpm_pcr_signature" "$pcr_public_sha256" "$pcr_sysfs" "$pcr_selection_text" <<'PY'
+# STATUS: DIAMANT VGT SUPREME
+import base64
+import hashlib
+import json
+import os
+import shutil
+import stat
+import struct
+import subprocess
+import sys
+
+json_path, public_key_sha256, pcr_sysfs, selection_text = sys.argv[1:5]
+MAX_BYTES = 1 << 20
+selection = [int(part) for part in selection_text.split(",")]
+
+with open(json_path, "rb") as handle:
+    raw = handle.read(MAX_BYTES + 1)
+if len(raw) > MAX_BYTES:
+    raise SystemExit("pcr-policy-too-large")
+value = json.loads(raw)
+if not isinstance(value, dict):
+    raise SystemExit("pcr-policy-invalid")
+bank = value.get("sha256")
+if not isinstance(bank, list) or not bank:
+    raise SystemExit("pcr-policy-invalid")
+
+entries = []
+for item in bank[:64]:
+    if not isinstance(item, dict) or not {"pcrs", "pkfp", "pol", "sig"} <= set(item):
+        raise SystemExit("pcr-policy-invalid")
+    pol = str(item["pol"]).lower()
+    pkfp = str(item["pkfp"]).lower()
+    if len(pol) != 64 or any(character not in "0123456789abcdef" for character in pol):
+        raise SystemExit("pcr-policy-invalid")
+    if len(pkfp) != 64 or any(character not in "0123456789abcdef" for character in pkfp):
+        raise SystemExit("pcr-policy-invalid")
+    try:
+        signature = base64.b64decode(str(item["sig"]), validate=True)
+    except Exception:
+        raise SystemExit("pcr-policy-invalid")
+    if not (64 <= len(signature) <= 1024):
+        raise SystemExit("pcr-policy-invalid")
+    entries.append((pkfp, pol, base64.b64encode(signature).decode("ascii")))
+
+def read_live_pcrs():
+    if os.path.isdir(pcr_sysfs):
+        values = {}
+        for index in selection:
+            path = os.path.join(pcr_sysfs, str(index))
+            descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+            try:
+                if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+                    raise SystemExit("pcr-readout-invalid")
+                text = os.read(descriptor, 4096).decode("ascii", "strict").strip()
+            finally:
+                os.close(descriptor)
+            if len(text) != 64 or any(character not in "0123456789abcdefABCDEF" for character in text):
+                raise SystemExit("pcr-readout-invalid")
+            values[index] = bytes.fromhex(text)
+        return values, "sysfs"
+
+    if shutil.which("tpm2_pcrread") is None:
+        raise SystemExit("pcr-readout-unavailable")
+    completed = subprocess.run(
+        ["tpm2_pcrread", "sha256:" + ",".join(str(index) for index in selection)],
+        capture_output=True,
+        check=False,
+        text=True,
+        timeout=10,
+    )
+    if completed.returncode != 0:
+        raise SystemExit("pcr-readout-unavailable")
+    values = {}
+    for line in completed.stdout.splitlines():
+        line = line.strip()
+        if ":" not in line:
+            continue
+        index_text, value_text = line.split(":", 1)
+        try:
+            index = int(index_text.strip())
+        except ValueError:
+            continue
+        if index in selection:
+            value_text = value_text.strip()
+            if value_text.startswith("0x"):
+                value_text = value_text[2:]
+            if len(value_text) != 64:
+                continue
+            values[index] = bytes.fromhex(value_text)
+    if len(values) != len(selection):
+        raise SystemExit("pcr-readout-unavailable")
+    return values, "tpm2_pcrread"
+
+def policy_pcr_digest(values):
+    pcr_digest = hashlib.sha256()
+    mask = bytearray(3)
+    last = -1
+    for index in selection:
+        if index <= last:
+            raise SystemExit("pcr-selection-invalid")
+        last = index
+        pcr_digest.update(values[index])
+        mask[index // 8] |= 1 << (index % 8)
+    header = (
+        struct.pack(">I", 0x0000017F)  # TPM_CC_PolicyPCR
+        + struct.pack(">I", 1)         # TPML_PCR_SELECTION.count
+        + struct.pack(">H", 0x000B)    # TPM2_ALG_SHA256
+        + bytes([len(mask)])
+        + bytes(mask)
+    )
+    extended = hashlib.sha256()
+    extended.update(bytes(32))  # fresh policy session starts at an all-zero digest
+    extended.update(header)
+    extended.update(pcr_digest.digest())
+    return extended.hexdigest()
+
+live_values, source = read_live_pcrs()
+computed = policy_pcr_digest(live_values)
+if public_key_sha256.lower() not in {entry[0] for entry in entries}:
+    raise SystemExit("pcr-policy-key-fingerprint-mismatch")
+print("computed=" + computed)
+print("values=" + json.dumps({str(index): live_values[index].hex() for index in selection},
+                             sort_keys=True, separators=(",", ":")))
+print("source=" + source)
+print("entries=%d" % len(entries))
+for index, (pkfp, pol, signature) in enumerate(entries):
+    print("entry|%d|%s|%s|%s" % (index, pkfp, pol, signature))
+PY
+  )"; then
+    degrade_hardware tpm-pcr-policy-invalid
+    return 1
+  fi
+
+  local computed_policy= pcr_values_json= pcr_source= declared_entries=0 line
+  local -a entry_lines=()
+  while IFS= read -r line; do
+    case "$line" in
+      computed=*) computed_policy=${line#computed=} ;;
+      values=*) pcr_values_json=${line#values=} ;;
+      source=*) pcr_source=${line#source=} ;;
+      entries=*) declared_entries=${line#entries=} ;;
+      'entry|'*) entry_lines+=("$line") ;;
+    esac
+  done <<<"$parsed"
+  require_hex "$computed_policy" || { degrade_hardware tpm-pcr-policy-invalid; return 1; }
+  [[ -n "$pcr_values_json" && "$pcr_values_json" == \{* ]] || { degrade_hardware tpm-pcr-policy-invalid; return 1; }
+  [[ "$pcr_source" == sysfs || "$pcr_source" == tpm2_pcrread ]] || { degrade_hardware tpm-pcr-policy-unavailable; return 1; }
+  [[ "${#entry_lines[@]}" -gt 0 && "${#entry_lines[@]}" -eq "$declared_entries" ]] || {
+    degrade_hardware tpm-pcr-policy-invalid
+    return 1
+  }
+
+  local signature_file_sha256 matched=false tag index pkfp pol signature_b64
+  signature_file_sha256="$(file_sha256 "$tpm_pcr_signature")"
+  require_hex "$signature_file_sha256" || { degrade_hardware tpm-pcr-policy-invalid; return 1; }
+  for line in "${entry_lines[@]}"; do
+    IFS='|' read -r tag index pkfp pol signature_b64 <<<"$line"
+    [[ "$tag" == entry ]] || continue
+    [[ "$pol" == "$computed_policy" ]] || continue
+    if [[ "$pkfp" != "$pcr_public_sha256" ]]; then
+      degrade_hardware tpm-pcr-key-fingerprint-mismatch
+      return 1
+    fi
+    hex_to_bin "$pol" "$tmp_dir/policy-digest.bin"
+    if ! python3 -c 'import base64, sys; open(sys.argv[2], "wb").write(base64.b64decode(sys.argv[1], validate=True))' \
+      "$signature_b64" "$tmp_dir/policy-signature.bin"; then
+      degrade_hardware tpm-pcr-signature-invalid
+      return 1
+    fi
+    # systemd-measure signs the PolicyPCR digest with the bank hash. RSA/ECDSA
+    # keys verify with dgst -sha256 (PKCS#1 v1.5 / ECDSA over the digest); Ed25519
+    # keys verify the raw digest message.
+    if openssl dgst -sha256 -verify "$tpm_public_key" \
+        -signature "$tmp_dir/policy-signature.bin" "$tmp_dir/policy-digest.bin" >/dev/null 2>&1 ||
+      openssl pkeyutl -verify -pubin -inkey "$tpm_public_key" -rawin \
+        -in "$tmp_dir/policy-digest.bin" -sigfile "$tmp_dir/policy-signature.bin" >/dev/null 2>&1; then
+      matched=true
+      break
+    fi
+  done
+  rm -f -- "$tmp_dir/policy-digest.bin" "$tmp_dir/policy-signature.bin"
+  if [[ "$matched" != true ]]; then
+    degrade_hardware tpm-pcr-signature-invalid
+    return 1
+  fi
+
+  local selection_json
+  selection_json="$(python3 -c 'import json, sys; print(json.dumps([int(part) for part in sys.argv[1].split(",")]))' "$pcr_selection_text")"
+  pcr_policy_json="$(printf '{"public_key_sha256":"%s","signature_sha256":"%s","selection":%s,"policy_digest":"%s","values":%s,"source":"%s"}' \
+    "$pcr_public_sha256" "$signature_file_sha256" "$selection_json" "$computed_policy" "$pcr_values_json" "$pcr_source")"
+  hardware_attestation=verified
+  attestation_reason=
+  return 0
+}
+
+# ------------------------------------------------------------ fs-verity
+
+fs_status=unavailable
+fs_method=
+fs_manifest_sha256=
+fs_files_measured=0
+fs_measurement_digest=
+fs_reason=fsverity-manifest-unavailable
+fs_integrity_json='{"status":"unavailable","method":"","manifest_sha256":"","files_measured":0,"measurement_digest":""}'
+
+degrade_fsverity() {
+  fs_status=degraded
+  fs_reason=$1
+  fs_method=
+  fs_manifest_sha256=
+  fs_files_measured=0
+  fs_measurement_digest=
+  fs_integrity_json="$(printf '{"status":"degraded","method":"","manifest_sha256":"","files_measured":0,"measurement_digest":""}')"
+  return 1
+}
+
+# verify_fsverity_manifest verifies the operator-signed manifest and then measures
+# every listed file with the real kernel FS_IOC_MEASURE_VERITY ioctl. No state JSON
+# is trusted; the kernel measurement is the evidence.
+verify_fsverity_manifest() {
+  if [[ "$attestation_keys_ready" != true ]]; then
+    degrade_fsverity "$attestation_keys_reason"
+    return 1
+  fi
+  safe_regular "$fsverity_manifest" || { degrade_fsverity fsverity-manifest-unavailable; return 1; }
+  safe_regular "$fsverity_manifest_signature" || { degrade_fsverity fsverity-manifest-signature-unavailable; return 1; }
+  local manifest_sha256 signature_hex
+  manifest_sha256="$(file_sha256 "$fsverity_manifest")"
+  require_hex "$manifest_sha256" || { degrade_fsverity fsverity-manifest-invalid; return 1; }
+  signature_hex="$(tr -d '[:space:]' < "$fsverity_manifest_signature")"
+  if ! ed25519_verify_digest "$attestation_public_key" "$manifest_sha256" "$signature_hex"; then
+    degrade_fsverity fsverity-manifest-signature-invalid
+    return 1
+  fi
+
+  local measured
+  if ! measured="$(python3 - "$fsverity_manifest" "$fsverity_manifest_schema" <<'PY'
+# STATUS: DIAMANT VGT SUPREME
+import errno
+import fcntl
+import hashlib
+import json
+import os
+import stat
+import struct
+import sys
+
+manifest_path, expected_schema = sys.argv[1], sys.argv[2]
+MAX_BYTES = 1 << 20
+MAX_FILES = 512
+# _IOWR('f', 134, struct fsverity_digest): the flexible-array header is 4 bytes.
+FS_IOC_MEASURE_VERITY = 0xC0048666
+FS_VERITY_HASH_ALG_SHA256 = 1
+
+try:
+    with open(manifest_path, "rb") as handle:
+        raw = handle.read(MAX_BYTES + 1)
+    if len(raw) > MAX_BYTES:
+        print("error=fsverity-manifest-too-large")
+        raise SystemExit(1)
+    value = json.loads(raw)
+except (OSError, ValueError):
+    print("error=fsverity-manifest-invalid")
+    raise SystemExit(1)
+if not isinstance(value, dict) or value.get("schema") != expected_schema:
+    print("error=fsverity-manifest-invalid")
+    raise SystemExit(1)
+files = value.get("files")
+if not isinstance(files, list) or not (1 <= len(files) <= MAX_FILES):
+    print("error=fsverity-manifest-invalid")
+    raise SystemExit(1)
+
+def measure(path):
+    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    try:
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            raise OSError(errno.EINVAL, "not a regular file")
+        buffer = bytearray(4 + 64)
+        struct.pack_into("<HH", buffer, 0, FS_VERITY_HASH_ALG_SHA256, 64)
+        fcntl.ioctl(descriptor, FS_IOC_MEASURE_VERITY, buffer, True)
+        algorithm, size = struct.unpack_from("<HH", buffer, 0)
+        if algorithm != FS_VERITY_HASH_ALG_SHA256 or size != 32:
+            raise OSError(errno.EOPNOTSUPP, "unexpected fs-verity digest")
+        return bytes(buffer[4:4 + size])
+    finally:
+        os.close(descriptor)
+
+measurement_digest = hashlib.sha256()
+for entry in files:
+    if not isinstance(entry, dict) or set(entry) != {"path", "sha256"}:
+        print("error=fsverity-manifest-invalid")
+        raise SystemExit(1)
+    path = entry["path"]
+    expected = str(entry["sha256"]).lower()
+    if (
+        not isinstance(path, str)
+        or not path.startswith("/")
+        or len(path) > 4096
+        or "\x00" in path
+        or ".." in path.split("/")
+        or os.path.normpath(path) != path
+    ):
+        print("error=fsverity-manifest-invalid")
+        raise SystemExit(1)
+    if len(expected) != 64 or any(character not in "0123456789abcdef" for character in expected):
+        print("error=fsverity-manifest-invalid")
+        raise SystemExit(1)
+    try:
+        measured = measure(path)
+    except OSError as error:
+        if error.errno in (errno.ENOTTY, errno.EOPNOTSUPP, errno.ENOSYS, errno.EINVAL):
+            print("error=fsverity-unsupported")
+        else:
+            print("error=fsverity-measurement-unavailable")
+        raise SystemExit(1)
+    if measured.hex() != expected:
+        print("error=fsverity-measurement-mismatch")
+        raise SystemExit(1)
+    measurement_digest.update(path.encode("utf-8"))
+    measurement_digest.update(b"\x00")
+    measurement_digest.update(measured)
+    measurement_digest.update(b"\n")
+
+print("files_measured=%d" % len(files))
+print("measurement_digest=" + measurement_digest.hexdigest())
+print("manifest_sha256=" + hashlib.sha256(raw).hexdigest())
+PY
+  )"; then
+    local reason
+    reason="$(sed -n 's/^error=//p' <<<"${measured:-error=fsverity-measurement-unavailable}" | head -n1)"
+    degrade_fsverity "${reason:-fsverity-measurement-unavailable}"
+    return 1
+  fi
+
+  local line measured_files=0 measurement_digest= reported_manifest_sha256=
+  while IFS= read -r line; do
+    case "$line" in
+      files_measured=*) measured_files=${line#files_measured=} ;;
+      measurement_digest=*) measurement_digest=${line#measurement_digest=} ;;
+      manifest_sha256=*) reported_manifest_sha256=${line#manifest_sha256=} ;;
+    esac
+  done <<<"$measured"
+  [[ "$measured_files" =~ ^[1-9][0-9]*$ && "$measured_files" -le 512 ]] || { degrade_fsverity fsverity-manifest-invalid; return 1; }
+  require_hex "$measurement_digest" || { degrade_fsverity fsverity-manifest-invalid; return 1; }
+  require_hex "$reported_manifest_sha256" || { degrade_fsverity fsverity-manifest-invalid; return 1; }
+  [[ "$reported_manifest_sha256" == "$manifest_sha256" ]] || { degrade_fsverity fsverity-manifest-invalid; return 1; }
+
+  fs_status=verified
+  fs_reason=
+  fs_method=FS_IOC_MEASURE_VERITY
+  fs_manifest_sha256=$manifest_sha256
+  fs_files_measured=$measured_files
+  fs_measurement_digest=$measurement_digest
+  fs_integrity_json="$(printf '{"status":"verified","method":"FS_IOC_MEASURE_VERITY","manifest_sha256":"%s","files_measured":%d,"measurement_digest":"%s"}' \
+    "$fs_manifest_sha256" "$fs_files_measured" "$fs_measurement_digest")"
+  return 0
+}
+
+# ------------------------------------------------------------- final verdict
+
+if [[ "$boot_identity" == live ]]; then
   attestation_status=live-recovery
   hardware_attestation=unavailable
   attestation_reason=platform-attestation-unavailable
+  pcr_policy_json=null
+  fs_status=not-applicable
+  fs_reason=
+  fs_integrity_json='{"status":"not-applicable","method":"","manifest_sha256":"","files_measured":0,"measurement_digest":""}'
+else
+  verify_tpm_attestation || true
+  verify_fsverity_manifest || true
+  if [[ "$hardware_attestation" == verified && "$fs_status" == verified ]]; then
+    attestation_status=verified
+    attestation_reason=
+  else
+    attestation_status=degraded
+    if [[ -z "$attestation_reason" ]]; then
+      attestation_reason=$fs_reason
+    fi
+    if [[ -z "$attestation_reason" ]]; then
+      attestation_reason=platform-attestation-degraded
+    fi
+  fi
 fi
 
-boot_id="$(cat /proc/sys/kernel/random/boot_id)"
-mode="$(tr -d '\r\n' < "$signing_mode")"
-pcr_public_sha256="$(openssl pkey -pubin -in "$pcr_public" -outform DER | sha256sum | awk '{print $1}')"
+if [[ "$attestation_keys_ready" != true ]]; then
+  # Without the pinned Ed25519 key pair the document can never be authenticated by
+  # a consumer, so it must not claim any positive verdict.
+  attestation_status=unavailable
+  attestation_reason=$attestation_keys_reason
+fi
 
-BOOT_ID="$boot_id" MODE="$mode" CMDLINE="$actual_cmdline" PCRS="$pcr_output" \
-PCR_SIGNATURE_SHA256="$pcr_signature_sha256" PCR_PUBLIC_SHA256="$pcr_public_sha256" \
-BOOT_IDENTITY="$boot_identity" FILESYSTEM_INTEGRITY_STATUS="$filesystem_integrity_status" \
-FILESYSTEM_INTEGRITY_SHA256="$filesystem_integrity_sha256" STATUS="$attestation_status" \
+# --------------------------------------------------- canonical signed document
+
+document_tmp="$output_dir/.boot-attestation.$$.json"
+signature_tmp="$output_dir/.boot-attestation.$$.sig"
+trap 'rm -f -- "$document_tmp" "$signature_tmp"; cleanup' EXIT
+
+canonical_digest="$(BOOT_ID="$boot_id" MODE="$mode" CMDLINE="$actual_cmdline" \
+BOOT_IDENTITY="$boot_identity" SECURE_BOOT="$secure_boot" \
 HARDWARE_ATTESTATION="$hardware_attestation" ATTESTATION_REASON="$attestation_reason" \
-SECURE_BOOT="$secure_boot" python3 - "$output_file" <<'PY'
+STATUS="$attestation_status" GENERATED_AT="$generated_at" NONCE="$nonce" BOOT_EPOCH="$boot_epoch" \
+PCR_JSON="$pcr_policy_json" FS_JSON="$fs_integrity_json" \
+python3 - "$document_tmp" <<'PY'
 # STATUS: DIAMANT VGT SUPREME
-import grp
+import hashlib
 import json
 import os
-import pathlib
-import tempfile
 import sys
 
-output = pathlib.Path(sys.argv[1])
-hardware_verified = os.environ["HARDWARE_ATTESTATION"] == "verified"
+pcr = None
+if os.environ["PCR_JSON"] not in ("", "null"):
+    pcr = json.loads(os.environ["PCR_JSON"])
 value = {
-    "schema": "astraeaos.boot-attestation.v1",
+    "schema": "astraeaos.boot-attestation.v2",
     "status": os.environ["STATUS"],
+    "boot_identity": os.environ["BOOT_IDENTITY"],
+    "boot_id": os.environ["BOOT_ID"],
+    "generated_at": os.environ["GENERATED_AT"],
+    "nonce": os.environ["NONCE"],
+    "boot_epoch": int(os.environ["BOOT_EPOCH"]),
+    "signing_mode": os.environ["MODE"],
     "secure_boot": os.environ["SECURE_BOOT"] == "true",
     "hardware_attestation": os.environ["HARDWARE_ATTESTATION"],
     "attestation_reason": os.environ["ATTESTATION_REASON"] or None,
-    "boot_id": os.environ["BOOT_ID"],
-    "signing_mode": os.environ["MODE"],
     "kernel_command_line": os.environ["CMDLINE"],
-    "pcr_signature_sha256": os.environ["PCR_SIGNATURE_SHA256"] or None,
-    "pcr_public_key_sha256": os.environ["PCR_PUBLIC_SHA256"],
-    "pcr_selection": [0, 2, 4, 7, 9, 11, 12] if hardware_verified else [],
-    "pcr_readout": os.environ["PCRS"] if hardware_verified else "",
-    "boot_identity": os.environ["BOOT_IDENTITY"],
-    "filesystem_integrity": {
-        "status": os.environ["FILESYSTEM_INTEGRITY_STATUS"],
-        "evidence_sha256": os.environ["FILESYSTEM_INTEGRITY_SHA256"] or None,
-    },
+    "pcr": pcr,
+    "filesystem_integrity": json.loads(os.environ["FS_JSON"]),
 }
-fd, temporary = tempfile.mkstemp(prefix=".boot-attestation.", dir=output.parent)
+canonical = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8") + b"\n"
+descriptor = os.open(sys.argv[1], os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC, 0o600)
 try:
-    with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
-        json.dump(value, handle, indent=2, sort_keys=True)
-        handle.write("\n")
-        handle.flush()
-        os.fsync(handle.fileno())
-    os.chmod(temporary, 0o640)
-    os.chown(temporary, 0, grp.getgrnam("gedefense").gr_gid)
-    os.replace(temporary, output)
+    os.write(descriptor, canonical)
+    os.fsync(descriptor)
 finally:
-    try:
-        os.unlink(temporary)
-    except FileNotFoundError:
-        pass
+    os.close(descriptor)
+print(hashlib.sha256(canonical).hexdigest())
 PY
-printf 'AstraeaOS boot trust evidence recorded: %s.\n' "$attestation_status"
+)"
+require_hex "$canonical_digest" || die "attestation canonicalization failed"
+
+signature_hex=
+if [[ "$attestation_keys_ready" == true ]]; then
+  if ! signature_hex="$(ed25519_sign_digest "$attestation_private_key" "$canonical_digest")"; then
+    rm -f -- "$document_tmp"
+    die "signing the boot attestation failed"
+  fi
+  if ! ed25519_verify_digest "$attestation_public_key" "$canonical_digest" "$signature_hex"; then
+    rm -f -- "$document_tmp"
+    die "self-verification of the boot attestation signature failed"
+  fi
+fi
+
+chmod 0640 -- "$document_tmp"
+chown root:gedefense -- "$document_tmp"
+mv -T -- "$document_tmp" "$output_file"
+if [[ -n "$signature_hex" ]]; then
+  printf '%s\n' "$signature_hex" >"$signature_tmp"
+  chmod 0640 -- "$signature_tmp"
+  chown root:gedefense -- "$signature_tmp"
+  mv -T -- "$signature_tmp" "$output_signature"
+else
+  rm -f -- "$output_signature"
+fi
+
+if [[ "$attestation_status" == verified || "$attestation_status" == live-recovery ]]; then
+  printf 'AstraeaOS boot trust evidence recorded: %s.\n' "$attestation_status"
+  exit 0
+fi
+printf 'AstraeaOS boot attestation degraded (fail-closed): %s\n' "$attestation_reason" >&2
+exit 1

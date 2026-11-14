@@ -83,4 +83,8 @@ emergency_stop.sh
 /add-stale.py
 /bump-version*.py
 /qa-server.py
-/extract.sh\n/logs/\n
+/extract.sh
+/logs/
+/analysis/
+/deliverables/
+/_5.2-verify/

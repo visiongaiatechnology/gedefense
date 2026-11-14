@@ -105,6 +105,14 @@ token=$(tr -d '\r\n' < "$TOKEN_FILE")
 [[ ${#token} -ge 16 ]] || fail "token file does not contain a plausible token" 1
 
 payload=$(printf '{"scope":"release","reason":"%s","confirm":"%s"}' "$REASON" "$CONFIRM_PHRASE")
+# 5.2.0 requires an idempotency identifier on every mutation (XDR/API replay guard,
+# FIND-019). Use the kernel UUID source when present and fall back to openssl.
+if [[ -r /proc/sys/kernel/random/uuid ]]; then
+	REQUEST_ID=$(tr -d '\r\n' < /proc/sys/kernel/random/uuid)
+else
+	REQUEST_ID=$(openssl rand -hex 16)
+fi
+[[ -n "$REQUEST_ID" ]] || fail "could not generate a mutation request identifier" 2
 
 if [[ "$DRY_RUN" -eq 1 ]]; then
 	printf 'post-update-rebaseline: dry-run\n  endpoint=%s\n  token-file=%s\n  payload=%s\n' \
@@ -120,6 +128,7 @@ status_body="$workdir/status.json"
 http_code=$(curl -sS --max-time "$TIMEOUT_SECONDS" -o "$response" -w '%{http_code}' \
 	-X POST "$ENDPOINT/api/v1/fim/baseline" \
 	-H "Authorization: Bearer ${token}" \
+	-H "X-VGT-Request-ID: ${REQUEST_ID}" \
 	-H 'Content-Type: application/json' \
 	--data-binary "$payload") || fail "rebaseline request failed (control plane unreachable?)" 1
 if [[ "$http_code" != "200" ]]; then

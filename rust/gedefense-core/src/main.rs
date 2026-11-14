@@ -51,6 +51,16 @@ const PROTOCOL: &str = "VGT3";
 const MAX_REQUEST_BYTES: u64 = 4096;
 const MAX_RESPONSE_BYTES: usize = 2048;
 const CLOCK_WINDOW_SECS: u64 = 30;
+// A request timestamp may lead the local clock by at most this much.
+//
+// The previous `|now - stamp| <= CLOCK_WINDOW_SECS` check accepted timestamps up
+// to a full window in the future. The nonce was cached against the arrival time
+// and evicted one window later, while such a future timestamp stayed valid for
+// another window after that: a captured request could be replayed in
+// [t + window + 1, t + 2 * window]. The tolerated future skew is therefore tiny
+// (the control plane and the core share one host clock), and the nonce entry is
+// keyed to the later of arrival and request time.
+const CLOCK_FUTURE_TOLERANCE_SECS: u64 = 5;
 const REPLAY_CACHE_CAPACITY: usize = 4096;
 const MAX_EXEC_EVENTS_PER_RESPONSE: usize = 24;
 const MAX_EGRESS_EVENTS_PER_RESPONSE: usize = 24;
@@ -613,6 +623,20 @@ fn secure_runtime_socket(path: &Path, group: u32, mode: u32) -> Result<(), BoxEr
     Ok(())
 }
 
+// Every privileged runtime socket is bound through this one path, so no caller
+// can accidentally create a world-accessible or group-mismatched socket that
+// escapes the F-18 hardening above.
+fn bind_secure_runtime_socket(
+    path: &Path,
+    group: u32,
+    mode: u32,
+) -> Result<UnixListener, BoxError> {
+    let _ = fs::remove_file(path);
+    let listener = UnixListener::bind(path)?;
+    secure_runtime_socket(path, group, mode)?;
+    Ok(listener)
+}
+
 fn sysctl_spec(key: &str) -> Option<(&'static str, &'static [&'static str])> {
     match key {
         "kernel.kptr_restrict" => Some(("/proc/sys/kernel/kptr_restrict", &["0", "1", "2"])),
@@ -917,28 +941,22 @@ impl KernelCore {
     fn take_cell_lsm_events(&mut self) -> Result<String, BoxError> {
         self.require_cell_lsm()?;
         let mut encoded = Vec::with_capacity(MAX_CELL_LSM_EVENTS_PER_RESPONSE);
+        let mut skipped = 0u64;
         while encoded.len() < MAX_CELL_LSM_EVENTS_PER_RESPONSE {
             let Some(item) = self.cell_lsm_events.next() else {
                 break;
             };
-            if item.len() != std::mem::size_of::<CellLsmDenyEvent>() {
-                return Err("kernel Gaia Cell LSM event has invalid size".into());
+            match decode_cell_lsm_deny_event(&item)? {
+                Some(record) => encoded.push(record),
+                None => {
+                    skipped = skipped.saturating_add(1);
+                    if skipped == 1 {
+                        eprintln!(
+                            "kernel Gaia Cell LSM denied an AF_UNSPEC socket; the denial is enforced but the record is not representable on the typed control-plane wire"
+                        );
+                    }
+                }
             }
-            let cgroup_id = u64::from_ne_bytes(item[0..8].try_into()?);
-            let pid = u32::from_ne_bytes(item[8..12].try_into()?);
-            let uid = u32::from_ne_bytes(item[12..16].try_into()?);
-            let family = i32::from_ne_bytes(item[16..20].try_into()?);
-            let action = item[20];
-            if cgroup_id == 0
-                || pid == 0
-                || family <= 0
-                || family > i32::from(u8::MAX)
-                || family == libc::AF_UNIX
-                || action != ACTION_DROP
-            {
-                return Err("kernel Gaia Cell LSM event has invalid metadata".into());
-            }
-            encoded.push(format!("{cgroup_id}:{pid}:{uid}:{family}"));
         }
         if encoded.is_empty() {
             Ok("empty".to_owned())
@@ -1369,8 +1387,25 @@ fn verify_mac(key: &[u8], fields: &[&str], encoded_mac: &str) -> Result<(), BoxE
         .map_err(|_| "request authentication failed".into())
 }
 
+// The one timestamp policy for authenticated IPC. A timestamp may be at most
+// CLOCK_WINDOW_SECS old and CLOCK_FUTURE_TOLERANCE_SECS ahead of the local
+// clock. This function is used both before the MAC check (cheap filter) and as
+// part of the replay decision, so the two can never drift apart.
+fn request_timestamp_error(now: u64, stamp: u64) -> Option<&'static str> {
+    if stamp > now.saturating_add(CLOCK_FUTURE_TOLERANCE_SECS) {
+        return Some("future");
+    }
+    if now.saturating_sub(stamp) > CLOCK_WINDOW_SECS {
+        return Some("stale");
+    }
+    None
+}
+
 struct ReplayGuard {
     set: HashSet<String>,
+    // (nonce, expires_at). The expiry is derived from the later of arrival time
+    // and request timestamp plus one full clock window, so a nonce is never
+    // evicted while its own timestamp could still pass the window check.
     order: VecDeque<(String, u64)>,
 }
 
@@ -1382,13 +1417,21 @@ impl ReplayGuard {
         }
     }
 
-    fn accept(&mut self, nonce: &str, now: u64) -> bool {
-        while let Some((old_nonce, timestamp)) = self.order.front() {
-            if now.saturating_sub(*timestamp) <= CLOCK_WINDOW_SECS {
+    fn accept(&mut self, nonce: &str, now: u64, stamp: u64) -> bool {
+        // A request outside its own validity window is never accepted, no matter
+        // whether its nonce is still cached.
+        if request_timestamp_error(now, stamp).is_some() {
+            return false;
+        }
+
+        while self
+            .order
+            .front()
+            .is_some_and(|(_, expires_at)| *expires_at < now)
+        {
+            let Some((old_nonce, _)) = self.order.pop_front() else {
                 break;
-            }
-            let old_nonce = old_nonce.clone();
-            self.order.pop_front();
+            };
             self.set.remove(&old_nonce);
         }
 
@@ -1410,8 +1453,8 @@ impl ReplayGuard {
         //
         // Eviction is safe because the nonce cache is the second line of defence, not the
         // first: every request also carries a timestamp that is rejected outright when it
-        // falls outside CLOCK_WINDOW_SECS, so an evicted nonce cannot be replayed later
-        // than the window it would have been held for anyway.
+        // falls outside CLOCK_WINDOW_SECS, and nonce entries outlive that window because
+        // they are keyed to max(arrival, request time) + CLOCK_WINDOW_SECS.
         while self.order.len() >= REPLAY_CACHE_CAPACITY {
             match self.order.pop_front() {
                 Some((old_nonce, _)) => {
@@ -1421,10 +1464,45 @@ impl ReplayGuard {
             }
         }
 
+        let expires_at = now.max(stamp).saturating_add(CLOCK_WINDOW_SECS);
         self.set.insert(nonce.to_owned());
-        self.order.push_back((nonce.to_owned(), now));
+        self.order.push_back((nonce.to_owned(), expires_at));
         true
     }
+}
+
+// GAIA-CELL LSM DENY EVENT DECODING
+//
+// One malformed record must not be able to wedge the whole enforcement-event
+// drain: the control plane reads a failed CELL_LSM_EVENTS call as a lost kernel
+// hook, pauses automatic decisions and raises a critical alert, so a single
+// undecodable record is a cheap denial of service against event correlation.
+//
+// AF_UNSPEC (0) is a legal socket(2) family: the LSM hook in the kernel denies
+// it like every other non-AF_UNIX family and emits it verbatim. The IPC wire
+// record carries only a typed, non-zero, non-AF_UNIX family (the control plane
+// rejects anything else and would then discard the entire batch), so that one
+// denial cannot be represented. It is skipped explicitly, which keeps the rest
+// of the batch intact; the kernel denial itself has already been enforced.
+fn decode_cell_lsm_deny_event(item: &[u8]) -> Result<Option<String>, BoxError> {
+    if item.len() != std::mem::size_of::<CellLsmDenyEvent>() {
+        return Err("kernel Gaia Cell LSM event has invalid size".into());
+    }
+    let cgroup_id = u64::from_ne_bytes(item[0..8].try_into()?);
+    let pid = u32::from_ne_bytes(item[8..12].try_into()?);
+    let uid = u32::from_ne_bytes(item[12..16].try_into()?);
+    let family = i32::from_ne_bytes(item[16..20].try_into()?);
+    let action = item[20];
+    if cgroup_id == 0 || pid == 0 || action != ACTION_DROP {
+        return Err("kernel Gaia Cell LSM event has invalid metadata".into());
+    }
+    if family == libc::AF_UNSPEC {
+        return Ok(None);
+    }
+    if family <= 0 || family > i32::from(u8::MAX) || family == libc::AF_UNIX {
+        return Err("kernel Gaia Cell LSM event has invalid metadata".into());
+    }
+    Ok(Some(format!("{cgroup_id}:{pid}:{uid}:{family}")))
 }
 
 fn write_response(
@@ -1464,7 +1542,7 @@ fn write_response(
 fn open_componentwise(path: &std::path::Path, final_flags: i32) -> Result<std::fs::File, BoxError> {
     use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
     let mut components = path.components();
-    let mut current: OwnedFd = match components.next() {
+    let anchor = match components.next() {
         Some(std::path::Component::RootDir) => {
             let fd = unsafe {
                 libc::open(
@@ -1479,15 +1557,36 @@ fn open_componentwise(path: &std::path::Path, final_flags: i32) -> Result<std::f
         }
         _ => return Err("component-wise open requires an absolute path".into()),
     };
-    let remaining: Vec<_> = components.collect();
-    if remaining.is_empty() {
-        return Err("component-wise open requires a file component".into());
+    let remaining: std::path::PathBuf = components.collect();
+    open_componentwise_from(anchor.as_raw_fd(), &remaining, final_flags)
+}
+
+// Resolve an already validated relative path one component at a time from an
+// open anchor directory descriptor. The anchor descriptor is the trust boundary:
+// no component can leave it (`..` and root components are rejected), and
+// O_NOFOLLOW refuses a symlink at every step. Used as the openat2 fallback for
+// both the absolute-path scan open and the home-anchored quarantine open.
+pub(crate) fn open_componentwise_from(
+    anchor: std::os::fd::RawFd,
+    relative: &std::path::Path,
+    final_flags: i32,
+) -> Result<std::fs::File, BoxError> {
+    use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
+    if relative.is_absolute() || relative.as_os_str().is_empty() {
+        return Err("component-wise open requires a relative file path".into());
     }
-    for (index, component) in remaining.iter().enumerate() {
+    let duplicate = unsafe { libc::fcntl(anchor, libc::F_DUPFD_CLOEXEC, 3) };
+    if duplicate < 0 {
+        return Err(std::io::Error::last_os_error().into());
+    }
+    let mut current: OwnedFd = unsafe { OwnedFd::from_raw_fd(duplicate) };
+    let components: Vec<_> = relative.components().collect();
+    let mut opened = false;
+    for (index, component) in components.iter().enumerate() {
         match component {
             std::path::Component::Normal(name) => {
                 let name_c = std::ffi::CString::new(name.as_encoded_bytes())?;
-                let is_last = index + 1 == remaining.len();
+                let is_last = index + 1 == components.len();
                 let flags = if is_last {
                     final_flags | libc::O_CLOEXEC | libc::O_NOFOLLOW
                 } else {
@@ -1498,10 +1597,14 @@ fn open_componentwise(path: &std::path::Path, final_flags: i32) -> Result<std::f
                     return Err(std::io::Error::last_os_error().into());
                 }
                 current = unsafe { OwnedFd::from_raw_fd(fd) };
+                opened = true;
             }
             std::path::Component::CurDir => continue,
             _ => return Err("component-wise open rejects parent or root components".into()),
         }
+    }
+    if !opened {
+        return Err("component-wise open requires a file component".into());
     }
     Ok(std::fs::File::from(current))
 }
@@ -1647,15 +1750,15 @@ fn handle_connection(
             return;
         }
     };
-    if now.abs_diff(stamp) > CLOCK_WINDOW_SECS {
-        eprintln!("rejected stale IPC request");
+    if let Some(reason) = request_timestamp_error(now, stamp) {
+        eprintln!("rejected IPC request with a {reason} timestamp");
         return;
     }
     if verify_mac(auth_key, &fields[..fields.len() - 1], supplied_mac).is_err() {
         eprintln!("rejected unauthenticated IPC request");
         return;
     }
-    if !replay.accept(nonce, now) {
+    if !replay.accept(nonce, now, stamp) {
         eprintln!("rejected replayed IPC request");
         let _ = write_response(&mut stream, auth_key, nonce, "ERR", "request rejected");
         return;
@@ -1838,11 +1941,8 @@ fn main() -> Result<(), BoxError> {
     // F-18: the user scan socket is a root-executing service surface. It is
     // restricted to the control-plane account instead of being world-writable.
     fs::set_permissions(scan_parent, fs::Permissions::from_mode(0o750))?;
-    let _ = fs::remove_file(&scan_socket);
-    let scan_listener = UnixListener::bind(&scan_socket)
+    let scan_listener = bind_secure_runtime_socket(Path::new(&scan_socket), control_gid, 0o660)
         .map_err(|error| std::io::Error::other(format!("user scan IPC bind: {error}")))?;
-    secure_runtime_socket(Path::new(&scan_socket), control_gid, 0o660)
-        .map_err(|error| std::io::Error::other(format!("user scan IPC permissions: {error}")))?;
     let scan_worker = scanner.clone();
     std::thread::Builder::new()
         .name("gedefense-user-scan".to_owned())
@@ -1865,30 +1965,17 @@ fn main() -> Result<(), BoxError> {
             }
         })?;
     eprintln!("GeDefense core startup phase=ipc-socket");
-    if let Some(parent) = Path::new(&socket).parent() {
-        fs::create_dir_all(parent)
-            .map_err(|error| std::io::Error::other(format!("IPC directory: {error}")))?;
-    }
-    let _ = fs::remove_file(&socket);
-    let listener = UnixListener::bind(&socket)
-        .map_err(|error| std::io::Error::other(format!("IPC bind: {error}")))?;
-    fs::set_permissions(&socket, fs::Permissions::from_mode(0o660))
-        .map_err(|error| std::io::Error::other(format!("IPC permissions: {error}")))?;
-    let socket_metadata = fs::symlink_metadata(&socket)
-        .map_err(|error| std::io::Error::other(format!("IPC metadata: {error}")))?;
-    if socket_metadata.gid() != control_gid {
-        let socket_c = CString::new(socket.as_bytes())?;
-        // SAFETY: socket_c is a valid NUL-terminated path. Group ownership is
-        // changed only when the service manager did not already apply Group=gedefense.
-        let chown_rc = unsafe { libc::chown(socket_c.as_ptr(), 0, control_gid) };
-        if chown_rc != 0 {
-            return Err(std::io::Error::other(format!(
-                "IPC ownership: {}",
-                std::io::Error::last_os_error()
-            ))
-            .into());
-        }
-    }
+    let socket_parent = Path::new(&socket)
+        .parent()
+        .ok_or("IPC socket parent is missing")?;
+    fs::create_dir_all(socket_parent)
+        .map_err(|error| std::io::Error::other(format!("IPC directory: {error}")))?;
+    // FIND-034: the control socket is created through the same hardened helper as
+    // the user scan socket. The previous inline path only set 0660: it never
+    // rejected a symlinked socket path, never verified the owning group and never
+    // checked that the result stayed inaccessible to "other".
+    let listener = bind_secure_runtime_socket(Path::new(&socket), control_gid, 0o660)
+        .map_err(|error| std::io::Error::other(format!("IPC socket hardening: {error}")))?;
     eprintln!("GeDefense core startup phase=xdp-load interface={iface}");
     let mut core = KernelCore::load(&object, &iface, require_cell_lsm).map_err(|error| {
         std::io::Error::other(format!("kernel data-plane load/attach: {error}"))
@@ -1983,12 +2070,47 @@ mod tests {
     #[test]
     fn replay_guard_rejects_duplicates_and_expires_old_entries() {
         let mut guard = ReplayGuard::new();
-        assert!(guard.accept("0123456789abcdef0123456789abcdef", 100));
-        assert!(!guard.accept("0123456789abcdef0123456789abcdef", 101));
+        let nonce = "0123456789abcdef0123456789abcdef";
+        assert!(guard.accept(nonce, 100, 100));
+        assert!(!guard.accept(nonce, 101, 101));
+        // The same nonce with a *fresh* timestamp after the entry expired is a
+        // new request, not a replay: the guard only holds nonces, not identities.
         assert!(guard.accept(
-            "0123456789abcdef0123456789abcdef",
+            nonce,
+            100 + CLOCK_WINDOW_SECS + 1,
             100 + CLOCK_WINDOW_SECS + 1
         ));
+    }
+
+    #[test]
+    fn replay_guard_rejects_future_timestamps_and_closes_the_window_gap() {
+        // The old |now - stamp| <= CLOCK_WINDOW_SECS check accepted a timestamp a
+        // whole window in the future. The nonce was cached against the arrival
+        // time but the timestamp stayed valid for a second window after the cache
+        // entry expired, so [t+31, t+60] was a replay gap. Finding FIND-034.
+        assert_eq!(request_timestamp_error(1_000, 1_000), None);
+        assert_eq!(request_timestamp_error(1_000, 1_005), None);
+        assert_eq!(
+            request_timestamp_error(1_000, 1_000 + CLOCK_FUTURE_TOLERANCE_SECS),
+            None
+        );
+        assert_eq!(
+            request_timestamp_error(1_000, 1_001 + CLOCK_FUTURE_TOLERANCE_SECS),
+            Some("future")
+        );
+        assert_eq!(request_timestamp_error(1_000, 1_030), Some("future"));
+        assert_eq!(request_timestamp_error(1_000, 969), Some("stale"));
+        assert_eq!(request_timestamp_error(1_000, 970), None);
+
+        let nonce = "ffffffffffffffffffffffffffffffff";
+        let mut guard = ReplayGuard::new();
+        // A request with the maximum tolerated future stamp is accepted ...
+        assert!(guard.accept(nonce, 1_000, 1_005));
+        // ... and a duplicate inside the window is still a replay ...
+        assert!(!guard.accept(nonce, 1_010, 1_005));
+        // ... but at t+45 the request is both cache-expired and outside the
+        // timestamp window: the replayed request must be refused.
+        assert!(!guard.accept(nonce, 1_045, 1_005));
     }
 
     #[test]
@@ -2006,7 +2128,7 @@ mod tests {
         for i in 0..REPLAY_CACHE_CAPACITY {
             let nonce = format!("{i:032}");
             assert!(
-                guard.accept(&nonce, 100),
+                guard.accept(&nonce, 100, 100),
                 "request {i} was refused before the cache was full"
             );
         }
@@ -2014,13 +2136,13 @@ mod tests {
         // One past the capacity. A nonce never seen before is not a replay.
         let fresh = "ffffffffffffffffffffffffffffffff";
         assert!(
-            guard.accept(fresh, 100),
+            guard.accept(fresh, 100, 100),
             "a new request was refused because the cache was full"
         );
 
         // The duplicate check still holds at capacity, which is the property the guard
         // exists for.
-        assert!(!guard.accept(fresh, 101));
+        assert!(!guard.accept(fresh, 101, 101));
 
         // And the cache stays bounded while doing so.
         assert!(guard.set.len() <= REPLAY_CACHE_CAPACITY);
@@ -2033,14 +2155,50 @@ mod tests {
         // commands - the ones a replay would have to imitate to be useful.
         let mut guard = ReplayGuard::new();
         for i in 0..REPLAY_CACHE_CAPACITY {
-            assert!(guard.accept(&format!("{i:032}"), 100));
+            assert!(guard.accept(&format!("{i:032}"), 100, 100));
         }
-        assert!(guard.accept("ffffffffffffffffffffffffffffffff", 100));
+        assert!(guard.accept("ffffffffffffffffffffffffffffffff", 100, 100));
 
         // The first nonce is the one that was evicted, so it is accepted again.
-        assert!(guard.accept(&format!("{:032}", 0), 100));
+        assert!(guard.accept(&format!("{:032}", 0), 100, 100));
         // The most recently accepted one is still held, so its replay is refused.
-        assert!(!guard.accept("ffffffffffffffffffffffffffffffff", 100));
+        assert!(!guard.accept("ffffffffffffffffffffffffffffffff", 100, 100));
+    }
+
+    #[test]
+    fn cell_lsm_denials_with_af_unspec_are_skipped_not_wedged() {
+        // The kernel LSM hook reports socket(2) creations verbatim; AF_UNSPEC (0)
+        // is a legal family and was previously treated as invalid metadata, which
+        // failed the whole event drain. One such record must be skipped only.
+        let mut item = [0u8; std::mem::size_of::<CellLsmDenyEvent>()];
+        item[0..8].copy_from_slice(&42u64.to_ne_bytes());
+        item[8..12].copy_from_slice(&4242u32.to_ne_bytes());
+        item[12..16].copy_from_slice(&1000u32.to_ne_bytes());
+        item[16..20].copy_from_slice(&libc::AF_UNSPEC.to_ne_bytes());
+        item[20] = ACTION_DROP;
+        assert_eq!(
+            decode_cell_lsm_deny_event(&item).expect("AF_UNSPEC is not corruption"),
+            None
+        );
+
+        // A representable family still produces the typed record.
+        item[16..20].copy_from_slice(&libc::AF_INET.to_ne_bytes());
+        assert_eq!(
+            decode_cell_lsm_deny_event(&item).expect("IPv4 denial"),
+            Some("42:4242:1000:2".to_owned())
+        );
+
+        // AF_UNIX, unknown and negative families stay invalid metadata.
+        for family in [libc::AF_UNIX, -1, i32::from(u8::MAX) + 1] {
+            item[16..20].copy_from_slice(&family.to_ne_bytes());
+            assert!(
+                decode_cell_lsm_deny_event(&item).is_err(),
+                "accepted family {family}"
+            );
+        }
+        item[16..20].copy_from_slice(&libc::AF_INET.to_ne_bytes());
+        item[20] = 0;
+        assert!(decode_cell_lsm_deny_event(&item).is_err(), "accepted a non-drop action");
     }
 
     #[test]
@@ -2360,6 +2518,34 @@ mod tests {
         let target = directory.join("target.sock");
         let target_listener = UnixListener::bind(&target).expect("bind target socket");
         let link = directory.join("link.sock");
+        std::os::unix::fs::symlink(&target, &link).expect("create symlink");
+        assert!(secure_runtime_socket(&link, gid, 0o660).is_err());
+        drop(target_listener);
+        fs::remove_dir_all(&directory).ok();
+    }
+
+    // FIND-034: the main control socket must take the same hardened route as the
+    // user scan socket - 0660, group-restricted, never world-accessible - instead
+    // of an inline bind + set_permissions without a symlink/ownership guard.
+    #[test]
+    fn ipc_socket_binding_is_hardened() {
+        let directory = test_hardening_directory("ipc-socket");
+        let path = directory.join("core.sock");
+        let gid = unsafe { libc::getgid() };
+        let listener =
+            bind_secure_runtime_socket(&path, gid, 0o660).expect("bind hardened IPC socket");
+        let metadata = fs::symlink_metadata(&path).expect("IPC socket metadata");
+        let mode = metadata.permissions().mode() & 0o777;
+        assert_eq!(mode, 0o660);
+        assert_eq!(mode & 0o007, 0, "IPC socket must not be accessible to other");
+        assert!(!metadata.file_type().is_symlink());
+        assert_eq!(metadata.gid(), gid);
+        drop(listener);
+
+        // A symlink at the socket path is never accepted as the socket itself.
+        let target = directory.join("target.sock");
+        let target_listener = UnixListener::bind(&target).expect("bind target socket");
+        let link = directory.join("linked.sock");
         std::os::unix::fs::symlink(&target, &link).expect("create symlink");
         assert!(secure_runtime_socket(&link, gid, 0o660).is_err());
         drop(target_listener);

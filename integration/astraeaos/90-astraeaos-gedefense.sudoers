@@ -6,5 +6,13 @@
 # path argument form is reachable only through the polkit action, where the
 # helper itself validates caller identity and file ownership on an open fd.
 # Keep the empty "" argument-marker: sudo matches it against "no arguments".
-%wheel ALL=(root) NOPASSWD: /usr/lib/astraeaos/gedefense-set-password ""
+#
+# FIND-009 (VGT-AUDIT-20261114-GD51): the set-password helper deliberately does NOT
+# carry NOPASSWD. Launching it through sudo requires the invoking wheel account to
+# authenticate interactively (sudo re-authentication), the polkit path requires the
+# auth_admin_keep dialog, and the helper itself additionally verifies the current
+# operator password before it replaces an existing credential. Do not re-add NOPASSWD
+# to this rule: that would turn a stolen desktop session into a silent operator-
+# password takeover.
+%wheel ALL=(root) /usr/lib/astraeaos/gedefense-set-password ""
 %wheel ALL=(root) NOPASSWD: /usr/lib/astraeaos/gedefense-ensure-ready ""

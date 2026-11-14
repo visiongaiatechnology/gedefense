@@ -592,15 +592,56 @@ func l7PeerHasSupplementaryGroup(pid int32, gid uint32) bool {
 // l7SelfTestPeerAuthorized admits only the control process's own kernel-attested
 // identity on the reserved self-test request path. The self-test needs to prove the
 // real edge/inspect path, but a deployment must not have to grant the control UID a
-// permanent producer authorization just to let its startup health check run. The
-// reserved path and the explicit self-test header prevent this from becoming a
-// general same-UID bypass; external producers still need an explicit policy entry.
+// permanent producer authorization just to let its startup health check run.
+//
+// FIND-022: the historical admission token was the fixed header value "1", which
+// turned any same-UID process into an authorised producer for /v1/inspect. The
+// request now has to present a process-local, cryptographically random token that
+// is generated on first use and never logged, and the kernel-attested peer must be
+// this very process (same UID, same PID). The reserved path keeps the bypass from
+// becoming a general same-UID route; external producers still need an explicit
+// policy entry.
+const l7SelfTestHeaderName = "X-Gedefense-Self-Test"
+
+var (
+	l7SelfTestTokenOnce sync.Once
+	l7SelfTestToken     string
+)
+
+// l7SelfTestHeaderValue returns the ephemeral in-process self-test token. It is
+// generated once from crypto/rand; a random-source failure leaves it empty, which
+// makes every self-test request fail closed.
+func l7SelfTestHeaderValue() string {
+	l7SelfTestTokenOnce.Do(func() {
+		token, err := randomBytesHex(32)
+		if err != nil {
+			l7SelfTestToken = ""
+			return
+		}
+		l7SelfTestToken = token
+	})
+	return l7SelfTestToken
+}
+
 func l7SelfTestPeerAuthorized(ctx context.Context, request *http.Request) bool {
-	if request == nil || request.Header.Get("X-Gedefense-Self-Test") != "1" {
+	if request == nil {
+		return false
+	}
+	token := l7SelfTestHeaderValue()
+	if token == "" {
+		return false
+	}
+	supplied := strings.TrimSpace(request.Header.Get(l7SelfTestHeaderName))
+	if supplied == "" || !tokenEqual(supplied, token) {
 		return false
 	}
 	cred, ok := ctx.Value(l7PeerContextKey{}).(l7PeerCredentials)
 	if !ok || cred.PID <= 0 || cred.UID != uint32(os.Geteuid()) {
+		return false
+	}
+	// Only this process itself may use the self-test bypass: the probe runs on a
+	// goroutine of the control process, so SO_PEERCRED must report its PID.
+	if cred.PID != int32(os.Getpid()) {
 		return false
 	}
 	if request.URL == nil {
@@ -714,7 +755,18 @@ func (s *L7Service) publishStatus(healthy bool) {
 		status.TLSHandshakesTotal = s.tlsHandshakes.Load()
 		status.TLSFindingsTotal = s.tlsFindings.Load()
 		status.TLSLastHandshake = tlsLast
-		status.TLSLastError = tlsLastErr
+		// An enabled TLS inspector without a configured server scope used to
+		// silently accept every SNI. The degraded policy state is published here
+		// so the deactivation is visible instead of implicit (FIND-022).
+		tlsStatusErr := tlsLastErr
+		if problem := tlsAllowedDomainsPolicyProblem(desired); problem != "" {
+			if tlsStatusErr != "" {
+				tlsStatusErr = problem + "; last TLS error: " + tlsStatusErr
+			} else {
+				tlsStatusErr = problem
+			}
+		}
+		status.TLSLastError = tlsStatusErr
 		status.TLSFingerprintVersion = fpVersion
 		status.TLSFingerprintSource = fpSource
 		status.TLSFingerprintSignatures = fpSignatures

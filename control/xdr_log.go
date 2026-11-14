@@ -78,13 +78,16 @@ func NewIncidentLoggerWithStorage(path, keyPath, storageKeyPath, nodeName string
 	}
 	last, count, legacy, verifyErr := verifyIncidentLogWithStorage(path, key, storage)
 	l.prevHash, l.sequence, l.integrityErr = last, count, verifyErr
-	if l.integrityErr == nil {
-		l.integrityErr = verifyHeadCheckpointWithStorage(l.headPath, l.prevHash, storage)
-	}
+	// A log written before a storage key existed is migrated before its head checkpoint is
+	// verified: the migration re-writes both files encrypted, so the strict head read below
+	// never has to accept a plaintext checkpoint.
 	if l.integrityErr == nil && legacy && storage != nil {
 		if err := migrateIncidentLog(path, l.headPath, key, storage); err != nil {
 			l.integrityErr = fmt.Errorf("incident encryption migration: %w", err)
 		}
+	}
+	if l.integrityErr == nil {
+		l.integrityErr = verifyHeadCheckpointWithStorage(l.headPath, l.prevHash, storage)
 	}
 	if st, err := os.Stat(path); err == nil {
 		l.expectedSize = st.Size()
@@ -164,9 +167,16 @@ func verifyHeadCheckpointWithStorage(path, lastHash string, storage *StorageCiph
 		return err
 	}
 	if storage != nil {
-		b, _, err = storage.Decrypt(path, "incident-head", b, nil)
+		// Strict read: the head names the authenticated tail of the chain, and a plaintext
+		// replacement of it is exactly the downgrade the storage encryption has to prevent. A
+		// half-migrated log is migrated above, before this check runs.
+		var wasLegacy bool
+		b, wasLegacy, err = storage.Decrypt(path, "incident-head", b, nil)
 		if err != nil {
 			return err
+		}
+		if wasLegacy {
+			return errors.New("incident log head checkpoint is not authenticated")
 		}
 	}
 	got := strings.TrimSpace(string(b))
@@ -214,7 +224,10 @@ func decodeIncidentLine(path string, line []byte, lineNo uint64, storage *Storag
 	plain := append([]byte(nil), line...)
 	if storage != nil {
 		var err error
-		plain, legacy, err = storage.Decrypt(path, "incident-record", line, &lineNo)
+		// Explicit migration read: every incident record is HMAC-chained with the incident key,
+		// so plaintext does not weaken the chain's authentication and the loader re-writes the
+		// log encrypted (migrateIncidentLog) before the process relies on it.
+		plain, legacy, err = storage.DecryptForMigration(path, "incident-record", line, &lineNo)
 		if err != nil {
 			return incidentRecord{}, false, err
 		}

@@ -3,8 +3,11 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -176,5 +179,62 @@ func TestCaseEngineScoreFloorAndFailClosedDefaults(t *testing.T) {
 	}
 	if status := engine.Status(10); status.Count != 1 {
 		t.Fatalf("a published AutoCreate=false revision was not honoured: %+v", status)
+	}
+}
+
+// TestCaseStoreRefusesUnauthenticatedLegacyPlaintext pins the FIND-015 follow-up decision for the
+// case store: it carries no independent payload authentication (no HMAC, no signature over the
+// store or its records), so a plaintext legacy history cannot be authenticated by anything except
+// the storage envelope it lacks. The strict Decrypt therefore stays and DecryptForMigration is not
+// used: adopting plaintext would let any writer of the state directory replace the case history
+// with forged records - the exact silent downgrade FIND-015 closed. Structurally valid plaintext
+// must be refused hard, not migrated and not rewritten.
+func TestCaseStoreRefusesUnauthenticatedLegacyPlaintext(t *testing.T) {
+	dir := t.TempDir()
+	keyPath := filepath.Join(dir, "storage.key")
+	if err := os.WriteFile(keyPath, bytes.Repeat([]byte{0x33}, 32), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	storage, err := NewStorageCipher(keyPath, "case-test-node")
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "cases.enc")
+	fixture := caseRecordFixture(
+		"CS-1111111111111111", strings.Repeat("f", 64),
+		time.Unix(1_700_000_000, 0).UTC(), 2,
+	)
+	legacyRaw, err := json.Marshal(caseStore{Schema: caseSchema, Revision: 3, Cases: []SecurityCase{fixture}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, legacyRaw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	engine, err := NewCaseEngine(path, storage, func(EvidenceRecord) error { return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status := engine.Status(10); status.Healthy {
+		t.Fatalf("an unauthenticated plaintext case history was accepted: %+v", status)
+	}
+	if engine.integrity == nil || !errors.Is(engine.integrity, errStoragePlaintext) {
+		t.Fatalf("plaintext case history was not refused by the strict storage reader: %v", engine.integrity)
+	}
+	if !strings.Contains(engine.integrity.Error(), "unencrypted case history refused") {
+		t.Fatalf("the refusal does not name the unauthenticated legacy document: %v", engine.integrity)
+	}
+	if err := engine.IngestIncident(testCaseIncident("incident-legacy", "critical")); err == nil {
+		t.Fatal("a plaintext legacy case store accepted a new incident")
+	}
+	// No migration may happen behind this refusal: the bytes on disk stay untouched, so retrying
+	// cannot turn a tamper attempt into an adopted history.
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(after, legacyRaw) {
+		t.Fatal("the refused plaintext case history was rewritten instead of left alone")
 	}
 }

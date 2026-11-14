@@ -390,7 +390,7 @@ func TestThreatIntelDocumentWithoutNamespaceStillAuthenticates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	document := runtimeSettingsEnvelope{Schema: runtimeSettingsSchema, Settings: legacy, MAC: hex.EncodeToString(mac)}
+	document := runtimeSettingsEnvelope{Schema: runtimeSettingsSchema, Settings: legacy, MAC: hex.EncodeToString(mac), HistoryMAC: authenticatedHistoryMAC(t, seeded)}
 	data, err := json.MarshalIndent(document, "", "  ")
 	if err != nil {
 		t.Fatal(err)

@@ -35,6 +35,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"sort"
@@ -69,6 +70,16 @@ const (
 	titanMaxLimit         = 50
 	titanMaxSensorEvents  = 256
 	titanMaxQuarantine    = 200
+
+	// Titan sensor restart backoff (FIND-031): a recoverable sensor error must never
+	// turn the Run loop into a CPU spin. The delay already exceeds 100ms on the first
+	// retry, doubles per consecutive failure, is capped and carries bounded positive
+	// jitter so independent instances do not retry in lockstep.
+	titanSensorRestartBackoffBase = 250 * time.Millisecond
+	titanSensorRestartBackoffMax  = 30 * time.Second
+	// titanSensorHealthyResetAfter marks a sensor run long enough that the next restart
+	// starts from the base delay again instead of continuing to grow.
+	titanSensorHealthyResetAfter = 30 * time.Second
 )
 
 type TitanMode string
@@ -574,6 +585,34 @@ func validateTitanEvent(event TitanEvent) error {
 	return nil
 }
 
+// titanSensorRestartDelay returns the wait before the next sensor restart. It is
+// exponential in the number of consecutive failed restarts, capped and jittered.
+// FIND-031: the retry path gets a mandatory pause instead of spinning.
+func titanSensorRestartDelay(attempt uint, jitter time.Duration) time.Duration {
+	if attempt < 1 {
+		attempt = 1
+	}
+	delay := titanSensorRestartBackoffBase
+	for step := uint(1); step < attempt && delay < titanSensorRestartBackoffMax; step++ {
+		delay *= 2
+	}
+	if delay > titanSensorRestartBackoffMax {
+		delay = titanSensorRestartBackoffMax
+	}
+	if jitter < 0 {
+		jitter = 0
+	}
+	if jitter > delay/2 {
+		jitter = delay / 2
+	}
+	return delay + jitter
+}
+
+// titanSensorRestartJitter returns one bounded positive jitter value.
+func titanSensorRestartJitter() time.Duration {
+	return time.Duration(rand.Int63n(int64(titanSensorRestartBackoffBase)))
+}
+
 // Run starts the bounded sensor loop and the policy-driven observation pipeline.
 // A sensor failure degrades the Titan status and is recorded as evidence instead
 // of being hidden.
@@ -597,6 +636,7 @@ func (e *TitanEngine) Run(ctx context.Context) {
 	if observer == nil {
 		observer = newTitanPlatformObserver()
 	}
+	restartAttempt := uint(0)
 	for {
 		if ctx.Err() != nil {
 			return
@@ -613,6 +653,7 @@ func (e *TitanEngine) Run(ctx context.Context) {
 			Severity: "info", Kind: "titan.sensor.started", Source: "titan",
 			Message: fmt.Sprintf("Titan sensor observing %d configured roots", len(roots)),
 		})
+		startedAt := time.Now()
 		restart, runErr := e.watchLoop(sensorCtx, observations, sensorErr)
 		cancel()
 		if !restart {
@@ -635,15 +676,28 @@ func (e *TitanEngine) Run(ctx context.Context) {
 				Severity: "critical", Kind: "titan.sensor.degraded", Source: "titan",
 				Message: "Titan integrity sensor is degraded: " + boundedTitanText(runErr.Error(), 240),
 			})
+			restartAttempt++
+			// A run that was healthy for a while resets the growth: the restart is then
+			// a new incident, not a continuation of the failure streak.
+			if time.Since(startedAt) >= titanSensorHealthyResetAfter {
+				restartAttempt = 1
+			}
 		} else {
 			e.setSensor("degraded", "sensor stopped without an error")
+			restartAttempt = 0
 		}
-		if !restart {
-			select {
-			case <-ctx.Done():
-				return
-			case <-time.After(5 * time.Second):
-			}
+		// Mandatory backoff before the retry (FIND-031). The vulnerable build fell
+		// through to the next iteration immediately, so a sensor that kept failing
+		// turned the loop into a tight CPU spin.
+		delay := titanSensorRestartDelay(restartAttempt, titanSensorRestartJitter())
+		e.recordEvidence(EvidenceRecord{
+			Severity: "info", Kind: "titan.sensor.restart_backoff", Source: "titan",
+			Message: fmt.Sprintf("Titan sensor restart in %s after %d consecutive restart attempt(s)", delay, restartAttempt),
+		})
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(delay):
 		}
 	}
 }

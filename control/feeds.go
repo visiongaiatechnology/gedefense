@@ -204,6 +204,72 @@ const (
 	kernelApplyDivergent       = "DIVERGENT"
 )
 
+// Persisted threat-intelligence state is the record of the last-known-good
+// generation per feed. It carries the anti-rollback floor (ManifestVersion) and
+// the exact indicator sets that are served to the kernel, so it is a security
+// artifact and not merely telemetry (FIND-023).
+//
+// The file is therefore written as an authenticated envelope:
+//
+//   - mode "ed25519": the payload is signed with the operator feed-signing key
+//     and verified against the pinned trust anchor on load (local signing
+//     deployments, where the private key is present on the host);
+//   - mode "manifest-anchor": the payload is bound to a detached, signed feed
+//     manifest whose raw bytes are embedded in the envelope. The manifest
+//     signature is verified with the pinned key and every per-feed floor, validity
+//     window and indicator digest is checked against the authenticated manifest
+//     entries (deployments that only verify externally signed manifests).
+//
+// A plaintext document is only accepted when the whole feed pipeline is
+// explicitly unauthenticated (no manifest gate, no pinned key, no local signing):
+// in that mode the persisted state cannot weaken an authenticity guarantee that is
+// configured off. Every other configuration fails closed on an unsigned or
+// unverifiable file, quarantines it and rebuilds the state in memory.
+const (
+	threatIntelStateEnvelopeSchema = "vgt-gedefense-threat-intel-state-envelope-v1"
+	threatIntelStateModeSigned     = "ed25519"
+	threatIntelStateModeAnchor     = "manifest-anchor"
+	threatIntelStateSignatureTag   = "vgt-gedefense/threat-intel-state/v1\x00"
+	// maxThreatIntelStateBytes bounds the state file on read. The state carries
+	// the last-known-good item sets, so the bound is generous but not absent:
+	// an unbounded os.ReadFile handed an attacker-controlled file straight to the
+	// JSON decoder.
+	maxThreatIntelStateBytes            = 96 << 20
+	threatIntelStateIntegrityEventLimit = 32
+	threatIntelStateQuarantineSuffix    = ".untrusted-"
+)
+
+// threatIntelStateEnvelope is the authenticated wrapper written for every state
+// file in a deployment with a feed trust model. Payload and Manifest are
+// base64.StdEncoding encoded JSON documents.
+type threatIntelStateEnvelope struct {
+	Schema    string `json:"schema"`
+	Mode      string `json:"mode"`
+	Payload   string `json:"payload,omitempty"`
+	Manifest  string `json:"manifest,omitempty"`
+	PublicKey string `json:"public_key,omitempty"`
+	Signature string `json:"signature,omitempty"`
+}
+
+// threatIntelStateIntegrityEvent records one integrity decision about the
+// persisted state so the journal, the API and the tests can prove that a
+// tampered file was refused instead of silently adopted.
+type threatIntelStateIntegrityEvent struct {
+	At     time.Time `json:"at"`
+	Kind   string    `json:"kind"`
+	Detail string    `json:"detail"`
+}
+
+// threatIntelStateSignatureMessage domain-separates the state signature from
+// feed-manifest signatures so one Ed25519 key can never be confused between the
+// two message spaces.
+func threatIntelStateSignatureMessage(payload []byte) []byte {
+	message := make([]byte, 0, len(threatIntelStateSignatureTag)+len(payload))
+	message = append(message, threatIntelStateSignatureTag...)
+	message = append(message, payload...)
+	return message
+}
+
 // ThreatIntelLock enforces live owner protection. TTL is strictly for crash recovery.
 type ThreatIntelLock struct {
 	mu          sync.Mutex
@@ -502,24 +568,32 @@ func threatFeedManifestMessageFor(document threatFeedManifestDocument) []byte {
 	return raw
 }
 
-// readSignedFeedManifest loads, strictly decodes and authenticates the detached
-// manifest. Any error is a fail-closed rejection: there is no code path that
-// continues with a partially trusted manifest.
-func (m *FeedManager) readSignedFeedManifest(manifestPath string, keys []ed25519.PublicKey, maxAge time.Duration) (threatFeedManifestDocument, error) {
+// readFeedManifestRaw reads a bounded, regular, non-symlink manifest file. It is
+// the single reader for both the live verification path and the persisted-state
+// anchor, so both operate on exactly the same bytes.
+func readFeedManifestRaw(manifestPath string) ([]byte, error) {
 	info, err := os.Lstat(manifestPath)
 	if err != nil {
-		return threatFeedManifestDocument{}, NewThreatIntelSecurityException("signed feed manifest is missing; feeds fail closed until the trust anchor is provisioned", err)
+		return nil, NewThreatIntelSecurityException("signed feed manifest is missing; feeds fail closed until the trust anchor is provisioned", err)
 	}
 	if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
-		return threatFeedManifestDocument{}, NewThreatIntelSecurityException("signed feed manifest must be a regular non-symlink file", nil)
+		return nil, NewThreatIntelSecurityException("signed feed manifest must be a regular non-symlink file", nil)
 	}
 	if info.Size() <= 0 || info.Size() > maxThreatFeedManifestBytes {
-		return threatFeedManifestDocument{}, NewThreatIntelSecurityException("signed feed manifest size rejected", nil)
+		return nil, NewThreatIntelSecurityException("signed feed manifest size rejected", nil)
 	}
 	raw, err := os.ReadFile(manifestPath)
 	if err != nil {
-		return threatFeedManifestDocument{}, NewThreatIntelSecurityException("signed feed manifest read failed", err)
+		return nil, NewThreatIntelSecurityException("signed feed manifest read failed", err)
 	}
+	return raw, nil
+}
+
+// parseSignedFeedManifestDocument strictly decodes one manifest document. It does
+// not authenticate and does not check the clock; callers add exactly the checks
+// their use case needs (live acceptance must be fresh, a persisted-state anchor
+// must merely have been validly signed).
+func parseSignedFeedManifestDocument(raw []byte) (threatFeedManifestDocument, error) {
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
 	var document threatFeedManifestDocument
@@ -529,46 +603,66 @@ func (m *FeedManager) readSignedFeedManifest(manifestPath string, keys []ed25519
 	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
 		return threatFeedManifestDocument{}, NewThreatIntelSecurityException("signed feed manifest trailing data rejected", nil)
 	}
-	if err := validateSignedFeedManifest(document, time.Now().UTC(), maxAge); err != nil {
-		return threatFeedManifestDocument{}, err
-	}
+	return document, nil
+}
+
+// verifyFeedManifestSignature authenticates the detached manifest signature
+// against the pinned keys. It is shared by live verification and the
+// persisted-state anchor.
+func verifyFeedManifestSignature(document threatFeedManifestDocument, keys []ed25519.PublicKey) error {
 	if len(keys) == 0 {
-		return threatFeedManifestDocument{}, NewThreatIntelSecurityException("no pinned feed signing key is configured; signed feed manifests cannot be authenticated", nil)
+		return NewThreatIntelSecurityException("no pinned feed signing key is configured; signed feed manifests cannot be authenticated", nil)
 	}
 	signature, err := base64.StdEncoding.DecodeString(strings.TrimSpace(document.Signature))
 	if err != nil {
 		signature, err = base64.RawStdEncoding.DecodeString(strings.TrimSpace(document.Signature))
 	}
 	if err != nil || len(signature) != ed25519.SignatureSize {
-		return threatFeedManifestDocument{}, NewThreatIntelSecurityException("signed feed manifest signature encoding rejected", nil)
+		return NewThreatIntelSecurityException("signed feed manifest signature encoding rejected", nil)
 	}
 	message := threatFeedManifestMessageFor(document)
 	for _, key := range keys {
 		if ed25519.Verify(key, message, signature) {
-			return document, nil
+			return nil
 		}
 	}
-	return threatFeedManifestDocument{}, NewThreatIntelSecurityException("signed feed manifest signature verification failed", nil)
+	return NewThreatIntelSecurityException("signed feed manifest signature verification failed", nil)
 }
 
-func validateSignedFeedManifest(document threatFeedManifestDocument, now time.Time, maxAge time.Duration) error {
+// readSignedFeedManifest loads, strictly decodes and authenticates the detached
+// manifest. Any error is a fail-closed rejection: there is no code path that
+// continues with a partially trusted manifest.
+func (m *FeedManager) readSignedFeedManifest(manifestPath string, keys []ed25519.PublicKey, maxAge time.Duration) (threatFeedManifestDocument, error) {
+	raw, err := readFeedManifestRaw(manifestPath)
+	if err != nil {
+		return threatFeedManifestDocument{}, err
+	}
+	document, err := parseSignedFeedManifestDocument(raw)
+	if err != nil {
+		return threatFeedManifestDocument{}, err
+	}
+	if err := validateSignedFeedManifest(document, time.Now().UTC(), maxAge); err != nil {
+		return threatFeedManifestDocument{}, err
+	}
+	if err := verifyFeedManifestSignature(document, keys); err != nil {
+		return threatFeedManifestDocument{}, err
+	}
+	return document, nil
+}
+
+// validateSignedFeedManifestIntegrity checks everything about a manifest that
+// does not depend on the current clock. It is used by the persisted-state anchor,
+// whose anti-rollback floor must remain verifiable after the manifest's freshness
+// window has passed; a stale-but-signed manifest still authenticates history.
+func validateSignedFeedManifestIntegrity(document threatFeedManifestDocument) error {
 	if document.Schema != threatFeedManifestSchema {
 		return NewThreatIntelSecurityException("signed feed manifest schema rejected", nil)
 	}
 	if document.GeneratedAt.IsZero() || document.ValidUntil.IsZero() {
 		return NewThreatIntelSecurityException("signed feed manifest timestamps rejected", nil)
 	}
-	if document.GeneratedAt.After(now.Add(threatFeedManifestClockSkew)) {
-		return NewThreatIntelSecurityException("signed feed manifest was issued in the future", nil)
-	}
-	if !now.Before(document.ValidUntil) {
-		return NewThreatIntelSecurityException("signed feed manifest has expired; feeds fail closed until a fresh signed manifest is provisioned", nil)
-	}
 	if document.ValidUntil.Before(document.GeneratedAt) {
 		return NewThreatIntelSecurityException("signed feed manifest validity window is inverted", nil)
-	}
-	if document.ValidUntil.Sub(document.GeneratedAt) > maxAge || now.Sub(document.GeneratedAt) > maxAge {
-		return NewThreatIntelSecurityException("signed feed manifest exceeds the configured maximum age", nil)
 	}
 	if len(document.Feeds) == 0 || len(document.Feeds) > 512 {
 		return NewThreatIntelSecurityException("signed feed manifest feed count rejected", nil)
@@ -603,11 +697,32 @@ func validateSignedFeedManifest(document threatFeedManifestDocument, now time.Ti
 				return NewThreatIntelSecurityException("signed feed manifest entry action rejected", nil)
 			}
 		}
-		if entry.ValidUntil.IsZero() || !entry.ValidUntil.After(now) {
-			return NewThreatIntelSecurityException("signed feed manifest entry validity expired", nil)
+		if entry.ValidUntil.IsZero() {
+			return NewThreatIntelSecurityException("signed feed manifest entry validity rejected", nil)
 		}
 		if entry.ValidUntil.After(document.ValidUntil) {
 			return NewThreatIntelSecurityException("signed feed manifest entry validity exceeds the document window", nil)
+		}
+	}
+	return nil
+}
+
+func validateSignedFeedManifest(document threatFeedManifestDocument, now time.Time, maxAge time.Duration) error {
+	if err := validateSignedFeedManifestIntegrity(document); err != nil {
+		return err
+	}
+	if document.GeneratedAt.After(now.Add(threatFeedManifestClockSkew)) {
+		return NewThreatIntelSecurityException("signed feed manifest was issued in the future", nil)
+	}
+	if !now.Before(document.ValidUntil) {
+		return NewThreatIntelSecurityException("signed feed manifest has expired; feeds fail closed until a fresh signed manifest is provisioned", nil)
+	}
+	if document.ValidUntil.Sub(document.GeneratedAt) > maxAge || now.Sub(document.GeneratedAt) > maxAge {
+		return NewThreatIntelSecurityException("signed feed manifest exceeds the configured maximum age", nil)
+	}
+	for _, entry := range document.Feeds {
+		if !entry.ValidUntil.After(now) {
+			return NewThreatIntelSecurityException("signed feed manifest entry validity expired", nil)
 		}
 	}
 	return nil
@@ -1024,6 +1139,13 @@ type FeedManager struct {
 	feedSigningKey       *feedSigningKeyPair
 	feedSigningErr       error
 	localManifestVersion uint64
+
+	// Persisted-state integrity bookkeeping (FIND-023). Everything here is
+	// guarded by mu. The events are a bounded audit trail of what happened to the
+	// state file (authenticated load, refusal, quarantine, persist refusal) and are
+	// exposed through PersistentStateIntegrity so the refusal is observable.
+	stateIntegrityEvents []threatIntelStateIntegrityEvent
+	stateIntegrityErr    string
 }
 
 func NewFeedManager(cfg FeedConfig, stateDir ...string) *FeedManager {
@@ -1111,7 +1233,20 @@ func NewFeedManager(cfg FeedConfig, stateDir ...string) *FeedManager {
 		}
 	}
 
-	// Invariant 7: Load persisted last-known-good generation and sync timestamps
+	// The integrity mode of the persisted state follows the feed authenticity
+	// configuration. When local signing is enabled the operator key is loaded once
+	// here, before the state is read, so a signed state file can be verified during
+	// construction and a key-load failure is the same sticky, fail-closed condition
+	// the sync pipeline reports.
+	if mgr.cfg.LocalSigning {
+		if keyFile := strings.TrimSpace(mgr.cfg.SigningKeyFile); keyFile != "" {
+			_ = mgr.ensureLocalSigningKey(keyFile)
+		}
+	}
+
+	// Invariant 7: Load persisted last-known-good generation and sync timestamps.
+	// A file that cannot be authenticated is quarantined and never adopted; the
+	// manager then starts from its safe defaults instead of trusting the file.
 	_ = mgr.loadPersistentState()
 	return mgr
 }
@@ -1273,19 +1408,384 @@ func (m *FeedManager) Telemetry() ThreatIntelTelemetry {
 	}
 }
 
-func (m *FeedManager) loadPersistentState() error {
-	data, err := os.ReadFile(m.statePath)
-	if err != nil {
-		return err
+// ---------------------------------------------------------------------------
+// Persisted state integrity (FIND-023)
+// ---------------------------------------------------------------------------
+
+// persistentStateAuthenticityRequired reports whether the deployment has a feed
+// authenticity model configured. Only a pipeline that is explicitly
+// unauthenticated may persist/read plaintext state: there, the state cannot
+// weaken an authenticity guarantee that the operator switched off.
+func (m *FeedManager) persistentStateAuthenticityRequired() bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.persistentStateAuthenticityRequiredLocked()
+}
+
+func (m *FeedManager) persistentStateAuthenticityRequiredLocked() bool {
+	return m.cfg.RequireSignedManifest || m.cfg.LocalSigning || len(m.signingKeys) > 0
+}
+
+// recordStateIntegrityEventLocked appends one integrity decision to the bounded
+// audit trail and mirrors it to the journal. Repeated identical events are
+// collapsed so a failing persistence path cannot flood the log. m.mu must be held.
+func (m *FeedManager) recordStateIntegrityEventLocked(kind, detail string) {
+	if n := len(m.stateIntegrityEvents); n > 0 {
+		last := m.stateIntegrityEvents[n-1]
+		if last.Kind == kind && last.Detail == detail {
+			return
+		}
 	}
+	m.stateIntegrityEvents = append(m.stateIntegrityEvents, threatIntelStateIntegrityEvent{
+		At: time.Now().UTC(), Kind: kind, Detail: detail,
+	})
+	if len(m.stateIntegrityEvents) > threatIntelStateIntegrityEventLimit {
+		m.stateIntegrityEvents = m.stateIntegrityEvents[len(m.stateIntegrityEvents)-threatIntelStateIntegrityEventLimit:]
+	}
+	log.Printf("threat-intel state integrity: %s: %s", kind, detail)
+}
+
+func (m *FeedManager) noteStateIntegrityFailure(kind, detail string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.stateIntegrityErr = detail
+	m.recordStateIntegrityEventLocked(kind, detail)
+}
+
+func (m *FeedManager) noteStateIntegritySuccess(kind, detail string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.stateIntegrityErr = ""
+	m.recordStateIntegrityEventLocked(kind, detail)
+}
+
+// PersistentStateIntegrity returns the last persisted-state integrity error (empty
+// when the state was authenticated or absent) and a copy of the integrity event
+// trail, so a refusal is observable through the API and provable in tests.
+func (m *FeedManager) PersistentStateIntegrity() (string, []threatIntelStateIntegrityEvent) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	events := append([]threatIntelStateIntegrityEvent(nil), m.stateIntegrityEvents...)
+	return m.stateIntegrityErr, events
+}
+
+// quarantinePersistentState moves an untrusted state file aside instead of
+// deleting it. The bytes are evidence of a tampering attempt and the rename keeps
+// them for the operator; the manager then rebuilds its state from safe defaults.
+func (m *FeedManager) quarantinePersistentState(reason string) {
+	m.mu.RLock()
+	statePath := m.statePath
+	m.mu.RUnlock()
+	if strings.TrimSpace(statePath) == "" {
+		return
+	}
+	target := statePath + threatIntelStateQuarantineSuffix + fmt.Sprintf("%d", time.Now().UTC().UnixNano())
+	if err := os.Rename(statePath, target); err != nil {
+		log.Printf("threat-intel state quarantine failed (%s): %v", reason, err)
+		return
+	}
+	log.Printf("threat-intel state moved to quarantine as untrusted (%s): %s", reason, target)
+}
+
+// cloneThreatIntelPersistentState deep-copies the document including every item
+// slice, so the save path can normalise the projection without mutating the live
+// manager state.
+func cloneThreatIntelPersistentState(doc ThreatIntelPersistentState) ThreatIntelPersistentState {
+	cloned := doc
+	cloned.Feeds = make(map[string]*FeedGenerationState, len(doc.Feeds))
+	for id, state := range doc.Feeds {
+		if state == nil {
+			continue
+		}
+		copied := *state
+		copied.LastGoodItems = append([]string(nil), state.LastGoodItems...)
+		cloned.Feeds[id] = &copied
+	}
+	return cloned
+}
+
+// resetFeedGenerationProjection removes every value that is only meaningful when
+// it was authenticated by a verified manifest generation.
+func resetFeedGenerationProjection(state *FeedGenerationState) {
+	if state == nil {
+		return
+	}
+	state.LastGoodItems = nil
+	state.LastGoodCount = 0
+	state.LastGoodGen = 0
+	state.LastGoodAt = time.Time{}
+	state.LastGoodFingerprint = ""
+	state.ManifestVersion = 0
+	state.ManifestValidUntil = time.Time{}
+	state.ManifestVerified = false
+	state.ManifestAuthenticity = "UNVERIFIED"
+}
+
+func (m *FeedManager) loadPersistentState() error {
+	m.mu.RLock()
+	statePath := m.statePath
+	required := m.persistentStateAuthenticityRequiredLocked()
+	m.mu.RUnlock()
+	if strings.TrimSpace(statePath) == "" {
+		return nil
+	}
+
+	// A missing state file on first start is normal and not an integrity finding.
+	if _, statErr := os.Lstat(statePath); statErr != nil {
+		if errors.Is(statErr, os.ErrNotExist) {
+			return nil
+		}
+		m.noteStateIntegrityFailure("state.read_refused", statErr.Error())
+		return statErr
+	}
+
+	raw, readErr := readBoundedPrivateFile(statePath, maxThreatIntelStateBytes)
+	if readErr != nil {
+		m.noteStateIntegrityFailure("state.read_refused", readErr.Error())
+		m.quarantinePersistentState("state file is not a private, bounded regular file")
+		return readErr
+	}
+
+	var probe struct {
+		Schema string `json:"schema"`
+	}
+	_ = json.Unmarshal(raw, &probe)
+
+	if probe.Schema == threatIntelStateEnvelopeSchema {
+		doc, mode, verificationErr := m.verifyPersistentStateEnvelope(raw)
+		if verificationErr != nil {
+			m.noteStateIntegrityFailure("state.untrusted", verificationErr.Error())
+			m.quarantinePersistentState(verificationErr.Error())
+			return verificationErr
+		}
+		m.applyPersistentStateDocument(doc)
+		m.noteStateIntegritySuccess("state.loaded", "authenticated persisted state accepted ("+mode+")")
+		return nil
+	}
+
 	var doc ThreatIntelPersistentState
-	if err := json.Unmarshal(data, &doc); err != nil {
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		m.noteStateIntegrityFailure("state.untrusted", "persisted state is not valid JSON: "+err.Error())
+		m.quarantinePersistentState("persisted state is not valid JSON")
 		return err
 	}
 	if doc.Schema != threatIntelStateSchemaV1 && doc.Schema != threatIntelStateSchemaV2 && doc.Schema != threatIntelStateSchemaV3 {
-		return errors.New("state schema mismatch")
+		err := errors.New("state schema mismatch")
+		m.noteStateIntegrityFailure("state.untrusted", err.Error())
+		m.quarantinePersistentState(err.Error())
+		return err
+	}
+	if required {
+		// An unsigned document in a deployment that has a feed authenticity model
+		// is exactly the downgrade this fix closes: never adopt its
+		// ManifestVersion or LastGoodItems. Quarantine and rebuild.
+		err := NewThreatIntelSecurityException("persisted threat-intelligence state is not authenticated; refusing to adopt its anti-rollback floor or indicator sets", nil)
+		m.noteStateIntegrityFailure("state.untrusted", err.Error())
+		m.quarantinePersistentState(err.Error())
+		return err
 	}
 
+	// Explicitly unauthenticated pipeline: the legacy document is accepted and
+	// re-persisted in the same format, because nothing about this pipeline is
+	// authenticated in the first place.
+	m.applyPersistentStateDocument(doc)
+	m.noteStateIntegritySuccess("state.loaded_unauthenticated", "feed authenticity is not configured; legacy plaintext state accepted")
+	return nil
+}
+
+// verifyPersistentStateEnvelope authenticates the state envelope and returns the
+// document plus the mode that authenticated it. Any error is a fail-closed
+// refusal; no partially verified document is returned.
+func (m *FeedManager) verifyPersistentStateEnvelope(raw []byte) (ThreatIntelPersistentState, string, error) {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	var envelope threatIntelStateEnvelope
+	if err := decoder.Decode(&envelope); err != nil {
+		return ThreatIntelPersistentState{}, "", NewThreatIntelSecurityException("persisted state envelope is malformed", err)
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return ThreatIntelPersistentState{}, "", NewThreatIntelSecurityException("persisted state envelope contains trailing data", nil)
+	}
+	if envelope.Schema != threatIntelStateEnvelopeSchema {
+		return ThreatIntelPersistentState{}, "", NewThreatIntelSecurityException("persisted state envelope schema rejected", nil)
+	}
+	m.mu.RLock()
+	keys := append([]ed25519.PublicKey(nil), m.signingKeys...)
+	m.mu.RUnlock()
+	switch envelope.Mode {
+	case threatIntelStateModeSigned:
+		return decodeSignedPersistentStateEnvelope(envelope, keys)
+	case threatIntelStateModeAnchor:
+		return m.decodeAnchoredPersistentStateEnvelope(envelope, keys)
+	default:
+		return ThreatIntelPersistentState{}, "", NewThreatIntelSecurityException("persisted state envelope authenticity mode rejected", nil)
+	}
+}
+
+func decodePersistentStateEnvelopePayload(envelope threatIntelStateEnvelope) ([]byte, error) {
+	payload, err := base64.StdEncoding.DecodeString(strings.TrimSpace(envelope.Payload))
+	if err != nil {
+		payload, err = base64.RawStdEncoding.DecodeString(strings.TrimSpace(envelope.Payload))
+	}
+	if err != nil || len(payload) == 0 {
+		return nil, NewThreatIntelSecurityException("persisted state payload encoding rejected", nil)
+	}
+	if len(payload) > maxThreatIntelStateBytes {
+		return nil, NewThreatIntelSecurityException("persisted state payload exceeds the bounded size", nil)
+	}
+	return payload, nil
+}
+
+func decodePersistentStateDocumentPayload(payload []byte) (ThreatIntelPersistentState, error) {
+	var doc ThreatIntelPersistentState
+	decoder := json.NewDecoder(bytes.NewReader(payload))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&doc); err != nil {
+		return ThreatIntelPersistentState{}, NewThreatIntelSecurityException("persisted state payload JSON rejected", err)
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return ThreatIntelPersistentState{}, NewThreatIntelSecurityException("persisted state payload contains trailing data", nil)
+	}
+	if doc.Schema != threatIntelStateSchemaV1 && doc.Schema != threatIntelStateSchemaV2 && doc.Schema != threatIntelStateSchemaV3 {
+		return ThreatIntelPersistentState{}, NewThreatIntelSecurityException("persisted state payload schema rejected", nil)
+	}
+	return doc, nil
+}
+
+// decodeSignedPersistentStateEnvelope verifies the Ed25519 signature over the
+// exact payload bytes against a pinned feed signing key. The envelope names its
+// key, but the key must be one of the bootstrap pins: a state file cannot
+// install its own trust anchor.
+func decodeSignedPersistentStateEnvelope(envelope threatIntelStateEnvelope, keys []ed25519.PublicKey) (ThreatIntelPersistentState, string, error) {
+	if len(keys) == 0 {
+		return ThreatIntelPersistentState{}, "", NewThreatIntelSecurityException("persisted state is signed but no pinned feed signing key is configured; state refused", nil)
+	}
+	publicKeyBytes, err := base64.StdEncoding.DecodeString(strings.TrimSpace(envelope.PublicKey))
+	if err != nil {
+		publicKeyBytes, err = base64.RawStdEncoding.DecodeString(strings.TrimSpace(envelope.PublicKey))
+	}
+	if err != nil || len(publicKeyBytes) != ed25519.PublicKeySize {
+		return ThreatIntelPersistentState{}, "", NewThreatIntelSecurityException("persisted state envelope public key rejected", nil)
+	}
+	publicKey := ed25519.PublicKey(publicKeyBytes)
+	pinned := false
+	for _, key := range keys {
+		if key.Equal(publicKey) {
+			pinned = true
+			break
+		}
+	}
+	if !pinned {
+		return ThreatIntelPersistentState{}, "", NewThreatIntelSecurityException("persisted state envelope names a feed signing key that is not pinned", nil)
+	}
+	signature, err := base64.StdEncoding.DecodeString(strings.TrimSpace(envelope.Signature))
+	if err != nil {
+		signature, err = base64.RawStdEncoding.DecodeString(strings.TrimSpace(envelope.Signature))
+	}
+	if err != nil || len(signature) != ed25519.SignatureSize {
+		return ThreatIntelPersistentState{}, "", NewThreatIntelSecurityException("persisted state signature encoding rejected", nil)
+	}
+	payload, err := decodePersistentStateEnvelopePayload(envelope)
+	if err != nil {
+		return ThreatIntelPersistentState{}, "", err
+	}
+	if !ed25519.Verify(publicKey, threatIntelStateSignatureMessage(payload), signature) {
+		return ThreatIntelPersistentState{}, "", NewThreatIntelSecurityException("persisted state signature verification failed", nil)
+	}
+	doc, err := decodePersistentStateDocumentPayload(payload)
+	if err != nil {
+		return ThreatIntelPersistentState{}, "", err
+	}
+	return doc, threatIntelStateModeSigned, nil
+}
+
+// decodeAnchoredPersistentStateEnvelope authenticates the state against an
+// embedded, Ed25519-signed feed manifest. The manifest signature is checked with
+// the pinned keys; the anti-rollback floor, validity window and indicator sets of
+// every feed must match the authenticated manifest entries. Anything that cannot
+// be bound is dropped (never adopted); a malformed envelope refuses the whole
+// document.
+func (m *FeedManager) decodeAnchoredPersistentStateEnvelope(envelope threatIntelStateEnvelope, keys []ed25519.PublicKey) (ThreatIntelPersistentState, string, error) {
+	if len(keys) == 0 {
+		return ThreatIntelPersistentState{}, "", NewThreatIntelSecurityException("persisted state is anchored to a manifest but no pinned feed signing key is configured; state refused", nil)
+	}
+	manifestRaw, err := base64.StdEncoding.DecodeString(strings.TrimSpace(envelope.Manifest))
+	if err != nil {
+		manifestRaw, err = base64.RawStdEncoding.DecodeString(strings.TrimSpace(envelope.Manifest))
+	}
+	if err != nil || len(manifestRaw) == 0 || len(manifestRaw) > maxThreatFeedManifestBytes {
+		return ThreatIntelPersistentState{}, "", NewThreatIntelSecurityException("persisted state manifest anchor encoding rejected", nil)
+	}
+	manifest, err := parseSignedFeedManifestDocument(manifestRaw)
+	if err != nil {
+		return ThreatIntelPersistentState{}, "", err
+	}
+	// A historical manifest authenticates history even after its freshness window:
+	// the anti-rollback floor must survive a restart during an offline window.
+	if err := validateSignedFeedManifestIntegrity(manifest); err != nil {
+		return ThreatIntelPersistentState{}, "", err
+	}
+	if err := verifyFeedManifestSignature(manifest, keys); err != nil {
+		return ThreatIntelPersistentState{}, "", err
+	}
+	payload, err := decodePersistentStateEnvelopePayload(envelope)
+	if err != nil {
+		return ThreatIntelPersistentState{}, "", err
+	}
+	doc, err := decodePersistentStateDocumentPayload(payload)
+	if err != nil {
+		return ThreatIntelPersistentState{}, "", err
+	}
+	entries := make(map[string]threatFeedManifestEntry, len(manifest.Feeds))
+	for _, entry := range manifest.Feeds {
+		entries[entry.ID] = entry
+	}
+	for id, state := range doc.Feeds {
+		if state == nil {
+			continue
+		}
+		entry, known := entries[id]
+		if !known {
+			if state.ManifestVersion != 0 || state.ManifestVerified || len(state.LastGoodItems) > 0 {
+				m.noteStateIntegrityFailure("state.feed_projection_refused", "feed "+id+" is not covered by the signed state anchor; its persisted generation was not adopted")
+				resetFeedGenerationProjection(state)
+			}
+			continue
+		}
+		if state.ManifestVersion != 0 && state.ManifestVersion != entry.Version {
+			m.noteStateIntegrityFailure("state.feed_projection_refused", fmt.Sprintf("feed %s persisted generation %d does not match the signed manifest generation %d; projection not adopted", id, state.ManifestVersion, entry.Version))
+			resetFeedGenerationProjection(state)
+			continue
+		}
+		if len(state.LastGoodItems) > 0 {
+			itemsDigest := computeFingerprint(state.LastGoodItems)
+			if !strings.EqualFold(itemsDigest, entry.ItemsSHA256) || !strings.EqualFold(state.LastGoodFingerprint, entry.ItemsSHA256) {
+				m.noteStateIntegrityFailure("state.feed_projection_refused", "feed "+id+" persisted indicator set does not match the signed manifest digest; projection not adopted")
+				resetFeedGenerationProjection(state)
+				continue
+			}
+		} else {
+			state.LastGoodAt = time.Time{}
+			state.LastGoodGen = 0
+			state.LastGoodFingerprint = ""
+		}
+		// The authenticated manifest entry is authoritative for the window and the
+		// verification flag; the persisted copies are replaced, not trusted.
+		state.LastGoodCount = len(state.LastGoodItems)
+		state.ManifestValidUntil = entry.ValidUntil
+		state.ManifestVerified = len(state.LastGoodItems) > 0
+		if state.ManifestVersion > 0 {
+			state.ManifestAuthenticity = "SIGNED"
+		} else {
+			state.ManifestAuthenticity = "UNVERIFIED"
+		}
+	}
+	return doc, threatIntelStateModeAnchor, nil
+}
+
+// applyPersistentStateDocument installs an already authenticated (or explicitly
+// unauthenticated) document into the live manager state.
+func (m *FeedManager) applyPersistentStateDocument(doc ThreatIntelPersistentState) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -1329,6 +1829,9 @@ func (m *FeedManager) loadPersistentState() error {
 	m.fingerprint = doc.Fingerprint
 
 	for id, state := range doc.Feeds {
+		if state == nil {
+			continue
+		}
 		if existing, ok := m.feedStates[id]; ok {
 			existing.LastGoodItems = state.LastGoodItems
 			existing.LastGoodCount = len(state.LastGoodItems)
@@ -1357,7 +1860,163 @@ func (m *FeedManager) loadPersistentState() error {
 	m.blockIndex.Replace(blockItems)
 	m.correlateIndex.Replace(corrItems)
 	m.annotateIndex.Replace(annotItems)
+}
+
+// persistentStateSigningKeyLocked returns the operator feed-signing key when
+// local signing is enabled and the key is one of the pinned trust anchors.
+// Anything else returns nil; the caller then falls back to the manifest anchor or
+// fails closed.
+func (m *FeedManager) persistentStateSigningKeyLocked() *feedSigningKeyPair {
+	if !m.cfg.LocalSigning {
+		return nil
+	}
+	keyFile := strings.TrimSpace(m.cfg.SigningKeyFile)
+	if keyFile == "" {
+		return nil
+	}
+	key, _ := m.localSigningKeyState()
+	if key == nil {
+		if err := m.ensureLocalSigningKey(keyFile); err != nil {
+			return nil
+		}
+		key, _ = m.localSigningKeyState()
+	}
+	if key == nil || len(key.private) != ed25519.PrivateKeySize {
+		return nil
+	}
+	for _, pinned := range m.signingKeys {
+		if pinned.Equal(key.public) {
+			return key
+		}
+	}
 	return nil
+}
+
+// currentSignedManifestForStateAnchorLocked loads the current signed manifest for
+// the state anchor. The live acceptance rules (freshness, signature) apply: only
+// a manifest that would be accepted for feeds may anchor the persisted state.
+func (m *FeedManager) currentSignedManifestForStateAnchorLocked() ([]byte, threatFeedManifestDocument, error) {
+	_, keys, manifestPath, maxAge := m.signingConfigLocked()
+	if len(keys) == 0 {
+		return nil, threatFeedManifestDocument{}, errors.New("persisted state cannot be anchored: no pinned feed signing key is configured")
+	}
+	raw, err := readFeedManifestRaw(manifestPath)
+	if err != nil {
+		return nil, threatFeedManifestDocument{}, fmt.Errorf("persisted state cannot be anchored: %w", err)
+	}
+	document, err := parseSignedFeedManifestDocument(raw)
+	if err != nil {
+		return nil, threatFeedManifestDocument{}, fmt.Errorf("persisted state cannot be anchored: %w", err)
+	}
+	if err := validateSignedFeedManifest(document, time.Now().UTC(), maxAge); err != nil {
+		return nil, threatFeedManifestDocument{}, fmt.Errorf("persisted state cannot be anchored: %w", err)
+	}
+	if err := verifyFeedManifestSignature(document, keys); err != nil {
+		return nil, threatFeedManifestDocument{}, fmt.Errorf("persisted state cannot be anchored: %w", err)
+	}
+	return raw, document, nil
+}
+
+// anchorPersistentStateDocumentLocked normalises the document against the current
+// signed manifest before it is persisted: the anti-rollback floor may only rise
+// to an authenticated generation, indicator sets that the current manifest does
+// not bind are dropped, and a persisted generation newer than the signed manifest
+// is refused instead of silently lowering the floor.
+func (m *FeedManager) anchorPersistentStateDocumentLocked(doc ThreatIntelPersistentState, manifest threatFeedManifestDocument) (ThreatIntelPersistentState, error) {
+	entries := make(map[string]threatFeedManifestEntry, len(manifest.Feeds))
+	for _, entry := range manifest.Feeds {
+		entries[entry.ID] = entry
+	}
+	for id, state := range doc.Feeds {
+		if state == nil {
+			continue
+		}
+		entry, known := entries[id]
+		if !known {
+			resetFeedGenerationProjection(state)
+			continue
+		}
+		if state.ManifestVersion > entry.Version {
+			return ThreatIntelPersistentState{}, fmt.Errorf(
+				"persisted feed %s generation %d is newer than the signed manifest generation %d; refusing to persist an unauthenticated anti-rollback floor", id, state.ManifestVersion, entry.Version)
+		}
+		if state.ManifestVersion == entry.Version && state.ManifestVerified && len(state.LastGoodItems) > 0 &&
+			strings.EqualFold(state.LastGoodFingerprint, entry.ItemsSHA256) &&
+			strings.EqualFold(computeFingerprint(state.LastGoodItems), entry.ItemsSHA256) {
+			state.ManifestValidUntil = entry.ValidUntil
+			state.LastGoodCount = len(state.LastGoodItems)
+			state.ManifestAuthenticity = "SIGNED"
+			continue
+		}
+		// The persisted indicator set is not bound by the current signed
+		// manifest. Keep an authenticated floor (raising it to the manifest
+		// generation is monotonic and cannot enable a rollback) but never the
+		// unbound items.
+		state.ManifestVersion = entry.Version
+		state.ManifestValidUntil = entry.ValidUntil
+		state.ManifestVerified = false
+		state.ManifestAuthenticity = "UNVERIFIED"
+		state.LastGoodItems = nil
+		state.LastGoodCount = 0
+		state.LastGoodGen = 0
+		state.LastGoodAt = time.Time{}
+		state.LastGoodFingerprint = ""
+	}
+	return doc, nil
+}
+
+// encodePersistentStateDocumentLocked serialises the document in the integrity
+// mode the configuration allows. It returns an error (and thus refuses the save)
+// when a feed authenticity model is configured but no authenticated format can be
+// produced: an unsigned write in that state would be a silent downgrade.
+func (m *FeedManager) encodePersistentStateDocumentLocked(doc ThreatIntelPersistentState) ([]byte, error) {
+	doc = cloneThreatIntelPersistentState(doc)
+	if !m.persistentStateAuthenticityRequiredLocked() {
+		return json.MarshalIndent(doc, "", "  ")
+	}
+	payload, err := json.Marshal(doc)
+	if err != nil {
+		return nil, err
+	}
+	if key := m.persistentStateSigningKeyLocked(); key != nil {
+		signature := ed25519.Sign(key.private, threatIntelStateSignatureMessage(payload))
+		return marshalPersistentStateEnvelope(threatIntelStateEnvelope{
+			Schema:    threatIntelStateEnvelopeSchema,
+			Mode:      threatIntelStateModeSigned,
+			Payload:   base64.StdEncoding.EncodeToString(payload),
+			PublicKey: feedSigningPublicKeyBase64(key.public),
+			Signature: base64.StdEncoding.EncodeToString(signature),
+		})
+	}
+	manifestRaw, manifest, err := m.currentSignedManifestForStateAnchorLocked()
+	if err != nil {
+		return nil, err
+	}
+	anchored, err := m.anchorPersistentStateDocumentLocked(doc, manifest)
+	if err != nil {
+		return nil, err
+	}
+	anchoredPayload, err := json.Marshal(anchored)
+	if err != nil {
+		return nil, err
+	}
+	return marshalPersistentStateEnvelope(threatIntelStateEnvelope{
+		Schema:   threatIntelStateEnvelopeSchema,
+		Mode:     threatIntelStateModeAnchor,
+		Payload:  base64.StdEncoding.EncodeToString(anchoredPayload),
+		Manifest: base64.StdEncoding.EncodeToString(manifestRaw),
+	})
+}
+
+func marshalPersistentStateEnvelope(envelope threatIntelStateEnvelope) ([]byte, error) {
+	encoded, err := json.MarshalIndent(envelope, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	if len(encoded) > maxThreatIntelStateBytes {
+		return nil, fmt.Errorf("persisted state envelope exceeds the bounded state size of %d bytes", maxThreatIntelStateBytes)
+	}
+	return encoded, nil
 }
 
 func (m *FeedManager) savePersistentStateLocked() error {
@@ -1378,8 +2037,10 @@ func (m *FeedManager) savePersistentStateLocked() error {
 		Fingerprint:                 m.fingerprint,
 		Feeds:                       m.feedStates,
 	}
-	data, err := json.MarshalIndent(doc, "", "  ")
+	data, err := m.encodePersistentStateDocumentLocked(doc)
 	if err != nil {
+		m.stateIntegrityErr = err.Error()
+		m.recordStateIntegrityEventLocked("state.persist_refused", err.Error())
 		return err
 	}
 	if err := os.MkdirAll(filepath.Dir(m.statePath), 0o700); err != nil {
@@ -1387,7 +2048,13 @@ func (m *FeedManager) savePersistentStateLocked() error {
 	}
 	// Feed state is the record of which indicators were published; it goes through
 	// the same symlink-refusing atomic writer as every other store.
-	return atomicWriteFile(m.statePath, data, 0o600)
+	if err := atomicWriteFile(m.statePath, data, 0o600); err != nil {
+		m.stateIntegrityErr = err.Error()
+		m.recordStateIntegrityEventLocked("state.persist_failed", err.Error())
+		return err
+	}
+	m.stateIntegrityErr = ""
+	return nil
 }
 
 // SyncWithLock acquires the lock with live-owner invariant and executes synchronization.
@@ -2189,7 +2856,7 @@ func (m *FeedManager) fetchFeedRawOnce(ctx context.Context, src ThreatFeedSource
 	if err != nil {
 		return nil, "", err
 	}
-	req.Header.Set("User-Agent", "VGT-GeDefense/5.1.0-beta.3 sovereign-threat-intel")
+	req.Header.Set("User-Agent", "VGT-GeDefense/5.2.0 sovereign-threat-intel")
 	req.Header.Set("Accept", "text/plain, application/json, */*")
 
 	resp, err := m.client.Do(req)

@@ -35,8 +35,19 @@ type AirlockValidationException struct{ AirlockException }
 type AirlockSecurityException struct{ AirlockException }
 type AirlockStorageException struct{ AirlockException }
 
+// AirlockBoundaryException marks a refusal because the inspected path left the
+// configured staging root or resolved through a symbolic link. The API layer maps
+// it to 403 Forbidden and records an event: this is not "the object was scanned
+// and found clean", it is "the object was never looked at because the request
+// tried to escape the jail".
+type AirlockBoundaryException struct{ AirlockException }
+
 func NewAirlockValidationException(msg string, err error) *AirlockValidationException {
 	return &AirlockValidationException{AirlockException{Message: msg, Err: err}}
+}
+
+func NewAirlockBoundaryException(msg string, err error) *AirlockBoundaryException {
+	return &AirlockBoundaryException{AirlockException{Message: msg, Err: err}}
 }
 
 func NewAirlockSecurityException(msg string, err error) *AirlockSecurityException {
@@ -82,6 +93,10 @@ var (
 	svgDataURIPattern        = regexp.MustCompile(`(?i)(?:href|xlink:href|src)\s*=\s*["']?\s*data\s*:\s*(?:image/svg\+xml|text/html|application/xhtml\+xml)`)
 	svgForeignObjectPattern  = regexp.MustCompile(`(?i)<\s*foreignObject\b`)
 	svgNamespacePattern      = regexp.MustCompile(`(?i)xmlns\s*=\s*["']http://www.w3.org/2000/svg["']|<svg\b`)
+	// svgDataURIMarkerPattern is the ASCII case-insensitive twin of the historical
+	// bytes.Contains(bytes.ToLower(...), "data:image/svg+xml") check. A regexp
+	// avoids allocating a lower-cased copy of every scan window.
+	svgDataURIMarkerPattern = regexp.MustCompile(`(?i)data:image/svg\+xml`)
 )
 
 // declaredMediaTypes maps a declared extension to its expected media type.
@@ -95,11 +110,195 @@ var declaredMediaTypes = map[string]string{
 // scriptCapableExtensions are file classes a web server may execute or render as
 // active content. They are escalated according to the existing executable
 // upload policy (reject => refused, report => visible finding).
+//
+// The list is enforced for every inspected object, not only inside the SVG
+// branch: a control that only ran for one declared extension reported a clean
+// .php/.jsp/.js upload whenever its bytes carried no obvious polyglot marker.
 var scriptCapableExtensions = map[string]struct{}{
 	".php": {}, ".phtml": {}, ".php3": {}, ".php4": {}, ".php5": {}, ".phar": {},
 	".cgi": {}, ".pl": {}, ".py": {}, ".rb": {}, ".sh": {}, ".bash": {}, ".lua": {},
 	".html": {}, ".htm": {}, ".xhtml": {}, ".shtml": {}, ".svg": {},
 	".jsp": {}, ".jspx": {}, ".asp": {}, ".aspx": {}, ".cshtml": {},
+	".js": {}, ".mjs": {}, ".cjs": {}, ".wasm": {},
+}
+
+// Scan bounds for the content inspection.
+//
+// The historical implementation read one 64 KiB sample and evaluated every
+// pattern against it, so a payload after byte 65536 was invisible: a clean
+// header was enough to pass. The scan now streams the object in bounded chunks
+// with a one-chunk overlap, which makes a marker after any offset detectable at
+// constant memory cost. A one-chunk overlap keeps a token that spans a chunk
+// boundary observable as well.
+//
+// The budget is a hard, deterministic policy bound: an object larger than
+// airlockScanBudgetBytes is refused instead of being scanned only in part. A
+// silent partial inspection is worse than a rejection that names its reason,
+// because it reports "clean" for bytes that were never looked at.
+const (
+	airlockInspectHeaderBytes = 1024
+	airlockScanChunkBytes     = 64 << 10
+	airlockScanOverlapBytes   = 64 << 10
+	airlockScanBudgetBytes    = 64 << 20
+)
+
+// airlockContentSignals accumulates the independent content classes while the
+// bytes are streamed. The evaluation order that assigns the reported threat
+// type stays in evaluateInspection; this type only records what was seen.
+type airlockContentSignals struct {
+	htmlActiveContent bool
+	svgXXE            bool
+	svgActiveContent  bool
+	svgDataURI        bool
+	polyglotIndex     int
+}
+
+func newAirlockContentSignals() airlockContentSignals {
+	return airlockContentSignals{polyglotIndex: -1}
+}
+
+// complete reports whether every content class has already been observed, so
+// the remaining bytes only need to be read (for the digest) and no longer
+// matched.
+func (s *airlockContentSignals) complete() bool {
+	return s.htmlActiveContent && s.svgXXE && s.svgActiveContent && s.svgDataURI && s.polyglotIndex >= 0
+}
+
+func (s *airlockContentSignals) consume(window []byte) {
+	if len(window) == 0 {
+		return
+	}
+	if !s.htmlActiveContent && htmlActiveContentPattern.Match(window) {
+		s.htmlActiveContent = true
+	}
+	if !s.svgXXE && svgXXEEntity.Match(window) {
+		s.svgXXE = true
+	}
+	if !s.svgActiveContent && (svgActiveElementPattern.Match(window) || svgDataURIPattern.Match(window) ||
+		svgForeignObjectPattern.Match(window) || svgDangerousAttrs.Match(window) || svgJavascriptURI.Match(window)) {
+		s.svgActiveContent = true
+	}
+	if !s.svgDataURI && (svgDataURIMarkerPattern.Match(window) ||
+		(svgNamespacePattern.Match(window) && svgActiveElementPattern.Match(window))) {
+		s.svgDataURI = true
+	}
+	if s.polyglotIndex < 0 {
+		for index, re := range dangerousPolyglotPatterns {
+			if re.Match(window) {
+				s.polyglotIndex = index
+				break
+			}
+		}
+	}
+}
+
+// scanAirlockBytes applies the streaming scan to an in-memory object.
+func scanAirlockBytes(data []byte, signals *airlockContentSignals) {
+	for offset := 0; offset < len(data); offset += airlockScanChunkBytes {
+		end := offset + airlockScanChunkBytes + airlockScanOverlapBytes
+		if end > len(data) {
+			end = len(data)
+		}
+		signals.consume(data[offset:end])
+		if signals.complete() {
+			return
+		}
+	}
+}
+
+// scanAirlockReader applies the same bounded, overlapping scan to a stream. It
+// consumes the entire reader even after every class was seen, because the
+// caller computes the object digest from the same pass.
+func scanAirlockReader(source io.Reader, signals *airlockContentSignals) error {
+	chunk := make([]byte, airlockScanChunkBytes)
+	carry := make([]byte, 0, airlockScanOverlapBytes)
+	window := make([]byte, 0, airlockScanChunkBytes+airlockScanOverlapBytes)
+	for {
+		n, readErr := io.ReadFull(source, chunk)
+		if n > 0 {
+			window = window[:0]
+			window = append(window, carry...)
+			window = append(window, chunk[:n]...)
+			if !signals.complete() {
+				signals.consume(window)
+			}
+			if len(window) > airlockScanOverlapBytes {
+				carry = append(carry[:0], window[len(window)-airlockScanOverlapBytes:]...)
+			} else {
+				carry = append(carry[:0], window...)
+			}
+		}
+		if readErr != nil {
+			if readErr == io.EOF || readErr == io.ErrUnexpectedEOF {
+				return nil
+			}
+			return readErr
+		}
+	}
+}
+
+// airlockJailedRelativePath maps a requested inspection path onto the
+// configured inspection root and proves the result stays inside it.
+//
+// The path is cleaned first, so absolute traversal (root/../etc/hostname) and
+// dot-segments cannot name a parent directory. An absolute request must then
+// live below the canonical root; a relative request is interpreted relative to
+// that root. The returned name is a clean relative name that openBeneath walks
+// one component at a time without ever following a symbolic link.
+func airlockJailedRelativePath(root, requested string) (string, error) {
+	trimmed := strings.TrimSpace(requested)
+	if trimmed == "" || strings.ContainsRune(trimmed, '\x00') {
+		return "", NewAirlockBoundaryException("inspection target path is empty or malformed", nil)
+	}
+	cleaned := filepath.Clean(trimmed)
+	var relative string
+	if filepath.IsAbs(cleaned) {
+		rel, err := filepath.Rel(root, cleaned)
+		if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+			return "", NewAirlockBoundaryException("inspection target is outside the configured inspection root", nil)
+		}
+		relative = rel
+	} else {
+		relative = cleaned
+	}
+	if relative == "" || relative == "." || relative == ".." || strings.HasPrefix(relative, ".."+string(os.PathSeparator)) ||
+		filepath.IsAbs(relative) || len(relative) > 2048 {
+		return "", NewAirlockBoundaryException("inspection target is outside the configured inspection root", nil)
+	}
+	for _, component := range strings.Split(relative, string(os.PathSeparator)) {
+		if component == "" || component == "." || component == ".." {
+			return "", NewAirlockBoundaryException("inspection target contains a non-canonical path component", nil)
+		}
+	}
+	return relative, nil
+}
+
+// inspectionRoot resolves the canonical staging/quarantine root that every
+// on-disk inspection is bound to. It comes from the administrable airlock
+// policy (quarantine_directory) and falls back to the root the inspector was
+// constructed with; an unconfigured or non-absolute root is a fail-closed
+// condition, never an implicit "current directory".
+func (a *AirlockInspector) inspectionRoot(policy airlockPolicy) (string, error) {
+	candidate := strings.TrimSpace(policy.quarantineDir)
+	if candidate == "" {
+		a.mu.RLock()
+		candidate = strings.TrimSpace(a.quarantineDir)
+		a.mu.RUnlock()
+	}
+	if candidate == "" {
+		return "", NewAirlockValidationException("airlock inspection root is not configured", nil)
+	}
+	if !filepath.IsAbs(candidate) {
+		return "", NewAirlockValidationException("airlock inspection root must be an absolute path", nil)
+	}
+	// Resolve the root once so the jail anchor is a real directory. The walk
+	// below every component still refuses a symbolic link, which keeps the
+	// resolution from becoming a trust decision.
+	resolved, err := filepath.EvalSymlinks(filepath.Clean(candidate))
+	if err != nil {
+		return "", NewAirlockStorageException("airlock inspection root is unavailable", err)
+	}
+	return resolved, nil
 }
 
 // activeContentMIME lists detected media types that are never benign when they
@@ -195,6 +394,97 @@ func DetectMagicType(buf []byte) string {
 }
 
 // InspectFile conducts comprehensive Magic-Byte, polyglot and cross-extension verification.
+//
+// The path is attacker-influenced (it arrives in an authenticated JSON request),
+// so it is never passed to os.Stat/os.Open directly:
+//
+//   - it must live below the canonical inspection root (filepath.Clean +
+//     filepath.Rel), and a symlink in any component is refused;
+//   - the file is opened through openBeneath, which descends the jail one
+//     descriptor at a time with openat(2)+O_NOFOLLOW, so a path component
+//     replaced between check and open cannot redirect the read (no TOCTOU);
+//   - the opened descriptor is what is stat'ed, hashed and scanned, so the
+//     inspected bytes are exactly the opened object.
+func (a *AirlockInspector) InspectFile(filePath string) (*AirlockInspectionResult, error) {
+	policy := a.policySnapshot()
+	root, err := a.inspectionRoot(policy)
+	if err != nil {
+		return nil, err
+	}
+	relative, err := airlockJailedRelativePath(root, filePath)
+	if err != nil {
+		return nil, err
+	}
+
+	// Lstat classifies the final component before the descriptor walk: a
+	// symbolic link is refused explicitly instead of surfacing as a generic
+	// resolve error. Enforcement does not depend on this check.
+	info, err := os.Lstat(filepath.Join(root, relative))
+	if err != nil {
+		return nil, NewAirlockValidationException("target file inaccessible", err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return nil, NewAirlockBoundaryException("inspection target is a symbolic link; refusing to follow it", nil)
+	}
+	if !info.Mode().IsRegular() {
+		return nil, NewAirlockBoundaryException("inspection target must be a regular file", nil)
+	}
+	// A symlinked parent directory would make the Lstat above resolve through
+	// it while the descriptor walk below refuses it. Classifying it as a jail
+	// refusal gives the API a 403 instead of a generic storage error; the
+	// refusal itself is enforced by openBeneath, not by this diagnostic.
+	if jailPathIsSymlinked(root, relative) {
+		return nil, NewAirlockBoundaryException("inspection target resolves through a symbolic link", nil)
+	}
+
+	file, err := openBeneath(root, relative, os.O_RDONLY, 0)
+	if err != nil {
+		return nil, NewAirlockStorageException("failed to open inspection target", err)
+	}
+	defer file.Close()
+
+	opened, err := file.Stat()
+	if err != nil {
+		return nil, NewAirlockStorageException("failed to stat inspection target", err)
+	}
+	if !opened.Mode().IsRegular() {
+		return nil, NewAirlockBoundaryException("inspection target is not a regular file", nil)
+	}
+	// Pattern 1.5.B: File size measured on the opened object, not on a path.
+	fileSize := opened.Size()
+	if fileSize <= 0 || fileSize > policy.maxFileSize {
+		return nil, NewAirlockValidationException(fmt.Sprintf("file size boundary violation: %d bytes", fileSize), nil)
+	}
+	if fileSize > airlockScanBudgetBytes {
+		// Deterministic rejection instead of a silent partial scan: a "clean"
+		// verdict for bytes that were never inspected is the failure mode this
+		// budget exists to prevent.
+		return nil, NewAirlockValidationException(
+			fmt.Sprintf("file exceeds the deterministic content-scan budget of %d bytes; inspection refused without a partial scan", int64(airlockScanBudgetBytes)), nil)
+	}
+
+	prefixBuf := make([]byte, airlockInspectHeaderBytes)
+	n, readErr := io.ReadFull(file, prefixBuf)
+	if readErr != nil && readErr != io.EOF && readErr != io.ErrUnexpectedEOF {
+		return nil, NewAirlockStorageException("failed to read file header", readErr)
+	}
+	prefix := prefixBuf[:n]
+
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return nil, NewAirlockStorageException("failed to rewind inspection target", err)
+	}
+	hasher := sha256.New()
+	signals := newAirlockContentSignals()
+	if err := scanAirlockReader(io.TeeReader(file, hasher), &signals); err != nil {
+		return nil, NewAirlockStorageException("failed to scan inspection target", err)
+	}
+	digest := hex.EncodeToString(hasher.Sum(nil))
+
+	return a.evaluateInspection(relative, fileSize, digest, DetectMagicType(prefix), prefix, signals)
+}
+
+// policySnapshot returns the administrable inspection posture with its safe,
+// fail-closed defaults applied.
 func (a *AirlockInspector) policySnapshot() airlockPolicy {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
@@ -267,73 +557,26 @@ func (p airlockPolicy) escalateScore(rejectScore int) int {
 	return airlockReportOnlyScore
 }
 
-func (a *AirlockInspector) InspectFile(filePath string) (*AirlockInspectionResult, error) {
-	fi, err := os.Stat(filePath)
-	if err != nil {
-		return nil, NewAirlockValidationException("target file inaccessible", err)
-	}
-
-	// Pattern 1.5.B: File size measured on actual disk file
-	fileSize := fi.Size()
-	policy := a.policySnapshot()
-	if fileSize <= 0 || fileSize > policy.maxFileSize {
-		return nil, NewAirlockValidationException(fmt.Sprintf("file size boundary violation: %d bytes", fileSize), nil)
-	}
-
-	f, err := os.Open(filePath)
-	if err != nil {
-		return nil, NewAirlockStorageException("failed to open inspection target", err)
-	}
-	defer f.Close()
-
-	// Read header prefix (first 1024 bytes)
-	prefixBuf := make([]byte, 1024)
-	n, err := f.Read(prefixBuf)
-	if err != nil && err != io.EOF {
-		return nil, NewAirlockStorageException("failed to read file header", err)
-	}
-	prefix := prefixBuf[:n]
-
-	// Compute full SHA-256
-	hasher := sha256.New()
-	hasher.Write(prefix)
-	if _, err := io.Copy(hasher, f); err != nil {
-		return nil, NewAirlockStorageException("failed to hash inspection target", err)
-	}
-	digest := hex.EncodeToString(hasher.Sum(nil))
-
-	detectedMime := DetectMagicType(prefix)
-	if _, err := f.Seek(0, io.SeekStart); err != nil {
-		return nil, NewAirlockStorageException("failed to rewind inspection target", err)
-	}
-	body := make([]byte, 65536)
-	bodyBytesRead, readErr := io.ReadFull(f, body)
-	if readErr != nil && readErr != io.EOF && readErr != io.ErrUnexpectedEOF {
-		return nil, NewAirlockStorageException("failed to read inspection sample", readErr)
-	}
-	body = body[:bodyBytesRead]
-
-	return a.evaluateContent(filePath, fileSize, digest, detectedMime, body)
-}
-
 // InspectBytes inspects an in-memory object without staging attacker-controlled content on disk.
 func (a *AirlockInspector) InspectBytes(filename string, data []byte) (*AirlockInspectionResult, error) {
 	policy := a.policySnapshot()
 	if len(data) == 0 || int64(len(data)) > policy.maxFileSize {
 		return nil, NewAirlockValidationException(fmt.Sprintf("file size boundary violation: %d bytes", len(data)), nil)
 	}
+	if int64(len(data)) > airlockScanBudgetBytes {
+		return nil, NewAirlockValidationException(
+			fmt.Sprintf("object exceeds the deterministic content-scan budget of %d bytes; inspection refused without a partial scan", int64(airlockScanBudgetBytes)), nil)
+	}
 	digestBytes := sha256.Sum256(data)
 	digest := hex.EncodeToString(digestBytes[:])
 	prefixEnd := len(data)
-	if prefixEnd > 1024 {
-		prefixEnd = 1024
-	}
-	sampleEnd := len(data)
-	if sampleEnd > 65536 {
-		sampleEnd = 65536
+	if prefixEnd > airlockInspectHeaderBytes {
+		prefixEnd = airlockInspectHeaderBytes
 	}
 	detectedMime := DetectMagicType(data[:prefixEnd])
-	result, err := a.evaluateContent(filename, int64(len(data)), digest, detectedMime, data[:sampleEnd])
+	signals := newAirlockContentSignals()
+	scanAirlockBytes(data, &signals)
+	result, err := a.evaluateInspection(filename, int64(len(data)), digest, detectedMime, data[:prefixEnd], signals)
 
 	// Preservation-on-reject: when the operator asked for automatic quarantine,
 	// a refused object is staged so the evidence survives the request.
@@ -349,7 +592,10 @@ func (a *AirlockInspector) InspectBytes(filename string, data []byte) (*AirlockI
 	return result, err
 }
 
-func (a *AirlockInspector) evaluateContent(filename string, fileSize int64, digest, detectedMime string, body []byte) (*AirlockInspectionResult, error) {
+// evaluateInspection is the single, ordered content rule set. It is fed by the
+// header prefix and the accumulated streaming scan signals, so the verdict no
+// longer depends on one 64 KiB sample.
+func (a *AirlockInspector) evaluateInspection(filename string, fileSize int64, digest, detectedMime string, header []byte, signals airlockContentSignals) (*AirlockInspectionResult, error) {
 	policy := a.policySnapshot()
 	ext := strings.ToLower(filepath.Ext(filename))
 	result := &AirlockInspectionResult{
@@ -366,11 +612,11 @@ func (a *AirlockInspector) evaluateContent(filename string, fileSize int64, dige
 		result.ThreatType = "DISGUISED_EXECUTABLE_PAYLOAD"
 		return result, NewAirlockSecurityException("ELF executable disguised as user document", nil)
 	}
-	trimmedBody := bytes.TrimSpace(body)
+	trimmedHeader := bytes.TrimSpace(header)
 
 	// F-11: env-shebang scripts are executable content regardless of the
 	// declared extension. The shebang path was completely invisible before.
-	if len(trimmedBody) >= 2 && trimmedBody[0] == '#' && trimmedBody[1] == '!' {
+	if len(trimmedHeader) >= 2 && trimmedHeader[0] == '#' && trimmedHeader[1] == '!' {
 		result.IsClean = false
 		result.RiskScore = clampScore(policy.escalateScore(220))
 		result.ThreatType = "SCRIPT_SHEBANG_PAYLOAD"
@@ -399,56 +645,57 @@ func (a *AirlockInspector) evaluateContent(filename string, fileSize int64, dige
 	}
 
 	isHTMLDocument := ext == ".html" || ext == ".htm" || ext == ".xhtml" || ext == ".shtml" || detectedMime == "text/html"
-	if isHTMLDocument && htmlActiveContentPattern.Match(body) {
+	if isHTMLDocument && signals.htmlActiveContent {
 		result.IsClean = false
 		result.RiskScore = clampScore(policy.escalateScore(210))
 		result.ThreatType = "HTML_ACTIVE_CONTENT"
 		return result, NewAirlockSecurityException("HTML upload contains active scripting or event-handler content", nil)
 	}
 
+	// SVG keeps its own, stricter rule set (XXE, SMIL, foreignObject, data:-URI).
+	// Only the content rules are SVG-specific; the extension policy below runs
+	// for every object.
 	isSVGDocument := policy.svgActiveContent && (ext == ".svg" || detectedMime == "image/svg+xml")
 	if isSVGDocument {
-		if svgXXEEntity.Match(body) {
+		if signals.svgXXE {
 			result.IsClean = false
 			result.RiskScore = clampScore(policy.escalateScore(250))
 			result.ThreatType = "SVG_XXE_INJECTION"
 			return result, NewAirlockSecurityException("SVG contains forbidden XML external entity (XXE)", nil)
 		}
-		if svgActiveElementPattern.Match(body) || svgDataURIPattern.Match(body) || svgForeignObjectPattern.Match(body) ||
-			svgDangerousAttrs.Match(body) || svgJavascriptURI.Match(body) {
+		if signals.svgActiveContent {
 			result.IsClean = false
 			result.RiskScore = clampScore(policy.escalateScore(200))
 			result.ThreatType = "SVG_ACTIVE_CONTENT"
 			return result, NewAirlockSecurityException("SVG contains SMIL animation, foreignObject or data:-URI active content", nil)
 		}
-		// F-11: script-capable extensions are escalated according to the existing
-		// executable upload policy (reject => refused, report => visible finding).
-		if _, scriptable := scriptCapableExtensions[ext]; scriptable {
-			result.IsClean = false
-			result.RiskScore = clampScore(policy.escalateScore(160))
-			result.ThreatType = "SCRIPT_CAPABLE_UPLOAD"
-			if policy.executableUploadPolicy == airlockExecPolicyReject {
-				return result, NewAirlockSecurityException(fmt.Sprintf("script-capable upload extension %s rejected", ext), nil)
-			}
-			return result, NewAirlockSecurityException(fmt.Sprintf("script-capable upload extension %s flagged", ext), nil)
-		}
+	}
 
-	} else if policy.svgActiveContent && ext != ".svg" && detectedMime != "image/svg+xml" &&
-		(bytes.Contains(bytes.ToLower(trimmedBody), []byte("data:image/svg+xml")) || svgNamespacePattern.Match(body) && svgActiveElementPattern.Match(body)) {
+	// F-11: script-capable extensions are escalated according to the existing
+	// executable upload policy (reject => refused, report => visible finding).
+	// This check is top-level: it must flag a .php/.js/.jsp upload even when the
+	// file body carries no other active-content marker.
+	if _, scriptable := scriptCapableExtensions[ext]; scriptable {
+		result.IsClean = false
+		result.RiskScore = clampScore(policy.escalateScore(160))
+		result.ThreatType = "SCRIPT_CAPABLE_UPLOAD"
+		if policy.executableUploadPolicy == airlockExecPolicyReject {
+			return result, NewAirlockSecurityException(fmt.Sprintf("script-capable upload extension %s rejected", ext), nil)
+		}
+		return result, NewAirlockSecurityException(fmt.Sprintf("script-capable upload extension %s flagged", ext), nil)
+	}
+
+	if policy.svgActiveContent && !isSVGDocument && signals.svgDataURI {
 		result.IsClean = false
 		result.RiskScore = clampScore(policy.escalateScore(200))
 		result.ThreatType = "SVG_DATA_URI_PAYLOAD"
 		return result, NewAirlockSecurityException("non-SVG upload embeds an active SVG/SMIL payload", nil)
 	}
-	if policy.polyglotDetection {
-		for _, re := range dangerousPolyglotPatterns {
-			if re.Match(body) {
-				result.IsClean = false
-				result.RiskScore = 200
-				result.ThreatType = "POLYGLOT_SCRIPT_INJECTION"
-				return result, NewAirlockSecurityException("polyglot script payload embedded in binary body", nil)
-			}
-		}
+	if policy.polyglotDetection && signals.polyglotIndex >= 0 {
+		result.IsClean = false
+		result.RiskScore = 200
+		result.ThreatType = "POLYGLOT_SCRIPT_INJECTION"
+		return result, NewAirlockSecurityException("polyglot script payload embedded in binary body", nil)
 	}
 	return result, nil
 }

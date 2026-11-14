@@ -56,6 +56,17 @@ const (
 	mitigationStateDisabled  = "disabled"
 	mitigationStateRefused   = "refused"
 	mitigationMinWatchSecond = 30
+
+	// mitigationPreviousMeasured marks a pre-mitigation sysctl value that the guard
+	// read from the kernel immediately before it changed the value.
+	mitigationPreviousMeasured = "measured"
+	// mitigationPreviousUnattributed marks a record whose pre-mitigation value cannot
+	// be attributed: the guard adopted a value that was already in force (missing
+	// state record, restore after restart) and no trustworthy "before" measurement
+	// exists. Restore/rollback policy: such a record is asserted but never reverted
+	// to a guessed value - writing an invented previous value would be an
+	// unattributable privileged change (FIND-029).
+	mitigationPreviousUnattributed = "unattributed"
 )
 
 // mitigationCore is the smallest privileged surface the guard needs. It is exactly the interface the
@@ -81,22 +92,27 @@ type MitigationTransition struct {
 }
 
 type MitigationStatus struct {
-	State       string                 `json:"state"`
-	Enabled     bool                   `json:"enabled"`
-	Control     string                 `json:"control,omitempty"`
-	Key         string                 `json:"key,omitempty"`
-	Desired     string                 `json:"desired,omitempty"`
-	Previous    string                 `json:"previous,omitempty"`
-	Current     string                 `json:"current,omitempty"`
-	Reason      string                 `json:"reason,omitempty"`
-	AppliedAt   *time.Time             `json:"applied_at,omitempty"`
-	StableAt    *time.Time             `json:"stable_at,omitempty"`
-	WatchUntil  *time.Time             `json:"watch_until,omitempty"`
-	Failures    int                    `json:"probing_failures"`
-	Drift       int                    `json:"drift_corrections"`
-	Warnings    []string               `json:"warnings,omitempty"`
-	Auxiliary   []AuxiliaryMitigation  `json:"auxiliary,omitempty"`
-	Transitions []MitigationTransition `json:"transitions,omitempty"`
+	State    string `json:"state"`
+	Enabled  bool   `json:"enabled"`
+	Control  string `json:"control,omitempty"`
+	Key      string `json:"key,omitempty"`
+	Desired  string `json:"desired,omitempty"`
+	Previous string `json:"previous,omitempty"`
+	// PreviousSource records whether Previous is a measured pre-mitigation value
+	// ("measured") or an unattributed adoption ("unattributed"). Rollback requires a
+	// measured value; for an unattributed record it refuses to write a guess and says
+	// so instead of reporting a revert that never happened (FIND-029).
+	PreviousSource string                 `json:"previous_source,omitempty"`
+	Current        string                 `json:"current,omitempty"`
+	Reason         string                 `json:"reason,omitempty"`
+	AppliedAt      *time.Time             `json:"applied_at,omitempty"`
+	StableAt       *time.Time             `json:"stable_at,omitempty"`
+	WatchUntil     *time.Time             `json:"watch_until,omitempty"`
+	Failures       int                    `json:"probing_failures"`
+	Drift          int                    `json:"drift_corrections"`
+	Warnings       []string               `json:"warnings,omitempty"`
+	Auxiliary      []AuxiliaryMitigation  `json:"auxiliary,omitempty"`
+	Transitions    []MitigationTransition `json:"transitions,omitempty"`
 }
 
 // AuxiliaryMitigation is a second catalogue control the guard actively re-asserts while it is in
@@ -480,8 +496,17 @@ func (g *MitigationGuard) apply(reason string, automatic bool) (MitigationStatus
 	}
 	record := &mitigationRecord{status: MitigationStatus{
 		State: mitigationStateApplying, Enabled: true, Control: target.control, Key: target.key,
-		Desired: target.desired, Previous: current, Current: current, Reason: reasonForMitigation(reason, why),
+		Desired: target.desired, Previous: current, PreviousSource: mitigationPreviousMeasured,
+		Current: current, Reason: reasonForMitigation(reason, why),
 	}}
+	if current == target.desired {
+		// The door was already closed before this guard existed. Whatever value was
+		// there before that earlier change is not observable any more: the record is
+		// marked as unattributed instead of logging an explicit non-value such as
+		// "unknown" and later restoring it (FIND-029).
+		record.status.Previous = ""
+		record.status.PreviousSource = mitigationPreviousUnattributed
+	}
 	g.record = record
 	g.mu.Unlock()
 
@@ -511,7 +536,7 @@ func (g *MitigationGuard) apply(reason string, automatic bool) (MitigationStatus
 	g.emit("high", "kernel.mitigation_applied", fmt.Sprintf(
 		"Entry point closed: %s=%s (was %s). Probation window %s; the host is watched for regressions and the value is reverted automatically if one appears.",
 		target.key, target.desired, current, g.watch))
-	g.persist(target.key, target.desired, current, reasonForMitigation(reason, why))
+	g.persist(target.key, target.desired, current, mitigationPreviousMeasured, reasonForMitigation(reason, why))
 	g.startWatcher()
 	return status, nil
 }
@@ -572,9 +597,28 @@ func (g *MitigationGuard) Rollback(reason string) (MitigationStatus, error) {
 		return record.status, errors.New("no mitigation is in force")
 	}
 	key, previous := record.status.Key, record.status.Previous
+	previousSource := record.status.PreviousSource
+	if previousSource == "" {
+		previousSource = mitigationPreviousUnattributed
+	}
 	cancel := g.cancel
 	g.cancel = nil
 	g.mu.Unlock()
+	if previous == "" {
+		// No measured pre-mitigation value exists (adopted or already-in-force record).
+		// Writing a guessed restore value would be an unattributable privileged change:
+		// refuse it explicitly and keep the assertion running instead of pretending a
+		// revert happened (FIND-029).
+		g.mu.Lock()
+		if g.cancel == nil {
+			g.cancel = cancel
+		}
+		g.mu.Unlock()
+		g.emit("critical", "kernel.mitigation_revert_unattributed", fmt.Sprintf(
+			"Rollback of %s refused: no measured previous value is recorded (previous source %q); refusing to write a guessed restore value. Reason: %s",
+			key, previousSource, reason))
+		return g.Status(), errors.New("no measured previous value is recorded for this mitigation; refusing to write a guessed restore value")
+	}
 	if cancel != nil {
 		cancel()
 	}
@@ -608,6 +652,14 @@ func (g *MitigationGuard) Rollback(reason string) (MitigationStatus, error) {
 	g.emit("high", "kernel.mitigation_reverted", fmt.Sprintf(
 		"Entry point reopened: %s restored to %s. Reason: %s", key, previous, reason))
 	g.clearPersisted()
+	// Auxiliary catalogue controls are independent of the primary record and must keep
+	// being re-asserted after the operator undid the primary mitigation (FIND-029).
+	g.mu.Lock()
+	keepWatcher := len(g.auxiliary) > 0
+	g.mu.Unlock()
+	if keepWatcher {
+		g.startWatcher()
+	}
 	return status, nil
 }
 
@@ -639,8 +691,11 @@ func (g *MitigationGuard) watchLoop(ctx context.Context) {
 	}
 }
 
-// tick performs one assertion cycle. It returns true when the guard has nothing left to do, so a
-// finished guard does not keep a permanent timer alive for the life of the process.
+// tick performs one assertion cycle and reports whether the watcher can stop. The
+// guard only stops when neither a mitigation record nor an auxiliary control is left
+// to assert. After the probation window closes the value stays re-asserted against
+// drift for as long as it is in force: probation is a status change
+// (watching -> held), not an end condition (FIND-029).
 func (g *MitigationGuard) tick(ctx context.Context) bool {
 	g.mu.Lock()
 	record := g.record
@@ -652,9 +707,38 @@ func (g *MitigationGuard) tick(ctx context.Context) bool {
 		}
 		return !hasAuxiliary
 	}
+	state := record.status.State
 	key, desired := record.status.Key, record.status.Desired
-	inWindow := !record.stable && g.now().Before(*record.status.WatchUntil)
+	watchUntil := record.status.WatchUntil
+	stable := record.stable
+	now := g.now()
 	g.mu.Unlock()
+
+	// A record that no longer holds a value has nothing left to assert. Auxiliary
+	// controls are independent of the primary record, so the watcher keeps running
+	// for them. This also prevents a reverted record from being re-applied.
+	switch state {
+	case mitigationStateIdle, mitigationStateReverted, mitigationStateFailed, mitigationStateDisabled, mitigationStateRefused:
+		if hasAuxiliary {
+			g.assertAuxiliary()
+		}
+		return !hasAuxiliary
+	}
+
+	// While apply() is still arming the record it has no probation deadline yet and the
+	// pending privileged write must not race the drift assertion. Only auxiliary
+	// controls are asserted, and WatchUntil is never dereferenced while nil
+	// (verification finding R5: applying/failed records exist while an auxiliary
+	// watcher is alive).
+	if state == mitigationStateApplying || key == "" {
+		if hasAuxiliary {
+			g.assertAuxiliary()
+		}
+		return !hasAuxiliary
+	}
+
+	// The probation window is only open when a deadline exists and is still ahead.
+	inWindow := !stable && watchUntil != nil && now.Before(*watchUntil)
 
 	// 1. Tamper assertion: the platform does not accept a silently changed door.
 	current, err := g.core.SysctlGet(key)
@@ -682,32 +766,34 @@ func (g *MitigationGuard) tick(ctx context.Context) bool {
 
 	// 2. Probation: probes run while the host is still proving that it tolerates the change, and the
 	// window closes on the first tick that lands after its deadline - including the case where no tick
-	// happened for the whole window.
+	// happened for the whole window or the deadline was never recorded.
 	if inWindow {
 		if err := g.probeAll(ctx); err != nil {
 			g.recordFailure(err.Error(), true)
 			return false
 		}
 	}
-	if !inWindow || !g.now().Before(*record.status.WatchUntil) {
+	if !inWindow {
 		g.mu.Lock()
 		if record.stable {
 			g.mu.Unlock()
-			return true
+			// The probation window was already evaluated. Keep the watcher alive:
+			// the value continues to be re-asserted on every following cycle.
+			return false
 		}
-		now := g.now()
+		stableAt := g.now()
 		record.stable = true
 		record.status.Failures = 0
 		record.status.State = mitigationStateStable
-		record.status.StableAt = &now
+		record.status.StableAt = &stableAt
 		record.status.Transitions = append(record.status.Transitions, MitigationTransition{
-			At: now, Kind: "probation-passed",
+			At: stableAt, Kind: "probation-passed",
 			Detail: fmt.Sprintf("the host stayed healthy for the whole probation window; %s remains in force", key),
 		})
 		g.mu.Unlock()
 		g.emit("info", "kernel.mitigation_held", fmt.Sprintf(
-			"The probation window passed without a regression; %s=%s stays in force. The value continues to be re-asserted.", key, desired))
-		return true
+			"The probation window passed without a regression; %s=%s stays in force and keeps being re-asserted on every interval.", key, desired))
+		return false
 	}
 	return false
 }

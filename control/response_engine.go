@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -74,8 +75,82 @@ const (
 	DefaultResponseTTL = 900 * time.Second  // 15 minutes
 	MaxEscalatedTTL    = 7 * 24 * time.Hour // 7 days ceiling
 	LookbackWindow24h  = 24 * time.Hour
+	// MaxResponseRecords is the hard ceiling for *blocking* containments: applied
+	// records (rollback still pending included), rollbacks that are not verified yet
+	// and degraded records whose kernel state is uncertain. Completed transactions do
+	// not count against it (FIND-027): a host that contains and releases one actor
+	// after another must never lock itself out at record 8193 and stay locked until
+	// the next restart. A record is only removed after a kernel release was verified;
+	// capacity pressure first triggers that release, it never drops a containment
+	// silently (verification finding R1).
 	MaxResponseRecords = 8192
+	// maxRetainedResponseRecords bounds the verified-terminal records (a failed apply
+	// is release-free) kept in memory for audit. Pruning keeps the working set bounded
+	// independently of uptime; the authoritative audit trail is the evidence ledger,
+	// which every rollback and failure already commits to.
+	maxRetainedResponseRecords = 2048
+	// maxResponseHistoryRecords bounds the escalation lookback history. It is pruned
+	// when it grows past this budget, so memory is capped even when more than 32768
+	// violations occur inside the 24h lookback window.
+	maxResponseHistoryRecords = 32768
+	// A DEGRADED record (the kernel rollback mutation failed) is retried with bounded
+	// exponential backoff. The record is never forgotten: its kernel state is unknown,
+	// so dropping it would create false assurance. After the attempt budget it stays
+	// visible and blocking until the core recovers or an operator intervenes (R3).
+	maxResponseRollbackAttempts = 8
 )
+
+// responseRollbackRetryDelay returns the wait before the next release attempt of a
+// DEGRADED record. It grows exponentially per failed attempt and is capped.
+func responseRollbackRetryDelay(attempts int) time.Duration {
+	const base = 30 * time.Second
+	const ceiling = 10 * time.Minute
+	if attempts < 1 {
+		attempts = 1
+	}
+	delay := base
+	for step := 1; step < attempts && delay < ceiling; step++ {
+		delay *= 2
+	}
+	if delay > ceiling {
+		delay = ceiling
+	}
+	return delay
+}
+
+// responseRollbackRetryDue reports whether a DEGRADED record may be tried again.
+func responseRollbackRetryDue(record ResponseRecord, now time.Time) bool {
+	if record.RollbackAttempts <= 0 || record.LastRollbackAttemptAt == nil {
+		return true
+	}
+	return !now.Before(record.LastRollbackAttemptAt.Add(responseRollbackRetryDelay(record.RollbackAttempts)))
+}
+
+// responseRecordIsActive reports whether a record still represents an enforced,
+// pending or uncertain containment and therefore consumes a capacity slot. An
+// expired APPLIED record counts until its kernel release was verified: it may still
+// hold a blocked IP or a frozen process, so dropping it from the working set would
+// leak the containment (verification finding R1).
+func responseRecordIsActive(record ResponseRecord) bool {
+	switch record.Status {
+	case StatusApplied, StatusRollbackRequested, StatusDegraded:
+		return true
+	default:
+		return false
+	}
+}
+
+// responseRecordIsReleaseFreeTerminal reports whether a record can leave the working
+// set without a kernel release: a failed apply never moved the kernel and a verified
+// rollback already released it.
+func responseRecordIsReleaseFreeTerminal(record ResponseRecord) bool {
+	switch record.Status {
+	case StatusFailed, StatusRolledBack:
+		return true
+	default:
+		return false
+	}
+}
 
 // CoreActionDispatcher abstracts privileged kernel mutations across standalone Linux and AstraeaOS.
 type CoreActionDispatcher interface {
@@ -108,6 +183,15 @@ type ResponseRecord struct {
 	EvidenceRef   string             `json:"evidence_ref"`
 	FailureReason string             `json:"failure_reason,omitempty"`
 	RolledBackAt  *time.Time         `json:"rolled_back_at,omitempty"`
+	// RollbackAttempts counts kernel release attempts. A DEGRADED record is retried
+	// with bounded backoff instead of being stuck forever, but it is never dropped
+	// without a verified release (verification finding R3).
+	RollbackAttempts      int        `json:"rollback_attempts,omitempty"`
+	LastRollbackAttemptAt *time.Time `json:"last_rollback_attempt_at,omitempty"`
+	// RollbackExhausted marks a DEGRADED record whose bounded retry budget is used up.
+	// It stays visible, blocking and operator-actionable; the once-only evidence entry
+	// is emitted when the budget is exhausted.
+	RollbackExhausted bool `json:"rollback_exhausted,omitempty"`
 }
 
 // ResponseConfig holds TTL presets and escalation policies.
@@ -253,6 +337,69 @@ func ResolveProcessTarget(targetID string) (int, uint64, error) {
 	return p, ResolveProcessStartTicks(p), nil
 }
 
+// activeResponseCountLocked counts the currently blocking containments. The caller
+// holds e.mu.
+func (e *ResponseEngine) activeResponseCountLocked() int {
+	active := 0
+	for _, record := range e.responses {
+		if responseRecordIsActive(record) {
+			active++
+		}
+	}
+	return active
+}
+
+// pruneTerminalResponsesLocked drops the oldest release-free terminal records (a
+// failed apply never moved the kernel and a verified rollback is already gone) once
+// more than maxRetainedResponseRecords are held. Records that may still hold kernel
+// state (APPLIED, ROLLBACK_REQUESTED, DEGRADED) are never pruned: capacity pressure
+// first performs a release attempt instead (verification finding R1). The caller
+// holds e.mu.
+func (e *ResponseEngine) pruneTerminalResponsesLocked() {
+	terminal := make([]ResponseRecord, 0, 16)
+	for _, record := range e.responses {
+		if responseRecordIsReleaseFreeTerminal(record) {
+			terminal = append(terminal, record)
+		}
+	}
+	if len(terminal) <= maxRetainedResponseRecords {
+		return
+	}
+	sort.Slice(terminal, func(i, j int) bool { return terminal[i].StartedAt.Before(terminal[j].StartedAt) })
+	excess := len(terminal) - maxRetainedResponseRecords
+	for index := 0; index < excess; index++ {
+		uuid := terminal[index].UUID
+		delete(e.responses, uuid)
+		// A terminal record must not keep an active-target claim alive.
+		for targetKey, mapped := range e.activeByTgt {
+			if mapped == uuid {
+				delete(e.activeByTgt, targetKey)
+			}
+		}
+	}
+}
+
+// pruneHistoryLocked keeps the escalation lookback bounded: it drops records that
+// can no longer influence CalculateTTL (older than the 24h window) and applies a hard
+// count cap for the case that more than maxResponseHistoryRecords violations happen
+// inside the window. The caller holds e.mu.
+func (e *ResponseEngine) pruneHistoryLocked(now time.Time) {
+	cutoff := now.Add(-LookbackWindow24h)
+	kept := e.history[:0]
+	for _, record := range e.history {
+		if record.StartedAt.After(cutoff) {
+			kept = append(kept, record)
+		}
+	}
+	e.history = kept
+	if len(e.history) > maxResponseHistoryRecords {
+		// Keep the newest entries; the dropped ones are still in the evidence ledger
+		// and can only raise a prior-count that is already above the escalation
+		// threshold, so dropping the oldest does not weaken the decision.
+		e.history = append([]ResponseRecord(nil), e.history[len(e.history)-maxResponseHistoryRecords:]...)
+	}
+}
+
 // ApplyResponse executes a typed mitigation, records the rollback state, and bounds duration.
 func (e *ResponseEngine) ApplyResponse(
 	ctx context.Context,
@@ -267,8 +414,21 @@ func (e *ResponseEngine) ApplyResponse(
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
+	// Capacity is enforced on containments that still represent kernel state
+	// (FIND-027): completed transactions are pruned instead of permanently blocking
+	// every further autonomous reaction. When the ceiling is reached, expired
+	// containments are released through the kernel *before* capacity may be denied;
+	// they are never pruned silently while they could still block an IP or freeze a
+	// process (verification finding R1). The scan runs only when the working set
+	// actually grows towards the ceiling, so the common path stays O(1).
 	if len(e.responses) >= MaxResponseRecords {
-		return nil, NewResponseStorageException("response capacity limit reached", nil)
+		e.pruneTerminalResponsesLocked()
+		if e.activeResponseCountLocked() >= MaxResponseRecords {
+			e.sweepRollbacksLocked(now, false)
+			if e.activeResponseCountLocked() >= MaxResponseRecords {
+				return nil, NewResponseStorageException("active response capacity limit reached", nil)
+			}
+		}
 	}
 
 	targetID = strings.TrimSpace(targetID)
@@ -375,6 +535,11 @@ func (e *ResponseEngine) ApplyResponse(
 	e.responses[respUUID] = record
 	e.activeByTgt[targetKey] = respUUID
 	e.history = append(e.history, record)
+	if len(e.history) > 2*maxResponseHistoryRecords {
+		// Amortised hard cap: the history can only overshoot the bound between two
+		// rollback sweeps after a very high violation rate (verification finding R2).
+		e.pruneHistoryLocked(now)
+	}
 
 	// Emit auditable evidence intent
 	if e.evidenceSink != nil {
@@ -392,92 +557,144 @@ func targetActionKey(owner string, action ResponseActionType, targetType, target
 	return fmt.Sprintf("%s:%s:%s:%s", owner, action, targetType, targetID)
 }
 
-// RollbackExpired scans and atomic-reverts all applied responses that have surpassed their TTL.
-// Enforces a strict 3-phase verification flow: ROLLBACK_REQUESTED -> Kernel Mutation -> Read-Back/Verify (ROLLED_BACK or DEGRADED).
-func (e *ResponseEngine) RollbackExpired(ctx context.Context, now time.Time) ([]ResponseRecord, error) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
+// releaseResponseLocked performs one verified kernel release for a record that may
+// still hold kernel state: ROLLBACK_REQUESTED -> kernel mutation -> read-back/verify
+// (ROLLED_BACK, or DEGRADED when the mutation failed). The caller holds e.mu.
+func (e *ResponseEngine) releaseResponseLocked(uuid string, record ResponseRecord, now time.Time) (ResponseRecord, bool) {
+	targetKey := targetActionKey(record.Owner, record.ActionType, record.TargetType, record.TargetID)
 
-	var rolledBack []ResponseRecord
+	// State transition 1: ROLLBACK_REQUESTED
+	record.Status = StatusRollbackRequested
+	record.RollbackAttempts++
+	attemptedAt := now
+	record.LastRollbackAttemptAt = &attemptedAt
+	e.responses[uuid] = record
 
-	for uuid, rec := range e.responses {
-		if rec.Status != StatusApplied {
-			continue
-		}
-		if now.Before(rec.ExpiresAt) {
-			continue
-		}
-
-		targetKey := targetActionKey(rec.Owner, rec.ActionType, rec.TargetType, rec.TargetID)
-
-		// State transition 1: ROLLBACK_REQUESTED
-		rec.Status = StatusRollbackRequested
-		e.responses[uuid] = rec
-
-		// State transition 2: Dispatch kernel mutation
-		var mutationErr error
-		if e.dispatcher != nil {
-			switch rec.ActionType {
-			case ActionContainIP:
-				mutationErr = e.dispatcher.UnblockIP(rec.TargetID)
-			case ActionFreezeExecution:
-				var pid int
-				var startTicks uint64
-				if strings.Contains(rec.TargetID, ":") {
-					parts := strings.SplitN(rec.TargetID, ":", 2)
-					pid, _ = strconv.Atoi(parts[0])
-					startTicks, _ = strconv.ParseUint(parts[1], 10, 64)
-				} else {
-					pid, _ = strconv.Atoi(rec.TargetID)
-				}
-				if rec.RollbackJSON != "" {
-					var rb map[string]any
-					if err := json.Unmarshal([]byte(rec.RollbackJSON), &rb); err == nil {
-						if stVal, ok := rb["start_ticks"]; ok {
-							switch v := stVal.(type) {
-							case string:
-								if parsed, err := strconv.ParseUint(v, 10, 64); err == nil {
-									startTicks = parsed
-								}
-							case float64:
-								startTicks = uint64(v)
+	// State transition 2: Dispatch kernel mutation
+	var mutationErr error
+	if e.dispatcher != nil {
+		switch record.ActionType {
+		case ActionContainIP:
+			mutationErr = e.dispatcher.UnblockIP(record.TargetID)
+		case ActionFreezeExecution:
+			var pid int
+			var startTicks uint64
+			if strings.Contains(record.TargetID, ":") {
+				parts := strings.SplitN(record.TargetID, ":", 2)
+				pid, _ = strconv.Atoi(parts[0])
+				startTicks, _ = strconv.ParseUint(parts[1], 10, 64)
+			} else {
+				pid, _ = strconv.Atoi(record.TargetID)
+			}
+			if record.RollbackJSON != "" {
+				var rb map[string]any
+				if err := json.Unmarshal([]byte(record.RollbackJSON), &rb); err == nil {
+					if stVal, ok := rb["start_ticks"]; ok {
+						switch v := stVal.(type) {
+						case string:
+							if parsed, err := strconv.ParseUint(v, 10, 64); err == nil {
+								startTicks = parsed
 							}
+						case float64:
+							startTicks = uint64(v)
 						}
 					}
 				}
-				mutationErr = e.dispatcher.UnfreezeProcess(pid, startTicks)
-			case ActionContainCell:
-				cgroupID, _ := strconv.ParseUint(rec.TargetID, 10, 64)
-				mutationErr = e.dispatcher.DeleteCellPolicy(cgroupID)
 			}
-		}
-
-		// State transition 3: Read-back / verify
-		if mutationErr != nil {
-			// Verification FAILED -> DEGRADED (Retain in activeByTgt to eliminate false assurance!)
-			rec.Status = StatusDegraded
-			rec.FailureReason = fmt.Sprintf("kernel rollback mutation failed: %v", mutationErr)
-			e.responses[uuid] = rec
-			if e.evidenceSink != nil {
-				_ = e.evidenceSink("ROLLBACK_DEGRADED", fmt.Sprintf("%s:%s", rec.TargetType, rec.TargetID), rec.FailureReason, now)
-			}
-			continue
-		}
-
-		// Verification VERIFIED -> ROLLED_BACK
-		rec.Status = StatusRolledBack
-		rec.RolledBackAt = &now
-		rec.FailureReason = ""
-		e.responses[uuid] = rec
-		delete(e.activeByTgt, targetKey)
-		rolledBack = append(rolledBack, rec)
-
-		if e.evidenceSink != nil {
-			_ = e.evidenceSink("ROLLBACK_VERIFIED", fmt.Sprintf("%s:%s", rec.TargetType, rec.TargetID), fmt.Sprintf("Auto-Rollback UUID=%s verified", uuid), now)
+			mutationErr = e.dispatcher.UnfreezeProcess(pid, startTicks)
+		case ActionContainCell:
+			cgroupID, _ := strconv.ParseUint(record.TargetID, 10, 64)
+			mutationErr = e.dispatcher.DeleteCellPolicy(cgroupID)
 		}
 	}
 
-	return rolledBack, nil
+	// State transition 3: Read-back / verify
+	if mutationErr != nil {
+		// Verification FAILED -> DEGRADED (retained in activeByTgt, no false assurance).
+		// The record is retried with bounded backoff and never dropped without a
+		// verified release (verification finding R3).
+		record.Status = StatusDegraded
+		record.FailureReason = fmt.Sprintf("kernel rollback mutation failed: %v", mutationErr)
+		e.responses[uuid] = record
+		if e.evidenceSink != nil {
+			_ = e.evidenceSink("ROLLBACK_DEGRADED", fmt.Sprintf("%s:%s", record.TargetType, record.TargetID), record.FailureReason, now)
+		}
+		return record, false
+	}
+
+	// Verification VERIFIED -> ROLLED_BACK. The completed transaction leaves the
+	// working set (FIND-027); the record is archived through the return value and the
+	// ROLLBACK_VERIFIED evidence commitment, so nothing is lost for the audit trail.
+	record.Status = StatusRolledBack
+	record.RolledBackAt = &now
+	record.FailureReason = ""
+	delete(e.responses, uuid)
+	delete(e.activeByTgt, targetKey)
+	if e.evidenceSink != nil {
+		_ = e.evidenceSink("ROLLBACK_VERIFIED", fmt.Sprintf("%s:%s", record.TargetType, record.TargetID), fmt.Sprintf("Auto-Rollback UUID=%s verified and released", uuid), now)
+	}
+	return record, true
+}
+
+// sweepRollbacksLocked releases every containment that is due for release: expired
+// APPLIED records and (when retryDegraded is set) DEGRADED records whose bounded
+// retry backoff elapsed. A containment is only removed from the working set after
+// the kernel release verified, never silently (verification finding R1). The caller
+// holds e.mu.
+func (e *ResponseEngine) sweepRollbacksLocked(now time.Time, retryDegraded bool) []ResponseRecord {
+	var released []ResponseRecord
+	for uuid, record := range e.responses {
+		switch record.Status {
+		case StatusApplied:
+			if now.Before(record.ExpiresAt) {
+				continue
+			}
+		case StatusDegraded:
+			if !retryDegraded {
+				continue
+			}
+			if record.RollbackAttempts >= maxResponseRollbackAttempts {
+				if !record.RollbackExhausted {
+					record.RollbackExhausted = true
+					e.responses[uuid] = record
+					if e.evidenceSink != nil {
+						_ = e.evidenceSink("ROLLBACK_EXHAUSTED", fmt.Sprintf("%s:%s", record.TargetType, record.TargetID),
+							fmt.Sprintf("release retry budget exhausted after %d attempts; kernel state remains uncertain for UUID=%s and requires operator/core recovery", record.RollbackAttempts, uuid), now)
+					}
+				}
+				continue
+			}
+			if !responseRollbackRetryDue(record, now) {
+				continue
+			}
+			if e.evidenceSink != nil {
+				_ = e.evidenceSink("ROLLBACK_RETRY", fmt.Sprintf("%s:%s", record.TargetType, record.TargetID),
+					fmt.Sprintf("retrying release attempt %d for UUID=%s", record.RollbackAttempts+1, uuid), now)
+			}
+		default:
+			continue
+		}
+		updated, verified := e.releaseResponseLocked(uuid, record, now)
+		if verified {
+			released = append(released, updated)
+		}
+	}
+	// Keep the working set and the escalation lookback bounded even on hosts that
+	// never restart the control plane. Only release-free terminal records are pruned.
+	e.pruneTerminalResponsesLocked()
+	if len(e.history) > maxResponseHistoryRecords {
+		e.pruneHistoryLocked(now)
+	}
+	return released
+}
+
+// RollbackExpired scans and atomic-reverts all applied responses that have surpassed their TTL.
+// Enforces a strict 3-phase verification flow: ROLLBACK_REQUESTED -> Kernel Mutation -> Read-Back/Verify (ROLLED_BACK or DEGRADED).
+// DEGRADED records (a failed kernel release) are retried with bounded backoff.
+func (e *ResponseEngine) RollbackExpired(_ context.Context, now time.Time) ([]ResponseRecord, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.sweepRollbacksLocked(now, true), nil
 }
 
 // ActiveResponses returns an immutable snapshot of all currently enforced or degraded responses.

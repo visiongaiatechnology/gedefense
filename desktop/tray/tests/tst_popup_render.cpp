@@ -9,12 +9,20 @@
 //
 // Usage: tst_popup_render [--out <directory>]
 // Without --out the compile-time path build/screenshots is used.
+//
+// The same harness also proves that untrusted control-plane payloads cannot
+// inject rich text into the tray UI (FIND-032): tooltips are rich-text sinks in
+// Qt, so the payload cases `<b>`, `<img src=...>` and `<a href=...>` must appear
+// as literal text, both in the flyout and in the tray icon tooltip.
 
 #include "state_icons.h"
 #include "state_labels.h"
+#include "status_client.h"
 #include "status_payload.h"
 #include "status_popup.h"
 #include "theme.h"
+#include "tray_controller.h"
+#include "ui_text.h"
 
 #include <QApplication>
 #include <QCommandLineOption>
@@ -24,13 +32,16 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QImage>
+#include <QLabel>
 #include <QList>
 #include <QPixmap>
 #include <QRect>
 #include <QSet>
 #include <QSizeF>
 #include <QString>
+#include <QSystemTrayIcon>
 #include <QTest>
+#include <QTextDocument>
 
 using gedefense::ActiveAlert;
 using gedefense::StatusPayload;
@@ -42,6 +53,33 @@ namespace {
 QString g_outputDirectory;
 
 constexpr int kMinimumScreenshotEdge = 180;
+
+// The soft-break helper inserts zero-width spaces for the *displayed* elided
+// text only; they are stripped again when a test compares against the payload.
+constexpr ushort kZeroWidthSpace = 0x200B;
+
+// Renders a rich-text sink string exactly as Qt renders it and returns the
+// literal text the user sees. An injected element disappears into formatting
+// (an <img> even becomes U+FFFC), while an escaped payload comes back verbatim.
+QString renderedPlainText(const QString& richText)
+{
+    QTextDocument document;
+    document.setHtml(richText);
+    QString text = document.toPlainText();
+    text.replace(QChar(QChar::LineSeparator), QLatin1Char('\n'));
+    text.replace(QChar(QChar::ParagraphSeparator), QLatin1Char('\n'));
+    return text;
+}
+
+// The markup an unescaped control-plane payload could smuggle into a rich-text
+// sink. The explicit <p>/<br/> framing of ui_text::plainTooltipText is allowed,
+// every element from the payload is not.
+bool containsInjectedMarkup(const QString& text)
+{
+    return text.contains(QStringLiteral("<b>")) || text.contains(QStringLiteral("<img"))
+        || text.contains(QStringLiteral("<a href")) || text.contains(QStringLiteral("<script"))
+        || text.contains(QStringLiteral("<p style"));
+}
 
 QDateTime timestamp(int year, int month, int day, int hour, int minute, int second)
 {
@@ -119,6 +157,15 @@ private slots:
     void rendersLongGermanCompounds();
     void rendersConstrainedViewport();
     void rendersDisabledConsoleAction();
+
+    // FIND-032 regression: untrusted control-plane payloads must render as
+    // literal text in every rich-text sink (tooltips, notifications).
+    void plainTooltipTextEscapesInjectedPayload_data();
+    void plainTooltipTextEscapesInjectedPayload();
+    void popupRendersInjectedPayloadAsLiteralText_data();
+    void popupRendersInjectedPayloadAsLiteralText();
+    void trayTooltipRendersInjectedPayloadAsLiteralText();
+    void notificationBodyEscapesInjectedPayload();
 
 private:
     // QVERIFY can only be used in void functions, therefore the path of the
@@ -357,6 +404,150 @@ void TestStatusPopupRender::rendersDisabledConsoleAction()
                    QRect(0, 0, 1920, 1080),
                    QSize(gedefense::theme::kPanelWidthPreferred, 600));
     QVERIFY(QFileInfo::exists(m_lastScreenshotPath));
+}
+
+// ---------------------------------------------------------------------------
+// FIND-032 - Qt tooltips and notifications are rich-text sinks. The control
+// plane sends only length/control-character sanitised strings (status_payload.cpp),
+// so a payload such as `<b>`, `<img src=...>` or `<a href=...>` must stay
+// literal text instead of becoming markup in the tray UI.
+// ---------------------------------------------------------------------------
+
+void TestStatusPopupRender::plainTooltipTextEscapesInjectedPayload_data()
+{
+    QTest::addColumn<QString>("payload");
+
+    QTest::newRow("bold") << QStringLiteral("<b>Schutz aktiv</b>");
+    QTest::newRow("image") << QStringLiteral("<img src=\"file:///etc/passwd\">");
+    QTest::newRow("link") << QStringLiteral("<a href=\"https://example.invalid\">Jetzt prüfen</a>");
+    QTest::newRow("paragraph") << QStringLiteral("<p style=\"color:red\">Warnung</p>");
+    QTest::newRow("entity") << QStringLiteral("&lt;b&gt;");
+}
+
+void TestStatusPopupRender::plainTooltipTextEscapesInjectedPayload()
+{
+    QFETCH(QString, payload);
+
+    const QString tooltip = gedefense::ui_text::plainTooltipText(payload);
+
+    // The framing is ours; the payload itself is not part of the markup and must
+    // not match any injected element.
+    QVERIFY2(Qt::mightBeRichText(tooltip), qUtf8Printable(tooltip));
+    QVERIFY(tooltip.startsWith(QStringLiteral("<p>")));
+    QVERIFY(tooltip.endsWith(QStringLiteral("</p>")));
+    QVERIFY2(!tooltip.contains(payload), qUtf8Printable(tooltip));
+    QVERIFY2(!containsInjectedMarkup(tooltip), qUtf8Printable(tooltip));
+
+    // Proof of literal plaintext behaviour: Qt's rich-text renderer returns the
+    // payload verbatim - no formatting, no image object, no link.
+    QCOMPARE(renderedPlainText(tooltip), payload);
+}
+
+void TestStatusPopupRender::popupRendersInjectedPayloadAsLiteralText_data()
+{
+    QTest::addColumn<QString>("payload");
+
+    QTest::newRow("bold") << QStringLiteral("<b>Schutz aktiv</b>");
+    QTest::newRow("image") << QStringLiteral("<img src=\"file:///etc/passwd\">");
+    QTest::newRow("link") << QStringLiteral("<a href=\"https://example.invalid\">Jetzt prüfen</a>");
+}
+
+void TestStatusPopupRender::popupRendersInjectedPayloadAsLiteralText()
+{
+    QFETCH(QString, payload);
+
+    StatusPopup popup(QStringLiteral("/nonexistent/gedefense-app"));
+    StatusPayload data = payloadForState(StatusState::Alert);
+    data.productVersion = payload;
+    data.nodeName = payload;
+    data.statusReason = payload;
+    data.sensor = payload;
+    data.lastAnomalySummary = payload;
+    data.activeAlert.summary = payload;
+    data.activeAlert.severity = payload;
+    data.activeAlert.target = payload;
+    popup.applyPayload(data);
+
+    // 1) The visible plain-text widgets render the markup characters literally.
+    QLabel* reason = popup.findChild<QLabel*>(QStringLiteral("reasonLabel"));
+    QVERIFY(reason != nullptr);
+    QCOMPARE(reason->textFormat(), Qt::PlainText);
+    QString reasonText = reason->text();
+    reasonText.remove(QChar(kZeroWidthSpace));
+    QCOMPARE(reasonText, payload);
+
+    QLabel* alertMeta = popup.findChild<QLabel*>(QStringLiteral("alertMeta"));
+    QVERIFY(alertMeta != nullptr);
+    QCOMPARE(alertMeta->textFormat(), Qt::PlainText);
+    QString alertMetaText = alertMeta->text();
+    alertMetaText.remove(QChar(kZeroWidthSpace));
+    QVERIFY2(alertMetaText.contains(payload), qUtf8Printable(alertMetaText));
+
+    // 2) Every tooltip of the flyout is escaped and renders the payload verbatim.
+    const QList<QLabel*> labels = popup.findChildren<QLabel*>();
+    int affectedTooltips = 0;
+    for (QLabel* label : labels)
+    {
+        const QString tooltip = label->toolTip();
+        if (tooltip.isEmpty())
+        {
+            continue;
+        }
+        QVERIFY2(Qt::mightBeRichText(tooltip), qUtf8Printable(tooltip));
+        QVERIFY2(!containsInjectedMarkup(tooltip), qUtf8Printable(tooltip));
+        const QString rendered = renderedPlainText(tooltip);
+        QVERIFY2(!rendered.contains(QChar(QChar::ObjectReplacementCharacter)), qUtf8Printable(rendered));
+        if (rendered.contains(payload))
+        {
+            ++affectedTooltips;
+        }
+    }
+    QVERIFY2(affectedTooltips >= 3, "the injected payload did not reach the tooltip sinks");
+
+    QLabel* headerMeta = popup.findChild<QLabel*>(QStringLiteral("headerMeta"));
+    QVERIFY(headerMeta != nullptr);
+    QCOMPARE(renderedPlainText(headerMeta->toolTip()), QStringLiteral("v%1 · %2").arg(payload, payload));
+}
+
+void TestStatusPopupRender::trayTooltipRendersInjectedPayloadAsLiteralText()
+{
+    StatusPopup popup(QStringLiteral("/nonexistent/gedefense-app"));
+    gedefense::StatusClient client;
+    gedefense::TrayController controller(&client, &popup);
+
+    const QString payload
+        = QStringLiteral("<img src=\"file:///etc/passwd\"> <a href=\"https://example.invalid\">prüfen</a>");
+    // StatusClient::unavailable is a signal and therefore a public method: the
+    // client-defined failure is emitted directly so the test does not depend on
+    // socket timing.
+    client.unavailable(payload);
+
+    QSystemTrayIcon* tray = controller.trayIcon();
+    QVERIFY(tray != nullptr);
+    QCOMPARE(controller.currentState(), StatusState::Stopped);
+
+    const QString tooltip = tray->toolTip();
+    QVERIFY(!tooltip.isEmpty());
+    QVERIFY2(Qt::mightBeRichText(tooltip), qUtf8Printable(tooltip));
+    QVERIFY2(!containsInjectedMarkup(tooltip), qUtf8Printable(tooltip));
+    QVERIFY2(!tooltip.contains(payload), qUtf8Printable(tooltip));
+    const QString rendered = renderedPlainText(tooltip);
+    QVERIFY2(rendered.contains(payload), qUtf8Printable(rendered));
+    QVERIFY2(!rendered.contains(QChar(QChar::ObjectReplacementCharacter)), qUtf8Printable(rendered));
+}
+
+void TestStatusPopupRender::notificationBodyEscapesInjectedPayload()
+{
+    const QString payload
+        = QStringLiteral("<b>Vertrauen</b> <a href=\"https://example.invalid\">Jetzt scannen</a>");
+    const QString body = gedefense::ui_text::plainNotificationText(payload);
+
+    QVERIFY2(!containsInjectedMarkup(body), qUtf8Printable(body));
+    QCOMPARE(body, payload.toHtmlEscaped());
+    // A markup-capable notification server decodes the entities back to the
+    // literal payload; a plain-text server shows the escaped characters. Neither
+    // can produce an injected element.
+    QCOMPARE(renderedPlainText(body), payload);
 }
 
 int main(int argc, char* argv[])

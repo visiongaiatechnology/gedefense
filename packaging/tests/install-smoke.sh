@@ -52,7 +52,7 @@ require_file() {
 
 assert_contains() {
   local path=$1 needle=$2 label=$3
-  grep -Fq -- "$needle" -- "$path" || fail "$label"
+  grep -Fq -- "$needle" "$path" || fail "$label"
 }
 
 assert_unit_syntax() {
@@ -112,13 +112,27 @@ tmpfiles="${SOURCE_ROOT}/packaging/tmpfiles/vgt-gedefense.conf"
 for line in \
   'd /run/gedefense-scan 0750 root gedefense -' \
   'd /etc/vgt/gedefense 0750 root gedefense -' \
-  'd /etc/vgt/gedefense/secrets 0700 root gedefense -' \
+  'd /etc/vgt/gedefense/secrets 0750 root gedefense -' \
   'd /etc/vgt/gedefense/tls 0750 root gedefense -' \
   'd /etc/vgt/gedefense-access 0750 gedefense-access gedefense-access -' \
   'd /var/lib/vgt/gedefense-access 0750 gedefense gedefense-access -' \
   'd /var/lib/vgt/gedefense-access/state 0700 gedefense-access gedefense-access -'; do
   assert_contains "$tmpfiles" "$line" "tmpfiles contract missing: $line"
 done
+# FIND-007: tmpfiles is the single source of truth for the secrets directory.
+# It must stay 0750 root:gedefense (group-traversable for the control plane);
+# the provisioning script and this smoke test have to agree with it.
+provision_script="${SOURCE_ROOT}/packaging/scripts/gedefense-provision"
+if grep -Fq '"/etc/vgt/gedefense/secrets:0750:root:${CONTROL_GROUP}"' "$provision_script"; then
+  pass "provisioning script declares the secrets directory as 0750 root:gedefense"
+else
+  fail "provisioning script must declare /etc/vgt/gedefense/secrets as 0750 root:gedefense (FIND-007)"
+fi
+if grep -Eq '/etc/vgt/gedefense/secrets:0[0-7]00' "$provision_script"; then
+  fail "provisioning script still tightens the secrets directory below 0750 (control plane cannot traverse)"
+else
+  pass "provisioning script does not tighten the secrets directory below 0750"
+fi
 if grep -Eq '(^|[[:space:]])(0777|0666)([[:space:]]|$)' "$tmpfiles" "${SOURCE_ROOT}/packaging/systemd"/*.service "${SOURCE_ROOT}/packaging/systemd"/*.in; then
   fail "world-writable mode declared in packaging"
 else
@@ -269,7 +283,7 @@ check_file() {
 
 for entry in \
   "etc/vgt/gedefense:750" \
-  "etc/vgt/gedefense/secrets:700" \
+  "etc/vgt/gedefense/secrets:750" \
   "etc/vgt/gedefense/tls:750" \
   "etc/vgt/gedefense-access:750" \
   "var/lib/vgt/gedefense:1770" \
@@ -282,6 +296,44 @@ for entry in \
     pass "directory ${relative} mode ${mode}"
   else
     fail "directory ${relative} mode ${actual}, expected ${mode}"
+  fi
+done
+
+# FIND-007: the control plane (gedefense) must be able to traverse the secrets
+# directory to reach its 0640 root:gedefense keys. Assert the DAC contract
+# (group execute, no world access) and, when the smoke test runs as root, prove
+# traversal with the actual control-plane identity.
+secrets_dir="${stage}/etc/vgt/gedefense/secrets"
+secrets_mode=$(stat -c '%a' -- "$secrets_dir")
+if [[ $secrets_mode == 750 ]]; then
+  pass "secrets directory is group-traversable (mode 0750, not 0700)"
+else
+  fail "secrets directory mode $secrets_mode, expected 0750 so the control-plane group can traverse it"
+fi
+if (( (8#$secrets_mode & 8#007) == 0 )); then
+  pass "secrets directory has no world permissions"
+else
+  fail "secrets directory mode $secrets_mode grants world permissions"
+fi
+if [[ $(id -u) -eq 0 ]] && command -v setpriv >/dev/null 2>&1 && id -u "$current_user" >/dev/null 2>&1; then
+  if setpriv --reuid="$(id -u "$current_user")" --regid="$(id -g "$current_user")" --clear-groups \
+      test -x "$secrets_dir" && \
+    setpriv --reuid="$(id -u "$current_user")" --regid="$(id -g "$current_user")" --clear-groups \
+      test -r "${secrets_dir}/core-ipc.key"; then
+    pass "control-plane identity can traverse the secrets directory and read its key"
+  else
+    fail "control-plane identity cannot traverse the secrets directory or read its key"
+  fi
+else
+  not_tested "real cross-account traversal of /etc/vgt/gedefense/secrets as the gedefense user (requires root)"
+fi
+for secret in "$secrets_dir"/*; do
+  [[ -f $secret && ! -L $secret ]] || continue
+  secret_mode=$(stat -c '%a' -- "$secret")
+  if (( (8#$secret_mode & 8#007) == 0 )); then
+    pass "secret $(basename -- "$secret") is not world-accessible (mode $secret_mode)"
+  else
+    fail "secret $(basename -- "$secret") is world-accessible (mode $secret_mode)"
   fi
 done
 
@@ -372,6 +424,16 @@ else
   pass "provisioning --check rejects a world-readable backend token"
 fi
 chmod 0600 "${stage}/var/lib/vgt/gedefense-access/dashboard.token"
+
+# Negative check: a non-traversable secrets directory (0700) must be rejected by
+# --check, because the control plane could no longer reach its 0640 keys.
+chmod 0700 "$secrets_dir"
+if run_provision --check >"${WORK}/provision-secrets-negative.log" 2>&1; then
+  fail "provisioning --check accepted a 0700 secrets directory (control plane cannot traverse it)"
+else
+  pass "provisioning --check rejects a 0700 secrets directory"
+fi
+chmod 0750 "$secrets_dir"
 
 # PKGBUILD must normalize CRLF and must not ship the two-profile example as a
 # live baseline (the provisioned baseline has three hash-bound profiles).

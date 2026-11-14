@@ -119,7 +119,27 @@ func (c *StorageCipher) Encrypt(path, purpose string, sequence uint64, plaintext
 	return encoded, nil
 }
 
+// errStoragePlaintext is returned when a document is not an authenticated envelope although a
+// master key is configured. It is never a reason to fall back to plaintext.
+var errStoragePlaintext = errors.New("plaintext storage document refused while a master key is configured")
+
+// Decrypt opens an authenticated storage envelope.
+//
+// A configured master key is an absolute requirement, not an option with a fallback: a document
+// that is not an envelope of encryptedStorageSchema is an error. The previous implementation
+// returned the raw bytes with legacy=true instead, so any writer with access to the state
+// directory could replace an encrypted checkpoint, verification watermark or policy floor with
+// plaintext JSON and have it accepted as a legacy document - a silent downgrade of exactly the
+// artifacts whose authenticity the encryption was supposed to guarantee.
+//
+// Plaintext is therefore only accepted by DecryptForMigration, which a caller has to choose
+// explicitly, and only for stores whose payload is independently authenticated or whose upgrade
+// path is intentional. The legacy return value is kept for source compatibility with the
+// migration-capable stores and is always false on this path.
 func (c *StorageCipher) Decrypt(path, purpose string, data []byte, expectedSequence *uint64) ([]byte, bool, error) {
+	if c == nil {
+		return nil, false, errors.New("storage cipher unavailable")
+	}
 	trimmed := bytes.TrimSpace(data)
 	if len(trimmed) == 0 {
 		return nil, false, errors.New("encrypted storage document is empty")
@@ -127,54 +147,94 @@ func (c *StorageCipher) Decrypt(path, purpose string, data []byte, expectedSeque
 	var probe struct {
 		Schema string `json:"schema"`
 	}
-	if json.Unmarshal(trimmed, &probe) != nil || probe.Schema != encryptedStorageSchema {
-		return append([]byte(nil), data...), true, nil
+	if err := json.Unmarshal(trimmed, &probe); err != nil || probe.Schema != encryptedStorageSchema {
+		return nil, false, fmt.Errorf("%w: %s", errStoragePlaintext, path)
 	}
-	envelope, err := decodeEncryptedStorageEnvelope(trimmed)
+	plaintext, err := c.openEnvelope(path, purpose, trimmed, expectedSequence)
 	if err != nil {
 		return nil, false, err
 	}
+	return plaintext, false, nil
+}
+
+// DecryptForMigration is the explicit legacy/migration reader.
+//
+// It accepts an unencrypted document (returning legacy=true) so a store written before a storage
+// key was configured can be migrated, and it is intentionally NOT a fallback of Decrypt: every
+// call site names the migration it performs. It must only be used by code that either
+// re-encrypts the document immediately or whose payload carries its own authentication
+// (signature/HMAC), never by verification paths that would then trust unauthenticated bytes.
+func (c *StorageCipher) DecryptForMigration(path, purpose string, data []byte, expectedSequence *uint64) ([]byte, bool, error) {
+	if c == nil {
+		return nil, false, errors.New("storage cipher unavailable")
+	}
+	trimmed := bytes.TrimSpace(data)
+	if len(trimmed) == 0 {
+		return nil, false, errors.New("encrypted storage document is empty")
+	}
+	var probe struct {
+		Schema string `json:"schema"`
+	}
+	if err := json.Unmarshal(trimmed, &probe); err != nil || probe.Schema != encryptedStorageSchema {
+		// Explicit migration mode: hand the plaintext to the caller, which decides whether it
+		// is a valid legacy document and re-encrypts it.
+		return append([]byte(nil), data...), true, nil
+	}
+	plaintext, err := c.openEnvelope(path, purpose, trimmed, expectedSequence)
+	if err != nil {
+		return nil, false, err
+	}
+	return plaintext, false, nil
+}
+
+// openEnvelope authenticates and decrypts one envelope. Callers must have established that the
+// document is an envelope; plaintext never reaches this function.
+func (c *StorageCipher) openEnvelope(path, purpose string, trimmed []byte, expectedSequence *uint64) ([]byte, error) {
+	envelope, err := decodeEncryptedStorageEnvelope(trimmed)
+	if err != nil {
+		return nil, err
+	}
 	if envelope.Schema != encryptedStorageSchema || envelope.Cipher != "AES-256-GCM" || envelope.Purpose != purpose {
-		return nil, false, errors.New("encrypted envelope binding mismatch")
+		return nil, errors.New("encrypted envelope binding mismatch")
 	}
 	if expectedSequence != nil && envelope.Sequence != *expectedSequence {
-		return nil, false, errors.New("encrypted record sequence mismatch")
+		return nil, errors.New("encrypted record sequence mismatch")
 	}
 	nonce, err := base64.RawURLEncoding.DecodeString(envelope.Nonce)
 	if err != nil {
-		return nil, false, errors.New("encrypted envelope nonce is malformed")
+		return nil, errors.New("encrypted envelope nonce is malformed")
 	}
 	ciphertext, err := base64.RawURLEncoding.DecodeString(envelope.Ciphertext)
 	if err != nil {
-		return nil, false, errors.New("encrypted envelope ciphertext is malformed")
+		return nil, errors.New("encrypted envelope ciphertext is malformed")
 	}
 	aad := storageAAD(c.nodeName, purpose, path, envelope.Sequence)
 	digest := sha256.Sum256(aad)
 	provided, err := hex.DecodeString(envelope.AADHash)
 	if err != nil || !hmac.Equal(provided, digest[:]) {
-		return nil, false, errors.New("encrypted envelope AAD binding mismatch")
+		return nil, errors.New("encrypted envelope AAD binding mismatch")
 	}
 	key, err := c.purposeKey(purpose)
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
 	defer clear(key)
 	block, err := aes.NewCipher(key)
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
 	gcm, err := cipher.NewGCM(block)
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
 	if len(nonce) != gcm.NonceSize() || len(ciphertext) < gcm.Overhead() {
-		return nil, false, errors.New("encrypted envelope sizes are invalid")
+		return nil, errors.New("encrypted envelope sizes are invalid")
 	}
 	plaintext, err := gcm.Open(nil, nonce, ciphertext, aad)
 	if err != nil {
-		return nil, false, errors.New("encrypted storage authentication failed")
+		return nil, errors.New("encrypted storage authentication failed")
 	}
-	return plaintext, false, nil
+	return plaintext, nil
 }
 
 func decodeEncryptedStorageEnvelope(data []byte) (encryptedStorageEnvelope, error) {

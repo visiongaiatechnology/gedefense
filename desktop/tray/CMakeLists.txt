@@ -38,6 +38,12 @@ qt_standard_project_setup()
 # be silently ignored and the icons would fall back to the painted placeholder.
 set(CMAKE_AUTORCC ON)
 
+# This project deliberately uses no .ui files. AUTOUIC is turned off because the
+# central escaping helper is named ui_text.h (src/ui_text.h): CMake's AUTOUIC
+# would otherwise treat every `#include "ui_text.h"` as a request for generated
+# uic output and fail the build looking for a non-existent text.ui.
+set(CMAKE_AUTOUIC OFF)
+
 enable_testing()
 
 # ---------------------------------------------------------------------------

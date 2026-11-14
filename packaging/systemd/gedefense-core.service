@@ -47,6 +47,12 @@ ReadWritePaths=-/proc/sys/kernel/kptr_restrict -/proc/sys/kernel/dmesg_restrict 
 ReadWritePaths=-/proc/sys/fs/protected_fifos -/proc/sys/fs/protected_regular -/proc/sys/fs/suid_dumpable
 ReadWritePaths=-/proc/sys/net/ipv4/tcp_syncookies -/proc/sys/net/ipv4/conf/all/accept_redirects -/proc/sys/net/ipv4/conf/default/accept_redirects -/proc/sys/net/ipv4/conf/all/send_redirects -/proc/sys/net/ipv4/conf/default/send_redirects
 ReadWritePaths=-/proc/sys/net/ipv6/conf/all/accept_redirects -/proc/sys/net/ipv6/conf/default/accept_redirects
+# CVE-2026-98432 (net.mptcp.enabled) is mitigated by the core's allowlisted
+# compare-set sysctl path; the mitigation guard reads and asserts it through the
+# privileged core. ProtectKernelTunables=true keeps /proc/sys read-only, so this
+# single node is granted explicitly instead of weakening the sandbox for all of
+# /proc/sys. The "-" prefix keeps hosts without MPTCP support starting cleanly.
+ReadWritePaths=-/proc/sys/net/mptcp/enabled
 UMask=0077
 
 [Install]

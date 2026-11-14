@@ -5,7 +5,9 @@
 The generated header embeds, as base64 constants, the signed release index, the
 trusted Ed25519 public key and a stdlib-only verifier (vgt_release_security.py).
 All substitutions are plain ASCII, so no shell quoting is required and an
-unfilled placeholder always fails closed at runtime.
+unfilled placeholder always fails closed at runtime. ``__VERSION__`` is filled
+from --product-version (used by the desktop One-Click builder); templates that
+hard-code their version are unaffected.
 """
 
 from __future__ import annotations
@@ -15,6 +17,7 @@ import base64
 from pathlib import Path
 
 PLACEHOLDERS = {
+    "__VERSION__": "product_version",
     "__RELEASE_PUBKEY_HEX__": "public_key_hex",
     "__RELEASE_INDEX_B64__": "index_b64",
     "__RELEASE_VERIFIER_B64__": "verifier_b64",
@@ -34,6 +37,7 @@ def render(
     index_b64: str,
     verifier_b64: str,
     trust_mode: str,
+    product_version: str = "",
     payload_sha256: str = "",
     control_sha256: str = "",
     access_sha256: str = "",
@@ -41,6 +45,7 @@ def render(
 ) -> None:
     text = template.read_text(encoding="utf-8-sig")
     values = {
+        "product_version": product_version,
         "public_key_hex": public_key_hex,
         "index_b64": index_b64,
         "verifier_b64": verifier_b64,
@@ -70,6 +75,7 @@ def main() -> int:
     parser.add_argument("--index", required=True)
     parser.add_argument("--verifier", required=True)
     parser.add_argument("--trust-mode", required=True, choices=["prebuilt", "source-signed"])
+    parser.add_argument("--product-version", default="")
     parser.add_argument("--payload-sha256", default="")
     parser.add_argument("--control-sha256", default="")
     parser.add_argument("--access-sha256", default="")
@@ -84,6 +90,7 @@ def main() -> int:
         index_b64=base64.b64encode(index).decode("ascii"),
         verifier_b64=base64.b64encode(verifier).decode("ascii"),
         trust_mode=options.trust_mode,
+        product_version=options.product_version,
         payload_sha256=options.payload_sha256,
         control_sha256=options.control_sha256,
         access_sha256=options.access_sha256,

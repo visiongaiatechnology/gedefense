@@ -1,0 +1,11 @@
+{
+  "schema": "vgt.gedefense.geoip-integrity-test-vector.v1",
+  "description": "Shared Python->Go interop vector for the canonical signed GeoIP sidecar contract. csv/sidecar/signature/public_key are byte-exact fixtures; the Python and Go test suites both consume this file so the producer and consumer contracts cannot drift.",
+  "csv_name": "geoip.csv",
+  "csv": "network,country_code,country_name,latitude,longitude,asn,as_name\n8.8.8.0/24,US,United States,37.751,-97.822,AS15169,Google LLC\n2001:4860::/32,US,United States,37.751,-97.822,AS15169,Google LLC\n",
+  "csv_sha256": "0367c52a48de3a4fe61cade4d500d9c8637cfc5556124f093244c29747da7479",
+  "csv_size": 193,
+  "sidecar_canonical": "{\"file\":\"geoip.csv\",\"schema\":\"vgt.gedefense.geoip-integrity.v1\",\"sha256\":\"0367c52a48de3a4fe61cade4d500d9c8637cfc5556124f093244c29747da7479\",\"size\":193}",
+  "public_key_base64": "88IwIKrszE/cKlfTQlslyIJ0qYOfzxNugS9hHFhifpQ=",
+  "signature_base64": "+Rn3/636KJigpbSTGPRnL3y9AautaHXcBenXlQ0vEGr1e29W1MiH3fYEjnaNBcLMdbKtmYXYEZfb6Q66vSTTCw=="
+}

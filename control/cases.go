@@ -110,18 +110,25 @@ func (e *CaseEngine) load() error {
 	if err != nil {
 		return err
 	}
+	// The case store has no independent payload authentication: neither the store nor a single
+	// case record carries an HMAC or signature, so the encrypted envelope is the only authenticity
+	// anchor this document has. It therefore uses the strict Decrypt and never DecryptForMigration:
+	// a plaintext store cannot be authenticated, and migrating it would let any writer of the state
+	// directory replace the case history with forged records - exactly the silent downgrade
+	// FIND-015 closed. Unencrypted case history is refused hard, never read as a legacy document.
+	plaintext, _, err := e.storage.Decrypt(e.path, casePurpose, raw, nil)
+	if err != nil {
+		if errors.Is(err, errStoragePlaintext) {
+			return fmt.Errorf("unencrypted case history refused: the case store carries no independent payload authentication, so a plaintext legacy store cannot be migrated safely: %w", err)
+		}
+		return fmt.Errorf("case store authentication failed: %w", err)
+	}
+	// The envelope is authenticated now; read its sequence to bind it to the store revision.
 	envelope, err := decodeEncryptedStorageEnvelope(bytes.TrimSpace(raw))
 	if err != nil {
 		return fmt.Errorf("case store envelope: %w", err)
 	}
 	expected := envelope.Sequence
-	plaintext, legacy, err := e.storage.Decrypt(e.path, casePurpose, raw, &expected)
-	if err != nil {
-		return fmt.Errorf("case store authentication failed: %w", err)
-	}
-	if legacy {
-		return errors.New("unencrypted case history is rejected")
-	}
 	store, err := decodeCaseStore(plaintext)
 	if errors.Is(err, errCaseStoreDuplicateFingerprint) {
 		// Legacy layout, not corruption: a store written before "one case per fingerprint" became

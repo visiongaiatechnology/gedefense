@@ -40,7 +40,6 @@ run_required(){
     BLOCKERS=$((BLOCKERS + 1))
     if [[ $name == "govulncheck" || $name == "cargo-audit" ]]; then
       MANDATORY_BLOCKERS=$((MANDATORY_BLOCKERS + 1))
-      (( STRICT == 0 )) || FAILURES=$((FAILURES + 1))
     fi
     return 0
   fi
@@ -83,16 +82,31 @@ for tool in trivy osv-scanner syft; do
 done
 
 REPORT=${REPORT:-"$WORK/sca-report.json"}
-python3 - "$REPORT" "${RESULTS[@]}" <<'PY'
+# The JSON status is derived strictly from the recorded evidence, never from the
+# exit path: a mandatory scanner that could not run is a BLOCKED gate and, in
+# --strict mode, a FAILED gate. Previously the report always claimed "PASS"
+# while all five scanners were logged as BLOCKED (FIND-005).
+if (( FAILURES > 0 )); then
+  STATUS="FAIL"
+elif (( MANDATORY_BLOCKERS > 0 )); then
+  if (( STRICT == 1 )); then STATUS="FAIL"; else STATUS="BLOCKED"; fi
+else
+  STATUS="PASS"
+fi
+python3 - "$REPORT" "$STATUS" "$STRICT" "$FAILURES" "$MANDATORY_BLOCKERS" "$BLOCKERS" "${RESULTS[@]}" <<'PY'
 import json, sys
-path, *entries = sys.argv[1:]
+path, status, strict, failures, mandatory_blockers, blockers, *entries = sys.argv[1:]
 rows = []
 for entry in entries:
-    name, status, detail = entry.split("|", 2)
-    rows.append({"tool": name, "status": status, "detail": detail})
+    name, row_status, detail = entry.split("|", 2)
+    rows.append({"tool": name, "status": row_status, "detail": detail})
 document = {
     "schema": "vgt.gedefense.sca-report.v1",
-    "status": "PASS" if not any(row["status"] == "FAIL" for row in rows) else "FAIL",
+    "status": status,
+    "strict": strict == "1",
+    "failed_checks": int(failures),
+    "mandatory_blockers": int(mandatory_blockers),
+    "blockers": int(blockers),
     "results": rows,
     "external_blocker": "Offline advisory databases and network access to vuln.go.dev/GitHub Advisory/RustSec are not available in the audited environment; the release host/CI must run this gate with network and pinned databases.",
 }
@@ -107,4 +121,4 @@ if (( MANDATORY_BLOCKERS > 0 && STRICT == 1 )); then
   echo "SCA GATE FAILED (strict mode: $MANDATORY_BLOCKERS mandatory scanner(s) unavailable)" >&2
   exit 1
 fi
-echo "SCA GATE COMPLETED (blockers documented: $BLOCKERS)"
+echo "SCA GATE COMPLETED (status: $STATUS, blockers documented: $BLOCKERS)"

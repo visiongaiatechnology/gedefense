@@ -19,11 +19,23 @@ const (
 )
 
 type ReleaseStatus struct {
-	Channel           string     `json:"channel"`
-	Phase             string     `json:"phase"`
-	Since             time.Time  `json:"since"`
-	Ready             bool       `json:"ready"`
-	Blockers          []string   `json:"blockers"`
+	Channel  string    `json:"channel"`
+	Phase    string    `json:"phase"`
+	Since    time.Time `json:"since"`
+	Ready    bool      `json:"ready"`
+	Blockers []string  `json:"blockers"`
+	// PolicyQuarantined, PolicyQuarantineDetail and PolicyQuarantineEvidence report the
+	// fail-closed startup quarantine of a policy document that could not be verified
+	// (FIND-013 / VGT-AUDIT-20261114-GD51). While the quarantine is active the document on
+	// disk is forensic evidence, not state: no automatic path may re-sign it, and only an
+	// explicit operator action resolves it.
+	PolicyQuarantined        bool   `json:"policy_quarantined,omitempty"`
+	PolicyQuarantineDetail   string `json:"policy_quarantine_detail,omitempty"`
+	PolicyQuarantineEvidence string `json:"policy_quarantine_evidence,omitempty"`
+	// AutoDegradeHeld reports that blockers are present while the operator disabled the
+	// automatic degradation. It separates "nothing to report" from "reported and
+	// intentionally not acted upon" (FIND-014).
+	AutoDegradeHeld   bool       `json:"auto_degrade_held,omitempty"`
 	CoreMisses        int        `json:"core_misses"`
 	EmergencyStop     bool       `json:"emergency_stop"`
 	FailSafeVerified  bool       `json:"fail_safe_verified"`
@@ -222,6 +234,12 @@ func (r *ReleaseController) currentBlockersLocked(target string, includeDuration
 	snap := r.state.Snapshot()
 	releaseCfg := r.effectiveReleaseConfigLocked()
 	var blockers []string
+	// The quarantine is the first blocker because it has to be the first thing the operator
+	// reads: an unverifiable policy is a trust decision, not a transient gate failure. It is
+	// also what refuses any promotion while the quarantine is active (FIND-013).
+	if r.status.PolicyQuarantined {
+		blockers = append(blockers, "signed policy is quarantined after an unverifiable startup; explicit operator recovery required")
+	}
 	if _, err := os.Stat(r.cfg.Release.EmergencyStopFile); err == nil {
 		blockers = append(blockers, "emergency stop is active")
 	} else if !errors.Is(err, os.ErrNotExist) {
@@ -441,6 +459,10 @@ func (r *ReleaseController) Transition(target, confirmation, reason string) (Rel
 	// verified one. Tying this flag to "observe" alone made a promoted platform that kept its
 	// enforcement report an unverified kernel state.
 	r.status.FailSafeVerified = kernelPolicyVerified(r.status.KernelPolicyState)
+	// A transition is an explicit operator action and it persisted a fresh, signed document.
+	// This is the only kind of path that may end the startup quarantine (FIND-013); the
+	// forensic copy of the unverifiable document is kept.
+	r.clearPolicyQuarantineLocked("release transition to " + target)
 	r.state.SetReleaseStatus(r.status)
 	r.state.AddEvent(Event{Severity: "high", Kind: "release.transition", Source: "release-gate", Message: fmt.Sprintf("Beta phase changed from %s to %s: %s", old.Phase, target, strings.TrimSpace(reason))})
 	_ = oldXDR
@@ -458,26 +480,26 @@ func (r *ReleaseController) Transition(target, confirmation, reason string) (Rel
 //
 //   - verified enforcement          -> applied, verified and retained; degraded phase
 //   - verified, non-enforcing intent -> verified-empty kernel, observe phase (as before)
-//   - unverifiable / missing policy  -> enforcement is RETAINED and the phase is degraded.
-//     An unreadable policy document is not an observe intent. Clearing the kernel on a
-//     corrupt or manipulated state file would let an attacker disarm the host with a
-//     restart (F-07 / CHAIN-003), so this path uses the same retention primitive as
-//     degradeLocked and requires an explicit operator action to release.
+//   - unverifiable / missing policy  -> enforcement is RETAINED, the phase is degraded and the
+//     document is quarantined unmodified. An unreadable policy document is not an observe
+//     intent. Clearing the kernel on a corrupt or manipulated state file would let an attacker
+//     disarm the host with a restart (F-07 / CHAIN-003), and automatically re-signing a
+//     tampered document would destroy the evidence and legitimise the tampering (FIND-013).
+//     This path uses the same retention primitive as degradeLocked, minus every write to the
+//     policy document, and requires an explicit operator action to release.
 func (r *ReleaseController) InitializeStartup(policyEnforcement string, policyVerified bool) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	// The unverifiable-policy branch has to run before the emergency-stop branch: both end in
+	// the degraded phase, but only this path must never persist the policy. Letting
+	// degradeLocked handle it first would re-sign the tampered document with the platform's
+	// own key (FIND-013).
+	if !policyVerified {
+		return r.quarantineUnverifiedPolicyLocked("startup: signed policy intent could not be verified")
+	}
 	if _, err := os.Stat(r.cfg.Release.EmergencyStopFile); err == nil {
 		r.status.EmergencyStop = true
 		return r.degradeLocked("emergency stop active at startup")
-	}
-	if !policyVerified {
-		// Retained enforcement, never a release: the same fail-safe primitive the running
-		// platform uses when it loses certainty about the kernel policy.
-		r.state.AddEvent(Event{
-			Severity: "critical", Kind: "release.startup_policy_unverified", Source: "release-gate",
-			Message: "Startup signed policy could not be verified; kernel enforcement is retained and degraded until an operator verifies or confirms a release",
-		})
-		return r.degradeLocked("startup: signed policy intent could not be verified")
 	}
 	if policyEnforcement != "enforce" {
 		return r.initializeObserveLocked()
@@ -521,6 +543,165 @@ func (r *ReleaseController) InitializeStartup(policyEnforcement string, policyVe
 	})
 	log.Printf("release: startup retained the verified kernel enforcement (fail-closed)")
 	return nil
+}
+
+// quarantineUnverifiedPolicyLocked enters the fail-closed startup quarantine for a policy
+// document that could not be verified (FIND-013 / VGT-AUDIT-20261114-GD51).
+//
+// The startup degradation used to run through degradeLocked, which persists a freshly signed
+// document. On a tampered policy.json that overwrote the attacker's own artifact with a valid
+// observe policy: the forensic trace was destroyed and the platform was re-signed into an
+// intent nobody had verified. The quarantine is deliberately different:
+//
+//   - the document on disk is never rewritten, re-signed or silently "repaired"; it is
+//     preserved unmodified and a one-time forensic copy (0600) is taken, so even a later
+//     explicit recovery cannot destroy the evidence;
+//   - the kernel enforcement is retained and confirmed - a host that was protecting keeps
+//     protecting - while automatic decisions stop (fail-closed in memory);
+//   - every automatic path that would persist a new signed policy refuses until an explicit
+//     operator action resolves the quarantine. Autonomous recovery is not a recovery path for
+//     a trust decision.
+//
+// The caller holds r.mu.
+func (r *ReleaseController) quarantineUnverifiedPolicyLocked(reason string) error {
+	r.status.PolicyQuarantined = true
+	r.status.PolicyQuarantineDetail = reason
+	evidence := ""
+	if copyPath, err := r.preservePolicyDocumentLocked(); err != nil {
+		// The copy is evidence hygiene, not the safety property: the original is untouched
+		// either way. A failed copy is still reported, so the operator does not believe one
+		// exists when it does not.
+		r.state.AddEvent(Event{
+			Severity: "critical", Kind: "policy.quarantine_evidence_failed", Source: "release-gate",
+			Message: "Unverifiable signed policy could not be copied for forensics; the original is untouched: " + err.Error(),
+		})
+		log.Printf("release: policy quarantine: forensic copy failed (the original is still untouched): %v", err)
+	} else if copyPath != "" {
+		evidence = copyPath
+		r.status.PolicyQuarantineEvidence = copyPath
+	}
+
+	// Fail-closed in memory, never on disk: automatic decisions stop, the kernel keeps what it
+	// can confirm, and the policy document is not touched. Note the difference to the old
+	// path: no Persist follows this reconciliation.
+	r.state.SetModes("unverified", "observe")
+	if err := r.reconcileVerifiedLocked(); err != nil {
+		// Nothing was removed - the kernel still holds whatever it held - but that state is
+		// not confirmed, so it is reported as unverified and the operator is required.
+		detail := reason + "; retained kernel policy could not be verified"
+		r.markDegradedLocked(detail, "unverified", false)
+		r.state.AddEvent(Event{
+			Severity: "critical", Kind: "release.quarantine_unverified", Source: "release-gate",
+			Message: "Unverifiable signed policy is quarantined and the retained kernel enforcement could not be verified; out-of-band verification required: " + reason,
+		})
+		log.Printf("release: policy quarantine active; retained kernel enforcement unverified: %s", reason)
+		r.refreshLocked()
+		r.state.SetReleaseStatus(r.status)
+		return fmt.Errorf("policy quarantine: retained kernel policy could not be verified: %w", err)
+	}
+	r.state.SetModes("enforce", "observe")
+	r.markDegradedLocked(reason, "verified-enforce", true)
+	if r.policy != nil {
+		r.state.SetPolicyStatus(r.policy.Status())
+	}
+	r.refreshLocked()
+	r.state.SetReleaseStatus(r.status)
+	r.state.AddEvent(Event{
+		Severity: "critical", Kind: "policy.quarantined", Source: "release-gate",
+		Message: "Signed policy could not be verified. The document on disk was preserved unmodified and quarantined in memory · " +
+			"no automatic re-signing · kernel enforcement retained and automatic decisions paused · " +
+			"recovery is an explicit operator action: investigate the document and its forensic copy (" + quarantineEvidenceLabel(evidence) + "), " +
+			"verify host integrity, restore a trusted signed policy backup, then re-establish the policy with the explicit RETURN:OBSERVE operator transition",
+	})
+	log.Printf("release: signed policy quarantined unmodified (never re-signed); evidence copy %q; kernel enforcement retained. OPERATOR RECOVERY REQUIRED: investigate the policy document/backup and re-establish the policy with the explicit RETURN:OBSERVE transition", quarantineEvidenceLabel(evidence))
+	return nil
+}
+
+func quarantineEvidenceLabel(path string) string {
+	if path == "" {
+		return "none created"
+	}
+	return path
+}
+
+// preservePolicyDocumentLocked copies the unverifiable policy document aside before anything
+// could legitimately replace it. The original file is opened read-only and never modified; the
+// copy is created 0600 and exclusive, so a pre-planted file or symlink at the evidence name
+// cannot redirect the write.
+func (r *ReleaseController) preservePolicyDocumentLocked() (string, error) {
+	stateFile := strings.TrimSpace(r.cfg.Policy.StateFile)
+	if stateFile == "" {
+		return "", nil
+	}
+	info, err := os.Stat(stateFile)
+	if errors.Is(err, os.ErrNotExist) {
+		// A missing document is unverifiable too, but there is nothing to preserve.
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	if !info.Mode().IsRegular() {
+		return "", fmt.Errorf("policy state %s is not a regular file", stateFile)
+	}
+	const maxForensicPolicyBytes = 8 << 20
+	if info.Size() > maxForensicPolicyBytes {
+		return "", fmt.Errorf("policy state %s is larger than %d bytes", stateFile, maxForensicPolicyBytes)
+	}
+	data, err := os.ReadFile(stateFile)
+	if err != nil {
+		return "", err
+	}
+	copyPath := stateFile + ".tampered." + time.Now().UTC().Format("20060102T150405.000000000Z")
+	if err := writePolicyEvidenceFile(copyPath, data); err != nil {
+		if !errors.Is(err, os.ErrExist) {
+			return "", err
+		}
+		// A collision on the nanosecond stamp is not worth losing the evidence over; one
+		// retry is enough, and O_EXCL still refuses to overwrite anything.
+		copyPath = stateFile + ".tampered." + time.Now().UTC().Format("20060102T150405.000000000Z")
+		if retryErr := writePolicyEvidenceFile(copyPath, data); retryErr != nil {
+			return "", errors.Join(err, retryErr)
+		}
+	}
+	return copyPath, nil
+}
+
+func writePolicyEvidenceFile(path string, data []byte) error {
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	if _, err = file.Write(data); err == nil {
+		err = file.Sync()
+	}
+	if closeErr := file.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		_ = os.Remove(path)
+		return err
+	}
+	return os.Chmod(path, 0o600)
+}
+
+// clearPolicyQuarantineLocked ends the quarantine after the explicit RETURN:OBSERVE operator
+// transition persisted a fresh, verified policy document. It is the only path allowed to end it:
+// automatic recovery, the automatic re-arm and the emergency-stop clear all refuse while the
+// quarantine is active. The forensic copy is deliberately kept - the evidence has to outlive the
+// recovery.
+func (r *ReleaseController) clearPolicyQuarantineLocked(method string) {
+	if !r.status.PolicyQuarantined {
+		return
+	}
+	evidence := r.status.PolicyQuarantineEvidence
+	r.status.PolicyQuarantined = false
+	r.status.PolicyQuarantineDetail = ""
+	r.state.AddEvent(Event{
+		Severity: "high", Kind: "policy.quarantine_cleared", Source: "operator",
+		Message: "Policy quarantine cleared by an explicit operator action (" + method + "); a fresh signed policy was persisted. Forensic copy kept: " + quarantineEvidenceLabel(evidence),
+	})
+	log.Printf("release: policy quarantine cleared by explicit operator action (%s); forensic copy kept: %s", method, quarantineEvidenceLabel(evidence))
 }
 
 func (r *ReleaseController) initializeObserveLocked() error {
@@ -652,19 +833,39 @@ func (r *ReleaseController) ObserveCore(success bool) {
 	r.state.SetReleaseStatus(r.status)
 }
 
+// Evaluate runs one release-gate cycle and reports the blockers it found.
+//
+// Evaluating the blockers is an obligation on every cycle and it is deliberately independent
+// of AutoDegrade: an operator who disabled the automatic fall-back must still see what would
+// have paused the platform. AutoDegrade gates exactly one thing - the automatic mode switch
+// through degradeLocked - and never the detection or the reporting of a blocker (FIND-014).
 func (r *ReleaseController) Evaluate() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if !r.runtimeSettingsLocked().AutoDegrade || r.status.Phase == ReleasePhaseObserve || r.status.Phase == ReleasePhaseDegraded {
+	autoDegrade := r.runtimeSettingsLocked().AutoDegrade
+	blockers := r.currentBlockersLocked(r.status.Phase, false)
+	// Publish the evaluation before any action is decided, so the status can never contradict
+	// the check: a blocker that is present is reported even when nothing is done about it.
+	r.status.Blockers = append([]string(nil), blockers...)
+	r.status.Ready = len(blockers) == 0
+	r.status.AutoDegradeHeld = false
+	if len(blockers) > 0 && !autoDegrade &&
+		(r.status.Phase == ReleasePhaseCanary || r.status.Phase == ReleasePhaseEnforce) {
+		// The platform would have paused, but the operator disabled AutoDegrade. That is a
+		// decision, not silence: the held blockers are reported as such.
+		r.status.AutoDegradeHeld = true
+	}
+	if !autoDegrade || len(blockers) == 0 ||
+		r.status.Phase == ReleasePhaseObserve || r.status.Phase == ReleasePhaseDegraded {
+		// Automatic response is either already paused or the operator owns the mode switch;
+		// there is no automatic degradation to make. The evaluation above is reported anyway.
 		r.trackNominalLocked()
 		r.recoverIfGatesPassLocked()
 		r.refreshLocked()
 		r.state.SetReleaseStatus(r.status)
 		return
 	}
-	if blockers := r.currentBlockersLocked(r.status.Phase, false); len(blockers) > 0 {
-		_ = r.degradeLocked(strings.Join(blockers, "; "))
-	}
+	_ = r.degradeLocked(strings.Join(blockers, "; "))
 	r.trackNominalLocked()
 	r.refreshLocked()
 	r.state.SetReleaseStatus(r.status)
@@ -703,6 +904,12 @@ func (r *ReleaseController) trackNominalLocked() {
 // response off - until an operator happened to look.
 func (r *ReleaseController) recoverIfGatesPassLocked() {
 	if r.status.Phase != ReleasePhaseDegraded || r.status.EmergencyStop {
+		return
+	}
+	// Automatic recovery may not re-establish the signed policy. While the startup document is
+	// quarantined the only way out is an explicit operator action (FIND-013); otherwise a calm
+	// period would talk the platform into re-signing an unverified state.
+	if r.status.PolicyQuarantined {
 		return
 	}
 	if r.status.KernelPolicyState != "verified-enforce" || !r.status.FailSafeVerified {
@@ -765,6 +972,12 @@ func (r *ReleaseController) ReArmVerified(reason string) (ReleaseStatus, error) 
 	defer r.mu.Unlock()
 	if r.status.EmergencyStop {
 		return cloneReleaseStatus(r.status), errors.New("emergency stop is active")
+	}
+	// Re-arming is automatic. It may not persist a new signed policy while the startup
+	// document is quarantined: that would destroy the evidence and is a trust decision, not a
+	// repair (FIND-013).
+	if r.status.PolicyQuarantined {
+		return cloneReleaseStatus(r.status), errors.New("signed policy is quarantined after an unverifiable startup; explicit operator recovery is required")
 	}
 	if r.status.Phase == ReleasePhaseEnforce {
 		return cloneReleaseStatus(r.status), nil
@@ -898,6 +1111,22 @@ func (r *ReleaseController) degradeLocked(reason string) error {
 		log.Printf("release: phase degraded, retained enforcement unverified: %s", reason)
 		return fmt.Errorf("fail-closed retention could not verify the kernel policy: %w", err)
 	}
+	if r.status.PolicyQuarantined {
+		// The startup policy document could not be verified and is preserved as evidence. A
+		// persist here would overwrite it and put a fresh signature on an intent nobody
+		// verified - destroying the evidence and pinning the change (FIND-013). The retention
+		// is reported without persistence; only an explicit operator action may re-sign.
+		r.state.SetModes("enforce", "observe")
+		detail := reason + "; signed policy persistence withheld (startup policy is quarantined)"
+		r.markDegradedLocked(detail, "verified-enforce", true)
+		r.state.AddEvent(Event{
+			Severity: "critical", Kind: "release.degrade_policy_withheld", Source: "release-gate",
+			Message: "Automatic response paused and kernel enforcement retained, but the signed policy was not rewritten: " +
+				"the startup policy document is quarantined and only an explicit operator recovery may re-sign it: " + reason,
+		})
+		log.Printf("release: phase degraded, kernel enforcement retained; policy persistence withheld because the startup policy is quarantined: %s", reason)
+		return nil
+	}
 	if err := r.policy.Persist(r.cfg.Node.Name, "enforce", "observe", r.state.BlocksSnapshot()); err != nil {
 		r.state.SetPolicyStatus(r.policy.Status())
 		detail := reason + "; retained policy persistence failed"
@@ -949,6 +1178,20 @@ func (r *ReleaseController) ClearEmergencyStop(confirmation, reason string) (Rel
 	}
 	if len(strings.TrimSpace(reason)) < 8 || len(reason) > 240 {
 		return cloneReleaseStatus(r.status), errors.New("clear reason must contain 8-240 characters")
+	}
+	// Clearing an emergency stop releases the kernel policy and persists a fresh signed
+	// document. While the startup policy is quarantined that would re-sign the unverifiable
+	// document, destroy the evidence and bypass the typed RETURN:OBSERVE recovery - and it
+	// would do so even when no emergency-stop marker exists at all. The quarantine may only be
+	// ended by the explicit RETURN:OBSERVE operator transition (FIND-013 / verify-policy gap).
+	if r.status.PolicyQuarantined {
+		r.state.AddEvent(Event{
+			Severity: "critical", Kind: "release.emergency_stop_clear_refused", Source: "release-gate",
+			Message: "Emergency-stop clear refused: the startup signed policy is quarantined. The emergency-stop marker, the kernel blocklist and the preserved policy document were left unchanged. " +
+				"Recovery is the explicit RETURN:OBSERVE operator transition: " + strings.TrimSpace(reason),
+		})
+		log.Printf("release: emergency-stop clear refused, policy quarantine is active (marker, kernel policy and document unchanged): %s", strings.TrimSpace(reason))
+		return cloneReleaseStatus(r.status), errors.New("policy quarantine is active; an unverifiable signed policy may only be released by the explicit RETURN:OBSERVE operator transition")
 	}
 	if err := os.Remove(r.cfg.Release.EmergencyStopFile); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return cloneReleaseStatus(r.status), err

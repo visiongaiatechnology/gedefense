@@ -1,15 +1,77 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
+	"mime"
 	"net/http"
 	"os"
 	"reflect"
 	"slices"
+	"strings"
 	"time"
 )
+
+// allowlistMutationRequest is the one request DTO both allowlist mutation paths
+// decode. FIND-018: the removal handler used to decode the same http.Request
+// body twice - first into a target-only struct, then again into the typed
+// confirmation struct. The second decode of an already consumed body fails with
+// EOF, so removing a management allowlist entry could never succeed; a body that
+// carried the confirmation fields failed the first strict decode instead. One
+// combined DTO, decoded once from a buffered body, keeps the strict
+// unknown-field contract and makes add and remove symmetric.
+type allowlistMutationRequest struct {
+	Target       string `json:"target"`
+	Confirmation string `json:"confirmation"`
+	Reason       string `json:"reason"`
+}
+
+// decodeBufferedStrictJSON buffers a bounded request body exactly once and then
+// applies the same strict JSON contract as decodeStrictJSON (JSON media type,
+// unknown fields refused, exactly one value). Buffering is what allows a handler
+// to make more than one decision on one read of the body.
+func decodeBufferedStrictJSON(w http.ResponseWriter, r *http.Request, max int64, dst any) error {
+	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil || mediaType != "application/json" {
+		return errors.New("Content-Type must be application/json")
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, max)
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		return err
+	}
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(dst); err != nil {
+		return err
+	}
+	var extra any
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+		return errors.New("request body must contain one JSON value")
+	}
+	return nil
+}
+
+// requireAllowlistRemovalConfirmation validates the typed confirmation phrase
+// and operator reason against a value that was already decoded. It mirrors the
+// requirements enforced by requireProtectionRemovalConfirmation in server.go,
+// without reading the request body a second time.
+func (s *APIServer) requireAllowlistRemovalConfirmation(w http.ResponseWriter, confirmation, reason, expected string) (string, bool) {
+	reason = strings.TrimSpace(reason)
+	if runes := []rune(reason); len(runes) < 8 || len(runes) > 240 {
+		writePublicError(w, http.StatusBadRequest, "a reason of 8-240 characters is required")
+		return "", false
+	}
+	if strings.TrimSpace(confirmation) != expected {
+		writePublicError(w, http.StatusBadRequest, "confirmation required: "+expected)
+		return "", false
+	}
+	return reason, true
+}
 
 type managementAllowlistKernelTxn struct {
 	added   []string
@@ -233,10 +295,8 @@ func (s *APIServer) addAllowlist(w http.ResponseWriter, r *http.Request) {
 		apiError(w, http.StatusServiceUnavailable, "runtime settings unavailable", nil)
 		return
 	}
-	var in struct {
-		Target string `json:"target"`
-	}
-	if err := decodeStrictJSON(w, r, 8<<10, &in); err != nil {
+	var in allowlistMutationRequest
+	if err := decodeBufferedStrictJSON(w, r, 8<<10, &in); err != nil {
 		apiError(w, http.StatusBadRequest, "invalid allowlist request", err)
 		return
 	}
@@ -287,10 +347,8 @@ func (s *APIServer) removeAllowlist(w http.ResponseWriter, r *http.Request) {
 		apiError(w, http.StatusConflict, "allowlist entries can only be removed in Observe", nil)
 		return
 	}
-	var in struct {
-		Target string `json:"target"`
-	}
-	if err := decodeStrictJSON(w, r, 8<<10, &in); err != nil {
+	var in allowlistMutationRequest
+	if err := decodeBufferedStrictJSON(w, r, 8<<10, &in); err != nil {
 		apiError(w, http.StatusBadRequest, "invalid allowlist request", err)
 		return
 	}
@@ -301,9 +359,10 @@ func (s *APIServer) removeAllowlist(w http.ResponseWriter, r *http.Request) {
 	}
 	// Removing a management allowlist entry reduces the trusted management surface: it
 	// requires a typed, target-derived confirmation and a reason, and it leaves a
-	// short-lived server-side undo (F-22).
+	// short-lived server-side undo (F-22). The description is validated against the
+	// body that was already decoded once, never by re-reading the body.
 	expected := "REMOVE ALLOWLIST " + normalized
-	if _, ok := s.requireProtectionRemovalConfirmation(w, r, expected); !ok {
+	if _, ok := s.requireAllowlistRemovalConfirmation(w, in.Confirmation, in.Reason, expected); !ok {
 		return
 	}
 	current := s.settings.Get()

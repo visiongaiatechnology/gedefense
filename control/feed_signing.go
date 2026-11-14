@@ -31,6 +31,7 @@ package main
 //   - Every failure path fails closed: no manifest means no accepted feed.
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -517,9 +518,179 @@ func verifyFeedSigningManifest(document threatFeedManifestDocument, keys []ed255
 // re-pinning a new key.
 const feedSigningSelfHealMarkerFile = "feed-signing.self-heal.json"
 
+// feedSigningSelfHealTempPrefix is the reserved prefix of the exclusive
+// temporary files the marker writer creates inside the state directory. A
+// remnant from an interrupted write carries this prefix, is never mistaken for a
+// published marker, and is removed by the next write.
+const (
+	feedSigningSelfHealTempPattern = ".feed-signing-self-heal-*.tmp"
+	feedSigningSelfHealTempPrefix  = ".feed-signing-self-heal-"
+)
+
 type feedSigningSelfHealMarker struct {
 	Schema    string `json:"schema"`
 	PublicKey string `json:"public_key"`
+}
+
+// readFeedSigningSelfHealMarker loads and validates a published marker. A
+// malformed marker and a marker that names a different key are both hard errors:
+// the second is a rotation signal that must be resolved by an explicit pin, not
+// silently re-trusted.
+func readFeedSigningSelfHealMarker(path, expectedKey string) (feedSigningSelfHealMarker, error) {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return feedSigningSelfHealMarker{}, err
+	}
+	if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
+		return feedSigningSelfHealMarker{}, errors.New("feed signing self-heal marker must be a regular non-symlink file")
+	}
+	if info.Size() <= 0 || info.Size() > feedSigningKeyMaxBytes {
+		return feedSigningSelfHealMarker{}, errors.New("feed signing self-heal marker size rejected")
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return feedSigningSelfHealMarker{}, fmt.Errorf("read feed signing self-heal marker: %w", err)
+	}
+	return validateFeedSigningSelfHealMarker(raw, expectedKey)
+}
+
+func validateFeedSigningSelfHealMarker(raw []byte, expectedKey string) (feedSigningSelfHealMarker, error) {
+	var marker feedSigningSelfHealMarker
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&marker); err != nil {
+		return feedSigningSelfHealMarker{}, errors.New("feed signing self-heal marker is malformed")
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return feedSigningSelfHealMarker{}, errors.New("feed signing self-heal marker is malformed")
+	}
+	if marker.Schema != "vgt.feed-signing.self-heal/v1" {
+		return feedSigningSelfHealMarker{}, errors.New("feed signing self-heal marker is malformed")
+	}
+	if marker.PublicKey != expectedKey {
+		return feedSigningSelfHealMarker{}, errors.New("feed signing self-heal marker does not match the operator key; explicit pin required after rotation")
+	}
+	return marker, nil
+}
+
+// removeStaleFeedSigningSelfHealTemps removes remnants of interrupted marker
+// writes. A stale temporary file is never a reason to report success: the only
+// object that proves the self-heal is a published, validated marker. A symbolic
+// link or directory with a matching name is left alone (ReadDir does not follow
+// links and the caller only removes regular files).
+func removeStaleFeedSigningSelfHealTemps(dir string) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		if name != feedSigningSelfHealMarkerFile+".tmp" && !strings.HasPrefix(name, feedSigningSelfHealTempPrefix) {
+			continue
+		}
+		candidate := filepath.Join(dir, name)
+		if info, infoErr := os.Lstat(candidate); infoErr == nil && info.Mode().IsRegular() {
+			_ = os.Remove(candidate)
+		}
+	}
+}
+
+// writeFeedSigningSelfHealMarker publishes the marker atomically:
+//
+//  1. an exclusive temporary file is created in the destination directory with a
+//     random name (os.CreateTemp), so a stale or corrupt ".tmp" left by a crash
+//     can never collide with the write and can never be mistaken for success;
+//  2. the exact written bytes are re-read and validated against the expected
+//     pinned public key before anything is published;
+//  3. only then is the temporary file renamed over the marker name.
+//
+// The previous implementation opened a fixed "<marker>.tmp" with O_EXCL and
+// returned success on os.ErrExist. A leftover temporary file therefore made the
+// function claim "self-healed" without a marker ever being validated or created.
+func writeFeedSigningSelfHealMarker(markerPath, expectedKey string) error {
+	dir := filepath.Dir(markerPath)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return fmt.Errorf("prepare feed signing self-heal state: %w", err)
+	}
+	// A symlink or directory at the final name is refused before the replace; the
+	// rename itself replaces the directory entry and never follows it.
+	if info, err := os.Lstat(markerPath); err == nil {
+		if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
+			return errors.New("feed signing self-heal marker must be a regular non-symlink file")
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("inspect feed signing self-heal marker: %w", err)
+	}
+
+	removeStaleFeedSigningSelfHealTemps(dir)
+
+	payload, err := json.Marshal(feedSigningSelfHealMarker{
+		Schema: "vgt.feed-signing.self-heal/v1", PublicKey: expectedKey,
+	})
+	if err != nil {
+		return err
+	}
+	temp, err := os.CreateTemp(dir, feedSigningSelfHealTempPattern)
+	if err != nil {
+		return fmt.Errorf("create feed signing self-heal temporary file: %w", err)
+	}
+	tempPath := temp.Name()
+	cleanup := func() {
+		_ = temp.Close()
+		_ = os.Remove(tempPath)
+	}
+	if err := temp.Chmod(0o600); err != nil {
+		cleanup()
+		return fmt.Errorf("restrict feed signing self-heal temporary file: %w", err)
+	}
+	if _, err := temp.Write(payload); err != nil {
+		cleanup()
+		return fmt.Errorf("write feed signing self-heal temporary file: %w", err)
+	}
+	if err := temp.Sync(); err != nil {
+		cleanup()
+		return fmt.Errorf("flush feed signing self-heal temporary file: %w", err)
+	}
+	if err := temp.Close(); err != nil {
+		_ = os.Remove(tempPath)
+		return fmt.Errorf("close feed signing self-heal temporary file: %w", err)
+	}
+
+	// Validate the published bytes, not the in-memory intent: a short write or a
+	// filesystem defect must surface here, before the marker name resolves to it.
+	written, err := os.ReadFile(tempPath)
+	if err != nil {
+		_ = os.Remove(tempPath)
+		return fmt.Errorf("re-read feed signing self-heal temporary file: %w", err)
+	}
+	if _, err := validateFeedSigningSelfHealMarker(written, expectedKey); err != nil {
+		_ = os.Remove(tempPath)
+		return err
+	}
+
+	// A concurrent writer may have published a marker between the Lstat above and
+	// this point. Its content is validated first; a mismatch stays fail-closed.
+	if _, statErr := os.Lstat(markerPath); statErr == nil {
+		if _, readErr := readFeedSigningSelfHealMarker(markerPath, expectedKey); readErr != nil {
+			_ = os.Remove(tempPath)
+			return readErr
+		}
+		_ = os.Remove(tempPath)
+		return nil
+	} else if !errors.Is(statErr, os.ErrNotExist) {
+		_ = os.Remove(tempPath)
+		return fmt.Errorf("inspect feed signing self-heal marker: %w", statErr)
+	}
+
+	if err := os.Rename(tempPath, markerPath); err != nil {
+		_ = os.Remove(tempPath)
+		return fmt.Errorf("publish feed signing self-heal marker: %w", err)
+	}
+	if dirHandle, openErr := os.Open(dir); openErr == nil {
+		_ = dirHandle.Sync()
+		_ = dirHandle.Close()
+	}
+	return nil
 }
 
 // selfHealFeedSigningPin is the narrow bootstrap for the documented operational
@@ -543,56 +714,24 @@ func selfHealFeedSigningPin(cfg FeedConfig, stateDir string) (ed25519.PublicKey,
 	if err := os.MkdirAll(stateDir, 0o700); err != nil {
 		return nil, false, fmt.Errorf("prepare feed signing self-heal state: %w", err)
 	}
+	expectedKey := feedSigningPublicKeyBase64(key.public)
 	if info, statErr := os.Lstat(markerPath); statErr == nil {
 		if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
 			return nil, false, errors.New("feed signing self-heal marker must be a regular non-symlink file")
 		}
-		raw, readErr := os.ReadFile(markerPath)
-		if readErr != nil {
-			return nil, false, fmt.Errorf("read feed signing self-heal marker: %w", readErr)
-		}
-		var marker feedSigningSelfHealMarker
-		if decodeErr := json.Unmarshal(raw, &marker); decodeErr != nil || marker.Schema != "vgt.feed-signing.self-heal/v1" {
-			return nil, false, errors.New("feed signing self-heal marker is malformed")
-		}
-		if marker.PublicKey != feedSigningPublicKeyBase64(key.public) {
-			return nil, false, errors.New("feed signing self-heal marker does not match the operator key; explicit pin required after rotation")
+		if _, readErr := readFeedSigningSelfHealMarker(markerPath, expectedKey); readErr != nil {
+			return nil, false, readErr
 		}
 		return key.public, true, nil
 	} else if !errors.Is(statErr, os.ErrNotExist) {
 		return nil, false, fmt.Errorf("inspect feed signing self-heal marker: %w", statErr)
 	}
-	marker, err := json.Marshal(feedSigningSelfHealMarker{
-		Schema: "vgt.feed-signing.self-heal/v1", PublicKey: feedSigningPublicKeyBase64(key.public),
-	})
-	if err != nil {
+	if err := writeFeedSigningSelfHealMarker(markerPath, expectedKey); err != nil {
 		return nil, false, err
 	}
-	tmp := markerPath + ".tmp"
-	file, err := os.OpenFile(tmp, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
-	if err != nil {
-		// A concurrent self-heal may have created the marker first; re-read it
-		// instead of guessing.
-		if errors.Is(err, os.ErrExist) {
-			return key.public, true, nil
-		}
-		return nil, false, err
-	}
-	cleanup := func() { _ = file.Close(); _ = os.Remove(tmp) }
-	if _, err := file.Write(marker); err != nil {
-		cleanup()
-		return nil, false, err
-	}
-	if err := file.Sync(); err != nil {
-		cleanup()
-		return nil, false, err
-	}
-	if err := file.Close(); err != nil {
-		_ = os.Remove(tmp)
-		return nil, false, err
-	}
-	if err := os.Rename(tmp, markerPath); err != nil {
-		_ = os.Remove(tmp)
+	// Success is only reported after the published marker was read back and
+	// validated; an interrupted or stale temporary file cannot produce this state.
+	if _, err := readFeedSigningSelfHealMarker(markerPath, expectedKey); err != nil {
 		return nil, false, err
 	}
 	return key.public, true, nil

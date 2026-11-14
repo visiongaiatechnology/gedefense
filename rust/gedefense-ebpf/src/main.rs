@@ -4,7 +4,7 @@
 use aya_ebpf::{
     bindings::{xdp_action, BPF_F_NO_PREALLOC, TC_ACT_OK, TC_ACT_SHOT},
     helpers::{
-        bpf_get_current_cgroup_id, bpf_get_current_comm, bpf_get_current_pid_tgid,
+        bpf_get_current_ancestor_cgroup_id, bpf_get_current_comm, bpf_get_current_pid_tgid,
         bpf_get_current_uid_gid, bpf_ktime_get_ns,
     },
     macros::{cgroup_skb, classifier, lsm, map, tracepoint, xdp},
@@ -16,7 +16,7 @@ use gedefense_common::{
     parse_network_header, CellLsmDenyEvent, EgressDropEvent, ExecEvent, IngressEvent,
     NetworkHeader, ACTION_DROP, CELL_LSM_DENY_NON_UNIX_SOCKET, EXEC_COMM_BYTES, L2_PREFIX_BYTES,
     MAX_BLOCKLIST_ENTRIES_V4, MAX_BLOCKLIST_ENTRIES_V6, NETWORK_ADDRESS_BYTES, NETWORK_FAMILY_V4,
-    NETWORK_FAMILY_V6,
+    NETWORK_FAMILY_V6, NETWORK_PROTOCOL_TCP,
 };
 
 const MAX_ALLOWLIST_ENTRIES: u32 = 65_536;
@@ -25,12 +25,27 @@ const EGRESS_EVENT_RING_BYTES: u32 = 1 << 20;
 const CELL_LSM_EVENT_RING_BYTES: u32 = 1 << 20;
 const INGRESS_EVENT_RING_BYTES: u32 = 8 << 20;
 const MAX_INGRESS_TRACKED_SOURCES: u32 = 8_192;
-// One event per 8192 packets keeps the 8 MiB ring from overflowing during a
-// sustained volumetric flood while still flushing at most every few milliseconds at
-// multi-hundred-kpps rates. New ports and the per-second epoch flush remain immediate.
-const INGRESS_BATCH_PACKETS: u32 = 8192;
+// One event per 255 packets keeps every wire counter exact: `attempt_count` is a
+// u8 in the ring record and in the control-plane text protocol, so a batch larger
+// than u8::MAX would have to clamp its attempt counter. That clamping made the
+// decoder treat a genuine TCP label as inconsistent and silently erase
+// `(protocol, tcp_flags)` for the whole aggregate. Flushing at 255 packets is
+// cheap: 8 MiB ring / 64-byte record = 131072 queued events, far above what
+// multi-hundred-kpps floods produce at one flush per 255 packets per source.
+// New ports and the per-second epoch flush remain immediate.
+const INGRESS_BATCH_PACKETS: u32 = 255;
+// Compile-time coupling to the wire contract: the batch must never exceed the
+// u8 range of `attempt_count`, so no emitted counter needs saturation. Raising
+// this bound requires widening the wire field and the userspace decoders first.
+const _: () = assert!(INGRESS_BATCH_PACKETS <= u8::MAX as u32);
 const INGRESS_HEALTH_KEY: u32 = 0;
 const MAX_CELL_LSM_POLICIES: u32 = 4096;
+// Maximum cgroup-v2 ancestor levels inspected per socket creation. The walk
+// starts at the root (level 0) and the kernel returns 0 once the requested level
+// is below the current cgroup, so the real cost is hierarchy depth + 2 helper
+// calls. cgroup.max.depth defaults to "max"; hierarchies deeper than this bound
+// are a documented residual limitation of the bounded eBPF loop.
+const MAX_CGROUP_ANCESTOR_LEVELS: i32 = 64;
 const AF_UNIX: i32 = 1;
 const EPERM: i32 = 1;
 
@@ -88,6 +103,13 @@ struct IngressWindow {
     syn_count: u32,
     ack_count: u32,
     attempt_count: u32,
+    // Number of buffered packets whose network protocol is TCP. Together with
+    // `packets` this tells a flush whether the aggregate mixes TCP and non-TCP
+    // packets. Such a batch has no single honest transport label, so it is emitted
+    // with the explicit neutral marker instead of inheriting the trigger packet's
+    // `(protocol, tcp_flags)`; that inheritance is what the decoder had to guess
+    // about before, and it is why the label used to be neutralised on mismatch.
+    tcp_packets: u32,
     // Exact bounded destination-port sample for this one-second source window.
     // The old modulo-64 bitmap allowed attacker-controlled collisions (e.g.
     // ports 22 and 86), which could hide a low-volume port scan from userspace.
@@ -147,6 +169,9 @@ pub fn gedefense_cell_socket_create(ctx: LsmContext) -> i32 {
 
 #[inline(always)]
 fn try_cell_socket_create(ctx: LsmContext) -> Result<i32, i32> {
+    // The trailing argument is the return value of the previously attached LSM
+    // program on this hook. Defer to it, exactly like the kernel LSM chain does,
+    // before applying the Gaia Cell policy.
     let previous: i32 = ctx.arg(4);
     if previous != 0 {
         return Ok(previous);
@@ -155,25 +180,58 @@ fn try_cell_socket_create(ctx: LsmContext) -> Result<i32, i32> {
     if family == AF_UNIX {
         return Ok(0);
     }
-    let cgroup_id = unsafe { bpf_get_current_cgroup_id() };
-    let Some(policy) = (unsafe { CELL_LSM_POLICIES.get(&cgroup_id) }) else {
-        return Ok(0);
-    };
-    if *policy & CELL_LSM_DENY_NON_UNIX_SOCKET == 0 {
-        return Ok(0);
+    // AF_UNSPEC (0) reaches this hook because __sock_create() only range-checks
+    // the family and performs the real lookup afterwards; a socket for it can
+    // never exist (-EAFNOSUPPORT). Refuse such requests explicitly instead of
+    // passing them through the policy check. Families that do not fit the u8
+    // field of CellLsmDenyEvent are refused the same way and without telemetry:
+    // the core's CELL_LSM event validator rejects family <= 0 or > u8::MAX as
+    // malformed wire data, so emitting a deny event there would abort a whole
+    // event drain. The matching userspace boundary is fixed in the core crate
+    // (rust/gedefense-core/src/main.rs); this is the kernel-side half.
+    if family <= 0 || family > i32::from(u8::MAX) {
+        return Ok(-EPERM);
     }
-    let pid_tgid = bpf_get_current_pid_tgid();
-    let uid_gid = bpf_get_current_uid_gid();
-    let event = CellLsmDenyEvent {
-        cgroup_id,
-        pid: (pid_tgid >> 32) as u32,
-        uid: uid_gid as u32,
-        family,
-        action: ACTION_DROP,
-        reserved: [0; 3],
-    };
-    let _ = CELL_LSM_EVENTS.output::<CellLsmDenyEvent>(&event, 0);
-    Ok(-EPERM)
+    // Walk the complete cgroup-v2 ancestry from the root (level 0) down to the
+    // current cgroup instead of matching only the current cgroup id. A policy
+    // installed on the Gaia Cell cgroup has to cover every descendant/leaf cgroup
+    // a cell process can be moved into; the previous direct-key match let child
+    // cgroups escape enforcement entirely. The kernel returns 0 for levels below
+    // the current cgroup, which ends the bounded loop. The matched cgroup id is
+    // reported in the event because that is the cell boundary the control plane
+    // installs policies for and correlates evidence against.
+    //
+    // Coverage boundary: socket_create is only reached when a socket is created.
+    // Sockets inherited across fork/exec or received over SCM_RIGHTS never pass
+    // this hook again, so a task inside an enforcing cell can still receive an
+    // already-created AF_INET socket from outside the cell. Closing that gap needs
+    // connect/sendmsg-time enforcement and remains a documented residual risk of
+    // this hook; it cannot be observed or repaired here.
+    let mut level: i32 = 0;
+    while level < MAX_CGROUP_ANCESTOR_LEVELS {
+        let cgroup_id = unsafe { bpf_get_current_ancestor_cgroup_id(level) };
+        if cgroup_id == 0 {
+            break;
+        }
+        if let Some(policy) = unsafe { CELL_LSM_POLICIES.get(&cgroup_id) } {
+            if *policy & CELL_LSM_DENY_NON_UNIX_SOCKET != 0 {
+                let pid_tgid = bpf_get_current_pid_tgid();
+                let uid_gid = bpf_get_current_uid_gid();
+                let event = CellLsmDenyEvent {
+                    cgroup_id,
+                    pid: (pid_tgid >> 32) as u32,
+                    uid: uid_gid as u32,
+                    family,
+                    action: ACTION_DROP,
+                    reserved: [0; 3],
+                };
+                let _ = CELL_LSM_EVENTS.output::<CellLsmDenyEvent>(&event, 0);
+                return Ok(-EPERM);
+            }
+        }
+        level += 1;
+    }
+    Ok(0)
 }
 #[tracepoint]
 pub fn gedefense_exec(_ctx: TracePointContext) -> u32 {
@@ -197,7 +255,12 @@ pub fn gedefense_exec(_ctx: TracePointContext) -> u32 {
 pub fn gedefense_xdp(ctx: XdpContext) -> u32 {
     match inspect(&ctx) {
         Ok(action) => action,
-        Err(()) => xdp_action::XDP_PASS,
+        // Fail closed: the only error paths here are frames advertised as IPv4/IPv6
+        // whose headers are truncated or self-contradictory. Such a frame is invalid
+        // for the kernel network stack as well, so passing it on would only hand the
+        // malformed packet to the stack; non-IP L2 is classified as
+        // `NetworkHeader::Other` and stays on the pass path.
+        Err(()) => xdp_action::XDP_DROP,
     }
 }
 
@@ -205,7 +268,10 @@ pub fn gedefense_xdp(ctx: XdpContext) -> u32 {
 pub fn gedefense_tc_ingress(ctx: TcContext) -> i32 {
     match inspect_tc_ingress(&ctx) {
         Ok(true) => TC_ACT_SHOT,
-        Ok(false) | Err(()) => TC_ACT_OK,
+        Ok(false) => TC_ACT_OK,
+        // Same fail-closed rule as XDP: malformed/truncated L3 frames cannot be
+        // classified against the policy maps, so they are dropped instead of passed.
+        Err(()) => TC_ACT_SHOT,
     }
 }
 
@@ -226,14 +292,14 @@ fn inspect_tc_ipv4(ctx: &TcContext, offset: usize) -> Result<bool, ()> {
         return Err(());
     }
     let key = Key::new(32, header.src);
-    if ALLOWLIST_V4.get(&key).is_some() {
-        return Ok(false);
-    }
     let (src_port, dst_port, flags) = if header.version_ihl & 0x0f == 5 {
         tc_transport_metadata(ctx, offset + mem::size_of::<Ipv4Hdr>(), header.protocol)
     } else {
         (0, 0, 0)
     };
+    // Observe before the policy verdict: an allowlisted source must not become
+    // invisible to the ingress counters. The previous early return meant a flood
+    // from an allowlisted prefix never reached the sensor health/rate telemetry.
     observe_ingress_v4(
         header.src,
         header.dst,
@@ -243,6 +309,9 @@ fn inspect_tc_ipv4(ctx: &TcContext, offset: usize) -> Result<bool, ()> {
         flags,
         ctx.len(),
     );
+    if ALLOWLIST_V4.get(&key).is_some() {
+        return Ok(false);
+    }
     Ok(BLOCKLIST_V4
         .get(&key)
         .is_some_and(|action| *action == ACTION_DROP))
@@ -255,11 +324,9 @@ fn inspect_tc_ipv6(ctx: &TcContext, offset: usize) -> Result<bool, ()> {
         return Err(());
     }
     let key = Key::new(128, header.src);
-    if ALLOWLIST_V6.get(&key).is_some() {
-        return Ok(false);
-    }
     let (src_port, dst_port, flags) =
         tc_transport_metadata(ctx, offset + mem::size_of::<Ipv6Hdr>(), header.next_header);
+    // Count before the allowlist verdict; see the IPv4 path above.
     observe_ingress_v6(
         header.src,
         header.dst,
@@ -269,6 +336,9 @@ fn inspect_tc_ipv6(ctx: &TcContext, offset: usize) -> Result<bool, ()> {
         flags,
         ctx.len(),
     );
+    if ALLOWLIST_V6.get(&key).is_some() {
+        return Ok(false);
+    }
     Ok(BLOCKLIST_V6
         .get(&key)
         .is_some_and(|action| *action == ACTION_DROP))
@@ -276,7 +346,7 @@ fn inspect_tc_ipv6(ctx: &TcContext, offset: usize) -> Result<bool, ()> {
 
 #[inline(always)]
 fn tc_transport_metadata(ctx: &TcContext, offset: usize, protocol: u8) -> (u16, u16, u8) {
-    if protocol == 6 {
+    if protocol == NETWORK_PROTOCOL_TCP {
         if let Ok(tcp) = ctx.load::<TcpPrefix>(offset) {
             return (
                 u16::from_be_bytes(tcp.src_port),
@@ -420,9 +490,6 @@ fn inspect_v4(ctx: &XdpContext, offset: usize) -> Result<u32, ()> {
     let dst = unsafe { (*header).dst };
     let protocol = unsafe { (*header).protocol };
     let key = Key::new(32, src);
-    if ALLOWLIST_V4.get(&key).is_some() {
-        return Ok(xdp_action::XDP_PASS);
-    }
 
     // Transport parsing is deliberately restricted to the fixed IPv4 header
     // form (IHL=5). Packets carrying IPv4 options still contribute source/rate
@@ -434,7 +501,13 @@ fn inspect_v4(ctx: &XdpContext, offset: usize) -> Result<u32, ()> {
         (0, 0, 0)
     };
     let packet_len = ctx.data_end().saturating_sub(ctx.data()) as u32;
+    // Observe before the policy verdict: an allowlisted source must not become
+    // invisible to the ingress counters. The previous early return meant a flood
+    // from an allowlisted prefix never reached the sensor health/rate telemetry.
     observe_ingress_v4(src, dst, protocol, src_port, dst_port, flags, packet_len);
+    if ALLOWLIST_V4.get(&key).is_some() {
+        return Ok(xdp_action::XDP_PASS);
+    }
 
     if let Some(action) = BLOCKLIST_V4.get(&key) {
         if *action == ACTION_DROP {
@@ -454,16 +527,17 @@ fn inspect_v6(ctx: &XdpContext, offset: usize) -> Result<u32, ()> {
     let dst = unsafe { (*header).dst };
     let protocol = unsafe { (*header).next_header };
     let key = Key::new(128, src);
-    if ALLOWLIST_V6.get(&key).is_some() {
-        return Ok(xdp_action::XDP_PASS);
-    }
 
     // Only direct TCP/UDP next-headers are parsed here. Extension-header chains
     // remain visible as IP-level telemetry and are left to userspace/L7 logic.
     let (src_port, dst_port, flags) =
         xdp_transport_metadata(ctx, offset + mem::size_of::<Ipv6Hdr>(), protocol);
     let packet_len = ctx.data_end().saturating_sub(ctx.data()) as u32;
+    // Count before the allowlist verdict; see the IPv4 path above.
     observe_ingress_v6(src, dst, protocol, src_port, dst_port, flags, packet_len);
+    if ALLOWLIST_V6.get(&key).is_some() {
+        return Ok(xdp_action::XDP_PASS);
+    }
 
     if let Some(action) = BLOCKLIST_V6.get(&key) {
         if *action == ACTION_DROP {
@@ -475,7 +549,7 @@ fn inspect_v6(ctx: &XdpContext, offset: usize) -> Result<u32, ()> {
 
 #[inline(always)]
 fn xdp_transport_metadata(ctx: &XdpContext, offset: usize, protocol: u8) -> (u16, u16, u8) {
-    if protocol == 6 {
+    if protocol == NETWORK_PROTOCOL_TCP {
         if let Ok(tcp) = ptr_at::<TcpPrefix>(ctx, offset) {
             let tcp = unsafe { &*tcp };
             return (
@@ -563,6 +637,17 @@ fn clear_ports(state: &mut IngressWindow) {
     state.port7 = 0;
 }
 
+/// True when the buffered aggregate mixes TCP and non-TCP packets. Such a batch
+/// has no single honest transport label, so its flush must use the explicit
+/// neutral marker (`protocol = 0`, `tcp_flags = 0`) instead of inheriting the
+/// label of the packet that happened to trigger the flush. A homogeneous batch
+/// keeps its label, and for TCP the attempt counter then always equals the SYN
+/// counter, which is the invariant the userspace decoder verifies.
+#[inline(always)]
+fn aggregate_mixes_tcp_classes(state: &IngressWindow) -> bool {
+    state.tcp_packets != 0 && state.tcp_packets != state.packets
+}
+
 #[inline(always)]
 fn observe_ingress_v4(
     source: [u8; 4],
@@ -600,17 +685,22 @@ fn observe_ingress_common_v4(
     packet_len: u32,
 ) {
     let epoch_sec = unsafe { bpf_ktime_get_ns() } / 1_000_000_000;
-    let syn = if protocol == 6 && (tcp_flags & 0x02) != 0 && (tcp_flags & 0x10) == 0 {
+    let syn =
+        if protocol == NETWORK_PROTOCOL_TCP && (tcp_flags & 0x02) != 0 && (tcp_flags & 0x10) == 0 {
+            1
+        } else {
+            0
+        };
+    let ack = if protocol == NETWORK_PROTOCOL_TCP && (tcp_flags & 0x10) != 0 {
         1
     } else {
         0
     };
-    let ack = if protocol == 6 && (tcp_flags & 0x10) != 0 {
-        1
+    let attempt = if protocol == NETWORK_PROTOCOL_TCP {
+        syn
     } else {
-        0
+        1
     };
-    let attempt = if protocol == 6 { syn } else { 1 };
     if let Some(ptr) = INGRESS_TRACK_V4.get_ptr_mut(&key) {
         let state = unsafe { &mut *ptr };
         if state.epoch_sec != epoch_sec {
@@ -641,6 +731,7 @@ fn observe_ingress_common_v4(
             state.syn_count = 0;
             state.ack_count = 0;
             state.attempt_count = 0;
+            state.tcp_packets = 0;
             clear_ports(state);
         }
         let new_port = remember_port(state, dst_port);
@@ -668,33 +759,63 @@ fn observe_ingress_common_v4(
             state.syn_count = 0;
             state.ack_count = 0;
             state.attempt_count = 0;
+            state.tcp_packets = 0;
         }
         state.packets = state.packets.saturating_add(1);
         state.bytes = state.bytes.saturating_add(packet_len);
         state.syn_count = state.syn_count.saturating_add(syn);
         state.ack_count = state.ack_count.saturating_add(ack);
         state.attempt_count = state.attempt_count.saturating_add(attempt);
+        if protocol == NETWORK_PROTOCOL_TCP {
+            state.tcp_packets = state.tcp_packets.saturating_add(1);
+        }
         if new_port || state.packets >= INGRESS_BATCH_PACKETS {
-            emit_ingress(
-                NETWORK_FAMILY_V4,
-                protocol,
-                tcp_flags,
-                src_port,
-                dst_port,
-                state.packets,
-                state.bytes,
-                state.syn_count,
-                state.ack_count,
-                state.attempt_count,
-                epoch_sec,
-                source,
-                destination,
-            );
+            if aggregate_mixes_tcp_classes(state) {
+                // A mixed TCP/non-TCP batch has no honest transport label: neither
+                // the protocol nor the TCP flags of the trigger packet describe the
+                // aggregate. Emit the explicit neutral marker (the same contract as
+                // the carry-over flushes) with exact counters, so userspace never
+                // has to guess and never loses a label that was genuinely TCP-only.
+                emit_ingress(
+                    NETWORK_FAMILY_V4,
+                    0,
+                    0,
+                    0,
+                    0,
+                    state.packets,
+                    state.bytes,
+                    state.syn_count,
+                    state.ack_count,
+                    state.attempt_count,
+                    epoch_sec,
+                    source,
+                    [0u8; NETWORK_ADDRESS_BYTES],
+                );
+            } else {
+                // Homogeneous batch: the trigger packet's label is representative,
+                // and for a TCP-only batch attempt_count equals syn_count.
+                emit_ingress(
+                    NETWORK_FAMILY_V4,
+                    protocol,
+                    tcp_flags,
+                    src_port,
+                    dst_port,
+                    state.packets,
+                    state.bytes,
+                    state.syn_count,
+                    state.ack_count,
+                    state.attempt_count,
+                    epoch_sec,
+                    source,
+                    destination,
+                );
+            }
             state.packets = 0;
             state.bytes = 0;
             state.syn_count = 0;
             state.ack_count = 0;
             state.attempt_count = 0;
+            state.tcp_packets = 0;
         }
         return;
     }
@@ -705,6 +826,7 @@ fn observe_ingress_common_v4(
         syn_count: 0,
         ack_count: 0,
         attempt_count: 0,
+        tcp_packets: 0,
         port0: dst_port,
         port1: 0,
         port2: 0,
@@ -746,17 +868,22 @@ fn observe_ingress_v6(
     packet_len: u32,
 ) {
     let epoch_sec = unsafe { bpf_ktime_get_ns() } / 1_000_000_000;
-    let syn = if protocol == 6 && (tcp_flags & 0x02) != 0 && (tcp_flags & 0x10) == 0 {
+    let syn =
+        if protocol == NETWORK_PROTOCOL_TCP && (tcp_flags & 0x02) != 0 && (tcp_flags & 0x10) == 0 {
+            1
+        } else {
+            0
+        };
+    let ack = if protocol == NETWORK_PROTOCOL_TCP && (tcp_flags & 0x10) != 0 {
         1
     } else {
         0
     };
-    let ack = if protocol == 6 && (tcp_flags & 0x10) != 0 {
-        1
+    let attempt = if protocol == NETWORK_PROTOCOL_TCP {
+        syn
     } else {
-        0
+        1
     };
-    let attempt = if protocol == 6 { syn } else { 1 };
     if let Some(ptr) = INGRESS_TRACK_V6.get_ptr_mut(&source) {
         let state = unsafe { &mut *ptr };
         if state.epoch_sec != epoch_sec {
@@ -785,6 +912,7 @@ fn observe_ingress_v6(
             state.syn_count = 0;
             state.ack_count = 0;
             state.attempt_count = 0;
+            state.tcp_packets = 0;
             clear_ports(state);
         }
         let new_port = remember_port(state, dst_port);
@@ -812,33 +940,60 @@ fn observe_ingress_v6(
             state.syn_count = 0;
             state.ack_count = 0;
             state.attempt_count = 0;
+            state.tcp_packets = 0;
         }
         state.packets = state.packets.saturating_add(1);
         state.bytes = state.bytes.saturating_add(packet_len);
         state.syn_count = state.syn_count.saturating_add(syn);
         state.ack_count = state.ack_count.saturating_add(ack);
         state.attempt_count = state.attempt_count.saturating_add(attempt);
+        if protocol == NETWORK_PROTOCOL_TCP {
+            state.tcp_packets = state.tcp_packets.saturating_add(1);
+        }
         if new_port || state.packets >= INGRESS_BATCH_PACKETS {
-            emit_ingress(
-                NETWORK_FAMILY_V6,
-                protocol,
-                tcp_flags,
-                src_port,
-                dst_port,
-                state.packets,
-                state.bytes,
-                state.syn_count,
-                state.ack_count,
-                state.attempt_count,
-                epoch_sec,
-                source,
-                destination,
-            );
+            if aggregate_mixes_tcp_classes(state) {
+                // Mixed TCP/non-TCP aggregate: emit the explicit neutral marker with
+                // exact counters instead of an unrelated trigger label. See the IPv4
+                // path above for the full rationale.
+                emit_ingress(
+                    NETWORK_FAMILY_V6,
+                    0,
+                    0,
+                    0,
+                    0,
+                    state.packets,
+                    state.bytes,
+                    state.syn_count,
+                    state.ack_count,
+                    state.attempt_count,
+                    epoch_sec,
+                    source,
+                    [0u8; NETWORK_ADDRESS_BYTES],
+                );
+            } else {
+                // Homogeneous batch: keep the representative trigger label.
+                emit_ingress(
+                    NETWORK_FAMILY_V6,
+                    protocol,
+                    tcp_flags,
+                    src_port,
+                    dst_port,
+                    state.packets,
+                    state.bytes,
+                    state.syn_count,
+                    state.ack_count,
+                    state.attempt_count,
+                    epoch_sec,
+                    source,
+                    destination,
+                );
+            }
             state.packets = 0;
             state.bytes = 0;
             state.syn_count = 0;
             state.ack_count = 0;
             state.attempt_count = 0;
+            state.tcp_packets = 0;
         }
         return;
     }
@@ -849,6 +1004,7 @@ fn observe_ingress_v6(
         syn_count: 0,
         ack_count: 0,
         attempt_count: 0,
+        tcp_packets: 0,
         port0: dst_port,
         port1: 0,
         port2: 0,
@@ -898,16 +1054,22 @@ fn emit_ingress(
     if packets == 0 {
         return;
     }
-    let attempts = if attempt_count > u8::MAX as u32 {
-        u8::MAX
-    } else {
-        attempt_count as u8
-    };
+    // Every emitted aggregate fits the wire exactly: `INGRESS_BATCH_PACKETS` is
+    // compile-time bounded to u8::MAX, the producer flushes before a larger batch
+    // can accumulate, and every path that produces an aggregate counts at most one
+    // attempt per packet. Do not saturate here: a silently clamped attempt counter
+    // made a genuine TCP label look inconsistent and erased protocol/tcp_flags for
+    // the whole batch in userspace. If the invariant were ever broken, drop the
+    // sample and account it in the existing event-loss health counter instead.
+    if packets > INGRESS_BATCH_PACKETS || attempt_count > u8::MAX as u32 {
+        increment_ingress_counter(&INGRESS_RING_DROPS);
+        return;
+    }
     let event = IngressEvent {
         family,
         protocol,
         tcp_flags,
-        attempt_count: attempts,
+        attempt_count: attempt_count as u8,
         src_port,
         dst_port,
         packets,

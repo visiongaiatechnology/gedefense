@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -392,5 +393,298 @@ func TestResponseEngine_DistinctActionsOnSameTarget(t *testing.T) {
 	}
 	if r1.UUID == r2.UUID {
 		t.Fatal("expected distinct response UUIDs for distinct actions")
+	}
+}
+
+// evidenceRecorder captures the evidence commitments of one engine for assertions.
+type evidenceRecorder struct {
+	mu     sync.Mutex
+	counts map[string]int
+}
+
+func newEvidenceRecorder() *evidenceRecorder {
+	return &evidenceRecorder{counts: make(map[string]int)}
+}
+
+func (r *evidenceRecorder) sink(action, _, _ string, _ time.Time) error {
+	r.mu.Lock()
+	r.counts[action]++
+	r.mu.Unlock()
+	return nil
+}
+
+func (r *evidenceRecorder) count(action string) int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.counts[action]
+}
+
+// TestResponseEngine_ExpiredContainmentsAreReleasedBeforeCapacityPressure is the
+// verification finding R1 regression: an expired containment may still hold a blocked
+// IP. Capacity pressure must release it through the kernel with evidence instead of
+// pruning it out of the bookkeeping silently.
+func TestResponseEngine_ExpiredContainmentsAreReleasedBeforeCapacityPressure(t *testing.T) {
+	dispatcher := newMockDispatcher()
+	cfg := DefaultResponseConfig()
+	cfg.ActorBanTTL = time.Second
+	cfg.EscalationEnabled = false
+	evidence := newEvidenceRecorder()
+	engine := NewResponseEngine(cfg, dispatcher, evidence.sink)
+	ctx := context.Background()
+	now := time.Unix(1_800_000_000, 0).UTC()
+
+	blocked := make([]string, 0, MaxResponseRecords)
+	for index := 0; index < MaxResponseRecords; index++ {
+		target := fmt.Sprintf("10.%d.%d.%d", index/65536, (index/256)%256, index%256)
+		blocked = append(blocked, target)
+		if _, err := engine.ApplyResponse(
+			ctx, now, fmt.Sprintf("inc-r1-%d", index), ActionContainIP, "IP", target, 90, "R1", "ev-r1",
+		); err != nil {
+			t.Fatalf("containment %d/%d: %v", index+1, MaxResponseRecords, err)
+		}
+	}
+	if len(dispatcher.blockedIPs) != MaxResponseRecords {
+		t.Fatalf("kernel holds %d blocked IPs, want %d", len(dispatcher.blockedIPs), MaxResponseRecords)
+	}
+
+	// All TTLs elapsed, the periodic sweep did not run yet and a new autonomous
+	// reaction arrives: the engine must release the expired containments first.
+	newRecord, err := engine.ApplyResponse(
+		ctx, now.Add(2*time.Second), "inc-r1-new", ActionContainIP, "IP", "203.0.113.9", 90, "R1", "ev-r1",
+	)
+	if err != nil {
+		t.Fatalf("new reaction was refused while expired containments were releasable: %v", err)
+	}
+	if newRecord == nil || newRecord.Status != StatusApplied {
+		t.Fatalf("new reaction record = %+v", newRecord)
+	}
+	if released := evidence.count("ROLLBACK_VERIFIED"); released != MaxResponseRecords {
+		t.Fatalf("evidence shows %d verified releases, want %d (silent prune?)", released, MaxResponseRecords)
+	}
+	for _, target := range blocked {
+		if dispatcher.blockedIPs[target] {
+			t.Fatalf("expired containment of %s was discarded without a kernel release", target)
+		}
+	}
+	if !dispatcher.blockedIPs["203.0.113.9"] {
+		t.Fatal("the new containment was not applied to the kernel")
+	}
+	engine.mu.RLock()
+	retained := len(engine.responses)
+	engine.mu.RUnlock()
+	if retained != 1 {
+		t.Fatalf("working set retains %d records, want 1: expired containments must be released, not pruned", retained)
+	}
+}
+
+// TestResponseEngine_DegradedRecordsAreRetriedWithBackoff is verification finding R3:
+// a DEGRADED record (failed kernel release) is retried with bounded backoff and leaves
+// the working set only after a verified release.
+func TestResponseEngine_DegradedRecordsAreRetriedWithBackoff(t *testing.T) {
+	dispatcher := newMockDispatcher()
+	cfg := DefaultResponseConfig()
+	cfg.ActorBanTTL = time.Second
+	cfg.EscalationEnabled = false
+	evidence := newEvidenceRecorder()
+	engine := NewResponseEngine(cfg, dispatcher, evidence.sink)
+	ctx := context.Background()
+	now := time.Unix(1_800_000_000, 0).UTC()
+	const target = "192.0.2.7"
+
+	if _, err := engine.ApplyResponse(ctx, now, "inc-r3", ActionContainIP, "IP", target, 90, "R3", "ev-r3"); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	dispatcher.failNextAction = true
+	if released, err := engine.RollbackExpired(ctx, now.Add(2*time.Second)); err != nil || len(released) != 0 {
+		t.Fatalf("first release attempt: released=%d err=%v", len(released), err)
+	}
+	if active := engine.ActiveResponses(); len(active) != 1 || active[0].Status != StatusDegraded {
+		t.Fatalf("degraded record not retained as active: %+v", active)
+	}
+	dispatcher.failNextAction = false
+
+	// Before the backoff elapsed the guard must not hammer the kernel again.
+	beforeRetry := now.Add(2*time.Second + time.Second)
+	if released, err := engine.RollbackExpired(ctx, beforeRetry); err != nil || len(released) != 0 {
+		t.Fatalf("degraded record was retried before its backoff elapsed: released=%d err=%v", len(released), err)
+	}
+	if active := engine.ActiveResponses(); len(active) != 1 || active[0].Status != StatusDegraded {
+		t.Fatalf("degraded record changed state before the retry: %+v", active)
+	}
+
+	// Once due, the retry releases the containment and the record leaves the set.
+	due := beforeRetry.Add(responseRollbackRetryDelay(1))
+	released, err := engine.RollbackExpired(ctx, due)
+	if err != nil || len(released) != 1 {
+		t.Fatalf("retry after backoff: released=%d err=%v", len(released), err)
+	}
+	if released[0].Status != StatusRolledBack {
+		t.Fatalf("retried record status = %s, want ROLLED_BACK", released[0].Status)
+	}
+	if dispatcher.blockedIPs[target] {
+		t.Fatalf("the kernel still blocks %s after the verified retry", target)
+	}
+	if active := engine.ActiveResponses(); len(active) != 0 {
+		t.Fatalf("degraded record did not leave the active set after release: %+v", active)
+	}
+	if evidence.count("ROLLBACK_RETRY") != 1 || evidence.count("ROLLBACK_VERIFIED") != 1 {
+		t.Fatalf("retry evidence = retry:%d verified:%d, want 1/1",
+			evidence.count("ROLLBACK_RETRY"), evidence.count("ROLLBACK_VERIFIED"))
+	}
+}
+
+// TestResponseEngine_DegradedRetryBudgetIsBounded proves the R3 retry stays bounded: a
+// permanently failing kernel release is attempted a finite number of times, then the
+// record stays visible, blocking and operator-actionable instead of being forgotten.
+func TestResponseEngine_DegradedRetryBudgetIsBounded(t *testing.T) {
+	dispatcher := newMockDispatcher()
+	cfg := DefaultResponseConfig()
+	cfg.ActorBanTTL = time.Second
+	cfg.EscalationEnabled = false
+	evidence := newEvidenceRecorder()
+	engine := NewResponseEngine(cfg, dispatcher, evidence.sink)
+	ctx := context.Background()
+	now := time.Unix(1_800_000_000, 0).UTC()
+	const target = "198.51.100.44"
+
+	record, err := engine.ApplyResponse(ctx, now, "inc-r3b", ActionContainIP, "IP", target, 90, "R3", "ev-r3")
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	dispatcher.failNextAction = true
+	attemptTime := now.Add(2 * time.Second)
+	if _, err := engine.RollbackExpired(ctx, attemptTime); err != nil {
+		t.Fatal(err)
+	}
+	for step := 0; step < maxResponseRollbackAttempts+2; step++ {
+		attemptTime = attemptTime.Add(11 * time.Minute) // beyond the capped retry backoff
+		if _, err := engine.RollbackExpired(ctx, attemptTime); err != nil {
+			t.Fatal(err)
+		}
+	}
+	engine.mu.RLock()
+	stored, found := engine.responses[record.UUID]
+	engine.mu.RUnlock()
+	if !found {
+		t.Fatal("the persistently degraded record was dropped from the working set")
+	}
+	if stored.RollbackAttempts != maxResponseRollbackAttempts {
+		t.Fatalf("release attempts = %d, want the bounded budget %d", stored.RollbackAttempts, maxResponseRollbackAttempts)
+	}
+	if !stored.RollbackExhausted {
+		t.Fatal("the exhausted retry budget was not marked")
+	}
+	if evidence.count("ROLLBACK_EXHAUSTED") != 1 {
+		t.Fatalf("exhaustion evidence = %d, want exactly 1", evidence.count("ROLLBACK_EXHAUSTED"))
+	}
+	if active := engine.ActiveResponses(); len(active) != 1 {
+		t.Fatalf("the uncertain kernel state is no longer visible as active: %d records", len(active))
+	}
+}
+
+// TestResponseEngine_HistoryIsCountBounded is verification finding R2: even when more
+// than maxResponseHistoryRecords violations occur inside the 24h lookback window, the
+// escalation history must be capped by count, not only by age.
+func TestResponseEngine_HistoryIsCountBounded(t *testing.T) {
+	engine := NewResponseEngine(DefaultResponseConfig(), nil, nil)
+	now := time.Unix(1_800_000_000, 0).UTC()
+	engine.mu.Lock()
+	for index := 0; index < maxResponseHistoryRecords+5000; index++ {
+		engine.history = append(engine.history, ResponseRecord{
+			UUID: fmt.Sprintf("hist-%d", index), TargetID: "198.51.100.7", StartedAt: now,
+		})
+	}
+	engine.mu.Unlock()
+	if _, err := engine.RollbackExpired(context.Background(), now.Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	engine.mu.RLock()
+	length := len(engine.history)
+	engine.mu.RUnlock()
+	if length != maxResponseHistoryRecords {
+		t.Fatalf("history length = %d, want the hard cap %d", length, maxResponseHistoryRecords)
+	}
+}
+
+// TestResponseEngine_SequentialContainmentsDoNotLockOut is the FIND-027 regression: a host that
+// contains and releases one target after another must not run into a permanent capacity wall once
+// the number of completed responses exceeds MaxResponseRecords. RollbackExpired removes a verified
+// rollback from the working set, so the 8193rd containment is applied as easily as the first.
+func TestResponseEngine_SequentialContainmentsDoNotLockOut(t *testing.T) {
+	cfg := DefaultResponseConfig()
+	cfg.EscalationEnabled = false
+	engine := NewResponseEngine(cfg, nil, nil)
+	ctx := context.Background()
+	now := time.Unix(1_800_000_000, 0).UTC()
+	const iterations = 9000 // deliberately above MaxResponseRecords (8192)
+
+	for index := 0; index < iterations; index++ {
+		target := fmt.Sprintf("10.%d.%d.%d", index/65536, (index/256)%256, index%256)
+		if _, err := engine.ApplyResponse(
+			ctx, now, fmt.Sprintf("inc-seq-%d", index), ActionContainIP, "IP", target, 90, "SEQUENTIAL", "evidence-seq",
+		); err != nil {
+			t.Fatalf("containment %d/%d was blocked by the response capacity: %v", index+1, iterations, err)
+		}
+		rolledBack, err := engine.RollbackExpired(ctx, now.Add(DefaultResponseTTL+time.Second))
+		if err != nil {
+			t.Fatalf("rollback %d/%d failed: %v", index+1, iterations, err)
+		}
+		if len(rolledBack) != 1 {
+			t.Fatalf("rollback %d/%d released %d records, want 1", index+1, iterations, len(rolledBack))
+		}
+	}
+
+	engine.mu.RLock()
+	retained := len(engine.responses)
+	engine.mu.RUnlock()
+	if retained != 0 {
+		t.Fatalf("completed responses are still retained in the working set: %d", retained)
+	}
+	if active := engine.ActiveResponses(); len(active) != 0 {
+		t.Fatalf("active responses after the rollbacks = %d, want 0", len(active))
+	}
+}
+
+// TestResponseEngine_ActiveCapacityLimitIsStillEnforced proves the fix does not remove the safety
+// ceiling: the hard limit keeps applying to *active* containments (FIND-027), and the capacity is
+// released again after their TTL elapsed.
+func TestResponseEngine_ActiveCapacityLimitIsStillEnforced(t *testing.T) {
+	cfg := DefaultResponseConfig()
+	cfg.ActorBanTTL = 48 * time.Hour
+	cfg.EscalationEnabled = false // the capacity ceiling is independent of escalation
+	engine := NewResponseEngine(cfg, nil, nil)
+	ctx := context.Background()
+	now := time.Unix(1_800_000_000, 0).UTC()
+
+	for index := 0; index < MaxResponseRecords; index++ {
+		target := fmt.Sprintf("10.%d.%d.%d", index/65536, (index/256)%256, index%256)
+		if _, err := engine.ApplyResponse(
+			ctx, now, fmt.Sprintf("inc-cap-%d", index), ActionContainIP, "IP", target, 90, "CAPACITY", "evidence-cap",
+		); err != nil {
+			t.Fatalf("active containment %d/%d was refused below the hard limit: %v", index+1, MaxResponseRecords, err)
+		}
+	}
+	rejected, err := engine.ApplyResponse(
+		ctx, now, "inc-cap-overflow", ActionContainIP, "IP", "10.255.255.255", 90, "CAPACITY", "evidence-cap",
+	)
+	if err == nil {
+		t.Fatalf("the active capacity limit was not enforced, got record %+v", rejected)
+	}
+	var storageErr *ResponseStorageException
+	if !errors.As(err, &storageErr) {
+		t.Fatalf("expected ResponseStorageException at the active limit, got %T: %v", err, err)
+	}
+
+	rolledBack, err := engine.RollbackExpired(ctx, now.Add(49*time.Hour))
+	if err != nil {
+		t.Fatalf("rollback of the expired hard-limit set failed: %v", err)
+	}
+	if len(rolledBack) != MaxResponseRecords {
+		t.Fatalf("released %d records after expiry, want %d", len(rolledBack), MaxResponseRecords)
+	}
+	if _, err := engine.ApplyResponse(
+		ctx, now.Add(50*time.Hour), "inc-cap-released", ActionContainIP, "IP", "10.255.255.255", 90, "CAPACITY", "evidence-cap",
+	); err != nil {
+		t.Fatalf("capacity was not released after the active responses expired: %v", err)
 	}
 }

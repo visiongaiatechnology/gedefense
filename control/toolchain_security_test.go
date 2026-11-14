@@ -3,37 +3,79 @@ package main
 
 import (
 	"os"
+	"path/filepath"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
 	"testing"
 )
 
-// toolchainSecurityFloor is the oldest Go toolchain this product may be built with.
-//
-// It is not a preference. `govulncheck` reported six standard-library
-// vulnerabilities that are reachable from this code when it is built with
-// go1.26.4, every one of them fixed in go1.26.5 or go1.26.6:
-//
-//	GO-2026-6218  net/url       quadratic complexity in resolvePath
-//	GO-2026-6090  crypto/tls    post-handshake message limit
-//	GO-2026-5856  crypto/tls    (fixed in go1.26.5)
-//	GO-2026-6089  net/http      ReadHeaderTimeout in the h2c check
-//	GO-2026-5972  encoding/asn1 recursion depth
-//	GO-2026-5026  net/http      (fixed in go1.26.6)
-//
-// The reachable traces include the two most exposed paths in the product: the L7
-// ingress reverse proxy (`l7_edge.go` -> `httputil.ReverseProxy`) and the threat
-// intelligence feed fetcher (`feeds.go` -> `http.Client.Do`), plus the API server
-// itself. A toolchain is part of the attack surface, and a build that silently uses
-// a vulnerable one ships the vulnerability.
-//
-// This test cannot run on every developer host, which is the point: it is a CI
-// gate. It fails loudly rather than allowing a vulnerable artefact to be produced.
-const toolchainSecurityFloor = "go1.26.6"
+// The release toolchain policy is declared once, in TOOLCHAINS.lock, and this
+// test derives every expectation from that file. A hard-coded floor used to
+// drift behind the lock (go1.26.6 while the lock and control/go.mod already
+// pinned go1.27.3), which made the gate approve stale release toolchains.
+const (
+	toolchainLockPath = "../TOOLCHAINS.lock"
+	lockGoReleaseKey  = "Go release validation"
+	lockNodeKey       = "Node.js syntax validation"
+	lockRustStableKey = "Rust stable"
+	lockRustEBPFKey   = "Rust eBPF nightly"
+)
+
+var (
+	releaseVersionPattern = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+$`)
+	nightlyPattern        = regexp.MustCompile(`^nightly-[0-9]{4}-[0-9]{2}-[0-9]{2}$`)
+)
+
+// toolchainLock is the parsed `key = value` release toolchain lock.
+type toolchainLock map[string]string
+
+// readToolchainLock loads TOOLCHAINS.lock relative to the package directory.
+// The go command runs a package's tests with the package directory as the
+// working directory, and the file read is local only: this test never touches
+// the network and never invokes a package manager or a toolchain download.
+func readToolchainLock(t *testing.T) toolchainLock {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join("..", "TOOLCHAINS.lock"))
+	if err != nil {
+		t.Fatalf("read TOOLCHAINS.lock: %v", err)
+	}
+	values := make(toolchainLock)
+	for _, line := range strings.Split(string(raw), "\n") {
+		key, value, found := strings.Cut(line, " = ")
+		if !found {
+			continue
+		}
+		values[strings.TrimSpace(key)] = strings.TrimSpace(value)
+	}
+	return values
+}
+
+// required returns a lock value and fails the test when it is missing.
+func (lock toolchainLock) required(t *testing.T, key string) string {
+	t.Helper()
+	value := lock[key]
+	if value == "" {
+		t.Fatalf("TOOLCHAINS.lock no longer declares %q", key)
+	}
+	return value
+}
+
+// goFloor returns the security floor in the `go1.27.3` form used by
+// runtime.Version() and the go.mod toolchain directive.
+func (lock toolchainLock) goFloor(t *testing.T) string {
+	t.Helper()
+	version := lock.required(t, lockGoReleaseKey)
+	if !releaseVersionPattern.MatchString(version) {
+		t.Fatalf("TOOLCHAINS.lock Go release validation %q is not a release version", version)
+	}
+	return "go" + version
+}
 
 // goVersionOlder reports whether version is strictly older than floor. Both are
-// expected in the `go1.26.4` form that runtime.Version() and the go directive use.
+// expected in the `go1.27.3` form that runtime.Version() and the go directive
+// use.
 func goVersionOlder(version, floor string) bool {
 	parse := func(value string) (int, int, int, bool) {
 		trimmed := strings.TrimPrefix(strings.TrimSpace(value), "go")
@@ -73,41 +115,27 @@ func goVersionOlder(version, floor string) bool {
 }
 
 // TestToolchainMeetsSecurityFloor blocks a release built with a toolchain that
-// carries the reachable standard-library vulnerabilities listed above.
+// is older than the Go release validated in TOOLCHAINS.lock and pinned in
+// control/go.mod.
 func TestToolchainMeetsSecurityFloor(t *testing.T) {
+	floor := readToolchainLock(t).goFloor(t)
 	version := runtime.Version()
 	if !strings.HasPrefix(version, "go") {
 		t.Fatalf("unrecognised toolchain version %q", version)
 	}
-	if goVersionOlder(version, toolchainSecurityFloor) {
-		t.Fatalf("toolchain %s is older than the security floor %s: govulncheck reports reachable standard-library vulnerabilities (GO-2026-6218, GO-2026-6090, GO-2026-5856, GO-2026-6089, GO-2026-5972, GO-2026-5026) below it", version, toolchainSecurityFloor)
+	if goVersionOlder(version, floor) {
+		t.Fatalf("toolchain %s is older than the TOOLCHAINS.lock release validation %s: the release gate must use the validated Go release (govulncheck evidence in SECURITY.md)", version, floor)
 	}
 }
 
-// TestToolchainFloorIsDeclaredInGoMod keeps the declared toolchain and the enforced
-// floor in step, so a build that pins an older toolchain cannot pass by ignoring the
-// test's constant.
-func TestToolchainFloorIsDeclaredInGoMod(t *testing.T) {
-	declared := declaredToolchain(t)
-	if declared == "" {
-		t.Fatalf("go.mod no longer declares a toolchain floor; the security floor is %s", toolchainSecurityFloor)
-	}
-	if goVersionOlder(declared, toolchainSecurityFloor) {
-		t.Fatalf("go.mod declares toolchain %s, which is below the security floor %s", declared, toolchainSecurityFloor)
-	}
-}
-
-// declaredToolchain reads the toolchain directive out of the module file. The go
-// command runs a package's tests with the package directory as the working
-// directory, so the module file sits beside the test that inspects it.
-func declaredToolchain(t *testing.T) string {
+// declaredToolchain reads the toolchain directive out of the given module file.
+func declaredToolchain(t *testing.T, moduleFile string) string {
 	t.Helper()
-	raw, err := os.ReadFile("go.mod")
+	raw, err := os.ReadFile(moduleFile)
 	if err != nil {
-		t.Fatalf("read go.mod: %v", err)
+		t.Fatalf("read %s: %v", moduleFile, err)
 	}
-	body := string(raw)
-	for _, line := range strings.Split(body, "\n") {
+	for _, line := range strings.Split(string(raw), "\n") {
 		trimmed := strings.TrimSpace(line)
 		if !strings.HasPrefix(trimmed, "toolchain ") {
 			continue
@@ -115,4 +143,55 @@ func declaredToolchain(t *testing.T) string {
 		return strings.TrimSpace(strings.TrimPrefix(trimmed, "toolchain "))
 	}
 	return ""
+}
+
+// TestToolchainFloorIsDeclaredInGoMod keeps the declared control toolchain and
+// the TOOLCHAINS.lock release validation in step, so a build that pins an older
+// toolchain cannot pass by ignoring the lock.
+func TestToolchainFloorIsDeclaredInGoMod(t *testing.T) {
+	lock := readToolchainLock(t)
+	floor := lock.goFloor(t)
+	declared := declaredToolchain(t, "go.mod")
+	if declared == "" {
+		t.Fatalf("control/go.mod no longer declares a toolchain floor; TOOLCHAINS.lock pins %s", floor)
+	}
+	if declared != floor {
+		t.Fatalf("control/go.mod declares toolchain %s but TOOLCHAINS.lock validates %s", declared, floor)
+	}
+	if goVersionOlder(declared, floor) {
+		t.Fatalf("control/go.mod declares toolchain %s, which is below the security floor %s", declared, floor)
+	}
+}
+
+// TestGatewayGoModDeclaresToolchain verifies the gateway module carries the
+// same explicit toolchain pin as the control module. A gateway module without a
+// toolchain directive would let a release build silently fall back to a newer
+// or older host toolchain than the validated release (FIND-004).
+func TestGatewayGoModDeclaresToolchain(t *testing.T) {
+	lock := readToolchainLock(t)
+	floor := lock.goFloor(t)
+	declared := declaredToolchain(t, filepath.Join("..", "gateway", "go.mod"))
+	if declared == "" {
+		t.Fatalf("gateway/go.mod no longer declares a toolchain; TOOLCHAINS.lock validates %s", floor)
+	}
+	if declared != floor {
+		t.Fatalf("gateway/go.mod declares toolchain %s but TOOLCHAINS.lock validates %s", declared, floor)
+	}
+}
+
+// TestToolchainLockDeclaresNodeAndRustPins validates the remaining release
+// toolchain pins parsed from TOOLCHAINS.lock, so removing or malforming a pin
+// fails the test gate instead of being discovered at packaging time.
+func TestToolchainLockDeclaresNodeAndRustPins(t *testing.T) {
+	lock := readToolchainLock(t)
+	if version := lock.required(t, lockNodeKey); !releaseVersionPattern.MatchString(version) {
+		t.Fatalf("TOOLCHAINS.lock Node.js syntax validation %q is not a release version", version)
+	}
+	if version := lock.required(t, lockRustStableKey); !releaseVersionPattern.MatchString(version) {
+		t.Fatalf("TOOLCHAINS.lock Rust stable %q is not a release version", version)
+	}
+	if nightly := lock.required(t, lockRustEBPFKey); !nightlyPattern.MatchString(nightly) {
+		t.Fatalf("TOOLCHAINS.lock Rust eBPF nightly %q is not a pinned nightly toolchain", nightly)
+	}
+	lock.goFloor(t) // Go release validation must be a release version as well.
 }

@@ -179,6 +179,15 @@ func (r *sessionRegistry) rotate(session *gatewaySession) (*gatewaySession, erro
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	// FIND-011: the grace alias of the previous rotation must leave the registry before
+	// previousID is overwritten. Leaving it behind made every rotation create one orphan
+	// map entry that was only reclaimed when something happened to validate that exact
+	// retired id; len(sessions) then grew with the number of rotations, the cap-based
+	// eviction in create() released far fewer aliases than it counted, and the registry
+	// held dead keys for the whole process lifetime.
+	if previous := session.previousID; previous != "" {
+		delete(r.sessions, previous)
+	}
 	session.previousID = session.id
 	session.previousValidUntil = now.Add(sessionRotationGrace)
 	delete(r.sessions, session.id)
@@ -213,16 +222,20 @@ func (r *sessionRegistry) revokeAll() int {
 	return revoked
 }
 
+// count reports sessions, not registry slots: a live session owns its current id and, during
+// the rotation grace window, one alias pointing at the same record. Counting map entries
+// reported that one operator as two and, before FIND-011, let orphaned aliases inflate the
+// number further.
 func (r *sessionRegistry) count() int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	count := 0
+	seen := make(map[*gatewaySession]struct{}, len(r.sessions))
 	for _, session := range r.sessions {
 		if session.id != "" {
-			count++
+			seen[session] = struct{}{}
 		}
 	}
-	return count
+	return len(seen)
 }
 
 // ---------------------------------------------------------------- cookies

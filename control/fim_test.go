@@ -4,6 +4,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -101,5 +102,26 @@ func TestFIMRejectsFilesystemRoot(t *testing.T) {
 	}
 	if _, err := NewFIMEngine([]string{string(filepath.Separator)}, filepath.Join(dir, "fim.enc"), storage); err == nil {
 		t.Fatal("filesystem-root target unexpectedly accepted")
+	}
+}
+
+// TestFIMRejectsPlaintextBaseline pins the strict storage contract for the FIM baseline: its
+// AEAD binding is the authenticity proof, so an unencrypted document must fail closed with a
+// clear message instead of being adopted as a legacy baseline.
+func TestFIMRejectsPlaintextBaseline(t *testing.T) {
+	watched := filepath.Join(t.TempDir(), "watched.conf")
+	if err := os.WriteFile(watched, []byte("trusted\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	engine := newTestFIM(t, []string{watched})
+	if _, err := engine.CreateBaseline(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(engine.baselinePath, []byte(`{"schema":"vgt-gedefense-fim-v1"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err := engine.load()
+	if err == nil || !strings.Contains(err.Error(), "unencrypted baselines are rejected") {
+		t.Fatalf("a plaintext FIM baseline was not refused with a clear error: %v", err)
 	}
 }

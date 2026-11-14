@@ -785,3 +785,98 @@ func writeFeedManifestJSON(path string, document threatFeedManifestDocument) err
 	}
 	return atomicWriteFile(path, encoded, 0o600)
 }
+
+// ---------------------------------------------------------------------------
+// FIND-023 (feed_signing): a stale or corrupt temporary file is never evidence
+// that the self-heal marker was published.
+// ---------------------------------------------------------------------------
+
+func TestFeedSigningSelfHealMarkerIgnoresStaleTempFiles(t *testing.T) {
+	dir := t.TempDir()
+	keysDir := filepath.Join(dir, "keys")
+	publicKey, err := InitFeedSigning(keysDir, "")
+	if err != nil {
+		t.Fatalf("init feed signing: %v", err)
+	}
+	stateDir := filepath.Join(dir, "state")
+	if err := os.MkdirAll(stateDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	markerPath := filepath.Join(stateDir, feedSigningSelfHealMarkerFile)
+
+	// The historical implementation opened markerPath+".tmp" with O_EXCL and
+	// reported success when that open returned os.ErrExist. Plant exactly the
+	// remnants an interrupted write leaves behind: the fixed legacy name and a
+	// partial CreateTemp file with the reserved prefix.
+	legacyStale := markerPath + ".tmp"
+	if err := os.WriteFile(legacyStale, []byte("{not-json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	prefixedStale := filepath.Join(stateDir, feedSigningSelfHealTempPrefix+"interrupted.tmp")
+	if err := os.WriteFile(prefixedStale, []byte("garbage"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	unrelated := filepath.Join(stateDir, "unrelated.file")
+	if err := os.WriteFile(unrelated, []byte("keep"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := FeedConfig{
+		LocalSigning: true, RequireSignedManifest: true,
+		SigningKeyFile: filepath.Join(keysDir, feedSigningPrivateKeyFile),
+	}
+	healed, ok, healErr := selfHealFeedSigningPin(cfg, stateDir)
+	if healErr != nil || !ok {
+		t.Fatalf("self-heal with stale temp files failed: ok=%v err=%v", ok, healErr)
+	}
+	if !healed.Equal(publicKey) {
+		t.Fatal("self-healed key is not the operator key")
+	}
+	// Success must mean a validated marker exists, not merely that a leftover
+	// temporary file was encountered.
+	if _, markerErr := readFeedSigningSelfHealMarker(markerPath, feedSigningPublicKeyBase64(publicKey)); markerErr != nil {
+		t.Fatalf("self-heal reported success without a valid marker: %v", markerErr)
+	}
+	for _, stale := range []string{legacyStale, prefixedStale} {
+		if _, statErr := os.Lstat(stale); !os.IsNotExist(statErr) {
+			t.Fatalf("stale temporary file %q was not cleaned up", stale)
+		}
+	}
+	if _, statErr := os.Lstat(unrelated); statErr != nil {
+		t.Fatalf("cleanup removed an unrelated state file: %v", statErr)
+	}
+
+	// The published marker is stable: a second call is idempotent.
+	secondKey, secondOK, secondErr := selfHealFeedSigningPin(cfg, stateDir)
+	if secondErr != nil || !secondOK || !secondKey.Equal(publicKey) {
+		t.Fatalf("second self-heal not idempotent: ok=%v err=%v", secondOK, secondErr)
+	}
+
+	// A corrupt marker is a hard fail-closed condition, never a re-create.
+	if err := os.WriteFile(markerPath, []byte("{corrupt"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, corruptErr := selfHealFeedSigningPin(cfg, stateDir); corruptErr == nil {
+		t.Fatal("corrupt self-heal marker was silently replaced")
+	}
+
+	// A marker for a different operator key is a rotation signal, not a licence
+	// to re-pin.
+	foreignPublic, _, generateErr := ed25519.GenerateKey(rand.Reader)
+	if generateErr != nil {
+		t.Fatal(generateErr)
+	}
+	foreignMarker := feedSigningSelfHealMarker{
+		Schema: "vgt.feed-signing.self-heal/v1", PublicKey: feedSigningPublicKeyBase64(foreignPublic),
+	}
+	foreignRaw, marshalErr := json.Marshal(foreignMarker)
+	if marshalErr != nil {
+		t.Fatal(marshalErr)
+	}
+	if err := os.WriteFile(markerPath, foreignRaw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, rotationErr := selfHealFeedSigningPin(cfg, stateDir); rotationErr == nil || !strings.Contains(rotationErr.Error(), "explicit pin required") {
+		t.Fatalf("rotated self-heal marker did not fail closed: %v", rotationErr)
+	}
+}

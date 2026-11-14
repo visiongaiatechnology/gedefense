@@ -187,9 +187,9 @@ def cmd_pack_source(args: argparse.Namespace) -> int:
         raise security.ReleaseError(f"staging directory already exists: {work}")
     try:
         stage_info = security.stage_tracked_tree(root, work, allow_dirty=args.allow_dirty)
-        name = f"VGT_GeDefense_{channel.capitalize()}_v5_{version}_Source.zip"
+        name = f"VGT_GeDefense_Beta_v5_{version}_Source.zip"
         archive = out_dir / name
-        prefix = f"VGT_GeDefense_{channel.capitalize()}_v5_{version}/"
+        prefix = f"VGT_GeDefense_Beta_v5_{version}/"
         first_hash = security.deterministic_zip(work, archive, prefix=prefix, epoch=epoch)
         sidecar = out_dir / (name + ".sha256")
         sidecar.write_text(f"{first_hash}  {name}\n", encoding="utf-8", newline="\n")

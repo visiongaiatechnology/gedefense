@@ -117,8 +117,15 @@ func TestRuntimeSettingsLoadLegacyDocumentWithoutRuleFields(t *testing.T) {
 	mac.Write([]byte(runtimeSettingsSchema))
 	mac.Write([]byte{0})
 	mac.Write(canonical)
+	// The history MAC is mandatory: every writer of this format emits it, and the history is
+	// the rollback surface that must not be plantable by a writer without the key.
+	historyMAC, err := (&SettingsStore{key: key}).macHistory(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	document := runtimeSettingsEnvelope{
 		Schema: runtimeSettingsSchema, Settings: legacy, MAC: hex.EncodeToString(mac.Sum(nil)),
+		HistoryMAC: hex.EncodeToString(historyMAC),
 	}
 	encoded, err := json.Marshal(document)
 	if err != nil {
@@ -134,5 +141,68 @@ func TestRuntimeSettingsLoadLegacyDocumentWithoutRuleFields(t *testing.T) {
 	}
 	if effective := effectiveRuleModules(store.Get()); len(effective) != len(supportedRuleModules) {
 		t.Fatalf("legacy document did not activate safe default modules: %v", effective)
+	}
+}
+
+// TestRuntimeSettingsRejectsMissingHistoryMAC is the regression for FIND-015: the history MAC
+// was verified only when the document happened to carry one ("if document.HistoryMAC != """), so
+// a document with an empty field skipped the history authentication entirely. The history is the
+// rollback surface - planting entries there makes an operator rollback activate settings the
+// attacker chose - and the format has always emitted a MAC for it, so an empty one is an
+// integrity failure and never a backward-compatibility case.
+func TestRuntimeSettingsRejectsMissingHistoryMAC(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		history bool
+	}{
+		{"empty history", false},
+		{"populated history", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			keyPath := filepath.Join(dir, "runtime.key")
+			if err := os.WriteFile(keyPath, make([]byte, 32), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			cfg := defaultConfig()
+			cfg.Runtime.StorageKeyFile = ""
+			path := filepath.Join(dir, "runtime.json")
+			store, err := NewSettingsStore(path, keyPath, cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tc.history {
+				next := store.Get()
+				next.ScanIntervalMillis = 1337
+				if _, err := store.Update(next); err != nil {
+					t.Fatal(err)
+				}
+			}
+			raw, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var document runtimeSettingsEnvelope
+			if err := json.Unmarshal(raw, &document); err != nil {
+				t.Fatal(err)
+			}
+			if document.HistoryMAC == "" {
+				t.Fatal("the fixture was not authenticated under the current format")
+			}
+			if tc.history && len(document.History) == 0 {
+				t.Fatal("the populated-history fixture carries no history")
+			}
+			document.HistoryMAC = ""
+			encoded, err := json.MarshalIndent(document, "", "  ")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, append(encoded, '\n'), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := NewSettingsStore(path, keyPath, cfg); err == nil {
+				t.Fatal("runtime settings with an empty history MAC were accepted")
+			}
+		})
 	}
 }

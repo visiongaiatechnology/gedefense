@@ -120,7 +120,7 @@ VGT GeDefense System (v4.2.5 — Fail-Closed Kinetic Rework & Security Fabric)
 │   │   ├── Background Incremental Verification (Authenticated Watermarks · 25,000 Records/Run)
 │   │   └── Automatic Retention Rotation (90% Threshold Trigger · Atomic Marker & Swap · Mode 0700)
 │   ├── Durable Security Transactions Engine (6-Phase Reversible Posture Pipeline with Rollback)
-│   ├── Autonomous XDR Engine (Proc Sampling, Socket Matching, Attack DAG, Self-Artifact Filter)
+│   ├── Autonomous XDR Engine (Proc Sampling, Socket Matching, Attack DAG, Own-Artifact Tamper Detection)
 │   ├── Incident Ledger & Recovery Subsystem (90% Retention Archiving & Damaged Tail Repair)
 │   ├── Kinetic Defense Engine (Volumetric Bursts, Protocol Invariants, Dynamic CIDR Mitigation)
 │   ├── Embedded GeoIP & Geographic Origin Resolver (Local CSV CIDR Range Lookup)
@@ -158,7 +158,7 @@ VGT GeDefense System (v4.2.5 — Fail-Closed Kinetic Rework & Security Fabric)
 │   ├── XDP Ingress Filter (gedefense_xdp · Invariant-Tolerant Parsing & LPM Trie Matching)
 │   │   ├── Management Allowlist Trie (ALLOWLIST_V4 / ALLOWLIST_V6) -> XDP_PASS
 │   │   └── Kinetic Blocklist Trie (BLOCKLIST_V4 / BLOCKLIST_V6) -> XDP_DROP
-│   ├── Ingress Event Ring Buffer (Perf Event Drain · Non-Hostile Aggregate Normalization)
+│   ├── Ingress Event Ring Buffer (Perf Event Drain · Explicit Neutral-Marker Wire Contract)
 │   ├── Process Execution Tracepoint (gedefense_sched_process_exec -> RingBuf Telemetry)
 │   ├── Cgroup Outbound Egress Filter (gedefense_egress -> Styx Port/Protocol Enforcement)
 │   └── Gaia Cells Socket Create LSM Hook (gedefense_cell_socket_create -> AF_UNIX Only Isolation)
@@ -381,13 +381,13 @@ control/
   trust_fabric_test.go                         Testing                        Unit tests for trust fabric configuration settings
   web_assets_contract_test.go                  Testing                        Contract tests verifying embedded web assets are present, valid, and secure
   web_i18n_contract_test.go                    Testing                        Contract tests verifying internationalization key coverage across DE, EN, RU, ZH
-  xdr.go                                       Autonomous XDR                 Autonomous XDR engine, process sampling, socket mapping, self-artifact filter
-  xdr_baseline.go                              Autonomous XDR                 Process baseline modeling, anomaly scoring, and approved executable sets
+  xdr.go                                       Autonomous XDR                 Autonomous XDR engine, process sampling, socket mapping, own-artifact tamper detection
+  xdr_baseline.go                              Autonomous XDR                 Process baseline modeling, anomaly scoring, and own-product artifact classification
   xdr_cause_hygiene_test.go                    Testing                        Unit tests verifying XDR degradation causes clear deterministically upon recovery
   xdr_cell_lsm_test.go                         Testing                        Integration tests connecting Gaia Cell LSM violations to XDR incidents
   xdr_dag.go                                   Autonomous XDR                 Directed Acyclic Graph (DAG) model synthesizing attack stories from incidents
   xdr_dag_test.go                              Testing                        Unit tests for DAG attack story generation, parent-child linking, and severity
-  xdr_deploy_not_tamper_test.go                Testing                        Unit tests verifying product component updates are recognized as self-artifacts
+  xdr_update_window_test.go                    Testing                        Unit tests for the signed TTL-bounded own-artifact update window and escalation
   xdr_history_test.go                          Testing                        Unit tests for historical XDR incident querying and pagination
   xdr_l7.go                                    Autonomous XDR                 Bridge transforming L7 WAF high-confidence detections into XDR incident events
   xdr_linux.go                                 Autonomous XDR                 Linux /proc inspection, socket table traversal, and executable path resolution
@@ -399,8 +399,8 @@ control/
   xdr_recovery_test.go                         Testing                        Unit tests for incident ledger recovery, retention rotation, and repair
   xdr_rules.go                                 Autonomous XDR                 Heuristic anomaly detection rules (reverse shell, mem injection, ptrace, suid)
   xdr_runtime_settings_test.go                 Testing                        Unit tests verifying dynamic settings changes propagate to the active XDR engine
-  xdr_self_artifact_test.go                    Testing                        Unit tests for self-artifact verification against signed product release roots
-  xdr_self_tamper_test.go                      Testing                        Unit tests verifying external binary modification triggers immediate containment
+  xdr_self_artifact_test.go                    Testing                        Unit tests for own-product artifact classification against the configured release root
+  xdr_self_tamper_test.go                      Testing                        Unit tests verifying own-artifact modification triggers XDR.SELF_TAMPER and fail-closed degradation
   xdr_test.go                                  Testing                        Comprehensive unit tests for the Autonomous XDR correlation pipeline
   xdr_types.go                                 Autonomous XDR                 Data structures and JSON models for XDR incidents, profiles, rules, and stories
 
@@ -464,7 +464,7 @@ integration/
   astraeaos/gedefense-core-astraeaos.conf      AstraeaOS Integration          Drop-in systemd configuration tuning gedefense-core for AstraeaOS
   astraeaos/gedefense-core-launch              AstraeaOS Integration          Privileged launcher script configuring eBPF filesystem mounts
   astraeaos/gedefense-ensure-ready             AstraeaOS Integration          Helper script ensuring all four daemons are active and responding
-  astraeaos/gedefense-set-password             AstraeaOS Integration          CLI utility setting or rotating the operator password in the gateway database
+  astraeaos/gedefense-set-password             AstraeaOS Integration          CLI utility rotating the operator password; requires interactive sudo/polkit re-authentication and a current-password step-up
   astraeaos/gedefense-shell.cpp                AstraeaOS Integration          Native C++ shell wrapper providing locked kiosk execution for GeDefense
   astraeaos/gedefense.desktop                  AstraeaOS Integration          Freedesktop XDG application shortcut placed in AstraeaOS system menu
   astraeaos/org.astraeaos.gedefense.policy     AstraeaOS Integration          Polkit XML policy defining granular permissions for AstraeaOS operators
@@ -989,7 +989,7 @@ Continuously collects, correlates, and analyzes operating system telemetry (proc
 - Inspects `/proc` execution trees and correlates socket inodes with processes in real time.
 - Matches behavior against 40+ built-in XDR detection rules (`xdr_rules.go`) covering living-off-the-land binaries (LOLBins), reverse shells, privilege escalation, and memory tampering.
 - Builds multi-stage attack Directed Acyclic Graphs (`xdr_dag.go`) connecting initial ingress, process spawning, network lateral movement, and persistence.
-- **Self-Artifact Recognition**: Recognizes official VGT binary updates under `VGT_RELEASE_ROOT` through signature and path verification, treating binary digest mismatches as approved operator updates (`self_artifact`) rather than hostile tampering, eliminating self-lockout DoS.
+- **Own-Artifact Integrity without a Blanket Exemption**: The protected set contains this installation's own executables. A digest mismatch on an own component is never downgraded to an approved `self_artifact` update: outside a verified update window it is a critical `XDR.SELF_TAMPER` incident with a release-blocking degradation and active response disabled (kill eligibility stays off, because terminating the product's own process is not a response). The only sanctioned path is an explicit operator action that verifies the Ed25519-signed release manifest and opens a bounded, digest-exact update window (`BeginSignedUpdateWindow`); only the exact bytes the manifest names for each artifact are applied and re-baselined, so a legitimate signed release cannot self-lock the platform.
 - Enforces configurable automated containment: process suspension/kill via Core IPC `pidfd_open`, and network origin blacklisting.
 
 #### Zugehörige Dateien
@@ -1533,11 +1533,11 @@ control/package_integrity.go
 Probes and verifies the cryptographic hardware trust state of the host platform at startup, including UEFI Secure Boot enforcement, kernel lockdown level, TPM 2.0 PCR registers, and running kernel image digest.
 
 #### Fähigkeiten
-- Queries UEFI variables via `/sys/firmware/efi/efivars/` to confirm SecureBoot mode (`0x01`).
-- Inspects `/sys/kernel/security/lockdown` to ensure confidentiality or integrity lockdown is active.
-- Communicates with `/dev/tpmrm0` or `/dev/tpm0` using TPM 2.0 command primitives to read PCR 0 (Firmware/BIOS), PCR 2 (Option ROMs), PCR 4 (Bootloader), and PCR 7 (Secure Boot Policy).
-- Calculates the running kernel image SHA-256 digest from `/boot` and `/proc/version` and verifies it against the signed distribution manifest.
-- Feeds hardware trust state into the Release Controller: failure immediately blocks promotion to `enforce`.
+- Verifies the AstraeaOS boot-attestation document against a pinned Ed25519 public key before any field is trusted: the detached signature over the document's SHA-256 digest must verify, and the JSON shape alone never yields a positive boot-trust claim (`FIND-008`).
+- Re-validates the signed measurement payload against the live TPM 2.0 PCR values (PCR 0 firmware, PCR 2 option ROMs, PCR 4 bootloader, PCR 7 Secure Boot policy) read from TPM sysfs, the pinned TPM policy key fingerprint and the systemd PCR signature file (`/run/systemd/tpm2-pcr-signature.json`).
+- Verifies the operator-signed fs-verity manifest file by file via `FS_IOC_MEASURE_VERITY` (bounded to 512 files) instead of trusting an unscoped kernel-image digest.
+- Reports `NOT_AVAILABLE`/`WARNING` instead of a fabricated verdict when the pinned keys, the attestation producer or the measured values are absent; UEFI Secure Boot state (`/sys/firmware/efi/efivars/`) and `/sys/kernel/security/lockdown` remain contextual evidence only.
+- Feeds the verified hardware trust state into the Release Controller: failure immediately blocks promotion to `enforce`.
 
 #### Zugehörige Dateien
 ```text
@@ -1556,7 +1556,8 @@ Styles:
 - control/web/v4.css (TPM register visualizer, Secure Boot badge, lockdown status pill)
 
 Datenbank / Storage:
-- /var/lib/vgt/gedefense/boot-trust.json
+- /run/astraeaos/boot-attestation.json (+ .sig, produced by the root-owned astraeaos-boot-attestation service)
+- /usr/share/astraeaos/boot-trust/ (pinned attestation/TPM public keys, operator-signed fs-verity manifest + .sig)
 
 Konfiguration:
 - gedefense.toml (boot_trust section: expected PCR hashes, required lockdown level)
@@ -1574,7 +1575,7 @@ Tests:
 control/boot_trust.go
 ├── liest /sys/firmware/efi/efivars/
 ├── liest /sys/kernel/security/lockdown
-├── greift auf TPM 2.0 Device zu (/dev/tpmrm0)
+├── liest TPM-2.0-PCR-Werte aus dem TPM-sysfs und die systemd-PCR-Signatur
 └── liefert Hardware-Status an control/release.go und control/server.go
 ```
 
@@ -1930,7 +1931,8 @@ Manages the staged operational promotion ladder (`OBSERVE` -> `CANARY` [900s soa
   5. Ingress Invariant Health (Raw ingress packet drop metrics within normal limits).
   6. Soak Window Completion (900 seconds in Canary mode without high-severity incidents).
 - **Fail-Closed Policy Retention (`release.go`)**: When degraded (e.g., loss of telemetry or core restart), the controller retains active kernel drop rules rather than opening the firewall (`verified-enforce`).
-- **Anti-Flapping Auto-Rearm (`recoverIfGatesPassLocked`)**: Automatically restores `ENFORCE` once healthy gate conditions persist for the soak window, without requiring manual operator intervention.
+- **Anti-Flapping Auto-Rearm (`recoverIfGatesPassLocked`)**: Automatically restores `ENFORCE` once healthy gate conditions persist for the soak window, without requiring manual operator intervention - except while a startup policy is quarantined: the automatic path never re-establishes an unverifiable signed policy, and promotion stays refused until an explicit operator recovery (`RETURN:OBSERVE`).
+- **Policy Quarantine & Blocker Reporting (`FIND-013`/`FIND-014`)**: An unverifiable signed policy is copied aside, left unmodified and never re-signed by an automatic path; the confirmed kernel enforcement is retained, and blocker evaluation and reporting still run when Auto-Degrade is disabled instead of being suppressed with the automatic mode switch.
 
 #### Zugehörige Dateien
 ```text
@@ -2281,6 +2283,9 @@ Executes in-kernel packet filtering, process execution tracing, egress filtering
   - Attaches to cgroup-skb hooks to enforce Styx outbound port and destination restrictions.
 - **Gaia Cells LSM Hook (`gedefense_cell_socket_create`)**:
   - Hooks kernel socket creation to restrict Gaia Cells sandboxes to `AF_UNIX` sockets.
+- **Producer Wire Contract (`FIND-036`)**:
+  - Flushes the ingress aggregate at most 255 packets per event (the `attempt_count` wire field is a `u8`), so counters are exact and never saturated; a batch that mixes TCP with non-TCP packets carries the explicit neutral marker (`protocol = 0`, `tcp_flags = 0`) instead of the label of the packet that triggered the flush.
+  - Walks the full cgroup-v2 ancestry (bounded to 64 levels) for LSM policies, so a policy pinned on a Gaia Cell cgroup also covers descendant and leaf cgroups.
 
 #### Zugehörige Dateien
 ```text
@@ -2335,6 +2340,7 @@ Defines shared Rust data structures, event payloads, map value structs, and IPC 
 - Defines `#repr(C)` structs for eBPF maps: `Ipv4LpmKey`, `Ipv6LpmKey`, `PacketDropEvent`, `ProcessExecEvent`, `EgressRule`.
 - Eliminates serialization overhead between kernel and userspace through zero-copy binary casting.
 - Enforces strict endianness safety for network byte order comparisons.
+- **Ingress Wire Decoder (`FIND-036`)**: Validates the producer contract on the userspace side (batch at least one packet, no counter above the batch length, disjoint SYN/ACK classes, `attempt_count == syn_count` for a TCP label, TCP flags only on a TCP label). A record that contradicts the contract is rejected and counted as a lost sample with a drain alarm - it is never rewritten into a neutral label, which previously hid corrupted aggregates instead of reporting them.
 
 #### Zugehörige Dateien
 ```text
@@ -2894,7 +2900,8 @@ app.js renders verified green seal ("CHAIN VERIFIED: OK") and event table
 #### Datenbankzugriffe / Storage
 - `/sys/firmware/efi/efivars/`
 - `/sys/kernel/security/lockdown`
-- `/dev/tpmrm0` (TPM 2.0 device)
+- `/sys/class/tpm/tpm0/pcr-sha256` (live TPM 2.0 PCR values)
+- `/run/astraeaos/boot-attestation.json` (+ `.sig`) and `/usr/share/astraeaos/boot-trust/` (pinned keys, signed fs-verity manifest)
 
 #### Authentifizierung / Berechtigungen
 - Operator Session.
@@ -2905,13 +2912,13 @@ Operator clicks "Attest Hardware Trust"
        ↓
 POST /api/v1/boot/attest
        ↓
-boot_trust.go reads EFI variables, queries TPM PCRs via kernel driver
+boot_trust.go verifies the signed boot-attestation document, re-validates the live TPM 2.0 PCR values and checks the operator-signed fs-verity manifest
        ↓
-Hashes compared against expected release manifest
+Measured digests compared against the signed fs-verity manifest and the pinned TPM policy
        ↓
 Hardware attestation status updated in memory and logged to Evidence Ledger
        ↓
-Dashboard updates TPM register values and displays "ATTESTATION: VERIFIED"
+Dashboard updates TPM register values and displays the resulting state - "ATTESTATION: VERIFIED" only when signature, PCR policy and fs-verity checks all pass, otherwise NOT_AVAILABLE / WARNING
 ```
 
 ---
@@ -3653,7 +3660,7 @@ The following comprehensive directory catalogs all 75+ HTTP REST and Server-Sent
 | `/api/v1/transactions/abort` | POST | `operations.js:abortTx()` | `control/transactions.go:handleTransactionAbort()` | Durable Transactions Engine | Rollback Execution & State Reversion |
 | `/api/v1/transactions/history`| GET | `operations.js:txHistory()`| `control/transactions.go:handleTransactionHistory()`| Durable Transactions Engine | `/var/lib/vgt/gedefense/transactions.log` |
 | `/api/v1/boot/status` | GET | `app.js:loadBootTrust()` | `control/boot_trust.go:handleBootStatus()` | Measured Boot Collector | `/sys/firmware/efi/`, `/sys/kernel/security/` |
-| `/api/v1/boot/pcrs` | GET | `app.js:loadPCRs()` | `control/boot_trust.go:handleBootPCRs()` | TPM 2.0 Subsystem | Hardware TPM Device `/dev/tpmrm0` |
+| `/api/v1/boot/pcrs` | GET | `app.js:loadPCRs()` | `control/boot_trust.go:handleBootPCRs()` | Measured Boot Collector | Signed attestation + live TPM 2.0 PCR sysfs values |
 | `/api/v1/boot/attest` | POST | `app.js:attestBoot()` | `control/boot_trust.go:handleBootAttest()` | Platform Attestation | Digest Comparison against Signed Manifest |
 | `/api/v1/fim/status` | GET | `app.js:loadFIM()` | `control/fim.go:handleFIMStatus()` | File Integrity Monitor | Inotify Watcher & Baseline Index |
 | `/api/v1/fim/scan` | POST | `app.js:runFIMScan()` | `control/chronos_fim.go:handleFIMScan()` | Chronos FIM Engine | Filesystem Cryptographic SHA-256 Walk |
@@ -3842,18 +3849,21 @@ System Startup / Fast Attestation:
 ---
 
 ### 7.5 Autonomous Incident Lifecycle, Deduplication & Storage Self-Repair Flow
-Demonstrates how raw process and socket anomalies are correlated into cases while preventing self-lockout DoS:
+Demonstrates how raw process and socket anomalies are correlated into cases, and how own-component updates stay attributable without a blanket self-artifact exemption:
 
 ```text
 Process Execution or Ingress Anomaly Detected
          ↓
 Autonomous XDR Engine (control/xdr.go)
          ↓
-Self-Artifact Verification Filter:
-         ├── If Binary Path starts with VGT_RELEASE_ROOT:
-         │     ├── Verify signature against official VGT Release Key
-         │     └── Match: Tag as "self_artifact" (Approved Operator Update)
-         │           └── Suppress containment and prevent XDR degradation (No Self-Lockout DoS)
+Own-Artifact Integrity Decision (control/xdr.go, control/xdr_baseline.go):
+         ├── Own component digest matches the approved baseline → no finding
+         ├── Own component changed and covered by a verified signed release manifest
+         │   (Ed25519, digest-exact, TTL-bounded update window):
+         │     └── Apply the authorized update and re-baseline the new bytes
+         ├── Any other own-component change:
+         │     └── XDR.SELF_TAMPER (critical) + release-blocking degradation +
+         │         active response disabled; no "self_artifact" allow-list downgrade
          └── If Non-VGT Binary:
                    ↓
 Extract Incident Metadata: { BinaryHash, PPID, PID, UID, SocketInode, MITRE_Tag }
@@ -4322,7 +4332,9 @@ This cross-reference details the core functions, data structures, and constants 
 - `control/xdr.go`:
   - `type XDREngine struct`: Process monitor, correlation rules, incident repository, containment dispatcher.
   - `func (x *XDREngine) CorrelateEvent(evt)`: Evaluates 40+ rules and matches process trees.
-  - `func (x *XDREngine) isSelfArtifact(path, hash)`: Recognizes approved VGT updates to prevent self-lockout DoS.
+  - `func (e *XDREngine) BeginSignedUpdateWindow(manifestPath, publicKeyPath, artifactDir, reason, ttl)`: Verifies the Ed25519-signed release manifest and opens the TTL-bounded, digest-exact window that is the only sanctioned path for replacing an own component.
+  - `func (b *XDRBaseline) ProductArtifactMismatch(exe)`: Reports approved/observed SHA-256 for an own component; the caller escalates to `XDR.SELF_TAMPER` unless the signed update window covers the exact new bytes.
+  - `func (e *XDREngine) selfTamper(path, observed, reason)`: Records the critical fail-closed self-tamper state (no containment, active response disabled, release-blocking degradation).
 - `control/xdr_dag.go`:
   - `func BuildAttackDAG(incidents)`: Constructs directed acyclic graph connecting attack phases.
 - `control/xdr_log.go` & `control/xdr_recovery.go`:

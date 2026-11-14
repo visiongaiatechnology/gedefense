@@ -17,7 +17,7 @@ import (
 	"time"
 )
 
-const version = "5.1.0-beta.3"
+const version = "5.2.0"
 
 func detectInterface(requested string) (string, error) {
 	if requested != "" && requested != "auto" {
@@ -57,9 +57,30 @@ type policyPersistence interface {
 	Status() PolicyStatus
 }
 
+// errPolicyUnverified is returned by every automatic writer of the signed policy when the
+// current document could not be verified. An unverified document is forensic evidence, not
+// the current intent: persisting on top of it would overwrite the evidence and put a fresh
+// signature on a state nobody verified (FIND-013 / VGT-AUDIT-20261114-GD51). Only an explicit
+// operator action - the RETURN:OBSERVE transition, which calls PolicyStore.Persist directly -
+// may re-establish a signed policy.
+var errPolicyUnverified = errors.New("signed policy is not verified; refusing to persist and re-sign an unverified policy document - explicit operator recovery (RETURN:OBSERVE) required")
+
 func persistPolicy(policy policyPersistence, cfg Config, state *State) error {
 	if policy == nil {
 		return nil
+	}
+	if status := policy.Status(); !status.Verified {
+		// This funnel serves the automatic writers (block expiry, automatic containment) and
+		// the operator block/allowlist mutations. None of them may silently re-sign a document
+		// the platform could not verify; the failure is fail-closed and reported once per
+		// refusing path so it cannot look like a successful write.
+		if state != nil {
+			state.AddEvent(Event{
+				Severity: "critical", Kind: "policy.persist_refused", Source: "policy",
+				Message: "Refused to persist the signed policy: the current document is not verified and must not be re-signed automatically; explicit operator recovery (RETURN:OBSERVE) required",
+			})
+		}
+		return errPolicyUnverified
 	}
 	enforcement, xdrMode := state.Modes()
 	if err := policy.Persist(cfg.Node.Name, enforcement, xdrMode, state.BlocksSnapshot()); err != nil {
@@ -249,8 +270,11 @@ func main() {
 		log.Fatalf("policy store: %v", err)
 	}
 	policyEnvelope, policyErr := policy.Load()
-	if policyErr != nil {
-		// Keep visibility but never enforce an unverified policy state.
+	if policyErr != nil || !policy.Status().Verified {
+		// Never enforce an unverified policy state. The static intent drops to observe for
+		// visibility only; the release controller below keeps the kernel enforcement it can
+		// confirm and quarantines the document itself without writing to it. Nothing here and
+		// nothing in the quarantine path re-signs the unverified policy (FIND-013).
 		cfg.Defense.Enforcement = "observe"
 		cfg.XDR.Mode = "observe"
 	}
@@ -413,8 +437,16 @@ func main() {
 	}
 	state.SetSettings(settings.Get())
 	state.SetPolicyStatus(policy.Status())
-	if policyErr != nil {
-		state.AddEvent(Event{Severity: "critical", Kind: "policy.signature_failure", Source: "policy", Message: "Signed policy verification failed; kernel enforcement is retained in degraded mode instead of being released"})
+	if policyErr != nil || !policy.Status().Verified {
+		// The release controller below quarantines the document without ever re-signing it.
+		// This event is the first operator instruction: it names the degradation and the only
+		// explicit recovery path, so a tampered state file is never silently "repaired".
+		state.AddEvent(Event{
+			Severity: "critical", Kind: "policy.signature_failure", Source: "policy",
+			Message: "Signed policy could not be verified; the document on disk is preserved unmodified and quarantined in memory (no automatic re-signing), kernel enforcement is retained and automatic decisions stay paused. " +
+				"Operator recovery is explicit: verify host integrity, inspect the preserved document and its forensic copy, restore a trusted signed policy backup, then re-establish the policy with the explicit RETURN:OBSERVE operator transition",
+		})
+		log.Printf("policy: verification failed; the document is preserved unmodified and quarantined without re-signing. Operator recovery required: verify host integrity, restore a trusted signed policy backup, then use the explicit RETURN:OBSERVE transition")
 	}
 	if policyErr == nil && policy.LastLoadRecovered() {
 		state.AddEvent(Event{Severity: "high", Kind: "policy.recovered_last_known_good", Source: "policy", Message: "Current policy state was unverifiable; the signed last-known-good intent was recovered and re-persisted"})

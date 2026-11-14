@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"encoding/hex"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -58,6 +60,55 @@ func TestStorageCipherAADBindingAndTamperDetection(t *testing.T) {
 	}
 	if _, _, err := cipher.Decrypt(path, "runtime-settings", sealed, &seq); err == nil {
 		t.Fatal("tampered envelope was accepted")
+	}
+}
+
+// authenticatedHistoryMAC returns the history MAC an unmodified SettingsStore persist writes for
+// an empty history. Test fixtures that craft a settings document by hand have to carry it because
+// the loader now requires the history authentication unconditionally instead of skipping it when
+// the field is empty.
+func authenticatedHistoryMAC(t *testing.T, store *SettingsStore) string {
+	t.Helper()
+	mac, err := store.macHistory(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return hex.EncodeToString(mac)
+}
+
+// TestStorageCipherRefusesPlaintextWhenAMasterKeyIsConfigured is the regression for the silent
+// downgrade: a document that was not an envelope used to be handed back as a "legacy" document
+// with err=nil. Any writer with access to the state directory could therefore replace an
+// authenticated checkpoint, watermark or policy floor with plaintext JSON, and the reader would
+// treat it as legacy rather than as a forgery.
+func TestStorageCipherRefusesPlaintextWhenAMasterKeyIsConfigured(t *testing.T) {
+	dir := t.TempDir()
+	key := testSecret(t, dir, "storage.key")
+	cipher, err := NewStorageCipher(key, "node-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "state.json")
+	for name, document := range map[string][]byte{
+		"plaintext json":     []byte(`{"secret":"forged plaintext state"}`),
+		"non-json plaintext": []byte("plain text state\n"),
+		"foreign schema":     []byte(`{"schema":"vgt-gedefense-aes256gcm-v0","ciphertext":"AA"}`),
+		"near miss schema":   []byte(`{"schema":"vgt-gedefense-aes256gcm-v1x","ciphertext":"AA"}`),
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, _, err := cipher.Decrypt(path, "runtime-settings", document, nil); !errors.Is(err, errStoragePlaintext) {
+				t.Fatalf("plaintext was not refused with errStoragePlaintext: %v", err)
+			}
+		})
+	}
+	// The explicit migration API is the only way to read plaintext with a key configured, and it
+	// reports the migration so the caller can re-encrypt. Decrypt itself never does.
+	opened, legacy, err := cipher.DecryptForMigration(path, "runtime-settings", []byte(`{"secret":"forged plaintext state"}`), nil)
+	if err != nil || !legacy {
+		t.Fatalf("explicit migration read failed: legacy=%v err=%v", legacy, err)
+	}
+	if !bytes.Contains(opened, []byte("forged plaintext state")) {
+		t.Fatal("explicit migration read did not return the plaintext document")
 	}
 }
 

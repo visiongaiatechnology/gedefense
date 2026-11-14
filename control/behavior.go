@@ -6,7 +6,9 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"log"
 	"math"
 	"os"
 	"path/filepath"
@@ -36,6 +38,22 @@ func (s runningStat) stddev() float64 {
 		return 0
 	}
 	return math.Sqrt(s.M2 / float64(s.Samples-1))
+}
+
+// validRunningStat rejects statistics the update recurrence could never have produced.
+//
+// A NaN or infinite spread, or a negative squared deviation, is provably not learned state.
+// The old M2 < 0 check missed NaN and +Inf because every comparison with NaN is false, so a
+// manipulated profile could carry a poisoned statistic into the z-score calculation and
+// suppress (or fabricate) every future anomaly.
+func validRunningStat(s runningStat) bool {
+	if math.IsNaN(s.M2) || math.IsInf(s.M2, 0) || s.M2 < 0 {
+		return false
+	}
+	if math.IsNaN(s.Mean) || math.IsInf(s.Mean, 0) || s.Mean < 0 {
+		return false
+	}
+	return true
 }
 
 type behaviorProfile struct {
@@ -258,6 +276,14 @@ func (m *BehaviorModel) Snapshot(limit int) []behaviorProfile {
 	return out
 }
 
+// Persist writes the learned profiles to the authenticated document on disk.
+//
+// It refuses to write while the loaded document failed authentication. Overwriting a
+// manipulated baseline would destroy the only forensic copy of what the attacker wrote, and it
+// used to clear integrityErr at the same time - so one periodic save silently turned a
+// detected profile manipulation into a clean state. The fail-closed state is left in place
+// until an operator explicitly resets it (ResetAfterIntegrityFailure), which starts an isolated
+// re-learning phase with a fresh authenticated baseline.
 func (m *BehaviorModel) Persist() error {
 	if !m.enabled {
 		return nil
@@ -268,6 +294,9 @@ func (m *BehaviorModel) Persist() error {
 }
 
 func (m *BehaviorModel) persistLocked() error {
+	if m.integrityErr != nil {
+		return fmt.Errorf("behavior profile integrity failure; refusing to overwrite the authenticated baseline: %w", m.integrityErr)
+	}
 	profiles := make([]behaviorProfile, 0, len(m.profiles))
 	for _, p := range m.profiles {
 		copyProfile := *p
@@ -305,6 +334,34 @@ func (m *BehaviorModel) persistLocked() error {
 	return nil
 }
 
+// ResetAfterIntegrityFailure clears a failed profile load and starts an isolated re-learning
+// phase with a fresh authenticated baseline.
+//
+// This is the only way out of the fail-closed state. It exists for an operator who has inspected
+// the profile document and decided that the learned state is not trustworthy any more: the old
+// profiles are discarded, never merged with the observed behaviour, and a new document is
+// written from the empty state. Nothing in the automatic path may call it.
+func (m *BehaviorModel) ResetAfterIntegrityFailure(reason string) error {
+	if m == nil {
+		return errors.New("behavior model unavailable")
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.integrityErr == nil {
+		return errors.New("behavior model has no integrity failure to reset")
+	}
+	m.profiles = make(map[string]*behaviorProfile)
+	m.dropped = 0
+	m.lastSaved = nil
+	m.integrityErr = nil
+	if err := m.persistLocked(); err != nil {
+		m.integrityErr = err
+		return err
+	}
+	log.Printf("behavior model: operator reset after integrity failure (%s); isolated re-learning started with a fresh authenticated baseline", strings.TrimSpace(reason))
+	return nil
+}
+
 func (m *BehaviorModel) load() error {
 	b, err := readBoundedPrivateFile(m.path, 64<<20)
 	if errors.Is(err, os.ErrNotExist) {
@@ -315,9 +372,17 @@ func (m *BehaviorModel) load() error {
 	}
 	legacy := false
 	if m.crypto != nil {
-		b, legacy, err = m.crypto.Decrypt(m.path, "behavior-profiles", b, nil)
+		// Migration reader, not the strict verifier: an unencrypted profile document written
+		// before a storage key was configured may still be migrated. That is safe here because
+		// the payload carries its own HMAC (verified below before any profile is adopted), and
+		// a migrated document is re-encrypted immediately (persistLocked at the end of load).
+		// Plaintext that does not authenticate is rejected exactly like any other forgery.
+		b, legacy, err = m.crypto.DecryptForMigration(m.path, "behavior-profiles", b, nil)
 		if err != nil {
 			return err
+		}
+		if legacy {
+			log.Printf("behavior model: migrating an unauthenticated-at-rest legacy document; it is verified by its HMAC and re-encrypted")
 		}
 	}
 	var doc behaviorDocument
@@ -354,7 +419,7 @@ func (m *BehaviorModel) load() error {
 		p := doc.Payload.Profiles[i]
 		if p.Executable == "" || len(p.Executable) > 4096 ||
 			p.ConnectionCount.Samples > 1_000_000_000 || p.UniqueRemotes.Samples > 1_000_000_000 ||
-			p.ConnectionCount.M2 < 0 || p.UniqueRemotes.M2 < 0 {
+			!validRunningStat(p.ConnectionCount) || !validRunningStat(p.UniqueRemotes) {
 			return errors.New("behavior profile contains invalid bounds")
 		}
 		if len(p.RemotePorts) > m.maxPorts {

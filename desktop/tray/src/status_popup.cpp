@@ -8,6 +8,7 @@
 #include "state_icons.h"
 #include "state_labels.h"
 #include "theme.h"
+#include "ui_text.h"
 
 #include <QEvent>
 #include <QFileInfo>
@@ -78,6 +79,10 @@ QFrame* createSeparator(QWidget* parent)
 // Bounded, plain-text label. The full text lives in the tooltip and the
 // displayed text is elided to the actual width, so long German compounds and
 // long node names can never force the panel off the screen.
+//
+// The tooltip is a rich-text sink: it is built explicitly from escaped text
+// (ui_text::plainTooltipText) so a control-plane payload can never inject
+// markup there either.
 // ---------------------------------------------------------------------------
 class ElidedLabel final : public QLabel
 {
@@ -93,7 +98,9 @@ public:
     void setFullText(const QString& text)
     {
         m_fullText = text;
-        setToolTip(text);
+        // Tooltips are rendered as rich text by Qt (content sniffing), so the
+        // unelided control-plane text must be escaped at this central sink.
+        setToolTip(ui_text::plainTooltipText(text));
         applyElision();
     }
 
@@ -452,11 +459,12 @@ void StatusPopup::refreshConsoleAvailability()
     m_consoleButton->setEnabled(available);
     if (available)
     {
-        m_consoleButton->setToolTip(tr("Öffnet die vollständige GeDefense-Konsole."));
+        m_consoleButton->setToolTip(ui_text::plainTooltipText(tr("Öffnet die vollständige GeDefense-Konsole.")));
     }
     else
     {
-        m_consoleButton->setToolTip(tr("Die Konsole ist auf diesem System nicht installiert."));
+        m_consoleButton->setToolTip(
+            ui_text::plainTooltipText(tr("Die Konsole ist auf diesem System nicht installiert.")));
     }
 }
 

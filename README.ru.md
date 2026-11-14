@@ -7,8 +7,8 @@
 ### Linux Security Fabric - Your Entenprise System
 
 [![License](https://img.shields.io/badge/License-AGPL--3.0--only-blue?style=for-the-badge)](https://www.gnu.org/licenses/agpl-3.0)
-[![Version](https://img.shields.io/badge/Version-5.1.0--beta.3-orange?style=for-the-badge)](#)
-[![Status](https://img.shields.io/badge/Status-Release_v5.1.0--beta.3-yellow?style=for-the-badge)](#)
+[![Version](https://img.shields.io/badge/Version-5.2.0-orange?style=for-the-badge)](#)
+[![Status](https://img.shields.io/badge/Status-Release_v5.2.0-yellow?style=for-the-badge)](#)
 [![Installer](https://img.shields.io/badge/Installer-Universal_Linux-green?style=for-the-badge)](#-быстрый-старт)
 [![Platform](https://img.shields.io/badge/Platform-Linux_x86__64-lightgrey?style=for-the-badge&logo=linux)](#)
 [![Data Plane](https://img.shields.io/badge/Data_Plane-Rust_eBPF%2FXDP-red?style=for-the-badge&logo=rust)](#-архитектура)
@@ -28,14 +28,21 @@
 🌐 **Languages / Sprachen / Языки / 语言:**  
 [English](README.md) · [Deutsch](README.de.md) · **Русский** · [中文 (简体)](README.zh.md)
 
+<br />
+
+⬇️ **Прямые ссылки на установщики (v5.2.0):**  
+[**OneClick-установщик (`.run`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v5.2.0/VGT_GeDefense_Beta_v5_5.2.0_OneClick.run) · [`.sha256`](https://github.com/visiongaiatechnology/gedefense/releases/download/v5.2.0/VGT_GeDefense_Beta_v5_5.2.0_OneClick.run.sha256) · [**Desktop Tray (`.run`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v5.2.0/GeDefense-5.2.0-Desktop-OneClick.run) · [`.sha256`](https://github.com/visiongaiatechnology/gedefense/releases/download/v5.2.0/GeDefense-5.2.0-Desktop-OneClick.run.sha256) · [**Исходный код (`.zip`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v5.2.0/VGT_GeDefense_Beta_v5_5.2.0_Source.zip) · [**Релиз v5.2.0**](https://github.com/visiongaiatechnology/gedefense/releases/tag/v5.2.0) · [Быстрый старт](#-быстрый-старт)
+
 </div>
 
-> **Обновление 5.1.0-beta.3 (29.10.2026) — самовосстановление фидов, реакция на CVE и подписанный релиз**
+> **Обновление 5.2.0 (14.11.2026) — Security Release**
+>
+> - **Релиз безопасности:** независимый глубокий аудит VGT-AUDIT-20261114-GD51 выявил 36 находок в шести цепочках атак и заблокировал release-gate 5.1.0-beta.3; 5.2.0 устраняет все 36 находок в установщике/цепочке поставок, аттестации загрузки, шлюзе/аутентификации, политике/криминалистике/хранилище, API/L7, фидах/airlock, самозащите, трее рабочего стола, ядре Rust и eBPF. Подробности в `CHANGELOG.md` и `RELEASE-NOTES.md`.
 >
 > - **Самовосстанавливающийся threat-intelligence фид:** отсутствующий trust anchor подписи фида создаётся из локального ключа оператора (opt-in) через rotation-safe маркер; просроченные манифесты переподписываются. Ротированный ключ со старым маркером остаётся fail-closed.
 > - **CVE-2026-98432 / CVE-2026-99999:** управляемые меры user-namespace и MPTCP активно удерживаются; экспозиция ядра остаётся видимой до установки исправления Ubuntu.
 > - **Mitigation guard:** пробы с ограниченными правами теперь явно помечаются как UNOBSERVED, а не пропускаются молча, и не вызывают ложный auto-revert.
-> - **Подписанный релиз:** 5.1.0-beta.3 поставляется как подписанный OneClick-установщик и воспроизводимый архив исходников.
+> - **Подписанный релиз:** 5.2.0 поставляется как подписанный OneClick-установщик и воспроизводимый архив исходников.
 
 
 <img width="1536" height="1024" alt="GeDefense_ Real Security, Many Feathers" src="https://github.com/user-attachments/assets/dc56735e-b2b2-45c9-a363-97554a92ae0a" />
@@ -73,7 +80,7 @@ Security-хотфикс для 5.1.0-beta.1. **Обновление рекоме
 ---
 
 > [!WARNING]
-> **ПУБЛИЧНАЯ БЕТА — НЕ ДЛЯ ПРОИЗВОДСТВА (Версия 5.1.0-beta.3).**  
+> **ПУБЛИЧНАЯ БЕТА — НЕ ДЛЯ ПРОИЗВОДСТВА (Версия 5.2.0).**  
 > GeDefense Titan и Linux Security Fabric находятся в активной разработке.
 > Бета предназначена только для тестовых и квалификационных хостов.
 > Архитектура проверяется автоматическими release-gates, но публичная
@@ -487,17 +494,17 @@ Observe ──→ Canary ──→ Enforce
 
 ```bash
 # Загрузить инсталлятор
-wget https://github.com/visiongaiatechnology/gedefense/releases/download/v5.1.0-beta.3/VGT_GeDefense_Beta_v5_5.1.0-beta.3_OneClick.run
+wget https://github.com/visiongaiatechnology/gedefense/releases/download/v5.2.0/VGT_GeDefense_Beta_v5_5.2.0_OneClick.run
 
 # Проверить SHA-256
-sha256sum --check VGT_GeDefense_Beta_v5_5.1.0-beta.3_OneClick.run.sha256
+sha256sum --check VGT_GeDefense_Beta_v5_5.2.0_OneClick.run.sha256
 
 # Установить (требуются права root)
-chmod 700 VGT_GeDefense_Beta_v5_5.1.0-beta.3_OneClick.run
-sudo ./VGT_GeDefense_Beta_v5_5.1.0-beta.3_OneClick.run
+chmod 700 VGT_GeDefense_Beta_v5_5.2.0_OneClick.run
+sudo ./VGT_GeDefense_Beta_v5_5.2.0_OneClick.run
 ```
 
-> **Доступность инсталлятора:** Официальные автономные установочные ассеты v5.1.0-beta.3 (`VGT_GeDefense_Beta_v5_5.1.0-beta.3_OneClick.run`) проверены и опубликованы в GitHub Releases.
+> **Доступность инсталлятора:** Официальные автономные установочные ассеты v5.2.0 (`VGT_GeDefense_Beta_v5_5.2.0_OneClick.run`) будут опубликованы вместе с подписанным GitHub Release.
 
 > Инсталлятор и контрольные суммы публикуются только после успешного прохождения всех этапов GitHub CI и квалификационных проверок целевого хоста. Никогда не запускайте непроверенные файлы RUN.
 
@@ -531,7 +538,7 @@ sudo ./VGT_GeDefense_Beta_v5_5.1.0-beta.3_OneClick.run
 
 ---
 
-## 🚧 Известные ограничения (5.1.0-beta.3)
+## 🚧 Известные ограничения (5.2.0)
 
 - Отсутствие поддержки Swarm / Mesh
 - Отсутствие разгрузки QUIC
@@ -592,7 +599,7 @@ sudo ./VGT_GeDefense_Beta_v5_5.1.0-beta.3_OneClick.run
   * **Успешная проверка очищает причину, которую она заменила.** Причины были односторонними: удалить их могли только ротация или восстановление оператором, поэтому временный сбой оставлял XDR деградировавшим — а автоматическое реагирование приостановленным — до тех пор, пока кто-нибудь не перезапускал плоскость управления.
   * **Развёртывание оператором больше не считается вмешательством.** Замена одного из собственных компонентов GeDefense деградировала XDR и приостанавливала автоматическое реагирование, поэтому выпуск исправления молча отключал часть защиты. Теперь это запись высокой серьёзности без привязанного реагирования; сторонние объекты сохраняют полное реагирование.
   * **Восстановление реестра инцидентов больше не требует отказаться от защиты,** что при сохранении принудительного применения было недостижимо: реестр можно было починить, только сначала разоружив хост, для защиты которого он и существует.
-  * **Ядро Rust терпимо относится к противоречивому агрегату.** Запись, метка TCP которой противоречит её счётчикам, сохраняется с нейтрализованным протоколом и неизменными счётчиками; запись, которую всё ещё невозможно декодировать, пропускается и называется, вместо того чтобы прерывать вычитывание; только порция, в которой многие записи не декодируются, — признак неверного wire-формата — сообщается как сбой.
+  * **Ядро Rust сохраняет метку TCP только для согласованного агрегата.** Однородная порция TCP сохраняет свои `protocol`/`tcp_flags` и точные счётчики — большая порция ACK или SYN больше не принимается за противоречие. Порция, смешивающая TCP с пакетами не-TCP, выдаётся с явным нейтральным маркером (`protocol = 0`, `tcp_flags = 0`) и точными счётчиками, вместо наследования метки пакета, вызвавшего сброс. Запись, противоречащая длине порции, отклоняется и учитывается как потерянный образец (с drain-тревогой, когда таких становится слишком много), а не переписывается в нейтральную метку. Производитель eBPF сбрасывает не более 255 пакетов за порцию (поле wire-формата `attempt_count` — `u8`), а его LSM-обход покрывает всю цепочку предков cgroup-v2 от корня, поэтому политика, установленная на cgroup Gaia Cell, охватывает и нижележащие leaf-cgroups. См. `rust/gedefense-common/src/lib.rs` (wire-декодер) и `rust/gedefense-ebpf/src/main.rs` (производитель).
 * **Хранение реестров:**
   * **Оба криминалистических реестра ротируются, а не заполняются.** Достижение бюджета останавливало запись, деградировало XDR и приостанавливало автоматическое реагирование, пока оператор не архивировал сегмент вручную, — дважды за один день на одном производственном хосте. При девяноста процентах запечатанная цепочка архивируется с манифестом, несущим размеры, дайджесты, последовательность, хэш заголовка и охват, и начинается свежая цепочка.
   * **Ротация переживает сбой.** Она копирует, прежде чем заменить, поэтому прерванный запуск завершается при следующем старте по маркеру ротации; маркер, манифест которого не совпадает, отклоняется, а не принимается на веру.
@@ -813,6 +820,6 @@ sudo python3 scripts/update-geoip-db.py /var/lib/vgt/gedefense/geoip.csv
 
 [![VGT](https://img.shields.io/badge/VisionGaia-Technology-cyan?style=for-the-badge)](https://visiongaiatechnology.de)
 
-*VGT GeDefense 5.1.0-beta.3 — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
+*VGT GeDefense 5.2.0 — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
 
 </div>

@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -193,6 +194,13 @@ func (c *ChronosScanner) SaveCheckpoint() error {
 }
 
 // LoadCheckpoint recovers a previously interrupted scan state.
+//
+// The checkpoint is sealed operational state, and its AEAD binding is its whole authenticity
+// proof: it carries no independent signature or MAC over the digests. A plaintext document is
+// therefore refused rather than migrated - any writer with access to the state directory could
+// otherwise dictate the resume state and the Merkle root of the next scan. The strict Decrypt
+// is used on purpose; when an old plaintext checkpoint is present, Scan starts a fresh full walk
+// and the next SaveCheckpoint replaces the file with an authenticated one.
 func (c *ChronosScanner) LoadCheckpoint() (*ChronosCheckpoint, error) {
 	if c.checkpointPath == "" {
 		return nil, nil
@@ -206,12 +214,12 @@ func (c *ChronosScanner) LoadCheckpoint() (*ChronosCheckpoint, error) {
 	}
 
 	if c.storage != nil {
-		plaintext, legacy, decryptErr := c.storage.Decrypt(c.checkpointPath, chronosPurpose, data, nil)
+		plaintext, _, decryptErr := c.storage.Decrypt(c.checkpointPath, chronosPurpose, data, nil)
 		if decryptErr != nil {
+			if errors.Is(decryptErr, errStoragePlaintext) {
+				return nil, NewChronosStorageException("unencrypted Chronos checkpoint is rejected: its AEAD binding is the only authenticity proof, and a fresh authenticated walk will replace it", decryptErr)
+			}
 			return nil, NewChronosStorageException("checkpoint authentication failed", decryptErr)
-		}
-		if legacy {
-			return nil, NewChronosStorageException("unencrypted Chronos checkpoint is rejected", nil)
 		}
 		data = plaintext
 	}
@@ -224,6 +232,13 @@ func (c *ChronosScanner) LoadCheckpoint() (*ChronosCheckpoint, error) {
 }
 
 // Scan processes directory trees incrementally, yielding between batches to prevent I/O starvation.
+//
+// resume continues an interrupted (PAUSED/RUNNING) checkpoint. A checkpoint that already
+// finished - COMPLETED or BOUNDED - is not a resumable state: it describes a previous walk.
+// Resuming one used to skip every path up to its LastVisitedPath and hand back the old Merkle
+// root as if it had been observed again, so a periodic full scan could never see a change that
+// happened after the first completed round. A new scan therefore always starts a complete walk,
+// and a COMPLETED checkpoint always reflects bytes that were read by this call.
 func (c *ChronosScanner) Scan(ctx context.Context, resume bool) (*ChronosCheckpoint, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -232,11 +247,11 @@ func (c *ChronosScanner) Scan(ctx context.Context, resume bool) (*ChronosCheckpo
 	if resume && c.checkpoint == nil {
 		_, _ = c.LoadCheckpoint()
 	}
-
-	if c.checkpoint == nil || !resume {
-		scanID := fmt.Sprintf("SCAN-%d", now.UnixNano())
+	resuming := resume && c.checkpoint != nil &&
+		(c.checkpoint.Phase == "RUNNING" || c.checkpoint.Phase == "PAUSED")
+	if !resuming {
 		c.checkpoint = &ChronosCheckpoint{
-			ScanID:           scanID,
+			ScanID:           fmt.Sprintf("SCAN-%d", now.UnixNano()),
 			Roots:            c.roots,
 			CurrentRootIndex: 0,
 			LastVisitedPath:  "",
@@ -249,10 +264,13 @@ func (c *ChronosScanner) Scan(ctx context.Context, resume bool) (*ChronosCheckpo
 		}
 	} else {
 		c.checkpoint.Phase = "RUNNING"
+		if c.checkpoint.FileHashes == nil {
+			c.checkpoint.FileHashes = make(map[string]string)
+		}
 	}
 
 	filesInBatch := 0
-	resumedPastLast := (c.checkpoint.LastVisitedPath == "")
+	resumedPastLast := c.checkpoint.LastVisitedPath == ""
 	policy := c.policy
 	if policy.maxFiles <= 0 {
 		policy = defaultIntegrityFabricSettings(Config{}).Chronos.policy()
@@ -265,19 +283,8 @@ func (c *ChronosScanner) Scan(ctx context.Context, resume bool) (*ChronosCheckpo
 	}
 	bounded := false
 
-	for rIdx := c.checkpoint.CurrentRootIndex; rIdx < len(c.roots); rIdx++ {
-		root := c.roots[rIdx]
-		c.checkpoint.CurrentRootIndex = rIdx
-
-		// A checkpoint walk must be bounded. Without a file and byte budget an
-		// operator-supplied root could keep the walker busy indefinitely and grow
-		// the in-memory digest map without limit.
-		if c.checkpoint.FilesScanned >= uint64(policy.maxFiles) || c.checkpoint.BytesScanned >= uint64(policy.maxTotalBytes) {
-			bounded = true
-			break
-		}
-
-		err := filepath.Walk(root, func(path string, info os.FileInfo, walkErr error) error {
+	walkRoot := func(root string) error {
+		return filepath.Walk(root, func(path string, info os.FileInfo, walkErr error) error {
 			if walkErr != nil {
 				return nil // Skip unreadable entries gracefully
 			}
@@ -325,7 +332,29 @@ func (c *ChronosScanner) Scan(ctx context.Context, resume bool) (*ChronosCheckpo
 
 			return nil
 		})
+	}
 
+	for rIdx := c.checkpoint.CurrentRootIndex; rIdx < len(c.roots); rIdx++ {
+		root := c.roots[rIdx]
+		c.checkpoint.CurrentRootIndex = rIdx
+
+		// A checkpoint walk must be bounded. Without a file and byte budget an
+		// operator-supplied root could keep the walker busy indefinitely and grow
+		// the in-memory digest map without limit.
+		if c.checkpoint.FilesScanned >= uint64(policy.maxFiles) || c.checkpoint.BytesScanned >= uint64(policy.maxTotalBytes) {
+			bounded = true
+			break
+		}
+
+		err := walkRoot(root)
+		if err == nil && !resumedPastLast {
+			// The checkpoint's last visited path no longer exists - the tree changed while the
+			// scan was interrupted. Skipping "until" a marker that cannot be found would skip
+			// every file in this root and report a digest set that was never read, so re-walk
+			// the root from the beginning.
+			resumedPastLast = true
+			err = walkRoot(root)
+		}
 		if err != nil {
 			if ctx.Err() != nil {
 				return c.checkpoint, ctx.Err()

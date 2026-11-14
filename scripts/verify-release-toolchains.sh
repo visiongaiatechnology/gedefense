@@ -13,11 +13,18 @@ set -Eeuo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
 LOCK="$ROOT/TOOLCHAINS.lock"
 REQUIRE_FLOOR=0
-for argument in "$@"; do
-  case $argument in
+SELF_TEST=0
+TEST_VERSION_GE=()
+while [[ $# -gt 0 ]]; do
+  case $1 in
     --require-security-floor) REQUIRE_FLOOR=1 ;;
-    *) echo "unknown argument: $argument" >&2; exit 2 ;;
+    --self-test) SELF_TEST=1 ;;
+    --test-version-ge)
+      [[ $# -ge 3 ]] || { echo "--test-version-ge requires LEFT RIGHT" >&2; exit 2; }
+      TEST_VERSION_GE=("$2" "$3"); shift 2 ;;
+    *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
+  shift
 done
 
 [[ -f "$LOCK" ]] || { echo "missing toolchain lock: $LOCK" >&2; exit 1; }
@@ -27,7 +34,66 @@ lock_value() {
   awk -F' = ' -v key="$key" '$1 == key { print $2; found=1; exit } END { if (!found) exit 1 }' "$LOCK"
 }
 
-version_ge() { [[ $(printf '%s\n%s\n' "$1" "$2" | sort -V | tail -n1) == "$2" ]]; }
+# version_ge compares dotted numeric versions: returns 0 when $1 >= $2,
+# 1 when $1 < $2 and 2 when either operand is not a structurally comparable
+# version (unparseable segment or a different segment count). The previous
+# implementation used ``sort -V | tail -n1 == "$2"`` which implements
+# $1 <= $2, so a stale go1.27.1 passed a go1.27.3 security floor. A non-zero
+# status is always fail-closed for the callers below.
+version_ge() {
+  local left=$1 right=$2
+  local -a left_parts right_parts
+  IFS=. read -r -a left_parts <<< "$left"
+  IFS=. read -r -a right_parts <<< "$right"
+  (( ${#left_parts[@]} > 0 && ${#left_parts[@]} == ${#right_parts[@]} )) || return 2
+  local index
+  for (( index = 0; index < ${#left_parts[@]}; index++ )); do
+    [[ ${left_parts[index]} =~ ^[0-9]+$ ]] || return 2
+    [[ ${right_parts[index]} =~ ^[0-9]+$ ]] || return 2
+    if (( 10#${left_parts[index]} > 10#${right_parts[index]} )); then return 0; fi
+    if (( 10#${left_parts[index]} < 10#${right_parts[index]} )); then return 1; fi
+  done
+  return 0
+}
+
+# self_test pins the comparison semantics with explicit positive/negative cases
+# so a future rewrite cannot silently invert the gate again. It is independent
+# of the host toolchains and runs before the lock/toolchain checks.
+self_test() {
+  local failures=0
+  self_test_case() {
+    local expected=$1 left=$2 right=$3 actual
+    if version_ge "$left" "$right"; then actual=pass; else actual=fail; fi
+    if [[ $actual == "$expected" ]]; then
+      printf 'SELFTEST PASS: version_ge %s %s -> %s\n' "$left" "$right" "$actual"
+    else
+      printf 'SELFTEST FAIL: version_ge %s %s -> %s (expected %s)\n' "$left" "$right" "$actual" "$expected" >&2
+      failures=$((failures + 1))
+    fi
+  }
+  self_test_case fail 1.27.1 1.27.3  # audit case FIND-004: go1.27.1 < go1.27.3
+  self_test_case pass 1.27.3 1.27.3
+  self_test_case pass 1.27.4 1.27.3
+  self_test_case pass 1.28.0 1.27.3
+  self_test_case pass 2.0.0 1.27.3
+  self_test_case fail 1.26.99 1.27.3
+  self_test_case fail 1.27 1.27.3
+  self_test_case fail 1.27.3.0 1.27.3
+  if (( failures > 0 )); then
+    printf 'SELFTEST FAILED (%d case(s)): version_ge gate would accept a stale toolchain\n' "$failures" >&2
+    return 1
+  fi
+  printf 'SELFTEST OK: version_ge is >= and fails closed on incomparable versions\n'
+  return 0
+}
+
+if (( SELF_TEST == 1 )); then
+  self_test
+  exit $?
+fi
+if (( ${#TEST_VERSION_GE[@]} == 2 )); then
+  if version_ge "${TEST_VERSION_GE[0]}" "${TEST_VERSION_GE[1]}"; then exit 0; else exit $?; fi
+fi
 
 EXPECTED_GO=$(lock_value 'Go release validation')
 EXPECTED_NODE=$(lock_value 'Node.js syntax validation')

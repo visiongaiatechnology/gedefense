@@ -83,6 +83,28 @@ type FIMScanSummary struct {
 	Findings   []FIMFinding `json:"findings"`
 }
 
+// FIM health states are the single source of truth for every consumer of FIMStatus.Health.
+//
+// They are constants rather than string literals because a drift between producer and consumer
+// is invisible: the hardening posture used to compare against "HEALTHY" while this engine
+// reported "VERIFIED", so a fully verified baseline was scored as unprotected forever.
+const (
+	fimHealthNoBaseline  = "NO_BASELINE"
+	fimHealthQuarantined = "QUARANTINED"
+	fimHealthPending     = "PENDING"
+	fimHealthDegraded    = "DEGRADED"
+	fimHealthTampered    = "TAMPERED"
+	fimHealthVerified    = "VERIFIED"
+	fimHealthDisabled    = "DISABLED"
+)
+
+// fimIntegrityVerified reports whether the published FIM health means "the whole protected set
+// matched the authenticated baseline". Only this state is a pass; PENDING is not yet evidence
+// and TAMPERED/DEGRADED/QUARANTINED are failures.
+func fimIntegrityVerified(health string) bool {
+	return health == fimHealthVerified
+}
+
 type FIMStatus struct {
 	Enabled       bool            `json:"enabled"`
 	Health        string          `json:"health"`
@@ -164,12 +186,15 @@ func (e *FIMEngine) load() error {
 	if err != nil {
 		return err
 	}
-	plaintext, legacy, err := e.storage.Decrypt(e.baselinePath, fimPurpose, raw, nil)
+	// The baseline carries no independent signature over its records - the AEAD binding is its
+	// authenticity proof - so an unencrypted document is refused rather than migrated. The only
+	// sanctioned way to replace a FIM baseline is the authenticated release rebaseline.
+	plaintext, _, err := e.storage.Decrypt(e.baselinePath, fimPurpose, raw, nil)
 	if err != nil {
+		if errors.Is(err, errStoragePlaintext) {
+			return errors.New("FIM baseline authentication failed: unencrypted baselines are rejected; an authenticated release rebaseline is the only migration")
+		}
 		return fmt.Errorf("FIM baseline authentication failed: %w", err)
-	}
-	if legacy {
-		return errors.New("unencrypted FIM baseline is rejected")
 	}
 	baseline, err := decodeFIMBaseline(plaintext, policy)
 	if err != nil {
@@ -530,29 +555,29 @@ func (e *FIMEngine) Status() FIMStatus {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 	status := FIMStatus{
-		Enabled: true, Health: "NO_BASELINE", BaselineCount: len(e.baseline.Files),
+		Enabled: true, Health: fimHealthNoBaseline, BaselineCount: len(e.baseline.Files),
 		Generation: e.baseline.Generation, Roots: append([]string(nil), e.roots...),
 		LastScan: cloneFIMSummary(e.lastScan),
 	}
 	if e.integrityErr != nil {
-		status.Health = "QUARANTINED"
+		status.Health = fimHealthQuarantined
 		status.Error = "FIM baseline integrity unavailable"
 		return status
 	}
 	if e.baseline.Generation == 0 {
 		return status
 	}
-	status.Health = "PENDING"
+	status.Health = fimHealthPending
 	if e.lastScan == nil {
 		return status
 	}
 	switch {
 	case e.lastScan.Errors > 0:
-		status.Health = "DEGRADED"
+		status.Health = fimHealthDegraded
 	case e.lastScan.Tampered > 0 || e.lastScan.Missing > 0 || e.lastScan.New > 0:
-		status.Health = "TAMPERED"
+		status.Health = fimHealthTampered
 	default:
-		status.Health = "VERIFIED"
+		status.Health = fimHealthVerified
 	}
 	return status
 }

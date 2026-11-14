@@ -262,6 +262,79 @@ func TestL7InlineEdgeStillDetectsBelowBlockThreshold(t *testing.T) {
 	}
 }
 
+// TestL7InlineEdgeSlowUpstreamDoesNotHoldTheInspectionSlot is the FIND-020
+// regression test. The request admission slot bounds inspection work; it must be
+// released as soon as the request has been inspected and not be held across the
+// upstream round-trip. With a capacity of one slot and one deliberately blocked
+// upstream response, the second (fast) request must still be inspected and
+// forwarded instead of being refused as "inspection busy".
+func TestL7InlineEdgeSlowUpstreamDoesNotHoldTheInspectionSlot(t *testing.T) {
+	slowReached := make(chan struct{}, 1)
+	slowRelease := make(chan struct{})
+	released := false
+	releaseSlow := func() {
+		if !released {
+			released = true
+			close(slowRelease)
+		}
+	}
+	defer releaseSlow()
+
+	_, _, client, upstream, _ := newL7InlineProducerFixture(t, "block", func(cfg *L7Config) {
+		cfg.MaxConcurrent = 1
+		cfg.RequestTimeoutMillis = 250
+	}, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/slow-upstream" {
+			select {
+			case slowReached <- struct{}{}:
+			default:
+			}
+			<-slowRelease
+		}
+		w.Header().Set("Content-Type", "text/plain")
+		_, _ = io.WriteString(w, "ok")
+	})
+
+	slowRequest := l7InlineProducerRequest(t, http.MethodGet, "/slow-upstream", nil, nil)
+	slowResult := make(chan error, 1)
+	go func() {
+		response, err := client.Do(slowRequest)
+		if err == nil {
+			_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 4096))
+			response.Body.Close()
+		}
+		slowResult <- err
+	}()
+
+	select {
+	case <-slowReached:
+	case err := <-slowResult:
+		t.Fatalf("slow request failed before reaching the upstream: %v", err)
+	case <-time.After(3 * time.Second):
+		t.Fatal("the slow request never reached the upstream")
+	}
+
+	// The upstream is still blocked and the one admission slot must already be
+	// free again: the fast request has to pass inspection and reach the upstream.
+	fastStatus, fastBody := l7InlineProducerDo(t, client, l7InlineProducerRequest(t, http.MethodGet, "/fast-after-slow", nil, nil))
+	if fastStatus != http.StatusOK {
+		t.Fatalf("a slow upstream blocked inspection of another request: status=%d body=%q", fastStatus, fastBody)
+	}
+	if got := upstream.hits.Load(); got != 2 {
+		t.Fatalf("upstream hits=%d, want 2 (slow + fast)", got)
+	}
+
+	releaseSlow()
+	select {
+	case err := <-slowResult:
+		if err != nil {
+			t.Fatalf("slow request failed: %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("the slow request never completed after the upstream was released")
+	}
+}
+
 // TestL7InlineEdgeInspectsResponseAndPreservesBody covers response inspection through
 // the real proxy path: the upstream body must arrive byte-identical and the response
 // counters must move.
@@ -335,7 +408,7 @@ func TestL7InlineEdgePeerCredentialPolicy(t *testing.T) {
 			cfg.SocketGroup = ""
 		}, nil)
 		request := l7InlineProducerRequest(t, http.MethodGet, l7SelfTestPath, nil, map[string]string{
-			"X-Gedefense-Self-Test": "1",
+			l7SelfTestHeaderName: l7SelfTestHeaderValue(),
 		})
 		status, _ := l7InlineProducerDo(t, client, request)
 		if status != http.StatusOK {

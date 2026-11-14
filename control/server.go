@@ -1087,7 +1087,7 @@ func (s *APIServer) auth(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
-			if !s.replay.Claim(r.Header.Get("X-VGT-Request-ID"), time.Now()) {
+			if !s.replay.ClaimFor(s.authenticatedRateIdentity(r, got), r.Header.Get("X-VGT-Request-ID"), time.Now()) {
 				http.Error(w, "request identifier missing or replayed", http.StatusConflict)
 				return
 			}
@@ -3169,12 +3169,32 @@ func (s *APIServer) airlockInspect(w http.ResponseWriter, r *http.Request) {
 		apiError(w, http.StatusBadRequest, "invalid inspect request", err)
 		return
 	}
+	// The requested path is attacker-influenced data. InspectFile binds it to the
+	// configured staging root and only ever opens below it (openat walk with
+	// O_NOFOLLOW); a boundary violation is a refusal, not an inspection result.
 	res, err := s.xdr.Airlock().InspectFile(req.FilePath)
 	if err != nil {
 		// The detail stays internal: an authenticated caller must not learn absolute paths or errno
 		// text from a success response. The operator receives a reason code, the journal the cause.
 		log.Printf("airlock inspect: %v", err)
-		writeJSON(w, http.StatusOK, map[string]any{"clean": false, "error": "inspection failed", "result": res})
+		var boundaryErr *AirlockBoundaryException
+		if errors.As(err, &boundaryErr) {
+			if s.state != nil {
+				s.state.AddEvent(Event{
+					Severity: "warning", Kind: "airlock.path_rejected", Source: "airlock",
+					Message: "Airlock inspection refused a target outside the configured staging root or through a symbolic link",
+					Target:  r.Method + " " + r.URL.Path,
+				})
+			}
+			writeJSON(w, http.StatusForbidden, map[string]any{"clean": false, "error": "inspection target refused"})
+			return
+		}
+		var validationErr *AirlockValidationException
+		if errors.As(err, &validationErr) {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"clean": false, "error": "inspection request rejected", "result": res})
+			return
+		}
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"clean": false, "error": "inspection unavailable", "result": res})
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"clean": true, "result": res})

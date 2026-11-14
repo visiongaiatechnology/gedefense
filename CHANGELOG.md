@@ -1,5 +1,162 @@
 # Changelog
 
+## 5.2.0 — 2026-11-14 — Security Release
+
+The independent deep audit **VGT-AUDIT-20261114-GD51** of 5.1.0-beta.3 reported
+**36 findings in six attack chains** and blocked the 5.1.0-beta.3 release gate.
+5.2.0 fixes all 36 findings. The changes are deliberately fail-closed and may
+require explicit operator action during an upgrade.
+
+### Fixed findings
+
+- **Installer and supply chain (FIND-001 – FIND-007):** desktop and server
+  OneClick installers verify the Ed25519 release signature and the payload hash
+  before extraction or any state change, and the server installer runs the
+  release-trust check before it touches state; state and secret paths keep their
+  documented ownership/modes with atomic `0600` files instead of predictable
+  temp paths; the release-toolchain gate, the SCA status derivation, the
+  canonical signed GeoIP sidecar contract and the release-key rotation are
+  enforced (fail closed) instead of being reported optimistically.
+- **Boot attestation (FIND-008):** the AstraeaOS boot-trust probe no longer
+  derives a positive claim from the JSON shape alone; it requires the detached
+  Ed25519 signature over the attestation document, the live TPM2 PCR values
+  against the pinned policy key and the signed fs-verity manifest.
+- **Gateway and authentication (FIND-009 – FIND-012):** the privileged
+  set-password helper keeps interactive sudo/polkit re-authentication and
+  requires the current operator password (step-up); password verification runs
+  behind a process-wide Argon2id admission gate with backpressure instead of
+  unbounded concurrent KDF allocations; session rotation no longer leaks
+  registry aliases; the anonymous `/gateway/version` build surface is retired
+  and answered as a plain 404 while `/gateway/livez` stays the only anonymous
+  health answer.
+- **Policy, forensics and storage (FIND-013 – FIND-017):** an unverifiable
+  signed policy is quarantined unmodified and is never re-signed by an
+  automatic path - promotion is refused until an explicit operator recovery;
+  blocker evaluation and reporting are no longer suppressed when Auto-Degrade
+  is disabled; operational histories and runtime settings are read through
+  strict AEAD/HistoryMAC (structurally valid plaintext is refused rather than
+  migrated); the interrupted-rotation marker is authenticated with the node
+  storage key; incremental ledger verification stays consistent under
+  concurrent appends and no longer quarantines a valid chain.
+- **API and L7 (FIND-018 – FIND-022):** allowlist removal decodes the request
+  body once; the replay guard stays available under cache pressure without
+  forgetting replays inside the window and the trust-fabric data race is
+  closed; the inline admission slot bounds the inspection engine instead of the
+  upstream; static-asset reads draw from a separate finite per-IP budget
+  instead of a blanket exemption; an unconfigured TLS hostname policy is
+  reported as disabled instead of silently inactive, and the reserved L7
+  self-test path requires the process-local ephemeral token instead of the
+  historical static header.
+- **Feeds and Airlock (FIND-023 – FIND-024):** the persisted
+  threat-intelligence state carries an authenticated envelope (Ed25519 or
+  detached signed manifest anchor) and is rebuilt in memory when unverifiable;
+  Airlock inspection is bound to the staging root, refuses symlinks and
+  traversal, and scans beyond the former 64 KiB sample.
+- **XDR, self-protection, RASP, behavior, FIM and response (FIND-025 – FIND-031):**
+  a mismatch on the product's own artifacts is no longer downgraded to
+  alert-only - it is `XDR.SELF_TAMPER` with a release-blocking degradation
+  unless a verified signed update window covers the exact new bytes, while kill
+  eligibility stays off; the RASP debugger exemption is bound to root plus the
+  signed system binary; a manipulated behavior profile is never overwritten and
+  Persist stays fail-closed until an operator resets the model; the hardening
+  posture consumes the FIM `VERIFIED` contract; response capacity counts active
+  containments only, so sequential containments no longer lock a host out; the
+  mitigation guard no longer reports a revert that never happened, attributes
+  only typed previous values and re-asserts an adopted mitigation; Gaia Cell
+  identity is stable across listings and Titan sensor restarts use a mandatory
+  backoff.
+- **Desktop tray (FIND-032):** control-plane payloads are rendered as plain text
+  in the Qt flyout and tray tooltip, so `<b>`, `<img>` and `<a>` cannot inject
+  rich text.
+- **Rust core (FIND-033 – FIND-036):** the user scan socket accepts only plain
+  path components inside the browser quarantine directory and reopens the file
+  beneath an anchor; the privileged control socket uses the hardened binder
+  (symlink refusal, owning-group and "other" permission check) and the IPC
+  timestamp window closes the replay gap; a copy-only quarantine removes the
+  source as its commit point and fails the transaction when it cannot, restore
+  never reproduces setuid/setgid/sticky bits, and a FIFO is refused instead of
+  blocking the IPC loop; unknown canary accessors are encoded as `u32::MAX`
+  instead of being attributed to UID 0.
+- **eBPF data plane (FIND-036):** the producer flushes at most 255 packets per
+  batch so every wire counter stays exact, emits mixed TCP/non-TCP aggregates
+  with the explicit neutral marker (`protocol = 0`, `tcp_flags = 0`) instead of
+  inheriting an unrelated packet label, and the LSM policy walk covers the full
+  cgroup-v2 ancestry so a policy on a Gaia Cell cgroup reaches descendant leaf
+  cgroups.
+
+### Behavior changes and upgrade notes
+
+- **Policy tamper is fail-closed and never self-healing:** an unverifiable
+  policy document is quarantined unmodified, the confirmed kernel enforcement is
+  retained, and nothing re-signs the document. Only an explicit operator
+  recovery (investigate the document and its forensic copy, then re-establish
+  the signed policy via the documented `RETURN:OBSERVE` transition) clears the
+  quarantine; automatic promotion stays blocked until then.
+- **Strict storage AEAD:** legacy plaintext operational histories are refused
+  with an explicit error instead of being migrated. There is no automatic
+  plaintext-to-ciphertext upgrade path for those documents.
+- **Step-up password change:** changing the gateway operator password now
+  requires the current password and an interactive sudo/polkit
+  re-authentication; the former `NOPASSWD` rule for the helper is gone.
+- **Authenticated rotation marker:** an unauthenticated rotation marker written
+  by an older version is refused; an interrupted evidence rotation requires
+  out-of-band verification/operator action before the next start completes it.
+- **Self-test token:** external scripts that used the former static self-test
+  header value are rejected; the reserved path is admitted only for the owning
+  process with its ephemeral token.
+- **`GET /gateway/version` is removed** and answers 404. Build information is
+  available only through authenticated session surfaces; `/gateway/livez` stays
+  a minimal `{"ok":true}`.
+- **Boot trust must be provisioned:** without the pinned Ed25519 attestation/TPM
+  keys and the signed fs-verity manifest, boot trust reports
+  `NOT_AVAILABLE`/`WARNING` - never a positive verdict. Install the AstraeaOS
+  attestation producer and its pinned trust anchors before evaluating boot
+  trust.
+- **GeoIP is verified at load:** the dataset must match the canonical
+  `vgt.gedefense.geoip-integrity.v1` sidecar and, in signed deployments, its
+  Ed25519 signature. A missing or mismatching sidecar makes the resolver
+  unavailable (fail-closed); re-generate and re-sign the dataset with
+  `scripts/update-geoip-db.py` instead of copying a CSV.
+- **eBPF object and Rust core share one wire contract** (batch ≤ 255, explicit
+  neutral marker); they must be upgraded together from the same release.
+- **systemd:** the shipped units keep `ProtectSystem=strict`, `ReadOnlyPaths`
+  and only the documented `ReadWritePaths` (e.g. `/run/gedefense`,
+  `/run/vgt-gedefense-l7`, `/sys/fs/cgroup/vgt-cells`). An in-place upgrade
+  requires the matching unit files and `systemctl daemon-reload`.
+- **Release toolchain host:** the release validation expects Node.js 22.16.0 and
+  Go 1.27.3; an older host toolchain is refused by the gate.
+
+### Verification
+
+- Regression tests for the findings were added for every group: Go control,
+  Go gateway, Rust core/eBPF, the Qt tray offscreen render harness, and the
+  Python/shell release tests. The release runner `scripts/tests/run_release_tests.sh`
+  covers the offline signing rehearsal, anti-rollback/floor checks, the
+  installer FIND-003 gate and the shell regression tests; its SKIP contract
+  reports missing git metadata or prebuilt binaries explicitly and never as
+  PASS.
+- Executable test evidence, counts and per-finding acceptance results are
+  maintained by the release lead in the audit deliverable/security report; this
+  changelog does not restate unverified figures.
+- Live TPM2/TPM hardware, fs-verity, the target-kernel eBPF verifier and the
+  offline SCA scanners are **NOT_TESTED/BLOCKED in this environment**. They
+  remain mandatory target-host qualification items and are not claimed as
+  passed here.
+
+### Known residual risks
+
+- A quarantine of a file that lives on a path the service can read but not
+  modify (`ProtectSystem=strict`, `ReadOnlyPaths`, read-only mounts) cannot
+  remove the source. The transaction aborts fail-closed with an explicit error
+  and the control plane must not record success while the object stays in
+  place; such files need an operator with write access.
+- The bounded replay guard keeps a full cache available, but an attacker who
+  spends more than `maxEntries + maxRetained` distinct identifiers inside one
+  replay window can push the oldest fingerprint out of the retained table. The
+  residual is bounded by the window and the per-scope quota.
+- The 70 VGT-100 controls that were already `NOT_TESTED` in the previous
+  checkpoint remain open; see `SECURITY.md` and `PRODUCTION-BETA-GATE.md`.
+
 ## 5.1.0-beta.3 - 2026-10-29 - Feed self-healing, CVE-2026-98432 response and mitigation hardening
 
 - Threat-intelligence feed signing self-heals the documented bootstrap case: with `feeds.local_signing=true`, an operator key and no pinned public key, the local key is pinned via a rotation-safe self-heal marker; a changed key with an old marker fails closed and requires an explicit pin.

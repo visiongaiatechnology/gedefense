@@ -51,16 +51,16 @@ func TestProductArtifactRootFollowsTheEnvironment(t *testing.T) {
 	}
 }
 
-// TestSelfTamperIsReportedButNotActedOn is the security fix.
+// TestOwnArtifactMismatchIsNotDowngraded is the FIND-025 regression test at the comparison
+// level.
 //
-// A digest mismatch on one of the product's own components cannot be told apart from an
-// approved update, and the response engine used to contain on it - over a hundred recorded
-// incidents show this product freezing its own gateway. That is a denial of service an
-// attacker can trigger by touching a single file, and it costs the operator the console
-// that would have explained it.
-//
-// The finding must survive at full severity; only the response is withheld.
-func TestSelfTamperIsReportedButNotActedOn(t *testing.T) {
+// A mismatch on one of the product's own components used to be marked AlertOnly, which removed
+// the finding from the response score and - through the matching branch in xdr.go - from every
+// degradation. The comparison no longer decides that: it reports a full finding, and the update
+// path turns it into XDR.SELF_TAMPER plus a release-blocking degradation unless a verified
+// signed update window covers the exact new bytes. Terminating the product's own already-running
+// process is still not a response, so kill eligibility stays off.
+func TestOwnArtifactMismatchIsNotDowngraded(t *testing.T) {
 	dir := t.TempDir()
 	own := filepath.Join(dir, "gedefense-control")
 	if err := os.WriteFile(own, []byte("the deployed bytes"), 0o700); err != nil {
@@ -93,12 +93,25 @@ func TestSelfTamperIsReportedButNotActedOn(t *testing.T) {
 	if match.Score != 120 || match.Category != "integrity" {
 		t.Fatalf("the finding was weakened: score=%d category=%s", match.Score, match.Category)
 	}
-	// The response is withheld.
-	if !match.AlertOnly {
-		t.Fatal("a mismatch on the product's own component was not marked alert-only")
+	if match.AlertOnly {
+		t.Fatal("a mismatch on the product's own component was downgraded to alert-only")
 	}
 	if match.KillEligible {
-		t.Fatal("a mismatch on the product's own component remained kill-eligible")
+		t.Fatal("a mismatch on the product's own component became kill-eligible")
+	}
+
+	// The mismatch is attributable: the engine can tell which approved digest the bytes diverge
+	// from, which is what the signed update window comparison needs.
+	expected, observed, mismatch := baseline.ProductArtifactMismatch(target)
+	if !mismatch {
+		t.Fatal("the engine did not classify the own-component digest mismatch")
+	}
+	if expected != "0000000000000000000000000000000000000000000000000000000000000000" || len(observed) != 64 {
+		t.Fatalf("the mismatch evidence is incomplete: expected=%q observed=%q", expected, observed)
+	}
+	// A path outside the product's own set is never routed through the update-window logic.
+	if _, _, mismatch := baseline.ProductArtifactMismatch("/usr/bin/bash"); mismatch {
+		t.Fatal("a foreign binary was classified as a product artifact")
 	}
 }
 

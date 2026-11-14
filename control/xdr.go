@@ -64,17 +64,219 @@ type XDREngine struct {
 	degradeWhy       string
 	degradeCauses    map[string]string
 	recoveryGate     chan struct{}
-	mu               sync.RWMutex
-	highJobs         chan evaluationJob
-	normalJobs       chan evaluationJob
-	workers          sync.WaitGroup
-	drops            atomic.Uint64
-	evaluated        atomic.Uint64
-	anomalies        atomic.Uint64
+	// updateWindow is the only sanctioned way to replace this installation's own binaries
+	// while XDR runs. It is opened exclusively by BeginSignedUpdateWindow after a signed
+	// release manifest verified; see selfTamper/checkProtected.
+	updateWindow *xdrUpdateWindow
+	mu           sync.RWMutex
+	highJobs     chan evaluationJob
+	normalJobs   chan evaluationJob
+	workers      sync.WaitGroup
+	drops        atomic.Uint64
+	evaluated    atomic.Uint64
+	anomalies    atomic.Uint64
 }
 
 func (e *XDREngine) SetReleaseController(release *ReleaseController) {
 	e.release = release
+}
+
+// xdrUpdateWindow is an explicitly authorized, signed window in which this installation's
+// own binaries may be replaced.
+//
+// The baseline comparison cannot tell an approved update from an attacker's replacement:
+// both change the bytes. The sanctioned way to replace an own component is therefore an
+// operator action that verifies the signed release manifest first and opens this bounded
+// window. Outside it, every change to an own component is XDR.SELF_TAMPER plus a
+// release-blocking degradation.
+type xdrUpdateWindow struct {
+	// ManifestSHA256 identifies the signed release manifest that opened the window.
+	ManifestSHA256 string
+	Reason         string
+	GrantedAt      time.Time
+	ExpiresAt      time.Time
+	// Expected maps the installed artifact path to the SHA-256 the signed manifest requires
+	// for it. An observation matching that digest is attributable to the release and is the
+	// only change the window permits.
+	Expected map[string]string
+}
+
+const (
+	xdrUpdateWindowDefaultTTL = 15 * time.Minute
+	xdrUpdateWindowMaxTTL     = time.Hour
+)
+
+// BeginSignedUpdateWindow verifies a signed release manifest and opens a bounded, attributable
+// update window for this installation's own binaries.
+//
+// The manifest is checked with the same verifier the release pipeline uses: Ed25519 signature
+// over the canonical envelope against the pinned release key, and every artifact digest below
+// artifactDir. Only a manifest that verifies can open the window, and only the exact bytes it
+// names may replace an own component while the window is open. Everything else remains
+// tampering.
+func (e *XDREngine) BeginSignedUpdateWindow(manifestPath, publicKeyPath, artifactDir, reason string, ttl time.Duration) error {
+	if e == nil {
+		return errors.New("XDR engine unavailable")
+	}
+	document, err := VerifyReleaseManifest(manifestPath, publicKeyPath, artifactDir)
+	if err != nil {
+		return fmt.Errorf("signed update window refused: %w", err)
+	}
+	manifestDigest, _, err := fileSHA256(manifestPath)
+	if err != nil {
+		return fmt.Errorf("signed update window refused: manifest digest: %w", err)
+	}
+	expected := make(map[string]string)
+	for _, path := range productArtifactPaths() {
+		artifact, ok := document.Envelope.Artifacts[filepath.Base(path)]
+		if !ok {
+			continue
+		}
+		expected[resolveBaselinePath(path)] = strings.ToLower(artifact.SHA256)
+	}
+	if len(expected) == 0 {
+		return errors.New("signed update window refused: the release manifest names none of this installation's executables")
+	}
+	if ttl <= 0 {
+		ttl = xdrUpdateWindowDefaultTTL
+	}
+	if ttl > xdrUpdateWindowMaxTTL {
+		ttl = xdrUpdateWindowMaxTTL
+	}
+	now := time.Now().UTC()
+	window := &xdrUpdateWindow{
+		ManifestSHA256: manifestDigest,
+		Reason:         strings.TrimSpace(reason),
+		GrantedAt:      now,
+		ExpiresAt:      now.Add(ttl),
+		Expected:       expected,
+	}
+	e.mu.Lock()
+	e.updateWindow = window
+	e.mu.Unlock()
+	e.state.AddEvent(Event{
+		Severity: "high", Kind: "xdr.update_window_opened", Source: "integrity",
+		Message: fmt.Sprintf("Signed package-update window opened for %d own executable(s); manifest=%s expires=%s",
+			len(expected), manifestDigest, window.ExpiresAt.Format(time.RFC3339)),
+		Target: productArtifactRoot(),
+	})
+	return nil
+}
+
+// EndSignedUpdateWindow closes an open window. An operator uses it when an update completed;
+// the window also expires by itself.
+func (e *XDREngine) EndSignedUpdateWindow(reason string) {
+	if e == nil {
+		return
+	}
+	e.mu.Lock()
+	open := e.updateWindow != nil
+	e.updateWindow = nil
+	e.mu.Unlock()
+	if open {
+		e.state.AddEvent(Event{Severity: "high", Kind: "xdr.update_window_closed", Source: "integrity",
+			Message: "Signed package-update window closed: " + strings.TrimSpace(reason)})
+	}
+}
+
+// SignedUpdateWindowActive reports whether a verified update window is currently open.
+func (e *XDREngine) SignedUpdateWindowActive() bool {
+	if e == nil {
+		return false
+	}
+	e.mu.RLock()
+	window := e.updateWindow
+	e.mu.RUnlock()
+	return window != nil && time.Now().UTC().Before(window.ExpiresAt)
+}
+
+// updateWindowCovers reports whether a change to identity is attributable to the currently
+// open, signed update window.
+//
+// A missing object is covered only while the window expects that exact artifact: an atomic
+// package update replaces files by rename and can expose a short gap. A present object is
+// covered only when its digest equals the digest the signed manifest requires. An expired
+// window permits nothing.
+func (e *XDREngine) updateWindowCovers(identity, digest string, missing bool) bool {
+	e.mu.Lock()
+	window := e.updateWindow
+	if window == nil {
+		e.mu.Unlock()
+		return false
+	}
+	if !time.Now().UTC().Before(window.ExpiresAt) {
+		e.updateWindow = nil
+		e.mu.Unlock()
+		e.state.AddEvent(Event{Severity: "high", Kind: "xdr.update_window_expired", Source: "integrity",
+			Message: "Signed package-update window expired without completing; own-component changes are tampering again"})
+		return false
+	}
+	want, ok := window.Expected[identity]
+	if !ok {
+		// A file being replaced atomically can be momentarily absent, which makes
+		// EvalSymlinks(file) fail and leaves identity as the stable route (for example
+		// .../current/bin/gedefense-control) instead of the release path the window recorded.
+		// Resolving the parent keeps the transient gap attributable to the same artifact.
+		if parent, err := filepath.EvalSymlinks(filepath.Dir(identity)); err == nil {
+			want, ok = window.Expected[filepath.Join(parent, filepath.Base(identity))]
+		}
+	}
+	e.mu.Unlock()
+	if !ok {
+		return false
+	}
+	if missing {
+		return true
+	}
+	return digest != "" && strings.EqualFold(digest, want)
+}
+
+// applyAuthorizedUpdate records a change that the signed update window permitted and moves the
+// in-memory baseline to the new bytes, so a completed update does not look like tampering on the
+// next check. The window consumes the artifact it expected; when the last expected artifact has
+// been observed the window closes on its own.
+func (e *XDREngine) applyAuthorizedUpdate(path, identity, digest, observed string, missing bool, updated protectedObject) {
+	if !e.claimTamper(identity, observed) {
+		return
+	}
+	e.mu.Lock()
+	window := e.updateWindow
+	closed := false
+	if window != nil {
+		if !missing {
+			delete(window.Expected, identity)
+			if len(window.Expected) == 0 {
+				e.updateWindow = nil
+				closed = true
+			}
+		}
+	}
+	if !missing {
+		for key, object := range e.protected {
+			if resolvedIdentity(key) != identity {
+				continue
+			}
+			// Keep the path the object was enrolled under; only its observed state changes.
+			e.protected[key] = protectedObject{path: object.path, digest: updated.digest, mode: updated.mode, size: updated.size}
+		}
+	}
+	e.mu.Unlock()
+	e.state.AddEvent(Event{Severity: "high", Kind: "xdr.update_window_artifact_applied", Source: "integrity",
+		Message: "GeDefense component replaced inside a verified signed update window", Target: path})
+	if closed {
+		e.state.AddEvent(Event{Severity: "high", Kind: "xdr.update_window_closed", Source: "integrity",
+			Message: "Signed package-update window closed: every artifact named by the manifest was observed"})
+	}
+}
+
+// newProtectedObject re-reads the observed state of path so an authorized update can move the
+// in-memory baseline to it.
+func newProtectedObject(path, digest string) (protectedObject, bool) {
+	st, err := os.Stat(path)
+	if err != nil || !st.Mode().IsRegular() {
+		return protectedObject{}, false
+	}
+	return protectedObject{path: path, digest: digest, mode: st.Mode().Perm(), size: st.Size()}, true
 }
 
 func NewXDREngine(cfg Config, state *State, core *CoreClient, feeds *FeedManager, policy *PolicyStore, settings *SettingsStore, configPath string) (*XDREngine, error) {
@@ -398,6 +600,8 @@ func (e *XDREngine) recordCellLSMDeny(event CoreCellLSMDenyEvent) {
 }
 
 func (e *XDREngine) protectedPaths() []string {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
 	paths := make([]string, 0, len(e.protected))
 	for path := range e.protected {
 		paths = append(paths, path)
@@ -865,15 +1069,27 @@ func (e *XDREngine) evaluate(p ProcessSample, conns []NetConnection, source stri
 	}
 	e.evaluated.Add(1)
 
-	// Morpheus RASP: Active Memory-Scraping / Ptrace Inspection in Data Path
+	// Morpheus RASP: Active Memory-Scraping / Ptrace Inspection in Data Path.
+	//
+	// A detection is signalled whether or not containment is armed. An alert-only RASP used to
+	// return the event without an error, and this caller only dispatched on the error, so an
+	// operator who chose alert-only got no XDR alarm at all. The RASP emits its own incident
+	// through the sink in both cases; the event decides whether an active response follows.
 	if e.morpheus != nil {
-		if raspEvt, raspErr := e.morpheus.InspectProcess(p); raspErr != nil && raspEvt != nil {
+		if raspEvt, _ := e.morpheus.InspectProcess(p); raspEvt != nil {
 			now := time.Now().UTC()
+			containment := e.morpheus.ContainmentEnabled()
+			kind := "morpheus.memory_scraping_detected"
+			message := fmt.Sprintf("Morpheus RASP detected memory scraping by PID %d (%s)", p.PID, p.Comm)
+			if containment {
+				kind = "morpheus.memory_scraping_blocked"
+				message = fmt.Sprintf("Morpheus RASP blocked memory scraping by PID %d (%s)", p.PID, p.Comm)
+			}
 			e.state.AddEvent(Event{
-				Severity: "critical", Kind: "morpheus.memory_scraping_blocked", Source: "rasp",
-				Message: fmt.Sprintf("Morpheus RASP blocked memory scraping by PID %d (%s)", p.PID, p.Comm),
+				Severity: "critical", Kind: kind, Source: "rasp",
+				Message: message, Target: fmt.Sprintf("pid:%d", p.PID),
 			})
-			if e.responses != nil {
+			if containment && e.responses != nil {
 				freezeTarget := fmt.Sprintf("%d:%d", p.PID, p.StartTicks)
 				evDigest := raspEvt.EventID
 				if raspEvt.AttackNode != nil {
@@ -927,6 +1143,32 @@ func (e *XDREngine) evaluate(p ProcessSample, conns []NetConnection, source stri
 		index = e.feeds.CorrelateIndex()
 	}
 	decision := e.rules.EvaluateProcess(p, conns, index, e.baseline, extra...)
+	// A digest mismatch on one of our own components is a trust-boundary event, not a process
+	// that should be frozen or killed. The right answer is the fail-closed degradation that
+	// XDR.SELF_TAMPER records - and a verified signed update window is the only thing that may
+	// turn the same bytes into a deployment. This interception is why the baseline no longer
+	// downgrades own artifacts to AlertOnly: nothing here may ever dispatch an "action: none"
+	// incident for them.
+	if containsString(decision.RuleIDs, "BASELINE.HASH_MISMATCH") && isProductArtifact(p.Exe) {
+		expected, actual, mismatch := e.baseline.ProductArtifactMismatch(p.Exe)
+		if mismatch {
+			identity := resolvedIdentity(p.Exe)
+			observed := actual
+			if observed == "" {
+				observed = "unreadable"
+			}
+			if e.updateWindowCovers(identity, actual, false) {
+				if updated, ok := newProtectedObject(resolvedIdentity(p.Exe), actual); ok {
+					e.applyAuthorizedUpdate(p.Exe, identity, actual, observed, false, updated)
+				}
+			} else {
+				e.selfTamper(p.Exe, observed, fmt.Sprintf(
+					"GeDefense component digest differs from the approved baseline (approved=%s observed=%s); an update requires a verified signed package-update window",
+					expected, observed))
+			}
+			return
+		}
+	}
 	if decision.Score < runtime.AlertScore || len(decision.RuleIDs) == 0 {
 		return
 	}
@@ -1205,7 +1447,7 @@ func (e *XDREngine) quarantineRemote(remote string, incident XDRIncident) error 
 		target += "/128"
 	}
 	enforced := false
-	enforcement, xdrMode := e.state.Modes()
+	enforcement, _ := e.state.Modes()
 	if enforcement == "enforce" {
 		if err := e.core.Add(target); err != nil {
 			return fmt.Errorf("kernel quarantine failed: %w", err)
@@ -1234,7 +1476,10 @@ func (e *XDREngine) quarantineRemote(remote string, incident XDRIncident) error 
 		return err
 	}
 	if e.policy != nil {
-		if err := e.policy.Persist(e.cfg.Node.Name, enforcement, xdrMode, e.state.BlocksSnapshot()); err != nil {
+		// Persist through the central funnel, never directly: it refuses to re-sign a policy
+		// document the platform could not verify (errPolicyUnverified) and publishes the refusal
+		// event. Writing e.policy.Persist here bypassed exactly that guard (FIND-013 funnel gap).
+		if err := persistPolicy(e.policy, e.cfg, e.state); err != nil {
 			e.state.RemoveBlockByID(block.ID)
 			if enforced {
 				if rollbackErr := e.core.Delete(target); rollbackErr != nil {
@@ -1245,10 +1490,8 @@ func (e *XDREngine) quarantineRemote(remote string, incident XDRIncident) error 
 					return errors.Join(err, fmt.Errorf("kernel rollback failed: %w", rollbackErr), failSafeErr)
 				}
 			}
-			e.state.SetPolicyStatus(e.policy.Status())
 			return fmt.Errorf("signed policy persistence failed: %w", err)
 		}
-		e.state.SetPolicyStatus(e.policy.Status())
 	}
 	e.state.AddEvent(Event{Severity: "high", Kind: "xdr.network_quarantine", Source: "response", Message: "Remote endpoint quarantined for 15 minutes", Target: target})
 	return nil
@@ -1317,15 +1560,28 @@ func (e *XDREngine) captureProtected(paths []string) {
 }
 
 func (e *XDREngine) checkProtected() {
-	paths := make([]string, 0, len(e.protected))
-	for p := range e.protected {
+	// The protected set is read under the lock because an authorized update window moves the
+	// recorded state of an object while the XDR workers run.
+	e.mu.RLock()
+	objects := make(map[string]protectedObject, len(e.protected))
+	for key, object := range e.protected {
+		objects[key] = object
+	}
+	e.mu.RUnlock()
+	paths := make([]string, 0, len(objects))
+	for p := range objects {
 		paths = append(paths, p)
 	}
 	sort.Strings(paths)
 	for _, p := range paths {
-		old := e.protected[p]
+		old := objects[p]
+		identity := resolvedIdentity(p)
 		st, err := os.Stat(p)
 		if err != nil {
+			if e.updateWindowCovers(identity, "", true) {
+				e.applyAuthorizedUpdate(p, identity, "", "missing", true, protectedObject{})
+				continue
+			}
 			e.selfTamper(p, "missing", "protected object disappeared")
 			continue
 		}
@@ -1337,9 +1593,17 @@ func (e *XDREngine) checkProtected() {
 		// Content, permissions and size are what the baseline recorded, so all three are
 		// part of the state that is compared and announced.
 		observed = fmt.Sprintf("%s:%04o:%d", observed, st.Mode().Perm(), st.Size())
-		if err != nil || digest != old.digest || st.Mode().Perm() != old.mode || st.Size() != old.size {
-			e.selfTamper(p, observed, "protected object changed after XDR initialization")
+		if err == nil && digest == old.digest && st.Mode().Perm() == old.mode && st.Size() == old.size {
+			continue
 		}
+		// A signed, currently open update window is the only exception: the change has to
+		// match the digest the verified release manifest names for exactly this artifact.
+		if e.updateWindowCovers(identity, digest, false) {
+			e.applyAuthorizedUpdate(p, identity, digest, observed, false,
+				protectedObject{path: p, digest: digest, mode: st.Mode().Perm(), size: st.Size()})
+			continue
+		}
+		e.selfTamper(p, observed, "protected object changed after XDR initialization")
 	}
 }
 
@@ -1383,30 +1647,19 @@ func (e *XDREngine) claimTamper(identity, observed string) bool {
 // selfTamper records that a protected object no longer matches the state this process
 // started with. The object and the state it was found in decide whether this is news:
 // see claimTamper.
+//
+// A change to one of GeDefense's own components is not exempt. The protected set contains
+// this installation's own executables, and every legitimate update replaces them while the
+// service runs - but that update has to be attributable, so the only sanctioned path is a
+// verified signed release manifest that opened a bounded update window (see
+// BeginSignedUpdateWindow). The window is checked by the observation path before this call;
+// reaching this point with an own component therefore means the replacement is unauthorized,
+// and it gets the same fail-closed treatment as a third-party object: a critical
+// XDR.SELF_TAMPER incident, a release-blocking degradation, and no active response on top of
+// a platform that has just declared its own trust boundary broken.
 func (e *XDREngine) selfTamper(path, observed, reason string) {
 	identity := resolvedIdentity(path)
 	if !e.claimTamper(identity, observed) {
-		return
-	}
-	// A change to one of GeDefense's own components is a deployment, not an intrusion.
-	//
-	// The protected set contains this installation's own executables, and every legitimate
-	// deployment replaces them while the service runs. Counting that as self-tampering degraded
-	// XDR, and a degraded XDR blocks every promotion and pauses the automatic response until
-	// somebody restarts the control plane - so shipping a fix quietly switched part of the
-	// protection off, and the operator read "it considers itself critical" instead of reading a
-	// deployment. The change is still reported and still recorded; it is simply no longer
-	// treated as an attack. Third-party objects keep the full response, because nothing
-	// legitimate rewrites those.
-	if isProductArtifact(path) {
-		e.appendIncident(XDRIncident{
-			ID: randomID(), Time: time.Now().UTC(), Severity: "high", Score: 120, Executable: path,
-			RuleIDs: []string{"XDR.SELF_ARTIFACT"}, Categories: []string{"integrity"},
-			Summary: reason, Decision: "alert", Action: "none",
-			Outcome: "recorded only; a GeDefense component was replaced, which is a deployment",
-		})
-		e.state.AddEvent(Event{Severity: "high", Kind: "xdr.self_artifact_changed", Source: "integrity",
-			Message: reason + " (GeDefense component: treated as a deployment)", Target: path})
 		return
 	}
 	// One cause per object, so the reported reason names everything that changed rather

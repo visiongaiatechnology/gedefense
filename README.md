@@ -7,8 +7,8 @@
 ### Linux Security Fabric - Your Entenprise System
 
 [![License](https://img.shields.io/badge/License-AGPL--3.0--only-blue?style=for-the-badge)](https://www.gnu.org/licenses/agpl-3.0)
-[![Version](https://img.shields.io/badge/Version-5.1.0--beta.3-orange?style=for-the-badge)](#)
-[![Status](https://img.shields.io/badge/Status-Release_v5.1.0--beta.3-yellow?style=for-the-badge)](#)
+[![Version](https://img.shields.io/badge/Version-5.2.0-orange?style=for-the-badge)](#)
+[![Status](https://img.shields.io/badge/Status-Release_v5.2.0-yellow?style=for-the-badge)](#)
 [![Installer](https://img.shields.io/badge/Installer-Universal_Linux-green?style=for-the-badge)](#-quick-start)
 [![Platform](https://img.shields.io/badge/Platform-Linux_x86__64-lightgrey?style=for-the-badge&logo=linux)](#)
 [![Data Plane](https://img.shields.io/badge/Data_Plane-Rust_eBPF%2FXDP-red?style=for-the-badge&logo=rust)](#-architecture)
@@ -28,14 +28,21 @@
 🌐 **Languages / Sprachen / Языки / 语言:**  
 **English** · [Deutsch](README.de.md) · [Русский](README.ru.md) · [中文 (简体)](README.zh.md)
 
+<br />
+
+⬇️ **Direct Installers (v5.2.0):**  
+[**OneClick Installer (`.run`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v5.2.0/VGT_GeDefense_Beta_v5_5.2.0_OneClick.run) · [`.sha256`](https://github.com/visiongaiatechnology/gedefense/releases/download/v5.2.0/VGT_GeDefense_Beta_v5_5.2.0_OneClick.run.sha256) · [**Desktop Tray (`.run`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v5.2.0/GeDefense-5.2.0-Desktop-OneClick.run) · [`.sha256`](https://github.com/visiongaiatechnology/gedefense/releases/download/v5.2.0/GeDefense-5.2.0-Desktop-OneClick.run.sha256) · [**Source (`.zip`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v5.2.0/VGT_GeDefense_Beta_v5_5.2.0_Source.zip) · [**v5.2.0 Release**](https://github.com/visiongaiatechnology/gedefense/releases/tag/v5.2.0) · [Quick Start](#-quick-start)
+
 </div>
 
-> **Update 5.1.0-beta.3 (2026-10-29) — Feed Self-Healing, CVE Response & Signed Release**
+> **Update 5.2.0 (2026-11-14) — Security Release**
+>
+> - **Security release:** the independent deep audit VGT-AUDIT-20261114-GD51 reported 36 findings in six attack chains and blocked the 5.1.0-beta.3 release gate; 5.2.0 fixes all 36 findings across installer/supply chain, boot attestation, gateway/auth, policy/forensics/storage, API/L7, feeds/airlock, self-protection, desktop tray, Rust core and eBPF. Details in `CHANGELOG.md` and `RELEASE-NOTES.md`.
 >
 > - **Self-healing threat-intelligence feed:** a missing feed-signing trust anchor is bootstrapped from the opt-in local operator key through a rotation-safe marker; expired manifests are re-signed. A rotated key with an old marker still fails closed.
 > - **CVE-2026-98432 / CVE-2026-99999 response:** managed user-namespace and MPTCP countermeasures are actively held; kernel exposure remains explicitly visible until the Ubuntu kernel fix is installed.
 > - **Mitigation guard:** permission-limited probes are now reported as UNOBSERVED instead of being silently skipped, and no longer trigger a false auto-revert.
-> - **Signed release:** 5.1.0-beta.3 ships as a signed OneClick installer and reproducible source archive.
+> - **Signed release:** 5.2.0 ships as a signed OneClick installer and reproducible source archive.
 
 
 > **GeDefense Ecosystem / Ökosystem / Экосистема / 生态系统:** [GeDefense WP](https://github.com/visiongaiatechnology/gedefensewp) — the WordPress side of the same security fabric.
@@ -76,7 +83,7 @@ Security hotfix for the 5.1.0-beta.1 CMS/bridge release. **Update is recommended
 ---
 
 > [!WARNING]
-> **PUBLIC BETA — NOT PRODUCTION-READY (Version 5.1.0-beta.3).**  
+> **PUBLIC BETA — NOT PRODUCTION-READY (Version 5.2.0).**  
 > GeDefense Titan and the Linux security fabric are in active development. This
 > beta is for test and qualification hosts only. The core architecture is
 > exercised by automated release gates, but public-CA release authenticity,
@@ -552,10 +559,10 @@ If the Gaia Cells runtime is **not present**, the adapter reports `runtime_not_i
 ### One-Click installer
 
 ```bash
-wget https://github.com/visiongaiatechnology/gedefense/releases/download/v5.1.0-beta.3/VGT_GeDefense_Beta_v5_5.1.0-beta.3_OneClick.run
-sha256sum --check VGT_GeDefense_Beta_v5_5.1.0-beta.3_OneClick.run.sha256
-chmod 700 VGT_GeDefense_Beta_v5_5.1.0-beta.3_OneClick.run
-sudo ./VGT_GeDefense_Beta_v5_5.1.0-beta.3_OneClick.run
+wget https://github.com/visiongaiatechnology/gedefense/releases/download/v5.2.0/VGT_GeDefense_Beta_v5_5.2.0_OneClick.run
+sha256sum --check VGT_GeDefense_Beta_v5_5.2.0_OneClick.run.sha256
+chmod 700 VGT_GeDefense_Beta_v5_5.2.0_OneClick.run
+sudo ./VGT_GeDefense_Beta_v5_5.2.0_OneClick.run
 ```
 
 The installer is source-self-contained and verifies its signed release index,
@@ -586,7 +593,7 @@ has to pass kernel verifier, XDP attachment, IPC, backend and TLS gates.
 
 ---
 
-## 🚧 Known Limitations (5.1.0-beta.1)
+## 🚧 Known Limitations (5.2.0)
 
 - No Swarm / Mesh support
 - No QUIC offloading
@@ -648,7 +655,7 @@ A hardening release. It removes the paths on which the platform could lose its o
   * **A verification that succeeds clears the cause it replaced.** Causes were one-way: only a rotation or an operator recovery removed one, so a transient fault kept XDR degraded - and the automatic response paused - until somebody restarted the control plane.
   * **A deployment by the operator is no longer treated as an intrusion.** Replacing one of GeDefense's own components degraded XDR and paused the automatic response, so shipping a fix quietly switched part of the protection off. It is now a high-severity record with no response attached; third-party objects keep the full reaction.
   * **Recovering the incident ledger no longer requires giving up the protection,** which under retention was unreachable - the ledger could only be repaired by first disarming the host whose protection it exists to preserve.
-  * **The Rust core tolerates an inconsistent aggregate.** A record whose TCP label contradicts its counters is kept with a neutralised protocol and its counters untouched; a record that still cannot be decoded is skipped and named instead of aborting the drain; only a batch in which many samples are undecodable - the signature of a wrong wire format - is reported as a fault.
+  * **The Rust core keeps a TCP label only for a consistent aggregate.** A homogeneous TCP batch keeps its `protocol`/`tcp_flags` and exact counters - a large ACK or SYN batch is no longer mistaken for a mismatch. A batch that mixes TCP with non-TCP packets is emitted with the explicit neutral marker (`protocol = 0`, `tcp_flags = 0`) and exact counters instead of inheriting the label of the packet that happened to trigger the flush. A record that contradicts the batch length is rejected and counted as a lost sample (with a drain alarm once too many accumulate), never rewritten into a neutral label. The eBPF producer flushes at most 255 packets per batch (the `attempt_count` wire field is a `u8`) and its LSM walk covers the full cgroup-v2 ancestry from the root, so a policy installed on a Gaia Cell cgroup also covers descendant leaf cgroups. See `rust/gedefense-common/src/lib.rs` (wire decoder) and `rust/gedefense-ebpf/src/main.rs` (producer).
 * **Ledger retention:**
   * **Both forensic ledgers rotate instead of filling up.** Reaching the budget stopped the recording, degraded XDR and paused the automatic response until an operator archived the segment by hand - twice on one production host in one day. At ninety percent the sealed chain is archived with a manifest carrying sizes, digests, sequence, head hash and scope, and a fresh chain continues.
   * **The rotation survives a crash.** It copies before it replaces, so an interrupted run is completed at the next start from a rotation marker; a marker whose manifest does not match is refused rather than trusted.
@@ -913,6 +920,6 @@ these assets locally; no runtime CDN or cloud lookup is used.
 
 [![VGT](https://img.shields.io/badge/VisionGaia-Technology-cyan?style=for-the-badge)](https://visiongaiatechnology.de)
 
-*VGT GeDefense 5.1.0-beta.3 — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
+*VGT GeDefense 5.2.0 — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
 
 </div>

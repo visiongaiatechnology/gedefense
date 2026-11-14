@@ -112,8 +112,72 @@ pass 'manual operator bearer remains volatile and is never persisted by the brow
 if grep -RInE --include='*.go' --exclude='*_test.go' '(^|[[:space:]\"])(os/exec|exec\.Command|syscall\.Exec)([[:space:]\"]|$)' control gateway; then
   fail 'runtime command execution primitive found in network-facing Go services'
 fi
-if grep -RInE --include='*.rs' '(std::process::Command|Command::new|libc::exec[a-z_]*|libc::system|/bin/(ba)?sh|[\"'"'"'`]bash[\"'"'"'`]|[\"'"'"'`]sh[\"'"'"'`][[:space:]]+-c)' \
-  rust/gedefense-common rust/gedefense-core rust/gedefense-ebpf; then
+# Shell/command sinks are forbidden in the shipped Rust daemons and eBPF code. Test-only
+# helpers legitimately spawn child processes to prove non-root behaviour; therefore
+# #[cfg(test)] items are stripped before scanning so a test fixture can never mask a
+# production execution sink (and cannot satisfy this gate by itself either).
+if ! python3 - "$ROOT" <<'PYRUSTEXEC'
+from pathlib import Path
+import re
+import sys
+
+root = Path(sys.argv[1])
+patterns = [
+    r'std::process::Command',
+    r'\bCommand::new\b',
+    r'libc::exec[a-z_]*',
+    r'libc::system\b',
+    r'/bin/(?:ba)?sh\b',
+    r'["\'`]bash["\'`]',
+    r'["\'`]sh["\'`]\s+-c',
+]
+marker = re.compile(r'#\s*\[\s*cfg\s*\(\s*test\s*\)\s*\]')
+
+
+def strip_cfg_test(source):
+    """Drop every '#[cfg(test)]' item, including nested blocks, before scanning."""
+    out = source
+    while True:
+        match = marker.search(out)
+        if not match:
+            return out
+        start = match.start()
+        cursor = match.end()
+        brace = out.find('{', cursor)
+        semicolon = out.find(';', cursor)
+        if brace < 0 or (semicolon >= 0 and semicolon < brace):
+            out = out[:start] + (out[semicolon + 1:] if semicolon >= 0 else '')
+            continue
+        depth = 0
+        index = brace
+        while index < len(out):
+            char = out[index]
+            if char == '{':
+                depth += 1
+            elif char == '}':
+                depth -= 1
+                if depth == 0:
+                    break
+            index += 1
+        out = out[:start] + out[index + 1:]
+
+
+hits = []
+for base in ('rust/gedefense-common', 'rust/gedefense-core', 'rust/gedefense-ebpf'):
+    for path in sorted((root / base).rglob('*.rs')):
+        try:
+            source = path.read_text(encoding='utf-8', errors='replace')
+        except OSError:
+            continue
+        production = strip_cfg_test(source)
+        for number, line in enumerate(production.splitlines(), 1):
+            if any(re.search(pattern, line) for pattern in patterns):
+                hits.append(f'{path.relative_to(root)}:{number}: {line.strip()[:160]}')
+if hits:
+    print('\n'.join(hits))
+    raise SystemExit(1)
+PYRUSTEXEC
+then
   fail 'runtime command/shell execution primitive found in Rust core or eBPF source'
 fi
 pass 'no shell/command execution primitives in Go control/gateway or Rust core/eBPF'
@@ -307,10 +371,61 @@ for header in ['Origin','Referer','Cookie','Authorization','Forwarded','X-Forwar
         missing.append('proxy scrub list contains '+header)
 if 'r.Header["X-Forwarded-For"] = nil' not in gw:
     missing.append('ReverseProxy X-Forwarded-For suppression')
+# FIND-012 (VGT-AUDIT-20261114-GD51): no anonymous build/version surface. The
+# former route and its handler must not come back; the retired path is answered
+# with a plain 404 that carries no build metadata, and liveness stays the only
+# anonymous health answer.
+if 'func (g *gateway) version(' in gw:
+    raise SystemExit('unauthenticated gateway version handler exists')
+if 'mux.HandleFunc("GET /gateway/version", g.removed)' not in gw or 'func (g *gateway) removed(' not in gw:
+    raise SystemExit('retired version path is not answered as a plain not-found')
+if 'http.NotFound(w, r)' not in gw:
+    raise SystemExit('removed version path does not produce a plain 404')
+if 'fmt.Fprintln(w, version)' in gw:
+    raise SystemExit('gateway source still writes the build version to a response')
+if 'func (g *gateway) livez(' not in gw or '{"ok":true}' not in gw:
+    raise SystemExit('minimal unauthenticated liveness endpoint missing or changed')
+# FIND-010 (VGT-AUDIT-20261114-GD51): the memory-hard password verification must
+# only be reachable through the process-wide admission gate on the sign-in path.
+if 'maxConcurrentKDF' not in gw or 'func (k *kdfGate) acquire(' not in gw:
+    raise SystemExit('password KDF admission gate missing')
+if 'g.verifyPasswordGated(r.Context(), ip, password)' not in gw:
+    raise SystemExit('sign-in handler bypasses the password KDF admission gate')
+if 'Retry-After' not in gw:
+    raise SystemExit('KDF backpressure response has no Retry-After header')
 if missing:
     raise SystemExit('gateway trust-boundary anchors missing: '+', '.join(missing))
 PY
-pass 'login/session/CSRF/Host checks and reverse-proxy header scrubbing present'
+pass 'login/session/CSRF/Host checks, reverse-proxy header scrubbing and no anonymous version surface present'
+
+python3 - "$ROOT" <<'PYFIND9'
+from pathlib import Path
+import re, sys
+root=Path(sys.argv[1])
+sudoers=(root/'integration'/'astraeaos'/'90-astraeaos-gedefense.sudoers').read_text(encoding='utf-8')
+# FIND-009 (VGT-AUDIT-20261114-GD51): the set-password helper must never be
+# launchable through a passwordless sudo rule; the fixed-argument rule stays, but
+# only with sudo's interactive re-authentication.
+if re.search(r'(?m)^\s*%wheel\s+ALL=\(root\)\s+NOPASSWD:[^\n]*/usr/lib/astraeaos/gedefense-set-password\b', sudoers):
+    raise SystemExit('sudoers still grants NOPASSWD for gedefense-set-password')
+if not re.search(r'(?m)^\s*%wheel\s+ALL=\(root\)\s+/usr/lib/astraeaos/gedefense-set-password\s+""\s*$', sudoers):
+    raise SystemExit('interactive fixed-argument set-password sudoers rule missing')
+helper=(root/'integration'/'astraeaos'/'gedefense-set-password').read_text(encoding='utf-8')
+for anchor in [
+    '/dev/tty',
+    '--verify-password-stdin',
+    'Current GeDefense operator password',
+    'installed credential was not changed',
+    'initial_setup_authorized',
+    'initial-access-password',
+]:
+    if anchor not in helper:
+        raise SystemExit('set-password current-password step-up anchor missing: '+anchor)
+gateway=(root/'gateway'/'main.go').read_text(encoding='utf-8')
+if 'verify-password-stdin' not in gateway:
+    raise SystemExit('gateway verification path required by the set-password step-up is missing')
+PYFIND9
+pass 'set-password keeps interactive sudo/polkit re-authentication and requires a current-password step-up before overwriting'
 
 python3 - "$ROOT" <<'PY'
 from pathlib import Path
@@ -354,7 +469,7 @@ fim=(root/'control'/'fim.go').read_text(encoding='utf-8')
 for anchor in [
     'policy.maxFiles', 'policy.maxTotalBytes', 'file identity changed while hashing',
     'e.storage.Encrypt(e.baselinePath, fimPurpose, generation, plaintext)',
-    'unencrypted FIM baseline is rejected',
+    'unencrypted baselines are rejected',
 ]:
     if anchor not in fim:
         raise SystemExit('hardened FIM anchor missing: '+anchor)
@@ -429,7 +544,7 @@ for anchor in [
 cases=(root/'control'/'cases.go').read_text(encoding='utf-8')
 for anchor in [
     'caseMaxRecords', 'caseFingerprint', 'EvidenceRecord',
-    'unencrypted case history is rejected', 'case history integrity unavailable',
+    'unencrypted case history refused', 'case history integrity unavailable',
 ]:
     if anchor not in cases:
         raise SystemExit('case engine invariant missing: '+anchor)
@@ -632,8 +747,18 @@ PY
 pass 'kernel exec EDR, GaiaCells BPF-LSM and signed-package integrity controls present'
 
 if [[ -f "$ROOT/dist/gedefense-ebpf" ]]; then
-  ebpf_sections=$(llvm-objdump -h "$ROOT/dist/gedefense-ebpf")
-  ebpf_symbols=$(llvm-objdump -t "$ROOT/dist/gedefense-ebpf")
+  # The release host may not ship LLVM alongside the bpf-linker toolchain. Both
+  # llvm-objdump and readelf prove the same things (section names + symbol table);
+  # refuse the gate only when neither inspector exists instead of dying with 127.
+  if command -v llvm-objdump >/dev/null 2>&1; then
+    ebpf_sections=$(llvm-objdump -h "$ROOT/dist/gedefense-ebpf")
+    ebpf_symbols=$(llvm-objdump -t "$ROOT/dist/gedefense-ebpf")
+  elif command -v readelf >/dev/null 2>&1; then
+    ebpf_sections=$(readelf -S -W "$ROOT/dist/gedefense-ebpf")
+    ebpf_symbols=$(readelf -s -W "$ROOT/dist/gedefense-ebpf")
+  else
+    fail 'no ELF inspector available to verify the built eBPF object (need llvm-objdump or readelf)'
+  fi
   grep -Eq '[[:space:]]lsm/socket_create[[:space:]]' <<<"$ebpf_sections" ||
     fail 'built eBPF object has no socket_create LSM section'
   for symbol in gedefense_cell_socket_create CELL_LSM_POLICIES CELL_LSM_EVENTS; do

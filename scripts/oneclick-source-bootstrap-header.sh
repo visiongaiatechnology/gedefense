@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# VGT GeDefense 5.1.0-beta.3 source-self-contained one-click bootstrap installer
+# VGT GeDefense 5.2.0 source-self-contained one-click bootstrap installer
 set -Eeuo pipefail
 umask 0077
 
-readonly PRODUCT_VERSION="5.1.0-beta.3"
+readonly PRODUCT_VERSION="5.2.0"
 readonly PAYLOAD_SHA256="__SOURCE_PAYLOAD_SHA256__"
 readonly GO_VERSION="1.27.3"
 readonly GO_LINUX_AMD64_SHA256="65efbc80fdc1fa2cd2631cad5b481777a68e8725f34e89f50fc6ac714e379b40"
@@ -36,14 +36,14 @@ trap cleanup EXIT
 
 usage(){
   cat <<'USAGE'
-VGT GeDefense 5.1.0-beta.3 One-Click Installer
+VGT GeDefense 5.2.0 One-Click Installer
 
 Usage:
-  ./GeDefense-5.1.0-beta.3-OneClick.run              Install or upgrade GeDefense
-  ./GeDefense-5.1.0-beta.3-OneClick.run --self-test  Verify this installer and inspect host readiness without modifying the host
-  ./GeDefense-5.1.0-beta.3-OneClick.run --verify     Alias for --self-test
-  ./GeDefense-5.1.0-beta.3-OneClick.run --allow-downgrade  Explicit recovery downgrade (still blocked below the release floor)
-  ./GeDefense-5.1.0-beta.3-OneClick.run --help       Show this help
+  ./GeDefense-5.2.0-OneClick.run              Install or upgrade GeDefense
+  ./GeDefense-5.2.0-OneClick.run --self-test  Verify this installer and inspect host readiness without modifying the host
+  ./GeDefense-5.2.0-OneClick.run --verify     Alias for --self-test
+  ./GeDefense-5.2.0-OneClick.run --allow-downgrade  Explicit recovery downgrade (still blocked below the release floor)
+  ./GeDefense-5.2.0-OneClick.run --help       Show this help
 
 The installer verifies the embedded signed release index with the pinned
 Ed25519 release public key and enforces semantic version monotonicity before any
@@ -111,9 +111,18 @@ release_trust_check(){
   have python3 || fail "python3 ist fÃ¼r die SignaturprÃ¼fung erforderlich (python3 zuerst installieren)."
   have sha256sum || fail "sha256sum ist fÃ¼r die SignaturprÃ¼fung erforderlich."
   TRUST_WORK=$(mktemp -d "${TMPDIR:-/tmp}/gedefense-release-trust.XXXXXX")
-  printf '%s' "$RELEASE_INDEX_B64" | base64 -d > "$TRUST_WORK/release-index.signed.json"
-  printf '%s' "$RELEASE_VERIFIER_B64" | base64 -d > "$TRUST_WORK/release-verifier.py"
-  chmod 0600 "$TRUST_WORK/release-index.signed.json" "$TRUST_WORK/release-verifier.py"
+  # FIND-003: trust material is staged through O_EXCL mktemp files (0600 from
+  # creation thanks to the global umask 0077) and renamed into place instead of
+  # writing through predictable redirect targets. Any staging failure aborts.
+  local trust_tmp
+  trust_tmp=$(mktemp -- "${TRUST_WORK}/release-index.signed.json.XXXXXXXX")
+  printf '%s' "$RELEASE_INDEX_B64" | base64 -d > "$trust_tmp"
+  chmod 0600 "$trust_tmp"
+  mv -fT -- "$trust_tmp" "$TRUST_WORK/release-index.signed.json"
+  trust_tmp=$(mktemp -- "${TRUST_WORK}/release-verifier.py.XXXXXXXX")
+  printf '%s' "$RELEASE_VERIFIER_B64" | base64 -d > "$trust_tmp"
+  chmod 0600 "$trust_tmp"
+  mv -fT -- "$trust_tmp" "$TRUST_WORK/release-verifier.py"
   python3 "$TRUST_WORK/release-verifier.py" verify-index \
     --index "$TRUST_WORK/release-index.signed.json" \
     --pubkey "$RELEASE_PUBKEY_HEX" \
@@ -138,9 +147,23 @@ persist_release_floor(){
     log "Release-Floor wird nur bei der Installation persistiert ($FLOOR_FILE)."
     return 0
   fi
-  install -d -o root -g root -m 0755 "$STATE_DIR"
+  # FIND-003: never re-create or reset the state directory here. The
+  # transactional full-stack installer established the 0710 gedefense:gedefense
+  # contract so the unprivileged control plane can traverse it; a root:root 0755
+  # reset at the end of the bootstrap silently revoked that contract. Assert the
+  # expected state instead of chmod/chown-ing it back.
+  [[ -d $STATE_DIR && ! -L $STATE_DIR ]] || fail "Runtime-State-Verzeichnis fehlt: $STATE_DIR"
+  local state_perms
+  state_perms=$(stat -c '%U:%G:%a' "$STATE_DIR")
+  # Accept both the installer-owned 0710 gedefense:gedefense contract and the
+  # packaged systemd-tmpfiles contract 1770 root:gedefense (root-owned sticky
+  # boundary; tmpfiles is the provisioning authority across reboots).
+  case $state_perms in
+    'gedefense:gedefense:710'|'root:gedefense:1770') ;;
+    *) fail "Runtime-State-Rechte unerwartet ($state_perms); erwartet gedefense:gedefense:710 oder root:gedefense:1770." ;;
+  esac
   python3 - "$FLOOR_FILE" "$NEXT_FLOOR" <<'PY'
-import json, os, pathlib, sys, time
+import json, os, pathlib, sys, tempfile, time
 path, highest = sys.argv[1:]
 document = {
     "schema": "vgt.gedefense.release-floor.v1",
@@ -148,13 +171,29 @@ document = {
     "updated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
 }
 target = pathlib.Path(path)
-temporary = target.with_name(target.name + f".tmp.{os.getpid()}")
-temporary.write_text(json.dumps(document, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-os.chmod(temporary, 0o600)
-os.replace(temporary, target)
+# O_EXCL temp file in the target directory (no predictable ".tmp.<pid>" name and
+# no symlink following), 0600 from creation, atomically renamed into place.
+handle, temporary = tempfile.mkstemp(prefix=target.name + ".tmp.", dir=str(target.parent))
+try:
+    os.fchmod(handle, 0o600)
+    with os.fdopen(handle, "w", encoding="utf-8") as stream:
+        stream.write(json.dumps(document, indent=2, sort_keys=True) + "\n")
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.replace(temporary, target)
+except BaseException:
+    try:
+        os.unlink(temporary)
+    except OSError:
+        pass
+    raise
 PY
-  chown root:root "$FLOOR_FILE" 2>/dev/null || true
+  # Fail closed: a floor file with the wrong owner/mode defeats the anti-rollback
+  # root of trust, so chown/chmod errors must never be swallowed.
+  chown root:root "$FLOOR_FILE"
   chmod 0600 "$FLOOR_FILE"
+  [[ $(stat -c '%U:%G:%a' "$FLOOR_FILE") == 'root:root:600' ]] \
+    || fail "Release-Floor-Datei hat unerwartete Rechte: $(stat -c '%U:%G:%a' "$FLOOR_FILE")."
   log "Release-Floor persistiert: $NEXT_FLOOR"
 }
 extract_and_verify_payload(){

@@ -2,15 +2,19 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
 	"time"
 )
 
@@ -31,12 +35,22 @@ import (
 
 const (
 	evidenceRotationMarkerName = "evidence-rotation.json"
-	evidenceRotationVersion    = 1
+	// evidenceRotationMarkerPurpose binds the marker envelope to its role and its path in the
+	// node storage key, so a marker copied from another purpose or from another file name can
+	// never authenticate.
+	evidenceRotationMarkerPurpose = "evidence-rotation-marker"
+	evidenceRotationVersion       = 1
 	// evidenceRotationThresholdPercent is when a rotation starts. Rotating at the budget would
 	// mean rotating only after recording has already stopped, so it happens while there is still
 	// room to write the records that describe the rotation.
 	evidenceRotationThresholdPercent = 90
 )
+
+// evidenceArchiveIDPattern describes the only identifiers a marker may name. The identifier
+// ends up in a path below <state-dir>/archive, so it is restricted to characters that cannot
+// express traversal, an absolute path or a directory separator. Generated identifiers use the
+// same alphabet (see newEvidenceArchiveID).
+var evidenceArchiveIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,128}$`)
 
 // EvidenceRotationResult describes what a rotation sealed and where it went.
 type EvidenceRotationResult struct {
@@ -64,10 +78,19 @@ type evidenceRotationManifest struct {
 
 // evidenceRotationMarker is what the next start needs in order to finish an interrupted
 // rotation. It is written before the live files are replaced and removed afterwards.
+//
+// It is authenticated with the node storage key (AEAD, purpose- and path-bound) exactly like the
+// chain files it describes. Without that, the marker was an unauthenticated JSON file in the
+// state directory: anyone able to write there could plant one that named a manifest of their
+// own making, and the next start would replace the live evidence chain with an empty one. The
+// sealed head and sequence bind the marker to the authenticated predecessor checkpoint, so a
+// marker replayed after a later rotation cannot reset a chain it does not describe.
 type evidenceRotationMarker struct {
 	Version        int    `json:"version"`
 	ArchiveID      string `json:"archive_id"`
 	ManifestSHA256 string `json:"manifest_sha256"`
+	SealedHead     string `json:"sealed_head"`
+	SealedSequence uint64 `json:"sealed_sequence"`
 }
 
 func (l *EvidenceLedger) rotationMarkerPath() string {
@@ -80,6 +103,13 @@ func (l *EvidenceLedger) Rotate(ctx context.Context, reason string) (EvidenceRot
 	defer l.mu.Unlock()
 	if l.integrityErr != nil {
 		return EvidenceRotationResult{}, fmt.Errorf("evidence ledger is quarantined: %w", l.integrityErr)
+	}
+	// The recovery marker has to be authenticated with the node storage key: an unauthenticated
+	// marker is exactly the forgery the interrupted-rotation path must not accept. Refusing a
+	// rotation in a key-less mode is therefore the safe answer - a production start refuses that
+	// configuration anyway.
+	if l.crypto == nil {
+		return EvidenceRotationResult{}, errors.New("evidence rotation needs a configured storage key to authenticate its recovery marker")
 	}
 	if l.sequence == 0 && l.expectedSize == 0 {
 		return EvidenceRotationResult{}, errors.New("evidence ledger holds nothing to seal")
@@ -114,11 +144,11 @@ const evidenceArchiveRetention = 24
 func (l *EvidenceLedger) pruneArchivesLocked(keep int) (int, error) {
 	archiveRoot := filepath.Join(filepath.Dir(l.path), "archive")
 	protected := ""
-	if raw, err := os.ReadFile(l.rotationMarkerPath()); err == nil {
-		var marker evidenceRotationMarker
-		if json.Unmarshal(raw, &marker) == nil {
-			protected = marker.ArchiveID
-		}
+	// Retention only protects an archive named by a marker it can authenticate. A plaintext
+	// marker is not evidence of anything and is ignored here; the interrupted-rotation path
+	// refuses it outright.
+	if marker, err := l.readRotationMarkerLocked(); err == nil {
+		protected = marker.ArchiveID
 	}
 	return pruneCompleteArchives(archiveRoot, "evidence-", keep, protected)
 }
@@ -183,7 +213,7 @@ func (l *EvidenceLedger) sealLocked(ctx context.Context, reason string) (string,
 	if err := ensurePrivateRecoveryDirectory(archiveRoot); err != nil {
 		return "", "", err
 	}
-	archiveID, err := newRecoveryArchiveID()
+	archiveID, err := newEvidenceArchiveID()
 	if err != nil {
 		return "", "", err
 	}
@@ -240,17 +270,109 @@ func (l *EvidenceLedger) sealLocked(ctx context.Context, reason string) (string,
 }
 
 // writeRotationMarkerLocked records that the swap is pending. The caller holds the lock.
+//
+// The marker is sealed with the node storage cipher exactly like the chain it describes: the
+// purpose and the marker path are bound into the AEAD associated data, so it cannot be forged,
+// copied from another file or replayed under a different identity. A key-less ledger cannot
+// produce an authenticated marker, which is why Rotate refuses in that mode instead of writing
+// a marker no start could safely trust.
 func (l *EvidenceLedger) writeRotationMarkerLocked(archiveID, manifestSHA string) error {
-	markerBytes, err := json.Marshal(evidenceRotationMarker{
-		Version: evidenceRotationVersion, ArchiveID: archiveID, ManifestSHA256: manifestSHA,
-	})
+	marker := evidenceRotationMarker{
+		Version:        evidenceRotationVersion,
+		ArchiveID:      archiveID,
+		ManifestSHA256: manifestSHA,
+		SealedHead:     l.headHash,
+		SealedSequence: l.sequence,
+	}
+	markerBytes, err := json.Marshal(marker)
 	if err != nil {
 		return err
 	}
-	if err := atomicWriteFile(l.rotationMarkerPath(), markerBytes, 0o600); err != nil {
+	if l.crypto == nil {
+		return errors.New("rotation marker cannot be authenticated without a storage key")
+	}
+	sealed, err := l.crypto.Encrypt(l.rotationMarkerPath(), evidenceRotationMarkerPurpose, 0, markerBytes)
+	if err != nil {
+		return fmt.Errorf("encrypt rotation marker: %w", err)
+	}
+	if err := atomicWriteFile(l.rotationMarkerPath(), append(sealed, '\n'), 0o600); err != nil {
 		return fmt.Errorf("write rotation marker: %w", err)
 	}
 	return nil
+}
+
+// readRotationMarkerLocked reads and authenticates the pending-rotation marker. The caller holds
+// the lock.
+//
+// A plaintext marker is accepted only for a key-less ledger, where it is used for retention
+// bookkeeping and never for completing a rotation. With a storage key configured, anything but
+// an envelope of evidenceRotationMarkerPurpose is an error.
+func (l *EvidenceLedger) readRotationMarkerLocked() (evidenceRotationMarker, error) {
+	markerPath := l.rotationMarkerPath()
+	data, err := readBoundedPrivateFile(markerPath, 16<<10)
+	if err != nil {
+		return evidenceRotationMarker{}, err
+	}
+	if l.crypto != nil {
+		plain, legacy, err := l.crypto.Decrypt(markerPath, evidenceRotationMarkerPurpose, data, nil)
+		if err != nil {
+			return evidenceRotationMarker{}, err
+		}
+		if legacy {
+			return evidenceRotationMarker{}, errors.New("evidence rotation marker is not authenticated")
+		}
+		data = plain
+	}
+	return decodeRotationMarker(data)
+}
+
+func decodeRotationMarker(data []byte) (evidenceRotationMarker, error) {
+	var marker evidenceRotationMarker
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&marker); err != nil {
+		return evidenceRotationMarker{}, fmt.Errorf("evidence rotation marker: %w", err)
+	}
+	var trailing any
+	if err := dec.Decode(&trailing); !errors.Is(err, io.EOF) {
+		return evidenceRotationMarker{}, errors.New("evidence rotation marker contains trailing data")
+	}
+	return marker, nil
+}
+
+// newEvidenceArchiveID returns an archive identifier that satisfies evidenceArchiveIDPattern.
+//
+// The canonical timestamp form contains a fractional-second dot; the evidence archive identifier
+// is kept inside the validation alphabet by writing that separator as '-'. The identifier stays
+// unique (timestamp plus random suffix) and sortable (the replacement is position-stable).
+func newEvidenceArchiveID() (string, error) {
+	id, err := newRecoveryArchiveID()
+	if err != nil {
+		return "", err
+	}
+	return strings.ReplaceAll(id, ".", "-"), nil
+}
+
+// evidenceArchiveManifestPath resolves the manifest path a marker names and proves that the
+// result stays inside the archive directory. The identifier pattern already excludes path
+// syntax; the filepath.Rel boundary is a second, independent check against a future pattern
+// change or a platform-specific path separator.
+func evidenceArchiveManifestPath(stateDir, archiveID string) (string, error) {
+	if !evidenceArchiveIDPattern.MatchString(archiveID) {
+		return "", errors.New("evidence rotation marker names an invalid archive identifier")
+	}
+	archiveRoot := filepath.Join(stateDir, "archive")
+	archiveDir := filepath.Join(archiveRoot, "evidence-"+archiveID)
+	rel, err := filepath.Rel(archiveRoot, archiveDir)
+	if err != nil || filepath.IsAbs(rel) || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || strings.ContainsRune(rel, filepath.Separator) {
+		return "", errors.New("evidence rotation marker names an archive outside the archive directory")
+	}
+	manifestPath := filepath.Join(archiveDir, "manifest.json")
+	relManifest, err := filepath.Rel(archiveRoot, manifestPath)
+	if err != nil || filepath.IsAbs(relManifest) || relManifest == ".." || strings.HasPrefix(relManifest, ".."+string(filepath.Separator)) {
+		return "", errors.New("evidence rotation manifest is outside the archive directory")
+	}
+	return manifestPath, nil
 }
 
 // cryptoNodeName reports the node the manifest belongs to without exposing the cipher itself.
@@ -305,7 +427,20 @@ func (l *EvidenceLedger) replaceWithFreshChainLocked() error {
 	l.integrityErr = nil
 	l.verifyScope = "empty"
 	l.fullVerifiedAt = nil
+	// A verification pass that captured the old chain uses this token to tell a rotation from
+	// damage: it must not report the replacement it raced with as corruption.
+	l.generation++
 	return nil
+}
+
+// rejectEvidenceRotation logs and returns a refusal of an interrupted rotation. The live chain is
+// never touched on this path: a marker that does not authenticate, does not match its archive or
+// does not name the authenticated predecessor head is a forgery or a replay, and completing it
+// would reset a chain that the marker does not describe.
+func rejectEvidenceRotation(format string, args ...any) error {
+	err := fmt.Errorf(format, args...)
+	log.Printf("evidence rotation marker refused: %v", err)
+	return err
 }
 
 // finishInterruptedEvidenceRotation completes a rotation that a crash interrupted.
@@ -315,6 +450,12 @@ func (l *EvidenceLedger) replaceWithFreshChainLocked() error {
 // that would repeat the failure this whole change came from: a file operation interrupted by a
 // crash taking the platform down. The archive is therefore checked against the marker and the
 // swap is repeated, which is idempotent.
+//
+// The marker is authenticated (AEAD, node storage key, purpose- and path-bound) and is bound to
+// the authenticated predecessor checkpoint: the sealed head and sequence it names must be the
+// head and sequence the live checkpoint seals. That is what stops a forged marker - or a marker
+// replayed from an older rotation - from resetting evidence it does not describe. Every refusal
+// leaves the live chain byte-for-byte unchanged and is reported as an integrity error.
 func finishInterruptedEvidenceRotation(path, headPath string, storage *StorageCipher) error {
 	dir := filepath.Clean(filepath.Dir(path))
 	markerPath := filepath.Join(dir, evidenceRotationMarkerName)
@@ -325,21 +466,93 @@ func finishInterruptedEvidenceRotation(path, headPath string, storage *StorageCi
 	if err != nil {
 		return err
 	}
-	var marker evidenceRotationMarker
-	if err := json.Unmarshal(data, &marker); err != nil {
-		return fmt.Errorf("evidence rotation marker: %w", err)
+	if storage == nil {
+		return rejectEvidenceRotation("evidence rotation marker cannot be authenticated without a configured storage key; out-of-band verification required")
 	}
-	if marker.Version != evidenceRotationVersion || marker.ArchiveID == "" || marker.ManifestSHA256 == "" {
-		return errors.New("evidence rotation marker is not usable; out-of-band verification required")
+	plain, legacy, err := storage.Decrypt(markerPath, evidenceRotationMarkerPurpose, data, nil)
+	if err != nil {
+		return rejectEvidenceRotation("evidence rotation marker is not authenticated: %v", err)
 	}
-	manifestPath := filepath.Join(dir, "archive", "evidence-"+marker.ArchiveID, "manifest.json")
+	if legacy {
+		return rejectEvidenceRotation("evidence rotation marker is not authenticated")
+	}
+	marker, err := decodeRotationMarker(plain)
+	if err != nil {
+		return rejectEvidenceRotation("evidence rotation marker is malformed: %v", err)
+	}
+	if marker.Version != evidenceRotationVersion || marker.ArchiveID == "" || marker.ManifestSHA256 == "" ||
+		marker.SealedHead == "" || marker.SealedSequence == 0 {
+		return rejectEvidenceRotation("evidence rotation marker is not usable; out-of-band verification required")
+	}
+	if !evidenceArchiveIDPattern.MatchString(marker.ArchiveID) {
+		return rejectEvidenceRotation("evidence rotation marker names an invalid archive identifier")
+	}
+	archiveRoot := filepath.Join(dir, "archive")
+	manifestPath, err := evidenceArchiveManifestPath(dir, marker.ArchiveID)
+	if err != nil {
+		return rejectEvidenceRotation("%v", err)
+	}
+	// Validate the archive directory ancestry before reading the manifest. A missing archive is
+	// reported by the manifest read below, which names the cause for the operator.
+	if _, statErr := os.Lstat(archiveRoot); statErr == nil {
+		if err := rejectSymlinkedDirectory(archiveRoot); err != nil {
+			return rejectEvidenceRotation("evidence rotation archive root is not a real directory: %v", err)
+		}
+		if err := rejectSymlink(filepath.Dir(manifestPath)); err != nil {
+			return rejectEvidenceRotation("evidence rotation archive is not a real directory: %v", err)
+		}
+	} else if !errors.Is(statErr, os.ErrNotExist) {
+		return rejectEvidenceRotation("evidence rotation archive root is not readable: %v", statErr)
+	}
 	manifestBytes, err := readBoundedPrivateFile(manifestPath, 1<<20)
 	if err != nil {
-		return fmt.Errorf("evidence rotation manifest: %w", err)
+		return rejectEvidenceRotation("evidence rotation manifest is not readable: %v", err)
 	}
 	digest := sha256.Sum256(manifestBytes)
 	if hex.EncodeToString(digest[:]) != marker.ManifestSHA256 {
-		return errors.New("evidence rotation manifest does not match its marker")
+		return rejectEvidenceRotation("evidence rotation manifest does not match its authenticated marker")
+	}
+	var manifest evidenceRotationManifest
+	dec := json.NewDecoder(bytes.NewReader(manifestBytes))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&manifest); err != nil {
+		return rejectEvidenceRotation("evidence rotation manifest is malformed: %v", err)
+	}
+	var trailing any
+	if err := dec.Decode(&trailing); !errors.Is(err, io.EOF) {
+		return rejectEvidenceRotation("evidence rotation manifest contains trailing data")
+	}
+	if manifest.Version != evidenceRotationVersion || manifest.ArchiveID != marker.ArchiveID ||
+		manifest.SealedHeadHash != marker.SealedHead || manifest.SealedRecords != marker.SealedSequence {
+		return rejectEvidenceRotation("evidence rotation manifest does not describe the sealed predecessor head")
+	}
+	// The predecessor the marker names has to be the chain that is live right now. A marker
+	// replayed after a newer rotation names a head the current checkpoint does not seal, and
+	// completing it would destroy evidence that rotation never described.
+	checkpoint, err := readEvidenceCheckpoint(headPath, storage)
+	if err != nil {
+		return rejectEvidenceRotation("evidence rotation predecessor checkpoint is not readable: %v", err)
+	}
+	if checkpoint.Version != evidenceRecordVersion {
+		return rejectEvidenceRotation("evidence rotation predecessor checkpoint has an unsupported version")
+	}
+	if checkpoint.Sequence == 0 && checkpoint.HeadHash == "" {
+		// The swap already completed before the crash; only the marker was left behind. The
+		// fresh chain is left untouched and the marker is cleared.
+		if err := os.Remove(markerPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("clear the rotation marker: %w", err)
+		}
+		return nil
+	}
+	if checkpoint.Sequence != marker.SealedSequence || checkpoint.HeadHash != marker.SealedHead {
+		return rejectEvidenceRotation("evidence rotation marker does not name the authenticated predecessor head; out-of-band verification required")
+	}
+	lines, _, err := evidenceLineWindow(path, 0, 0)
+	if err != nil {
+		return rejectEvidenceRotation("evidence ledger is not readable: %v", err)
+	}
+	if lines != marker.SealedSequence {
+		return rejectEvidenceRotation("evidence rotation marker does not describe the live chain (%d records, marker names %d)", lines, marker.SealedSequence)
 	}
 	ledger := &EvidenceLedger{path: path, headPath: headPath, crypto: storage}
 	if err := ledger.replaceWithFreshChainLocked(); err != nil {
