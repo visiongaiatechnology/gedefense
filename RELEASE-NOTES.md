@@ -1,5 +1,17 @@
 # Release Notes
 
+## 6.0.0 — 2026-11-15 — GeDefense V6 (5-Point Anti-Spyware Architecture)
+
+**GeDefense V6 (`6.0.0`)** promotes the 5-point anti-spyware blueprint into the V6 release line (Settings v17). In `observe` and `canary` phases all five planes remain **off** so baseline qualification preserves 5.2.0 behavior; once GeDefense is armed (**`enforce`**), `gedefense-control` automatically activates the safe V6 baseline (**StyX** `monitor`, **Titan Exec Gate** `contain`, **Parser Cells** `enabled`, **Emergency Lockdown** `enabled` + `auto_arm`) since no dedicated V6 UI panels are shipped yet, while **Witness** remains opt-in and operator API overrides stay sticky across restarts:
+
+### Highlights
+- **Point 1 — Titan Exec/Library Gate:** eBPF LSM hooks (`bprm_check_security`, `mmap_file`, `task_fix_setuid`) and Go-Control policy sync over VGT3, reporting honest `inactive` status when the running kernel omits `bpf` from `/sys/kernel/security/lsm`.
+- **Point 2 — Ephemeral Parser Cells (`gedefense-cell-helper.service`):** optional root helper spawner isolating untrusted parser workloads inside namespaces/tmpfs/seccomp/cgroup-v2 sandboxes with burn-on-completion ledgers, `VGTGC2` HMAC IPC, loader-env blocking (`LD_*`, etc.), and control-owned import staging.
+- **Point 3 — StyX Egress & C2/Beacon Detection:** kernel egress enforcement + flow correlation with zero overhead bypass in default `mode=off`.
+- **Point 4 — Out-of-Band Witness Client:** Ed25519-signed ledger checkpoints, `ledger_epoch` rotation guard, and SSRF/DNS-rebinding-protected outbound dialing.
+- **Point 5 — Emergency Lockdown:** XDP/TC egress lockdown latch, hardened composite USB BadUSB classification, broker freeze (including 15-char `comm` truncation), and operator-latched recovery.
+- **UI & Release Alignment:** updated dashboard shell/i18n branding (`LINUX DEFENSE // V6`), artifact naming (`VGT_GeDefense_V6_6.0.0_*`), and host validation checks.
+
 ## 5.2.0 — 2026-11-14 — Security Release
 
 This is the security release for the independent deep audit
@@ -63,6 +75,13 @@ continued silently now stop and name the condition.
   makes the resolver unavailable (fail-closed).
 - The eBPF object and the Rust core implement one wire contract (batch ≤ 255,
   neutral marker `protocol = 0`) and must come from the same release.
+- **Gateway password migration under the shipped sandbox (carry-over fix):** the
+  `gedefense-access` unit keeps `ProtectSystem=strict` and a read-only release
+  tree, but lists its own `/etc/vgt/gedefense-access` credential directory as a
+  documented writable path. A legacy PBKDF2 password record is therefore
+  atomically replaced with Argon2id after the first successful login. No other
+  sandbox directive is relaxed; run `systemctl daemon-reload` after installing
+  the unit.
 
 ### Upgrade steps
 
@@ -75,7 +94,8 @@ continued silently now stop and name the condition.
    `systemctl daemon-reload`. The units keep `ProtectSystem=strict`,
    `ReadOnlyPaths` and only the documented `ReadWritePaths` (for example
    `/run/gedefense`, `/run/vgt-gedefense-l7`, `/sys/fs/cgroup/vgt-cells`,
-   `/var/lib/vgt/gedefense`); do not widen the sandbox to work around a path.
+   `/var/lib/vgt/gedefense`, `/etc/vgt/gedefense-access`); do not widen the
+   sandbox to work around a path.
 4. Deploy the Rust core and the eBPF object from this same release. A mixed
    core/eBPF pair is refused or loses samples, because the wire contract
    changed.

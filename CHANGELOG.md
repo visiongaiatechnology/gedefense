@@ -1,5 +1,20 @@
 # Changelog
 
+## 6.0.0 — 2026-11-15 — GeDefense V6 Anti-Spyware & Sovereignty Architecture
+
+GeDefense **V6 (6.0.0)** introduces the 5-point anti-spyware defense-in-depth architecture on top of the hardened V5/5.2.0 foundation (Runtime Settings **v17**). During `observe` and `canary` phases all five subsystems stay **off / fail-closed**; once GeDefense is armed (**`enforce`**), because no dedicated V6 Web UI panel ships yet, `gedefense-control` automatically activates the safe V6 baseline (**StyX** `monitor`, **Titan Exec Gate** `contain`, **Ephemeral Parser Cells** `enabled`, **Emergency Lockdown** `enabled` + `auto_arm`), while **Witness** stays **opt-in** (requires external peer endpoint/pinning) and explicit operator API overrides remain sticky:
+
+### New Subsystems (Phase 1, Default-Off)
+- **Point 1 — Titan + eBPF-LSM Exec & Shared-Library Gate (`docs/POINT1-TITAN-EXEC-GATE.md`):** kernel eBPF LSM execution/mmap path enforcement (`bprm_check_security`, `mmap_file`, `task_fix_setuid`) paired with split-BTF / ctime awareness and unprivileged Go-Control policy synchronization over VGT3. Reports honest `inactive` host layer state when `/sys/kernel/security/lsm` lacks `bpf`.
+- **Point 2 — Ephemeral Parser Cells (`docs/POINT2-PARSER-CELLS.md`):** Qubes-light sandboxed parser worker lifecycle managed exclusively by the dedicated root helper unit `gedefense-cell-helper.service` over an HMAC-authenticated `VGTGC2` Unix socket (private namespaces, tmpfs/pivot_root, seccomp, cgroup-v2 bounds, TTL/burn ledger, unprivileged import/export split).
+- **Point 3 — StyX Egress & C2/Beacon Detection (`docs/POINT3-EGRESS-BEACON.md`):** eBPF egress enforcement + periodic beacon/exfiltration correlation (`styx_flow`) while keeping default `mode=off` behavior byte-identical to 5.2.0.
+- **Point 4 — Out-of-Band Witness Client (`docs/POINT4-WITNESS.md`):** signed checkpoint witness publishing with privacy-preserving digests, `ledger_epoch` rotation guard, SSRF/DNS-rebinding-hardened dialer (blocking loopback/link-local/cloud metadata), and honest `quote_kind=none` reporting on hosts without TPM/UEFI attestation.
+- **Point 5 — Emergency Lockdown (`docs/POINT5-LOCKDOWN.md`):** XDP/TC egress drop latch, strict USB/Thunderbolt BadUSB composite-class fail-safe policy (`bDeviceClass=00` requires all interfaces to be HID and count-complete), broker freeze (`astraea-key-broker` + 15-char `/proc/*/comm` truncation match `astraea-key-bro`), and latched operator clear.
+
+### Branding, Packaging & Audit Hardening
+- Bumped product release to **GeDefense V6 (`6.0.0`, stable channel)** across Go Control (`6.0.0`), Access Gateway (`6.0.0-access`), Rust Workspace (`6.0.0`), AstraeaOS integration contract, packaging scripts, CI workflows, and dashboard branding (`LINUX DEFENSE // V6`).
+- Fixed audit findings in composite BadUSB classification (`rust/gedefense-core/src/lockdown_usb.rs`), 15-byte Linux `comm` broker matching (`rust/gedefense-core/src/lockdown_brokers.rs`), Witness SSRF/DNS-rebinding validation (`control/witness_settings.go`, `control/witness_client.go`), loader environment variable filtering and strict UID resolution in `gedefense-cell-helper`, and aligned `scripts/validate-installed-linux-host.sh` `parser-inputs` ownership check (`gedefense:gedefense:730`) with the runtime helper contract.
+
 ## 5.2.0 — 2026-11-14 — Security Release
 
 The independent deep audit **VGT-AUDIT-20261114-GD51** of 5.1.0-beta.3 reported
@@ -121,8 +136,15 @@ require explicit operator action during an upgrade.
   neutral marker); they must be upgraded together from the same release.
 - **systemd:** the shipped units keep `ProtectSystem=strict`, `ReadOnlyPaths`
   and only the documented `ReadWritePaths` (e.g. `/run/gedefense`,
-  `/run/vgt-gedefense-l7`, `/sys/fs/cgroup/vgt-cells`). An in-place upgrade
-  requires the matching unit files and `systemctl daemon-reload`.
+  `/run/vgt-gedefense-l7`, `/sys/fs/cgroup/vgt-cells`,
+  `/etc/vgt/gedefense-access`). An in-place upgrade requires the matching unit
+  files and `systemctl daemon-reload`.
+- **Carry-over fix — gateway password migration under the sandbox:** the
+  `gedefense-access` unit no longer pins `/etc/vgt/gedefense-access` read-only.
+  That directory is a documented `ReadWritePaths` entry, so a legacy PBKDF2
+  record is atomically replaced with Argon2id after the first successful login.
+  `ProtectSystem=strict` and the read-only release tree are unchanged; no other
+  sandbox directive is relaxed.
 - **Release toolchain host:** the release validation expects Node.js 22.16.0 and
   Go 1.27.3; an older host toolchain is refused by the gate.
 
@@ -250,7 +272,7 @@ describe verified source changes, not a production certification.
   default, while production still uses `/var/lib/vgt/gedefense/dashboard.token`
   and explicit token-rotation tests keep their own temp file. This is a
   test-isolation correction, not a production authorization change.
-- Verified the full control suite on the live `visiongaia.de` host without
+- Verified the full control suite on the target reference host without
   filesystem masking: PASS (117.965 s).
 - Updated README installer links to this release tag. No product, L7, gateway,
   UI or documentation content changed relative to hotfix3.

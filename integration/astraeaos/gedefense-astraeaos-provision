@@ -19,6 +19,17 @@ readonly RELEASE=/opt/vgt/gedefense/current
 readonly PROFILE=/usr/share/gedefense/profiles/astraeaos.toml
 readonly GENERIC_PROFILE=/usr/share/gedefense/profiles/generic.toml
 readonly ACCESS_BINARY=/opt/vgt/gedefense/current/bin/gedefense-access
+# POINT 2: privileged ephemeral parser-cell helper material. The helper unit is
+# optional infrastructure (parser_cells.enabled=false by default); if it is not
+# installed the key/dirs are still provisioned so a later package upgrade cannot
+# start the helper against a half-provisioned trust root.
+readonly CELL_HELPER_KEY=${SECRET_DIR}/cell-helper.key
+readonly PARSER_INPUTS=${STATE_DIR}/parser-inputs
+readonly PARSER_EXPORTS=${STATE_DIR}/parser-exports
+readonly PARSER_IMPORTS=${STATE_DIR}/parser-imports
+readonly PARSER_LEDGER=${STATE_DIR}/parser-burn-ledger.jsonl
+readonly PARSER_PROFILE=${CONFIG_DIR}/parser-profiles.conf
+readonly PARSER_PROFILE_TEMPLATE=/usr/share/gedefense/parser-profiles.conf
 
 fail() {
   printf 'GeDefense AstraeaOS provisioning failed: %s\n' "$1" >&2
@@ -162,6 +173,47 @@ install_xdr_baseline() {
   mv -T -- "$temporary" "$destination"
 }
 
+# POINT 2: keep the helper's staging material in the same provisioning contract
+# as the generic package. The ledger must exist as a 0640 root:gedefense regular
+# file (the helper unit's ReadWritePaths fails closed without it) and the profile
+# default is header-only; an existing operator profile is never rewritten.
+install_parser_cell_material() {
+  local temporary
+  require_regular_or_absent "$PARSER_LEDGER"
+  if [[ ! -f $PARSER_LEDGER ]]; then
+    temporary=$(mktemp -- "${PARSER_LEDGER}.new.XXXXXXXX")
+    : >"$temporary"
+    chown root:gedefense "$temporary"
+    chmod 0640 "$temporary"
+    mv -T -- "$temporary" "$PARSER_LEDGER"
+  fi
+  chown root:gedefense "$PARSER_LEDGER"
+  chmod 0640 "$PARSER_LEDGER"
+  [[ $(stat -c '%U:%G:%a' "$PARSER_LEDGER") == 'root:gedefense:640' ]] ||
+    fail 'parser burn ledger permissions are inconsistent'
+
+  require_regular_or_absent "$PARSER_PROFILE"
+  if [[ ! -f $PARSER_PROFILE ]]; then
+    if [[ -f $PARSER_PROFILE_TEMPLATE && ! -L $PARSER_PROFILE_TEMPLATE ]]; then
+      install -m 0640 -o root -g root "$PARSER_PROFILE_TEMPLATE" "$PARSER_PROFILE"
+    else
+      temporary=$(mktemp -- "${PARSER_PROFILE}.new.XXXXXXXX")
+      printf '%s\n' \
+        '# /etc/vgt/gedefense/parser-profiles.conf' \
+        '# POINT 2 parser-cell profiles: intentionally empty by default; see' \
+        '# docs/POINT2-PARSER-CELLS.md §4 before adding a verified profile.' \
+        >"$temporary"
+      chown root:root "$temporary"
+      chmod 0640 "$temporary"
+      mv -T -- "$temporary" "$PARSER_PROFILE"
+    fi
+  fi
+  chown root:root "$PARSER_PROFILE"
+  chmod 0640 "$PARSER_PROFILE"
+  [[ $(stat -c '%U:%G:%a' "$PARSER_PROFILE") == 'root:root:640' ]] ||
+    fail 'parser profile permissions are inconsistent'
+}
+
 [[ $(id -u) -eq 0 ]] || fail "root is required"
 [[ -x ${RELEASE}/bin/gedefense-access ]] || fail "GeDefense release is not installed"
 [[ -f "$PROFILE" && ! -L "$PROFILE" ]] || fail "AstraeaOS profile is unavailable"
@@ -181,6 +233,13 @@ install -d -m 0750 -o "$ACCESS_USER" -g "$ACCESS_GROUP" "$ACCESS_CONFIG_DIR"
 install -d -m 0750 -o gedefense -g "$ACCESS_GROUP" "$ACCESS_STATE_PARENT"
 install -d -m 0700 -o "$ACCESS_USER" -g "$ACCESS_GROUP" "$ACCESS_STATE_DIR"
 install -d -m 0750 -o root -g gedefense "$SCAN_RUN_DIR"
+# POINT 2: parser-cell staging roots. parser-inputs is control-owned
+# (0730 gedefense:gedefense, helper staging-dir contract: Owner=Control-UID);
+# parser-exports stays root:gedefense 0750 (only the helper writes there);
+# parser-imports is the control-owned untrusted import copy (T5 fix).
+install -d -m 0730 -o gedefense -g gedefense "$PARSER_INPUTS"
+install -d -m 0750 -o root -g gedefense "$PARSER_EXPORTS"
+install -d -m 0750 -o gedefense -g gedefense "$PARSER_IMPORTS"
 
 require_regular_or_absent "${CONFIG_DIR}/gedefense.toml"
 if [[ ! -f ${CONFIG_DIR}/gedefense.toml ]] ||
@@ -194,6 +253,7 @@ fi
 install_random_key "${SECRET_DIR}/core-ipc.key" root gedefense 0640
 install_random_key "${SECRET_DIR}/storage-master.key" root gedefense 0640
 install_random_key "${SECRET_DIR}/gaia-cells.key" root gedefense 0640
+install_random_key "$CELL_HELPER_KEY" root gedefense 0640
 install_random_key "${STATE_DIR}/xdr-log.key" gedefense gedefense 0600
 install_random_key "${STATE_DIR}/runtime-settings.key" gedefense gedefense 0600
 install_random_key "${ACCESS_STATE_DIR}/access-session.key" "$ACCESS_USER" "$ACCESS_GROUP" 0600
@@ -201,5 +261,6 @@ install_dashboard_token
 install_initial_password
 install_tls_identity
 install_xdr_baseline
+install_parser_cell_material
 
 printf 'GeDefense AstraeaOS provisioning complete.\n'

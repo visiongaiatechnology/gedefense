@@ -581,6 +581,145 @@ func TestInitFeedSigningProvisioning(t *testing.T) {
 	}
 }
 
+// writeFeedSigningTestKeyFile writes exact key-file bytes, independent of
+// InitFeedSigning, so a test controls the raw material and the file mode.
+func writeFeedSigningTestKeyFile(t *testing.T, path string, raw []byte, mode os.FileMode) {
+	t.Helper()
+	if err := os.WriteFile(path, raw, mode); err != nil {
+		t.Fatal(err)
+	}
+	// WriteFile keeps an existing file's mode; chmod makes the test independent
+	// of the process umask and of the previous write.
+	if err := os.Chmod(path, mode); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestFeedSigningKeyFileBytesAreNotTrimmed is the regression test for the P3
+// provisioning flake: loadFeedSigningPublicKey ran strings.TrimSpace over the
+// raw 32 key bytes. A randomly generated Ed25519 key starting or ending with a
+// whitespace byte was shortened to 31 bytes and rejected, which failed
+// TestInitFeedSigningProvisioning in 11/200 runs.
+func TestFeedSigningKeyFileBytesAreNotTrimmed(t *testing.T) {
+	dir := t.TempDir()
+	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	publicPath := filepath.Join(dir, "feed-signing.ed25519.pub")
+	privatePath := filepath.Join(dir, "feed-signing.ed25519")
+	// Every byte unicode.IsSpace strips from a Go string, plus NUL (which is key
+	// material like any other byte and also must never be reinterpreted).
+	edgeBytes := []byte{0x20, 0x09, 0x0a, 0x0d, 0x0b, 0x0c, 0x00}
+
+	// (a) 32 raw key bytes stay 32 raw key bytes, even when an edge byte is one
+	// TrimSpace would have removed. 0x0a/0x0d are included: a key ending in a
+	// newline byte is a valid key, not a newline-terminated 31-byte key.
+	for _, edge := range edgeBytes {
+		for _, index := range []int{0, ed25519.PublicKeySize - 2, ed25519.PublicKeySize - 1} {
+			edited := append([]byte(nil), publicKey...)
+			edited[index] = edge
+			writeFeedSigningTestKeyFile(t, publicPath, edited, 0o644)
+			loaded, loadErr := loadFeedSigningPublicKey(publicPath)
+			if loadErr != nil {
+				t.Fatalf("public key with edge byte 0x%02x at index %d rejected: %v", edge, index, loadErr)
+			}
+			if !loaded.Equal(ed25519.PublicKey(edited)) {
+				t.Fatalf("public key with edge byte 0x%02x at index %d was altered", edge, index)
+			}
+		}
+	}
+	// A key whose final two bytes are exactly "\r\n" is a 32-byte key, not a
+	// terminated 30-byte key.
+	crlfKey := append([]byte(nil), publicKey...)
+	crlfKey[ed25519.PublicKeySize-2], crlfKey[ed25519.PublicKeySize-1] = '\r', '\n'
+	writeFeedSigningTestKeyFile(t, publicPath, crlfKey, 0o644)
+	if loaded, loadErr := loadFeedSigningPublicKey(publicPath); loadErr != nil || !loaded.Equal(ed25519.PublicKey(crlfKey)) {
+		t.Fatalf("32-byte public key ending in CRLF was not accepted verbatim: %v", loadErr)
+	}
+
+	// (b) Exactly one optional trailing file terminator is tolerated for the raw
+	// form and for the documented base64 form.
+	for _, terminator := range [][]byte{{'\n'}, {'\r', '\n'}} {
+		rawForm := append(append([]byte(nil), publicKey...), terminator...)
+		writeFeedSigningTestKeyFile(t, publicPath, rawForm, 0o644)
+		if loaded, loadErr := loadFeedSigningPublicKey(publicPath); loadErr != nil || !loaded.Equal(publicKey) {
+			t.Fatalf("newline-terminated raw public key rejected: %v", loadErr)
+		}
+		base64Form := append([]byte(feedSigningPublicKeyBase64(publicKey)), terminator...)
+		writeFeedSigningTestKeyFile(t, publicPath, base64Form, 0o644)
+		if loaded, loadErr := loadFeedSigningPublicKey(publicPath); loadErr != nil || !loaded.Equal(publicKey) {
+			t.Fatalf("newline-terminated base64 public key rejected: %v", loadErr)
+		}
+	}
+
+	// (c) 31/33-byte key material is rejected with an error that names the
+	// required size: a truncated or padded key is never quietly accepted.
+	for _, rejected := range [][]byte{
+		publicKey[:ed25519.PublicKeySize-1],
+		append(append([]byte(nil), publicKey...), 0xAB),
+		append(append([]byte(nil), publicKey...), 0xAB, 0xCD),
+	} {
+		writeFeedSigningTestKeyFile(t, publicPath, rejected, 0o644)
+		_, loadErr := loadFeedSigningPublicKey(publicPath)
+		if loadErr == nil {
+			t.Fatalf("%d-byte public key file was accepted", len(rejected))
+		}
+		if !strings.Contains(loadErr.Error(), "32-byte") {
+			t.Fatalf("public key size error is not clear: %v", loadErr)
+		}
+	}
+
+	// The operator key loader follows the same rule: binary seed/key bytes are
+	// used verbatim (only one optional trailing newline is stripped).
+	seed := privateKey.Seed()
+	for _, edge := range edgeBytes {
+		edited := append([]byte(nil), seed...)
+		edited[0], edited[ed25519.SeedSize-1] = edge, edge
+		writeFeedSigningTestKeyFile(t, privatePath, edited, 0o600)
+		loaded, loadErr := loadFeedSigningKeyPair(privatePath)
+		if loadErr != nil {
+			t.Fatalf("private seed with edge bytes 0x%02x rejected: %v", edge, loadErr)
+		}
+		want := ed25519.NewKeyFromSeed(edited)
+		if !loaded.private.Equal(want) || !loaded.public.Equal(want.Public().(ed25519.PublicKey)) {
+			t.Fatalf("private seed with edge bytes 0x%02x was altered", edge)
+		}
+	}
+	for _, keyMaterial := range [][]byte{seed, privateKey} {
+		want := ed25519.PrivateKey(append([]byte(nil), keyMaterial...))
+		if len(keyMaterial) == ed25519.SeedSize {
+			want = ed25519.NewKeyFromSeed(keyMaterial)
+		}
+		for _, terminator := range [][]byte{{'\n'}, {'\r', '\n'}} {
+			rawForm := append(append([]byte(nil), keyMaterial...), terminator...)
+			writeFeedSigningTestKeyFile(t, privatePath, rawForm, 0o600)
+			loaded, loadErr := loadFeedSigningKeyPair(privatePath)
+			if loadErr != nil {
+				t.Fatalf("%d-byte private key material with terminator rejected: %v", len(keyMaterial), loadErr)
+			}
+			if !loaded.private.Equal(want) || !loaded.public.Equal(want.Public().(ed25519.PublicKey)) {
+				t.Fatalf("%d-byte private key material with terminator was altered", len(keyMaterial))
+			}
+		}
+	}
+	for _, rejected := range [][]byte{
+		seed[:ed25519.SeedSize-1],
+		append(append([]byte(nil), seed...), 0xAB),
+		privateKey[:ed25519.PrivateKeySize-1],
+		append(append([]byte(nil), privateKey...), 0xAB),
+	} {
+		writeFeedSigningTestKeyFile(t, privatePath, rejected, 0o600)
+		_, loadErr := loadFeedSigningKeyPair(privatePath)
+		if loadErr == nil {
+			t.Fatalf("%d-byte private key file was accepted", len(rejected))
+		}
+		if !strings.Contains(loadErr.Error(), "32-byte seed") {
+			t.Fatalf("private key size error is not clear: %v", loadErr)
+		}
+	}
+}
+
 func TestFeedLocalSigningConfigValidation(t *testing.T) {
 	publicKey, _, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {

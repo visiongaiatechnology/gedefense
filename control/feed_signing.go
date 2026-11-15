@@ -258,10 +258,36 @@ func writeFeedSigningFile(path string, data []byte, mode os.FileMode, allowed fu
 	return nil
 }
 
+// feedSigningKeyFileBytes returns the key material stored in a key file.
+//
+// Key material is binary, not text: no TrimSpace/Trim is ever applied to it. A
+// randomly generated Ed25519 key may legitimately begin or end with a byte that
+// unicode considers whitespace (0x20, 0x09, 0x0a, 0x0d, 0x0b, 0x0c); trimming the
+// raw bytes silently shortens a valid 32-byte key (the P3 flaky provisioning
+// bug). The only tolerated file decoration is one optional trailing line
+// terminator ("\n" or "\r\n"). A file whose size already equals one of the
+// accepted raw key sizes is returned verbatim, so a key whose last byte happens
+// to be 0x0a/0x0d is never mistaken for a terminated shorter key.
+func feedSigningKeyFileBytes(raw []byte, rawSizes ...int) []byte {
+	for _, size := range rawSizes {
+		if len(raw) == size {
+			return raw
+		}
+	}
+	if len(raw) >= 2 && raw[len(raw)-2] == '\r' && raw[len(raw)-1] == '\n' {
+		return raw[:len(raw)-2]
+	}
+	if len(raw) > 0 && raw[len(raw)-1] == '\n' {
+		return raw[:len(raw)-1]
+	}
+	return raw
+}
+
 // loadFeedSigningKeyPair reads and validates the operator private key. The
 // accepted shapes are the 32-byte Ed25519 seed (what --init-feed-signing
 // writes) and the 64-byte private key, so an operator can migrate an existing
-// Ed25519 key without converting it by hand.
+// Ed25519 key without converting it by hand. The bytes are used exactly as
+// stored; only one optional trailing newline is stripped.
 func loadFeedSigningKeyPair(path string) (*feedSigningKeyPair, error) {
 	if !filepath.IsAbs(strings.TrimSpace(path)) {
 		return nil, errors.New("feed signing key file must be an absolute path")
@@ -283,21 +309,24 @@ func loadFeedSigningKeyPair(path string) (*feedSigningKeyPair, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read feed signing key: %w", err)
 	}
-	switch len(raw) {
+	fileSize := len(raw)
+	keyBytes := feedSigningKeyFileBytes(raw, ed25519.SeedSize, ed25519.PrivateKeySize)
+	switch len(keyBytes) {
 	case ed25519.SeedSize:
-		privateKey := ed25519.NewKeyFromSeed(raw)
+		privateKey := ed25519.NewKeyFromSeed(keyBytes)
 		return &feedSigningKeyPair{private: privateKey, public: privateKey.Public().(ed25519.PublicKey)}, nil
 	case ed25519.PrivateKeySize:
-		privateKey := ed25519.PrivateKey(append([]byte(nil), raw...))
+		privateKey := ed25519.PrivateKey(append([]byte(nil), keyBytes...))
 		return &feedSigningKeyPair{private: privateKey, public: privateKey.Public().(ed25519.PublicKey)}, nil
 	default:
-		return nil, fmt.Errorf("feed signing key must contain a %d-byte seed or a %d-byte private key", ed25519.SeedSize, ed25519.PrivateKeySize)
+		return nil, fmt.Errorf("feed signing key must contain exactly a %d-byte seed or a %d-byte private key (optionally followed by a single newline); got %d bytes", ed25519.SeedSize, ed25519.PrivateKeySize, fileSize)
 	}
 }
 
 // loadFeedSigningPublicKey reads a pinned public key file (raw 32 bytes or its
 // base64 representation) so an operator can verify a deployment without the
-// private key being present.
+// private key being present. The stored bytes are key material, not text: they
+// are never trimmed, and only one optional trailing newline is tolerated.
 func loadFeedSigningPublicKey(path string) (ed25519.PublicKey, error) {
 	if !filepath.IsAbs(strings.TrimSpace(path)) {
 		return nil, errors.New("feed public key file must be an absolute path")
@@ -319,16 +348,19 @@ func loadFeedSigningPublicKey(path string) (ed25519.PublicKey, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read feed public key: %w", err)
 	}
-	raw = []byte(strings.TrimSpace(string(raw)))
-	if len(raw) == ed25519.PublicKeySize {
-		return ed25519.PublicKey(append([]byte(nil), raw...)), nil
+	fileSize := len(raw)
+	// The raw form is the exact 32-byte key as written by --init-feed-signing;
+	// binary key bytes are never trimmed or string-converted before this check.
+	keyBytes := feedSigningKeyFileBytes(raw, ed25519.PublicKeySize)
+	if len(keyBytes) == ed25519.PublicKeySize {
+		return ed25519.PublicKey(append([]byte(nil), keyBytes...)), nil
 	}
-	decoded, decodeErr := base64.StdEncoding.DecodeString(string(raw))
+	decoded, decodeErr := base64.StdEncoding.DecodeString(string(keyBytes))
 	if decodeErr != nil {
-		decoded, decodeErr = base64.RawStdEncoding.DecodeString(string(raw))
+		decoded, decodeErr = base64.RawStdEncoding.DecodeString(string(keyBytes))
 	}
 	if decodeErr != nil || len(decoded) != ed25519.PublicKeySize {
-		return nil, errors.New("feed public key is not a valid Ed25519 public key")
+		return nil, fmt.Errorf("feed public key file must contain exactly a %d-byte raw Ed25519 public key or its base64 encoding (optionally followed by a single newline); got %d bytes", ed25519.PublicKeySize, fileSize)
 	}
 	return ed25519.PublicKey(decoded), nil
 }

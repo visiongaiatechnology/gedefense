@@ -25,6 +25,7 @@ PLACEHOLDERS = {
     "__PAYLOAD_SHA256__": "payload_sha256",
     "__CONTROL_SHA256__": "control_sha256",
     "__ACCESS_SHA256__": "access_sha256",
+    "__HELPER_SHA256__": "helper_sha256",
     "__SOURCE_PAYLOAD_SHA256__": "source_payload_sha256",
 }
 
@@ -41,6 +42,7 @@ def render(
     payload_sha256: str = "",
     control_sha256: str = "",
     access_sha256: str = "",
+    helper_sha256: str = "",
     source_payload_sha256: str = "",
 ) -> None:
     text = template.read_text(encoding="utf-8-sig")
@@ -53,6 +55,7 @@ def render(
         "payload_sha256": payload_sha256,
         "control_sha256": control_sha256,
         "access_sha256": access_sha256,
+        "helper_sha256": helper_sha256,
         "source_payload_sha256": source_payload_sha256,
     }
     for placeholder, key in PLACEHOLDERS.items():
@@ -79,6 +82,7 @@ def main() -> int:
     parser.add_argument("--payload-sha256", default="")
     parser.add_argument("--control-sha256", default="")
     parser.add_argument("--access-sha256", default="")
+    parser.add_argument("--helper-sha256", default="")
     parser.add_argument("--source-payload-sha256", default="")
     options = parser.parse_args()
     verifier = Path(options.verifier).read_bytes()
@@ -94,6 +98,7 @@ def main() -> int:
         payload_sha256=options.payload_sha256,
         control_sha256=options.control_sha256,
         access_sha256=options.access_sha256,
+        helper_sha256=options.helper_sha256,
         source_payload_sha256=options.source_payload_sha256,
     )
     return 0

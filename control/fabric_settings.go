@@ -80,7 +80,7 @@ type fabricRollbackRequest struct {
 func fabricModuleName(raw string) (string, bool) {
 	module := strings.ToLower(strings.TrimSpace(raw))
 	switch module {
-	case "kinetic", "network", "protection", "xdr", "l7", "threat_intel", "hardening", "integrity", "boot_trust", "policy_trust", "forensics", "system", "detection":
+	case "kinetic", "network", "protection", "xdr", "l7", "threat_intel", "hardening", "integrity", "boot_trust", "policy_trust", "forensics", "system", "detection", "styx", "titan_exec", "parser_cells", "lockdown", "witness":
 		return module, true
 	default:
 		return "", false
@@ -128,6 +128,16 @@ func fabricModuleSnapshot(settings RuntimeSettings, module string) (interface{},
 		return effectiveForensicsSettings(settings), nil
 	case "system":
 		return effectiveSystemSettings(settings), nil
+	case "styx":
+		return effectiveStyxFabricSettings(settings), nil
+	case "titan_exec":
+		return effectiveTitanExecFabricSettings(settings), nil
+	case "parser_cells":
+		return effectiveParserCellsSettings(settings), nil
+	case "lockdown":
+		return effectiveLockdownSettings(settings), nil
+	case "witness":
+		return effectiveWitnessSettings(settings), nil
 	default:
 		return nil, fmt.Errorf("unsupported settings module %q", module)
 	}
@@ -290,6 +300,66 @@ func decodeModuleSettings(raw json.RawMessage, module string, next *RuntimeSetti
 			return err
 		}
 		next.System = &in
+	case "styx":
+		var in StyxFabricSettings
+		if err := decode(&in); err != nil {
+			return err
+		}
+		// Validate and canonicalise before the revision is compared/persisted, so a
+		// non-canonical CIDR or a port rule the core would reject never reaches the
+		// settings store and therefore never fails the kernel sync midway.
+		if err := validateStyxFabricSettings(&in); err != nil {
+			return err
+		}
+		next.Styx = &in
+	case "titan_exec":
+		var in TitanExecFabricSettings
+		if err := decode(&in); err != nil {
+			return err
+		}
+		// Validate and canonicalise before the revision is compared/persisted, so a
+		// relative/non-canonical path or a per-cgroup rule the core would reject
+		// never reaches the settings store and therefore never fails the kernel
+		// sync midway.
+		if err := validateTitanExecFabricSettings(&in); err != nil {
+			return err
+		}
+		next.TitanExec = &in
+	case "parser_cells":
+		var in ParserCellsFabricSettings
+		if err := decode(&in); err != nil {
+			return err
+		}
+		// Reject-not-repair: caps, profile ids and bounds are validated before the
+		// revision is persisted or compared, exactly like the other modules.
+		if err := validateParserCellsFabricSettings(&in); err != nil {
+			return err
+		}
+		next.ParserCells = &in
+	case "lockdown":
+		var in LockdownFabricSettings
+		if err := decode(&in); err != nil {
+			return err
+		}
+		// POINT 5 / P5-T3: bounds and the closed vocabularies are enforced before the
+		// revision is persisted, so the engine never receives a document it would have
+		// to clamp. A disabling edit is always valid; enabling requires a phase.
+		if err := validateLockdownFabricSettings(&in); err != nil {
+			return err
+		}
+		next.Lockdown = &in
+	case "witness":
+		var in WitnessFabricSettings
+		if err := decode(&in); err != nil {
+			return err
+		}
+		// POINT 4 / P4-T2: transport anchors, bounds and the mode contract are
+		// enforced before the revision is persisted. Enabling http mode without a
+		// pin is refused here, exactly as the engine would refuse to start it.
+		if err := validateWitnessFabricSettings(&in); err != nil {
+			return err
+		}
+		next.Witness = &in
 	default:
 		return fmt.Errorf("unsupported settings module %q", module)
 	}
@@ -504,6 +574,73 @@ func (s *APIServer) fabricModuleApplyState(settings RuntimeSettings, module stri
 			return "engine_unavailable"
 		}
 	}
+	if module == "styx" {
+		if s.xdr == nil {
+			return "engine_unavailable"
+		}
+		sync := s.xdr.StyxPolicyStatus()
+		if !effectiveStyxFabricSettings(settings).Enabled {
+			// Disabled is the safe default: there is nothing the kernel has to apply,
+			// so capability and retry state are reported by /api/v1/styx/status, not
+			// by claiming this revision failed to activate.
+			if sync.State == StyxSyncStateApplied || sync.State == StyxSyncStateCapabilityMissing {
+				return "applied"
+			}
+			return "reload_pending"
+		}
+		switch sync.State {
+		case StyxSyncStateApplied:
+			return "applied"
+		case StyxSyncStateCapabilityMissing:
+			// Persisted, but the running core cannot apply it. The status endpoint
+			// names the capability; claiming "applied" here would be a lie.
+			return "engine_unavailable"
+		default:
+			return "reload_pending"
+		}
+	}
+	if module == "titan_exec" {
+		// The syncer is wired by the XDR engine composition (P1-T5). Until it is
+		// present the module reports the honest unavailable runtime instead of
+		// claiming a persisted enforcement revision was activated.
+		sync, wired := titanExecRuntimeStatus(s.xdr)
+		return titanExecModuleApplyState(settings, sync, wired)
+	}
+	if module == "parser_cells" {
+		// POINT 2 / P2-T3: the runtime is the wired ParserCellManager. Disabled is
+		// the shipped default and answers "disabled" - a persisted draft that is
+		// deliberately inert is not a failure. Enabled but unavailable (no helper,
+		// no sandbox capability) must not claim the revision was activated.
+		manager := s.parserCellsManager()
+		if manager == nil {
+			return "engine_unavailable"
+		}
+		status := manager.Status()
+		if !status.Enabled {
+			return "disabled"
+		}
+		if !status.Available {
+			return "engine_unavailable"
+		}
+		return "applied"
+	}
+	if module == "lockdown" {
+		// POINT 5 / P5-T3: the engine reads the persisted namespace live on every
+		// operation, so an enabled revision is active as soon as it is persisted.
+		// Disabled is the upgrade default and answers "disabled" - a deliberately
+		// inert draft is not a failure. Without a wired engine, or against a core
+		// that cannot speak the command family, nothing can be activated.
+		if s.lockdown == nil {
+			return "engine_unavailable"
+		}
+		if !effectiveLockdownSettings(settings).Enabled {
+			return "disabled"
+		}
+		if s.lockdown.StatusView().Core.Capability == "missing" {
+			return "engine_unavailable"
+		}
+		return "applied"
+	}
 	if module == "hardening" {
 		// The RASP, deception and Airlock engines live inside the XDR engine. If
 		// that engine is absent the policy is persisted but cannot be projected,
@@ -511,6 +648,19 @@ func (s *APIServer) fabricModuleApplyState(settings RuntimeSettings, module stri
 		if s.xdr == nil {
 			return "engine_unavailable"
 		}
+	}
+	if module == "witness" {
+		// POINT 4 / P4-T2: the engine reads the persisted namespace live on every
+		// cycle, so an enabled revision is active as soon as it is persisted.
+		// Disabled is the upgrade default and answers "disabled" - a deliberately
+		// inert draft is not a failure. Without a wired engine nothing can run.
+		if s.witness == nil {
+			return "engine_unavailable"
+		}
+		if !witnessModeActive(effectiveWitnessSettings(settings)) {
+			return "disabled"
+		}
+		return "applied"
 	}
 	return "applied"
 }
@@ -597,6 +747,43 @@ func (s *APIServer) fabricModuleDetails(module string) map[string]any {
 			details["core_deadline_ms"] = s.core.deadline().Milliseconds()
 		}
 		return details
+	}
+	if module == "styx" {
+		details := map[string]any{"runtime": StyxStatusView{State: StyxSyncStateUnavailable, Sync: StyxSyncStatus{State: StyxSyncStateUnavailable}}}
+		if s.xdr != nil {
+			details["runtime"] = s.styxStatusView()
+		}
+		return details
+	}
+	if module == "titan_exec" {
+		sync, wired := titanExecRuntimeStatus(s.xdr)
+		return titanExecModuleDetails(sync, wired)
+	}
+	if module == "parser_cells" {
+		// POINT 2 / P2-T3: the runtime projection is already bounded by the manager;
+		// without wiring the module says so instead of presenting a fake runtime.
+		details := map[string]any{"runtime": "unavailable"}
+		if manager := s.parserCellsManager(); manager != nil {
+			details["runtime"] = manager.Status()
+		}
+		return details
+	}
+	if module == "lockdown" {
+		// POINT 5 / P5-T3: the bounded engine projection. Without wiring the module
+		// says so instead of presenting a fake runtime; the status view itself never
+		// carries a duress path, token or PID.
+		if s.lockdown == nil {
+			return map[string]any{"runtime": "unavailable"}
+		}
+		return map[string]any{"runtime": s.lockdown.StatusView()}
+	}
+	if module == "witness" {
+		// POINT 4 / P4-T2: the bounded engine projection. It carries counters,
+		// hashes and enums only - never a path, endpoint or key material.
+		if s.witness == nil {
+			return map[string]any{"runtime": "unavailable"}
+		}
+		return map[string]any{"runtime": s.witness.StatusView()}
 	}
 	if module == "forensics" {
 		settings := effectiveForensicsSettings(s.settings.Get())
@@ -867,4 +1054,67 @@ func (s *APIServer) fabricSettingsRollback(w http.ResponseWriter, r *http.Reques
 	s.state.SetAllowlistReady(s.state.Snapshot().CoreConnected)
 	s.state.AddEvent(Event{Severity: "high", Kind: "fabric.settings.rollback", Source: "operator", Message: fmt.Sprintf("Fabric settings restored from revision %d as revision %d", in.Revision, updated.Revision)})
 	writeJSON(w, http.StatusOK, updated)
+}
+
+// --------------------------------------------------- titan_exec module projection
+
+// titanExecStatusSource is implemented by the XDR engine once the syncer is wired
+// there (P1-T5: xdr.go). Until then the settings module reports an honest
+// unavailable runtime instead of claiming the persisted revision was activated.
+type titanExecStatusSource interface {
+	TitanExecPolicyStatus() TitanExecSyncStatus
+}
+
+// titanExecRuntimeStatus resolves the wired runtime status for the settings module.
+func titanExecRuntimeStatus(xdr *XDREngine) (TitanExecSyncStatus, bool) {
+	if xdr == nil {
+		return titanExecUnavailableStatus(), false
+	}
+	source, ok := any(xdr).(titanExecStatusSource)
+	if !ok {
+		return titanExecUnavailableStatus(), false
+	}
+	return source.TitanExecPolicyStatus(), true
+}
+
+// titanExecModuleApplyState maps the persisted revision and the runtime status onto
+// the Fabric Settings apply-state vocabulary. It is pure so the mapping is testable
+// without an engine.
+func titanExecModuleApplyState(settings RuntimeSettings, sync TitanExecSyncStatus, wired bool) string {
+	desired := effectiveTitanExecFabricSettings(settings)
+	if !wired {
+		if !desired.Enabled {
+			// The upgrade default needs no activation; there is nothing to project.
+			return "applied"
+		}
+		// Persisted, but the running control plane has no wired syncer: claiming
+		// "applied" would be the exact lie §8 forbids.
+		return "engine_unavailable"
+	}
+	if !desired.Enabled {
+		if sync.State == TitanExecSyncStateApplied || sync.State == TitanExecSyncStateCapabilityMissing {
+			return "applied"
+		}
+		return "reload_pending"
+	}
+	switch sync.State {
+	case TitanExecSyncStateApplied:
+		if sync.Enabled && sync.Mode == desired.Mode {
+			return "applied"
+		}
+		return "reload_pending"
+	case TitanExecSyncStateCapabilityMissing, TitanExecSyncStateInactive, TitanExecSyncStateUnavailable:
+		// Persisted, but the running core cannot apply or enforce it. The status
+		// endpoint names the capability/activation fact; claiming "applied" here
+		// would be a lie.
+		return "engine_unavailable"
+	default:
+		return "reload_pending"
+	}
+}
+
+// titanExecModuleDetails is the module-specific runtime presentation. It carries
+// the bounded status view and whether the syncer is wired at all.
+func titanExecModuleDetails(sync TitanExecSyncStatus, wired bool) map[string]any {
+	return map[string]any{"runtime": sync, "wired": wired}
 }

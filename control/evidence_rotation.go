@@ -29,9 +29,16 @@ import (
 // clear it.
 //
 // The order is deliberately copy-then-replace: the live files are touched only after the archive
-// exists and its manifest digest is recorded, so a crash before the swap leaves a working
-// ledger, and a crash during the swap is completed by the next start from the rotation marker.
-// Nothing is removed before it has been preserved.
+// exists and its manifest digest is recorded, so a crash before the swap leaves a working ledger,
+// and a crash before the live files are replaced is completed by the next start from the rotation
+// marker. A crash after the fresh epoch checkpoint is durable leaves only the marker behind, which
+// the next start clears. One window is deliberately fail-closed instead of completed: once the
+// fresh chain file has replaced the live log but before its authenticated epoch checkpoint exists,
+// the next start sees 0 records where the marker names the sealed segment and refuses. The sealed
+// archive and the predecessor epoch checkpoint stay intact - the epoch does not move, so there is
+// no rollback vector a witness could observe - but the ledger stays quarantined until an operator
+// restores the sealed segment from the archive and clears the marker. Nothing is removed before it
+// has been preserved, and no code path claims that this window is completed automatically.
 
 const (
 	evidenceRotationMarkerName = "evidence-rotation.json"
@@ -385,6 +392,14 @@ func (l *EvidenceLedger) cryptoNodeName() string {
 
 // replaceWithFreshChainLocked swaps the live log for an empty one and resets the checkpoint, so
 // the next append starts a new chain. The caller holds the lock.
+//
+// It has one deliberately fail-closed crash window: the rename below makes the live chain empty
+// before the fresh epoch checkpoint is written. A crash in that window is not completed by the
+// next start - the pending marker names the sealed segment while the live chain holds 0 records,
+// so recovery refuses and the ledger stays quarantined. The archive and the predecessor epoch
+// checkpoint are untouched (no epoch regression), so the documented operator recovery remains
+// available: restore the sealed segment from the archive, clear the marker, restart, retry the
+// rotation.
 func (l *EvidenceLedger) replaceWithFreshChainLocked() error {
 	dir := filepath.Dir(l.path)
 	temp, err := os.CreateTemp(dir, ".evidence-fresh-*")
@@ -413,7 +428,17 @@ func (l *EvidenceLedger) replaceWithFreshChainLocked() error {
 	if err := syncDirectory(dir); err != nil {
 		return err
 	}
-	if err := writeEvidenceCheckpoint(l.headPath, 0, "", l.crypto); err != nil {
+	// The rotation is what makes the sequence go back to 0, so the generation it belongs to has
+	// to be persisted with the fresh checkpoint. Once this write is durable the epoch is
+	// crash-safe: a start after a completed swap reads it from the authenticated checkpoint. A
+	// crash between the rename above and this write is the fail-closed window documented on the
+	// function; recovery refuses there instead of deriving an epoch. An exhausted counter is
+	// refused rather than wrapped: a wrap would look like a rollback.
+	if l.ledgerEpoch == ^uint64(0) {
+		return errors.New("evidence ledger epoch is exhausted")
+	}
+	nextEpoch := l.ledgerEpoch + 1
+	if err := writeEvidenceCheckpoint(l.headPath, 0, "", nextEpoch, l.crypto); err != nil {
 		return err
 	}
 	if err := os.Remove(l.watermarkPath()); err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -427,6 +452,7 @@ func (l *EvidenceLedger) replaceWithFreshChainLocked() error {
 	l.integrityErr = nil
 	l.verifyScope = "empty"
 	l.fullVerifiedAt = nil
+	l.ledgerEpoch = nextEpoch
 	// A verification pass that captured the old chain uses this token to tell a rotation from
 	// damage: it must not report the replacement it raced with as corruption.
 	l.generation++
@@ -443,13 +469,20 @@ func rejectEvidenceRotation(format string, args ...any) error {
 	return err
 }
 
-// finishInterruptedEvidenceRotation completes a rotation that a crash interrupted.
+// finishInterruptedEvidenceRotation completes a rotation that a crash interrupted before the
+// live files were replaced.
 //
 // The marker is written before the live files are replaced, so its presence means the sealed
 // segment is already archived and verified and only the swap is missing. Refusing to start over
 // that would repeat the failure this whole change came from: a file operation interrupted by a
 // crash taking the platform down. The archive is therefore checked against the marker and the
-// swap is repeated, which is idempotent.
+// swap is repeated, which is idempotent while the live chain still holds the sealed records.
+//
+// The window after the fresh chain file replaced the live log but before the fresh epoch
+// checkpoint exists is NOT completed here. The live chain holds 0 records where the marker names
+// the sealed segment, so the check below refuses rather than guessing. That is the documented
+// fail-closed window: the archive and the predecessor checkpoint are intact and the epoch does
+// not move (no rollback vector), and an operator performs the recovery out of band.
 //
 // The marker is authenticated (AEAD, node storage key, purpose- and path-bound) and is bound to
 // the authenticated predecessor checkpoint: the sealed head and sequence it names must be the
@@ -554,7 +587,10 @@ func finishInterruptedEvidenceRotation(path, headPath string, storage *StorageCi
 	if lines != marker.SealedSequence {
 		return rejectEvidenceRotation("evidence rotation marker does not describe the live chain (%d records, marker names %d)", lines, marker.SealedSequence)
 	}
-	ledger := &EvidenceLedger{path: path, headPath: headPath, crypto: storage}
+	// The completion is the same swap Rotate performs, so it has to derive the same generation
+	// from the authenticated predecessor checkpoint instead of starting from zero: otherwise a
+	// crash-recovered rotation would move the witness-visible epoch backwards.
+	ledger := &EvidenceLedger{path: path, headPath: headPath, crypto: storage, ledgerEpoch: checkpoint.LedgerEpoch}
 	if err := ledger.replaceWithFreshChainLocked(); err != nil {
 		return fmt.Errorf("complete the interrupted rotation: %w", err)
 	}

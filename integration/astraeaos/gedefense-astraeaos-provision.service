@@ -1,7 +1,7 @@
 # STATUS: DIAMANT VGT SUPREME
 [Unit]
 Description=Provision VGT GeDefense for AstraeaOS
-Before=gedefense-core.service
+Before=gedefense-core.service gedefense-cell-helper.service
 ConditionPathExists=/opt/vgt/gedefense/current/bin/gedefense-access
 
 [Service]

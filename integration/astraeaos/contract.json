@@ -1,6 +1,6 @@
 {
   "schema": "vgt-gedefense-astraeaos-integration-v1",
-  "gedefense_version": "5.2.0",
+  "gedefense_version": "6.0.0",
   "minimum_astraeaos_version": "0.1",
   "security_authority": "gedefense",
   "sentinel_runtime_mode": "migration-source-only",
@@ -17,6 +17,7 @@
     "browser_quarantine_release_scan": "implemented-peercred-v1",
     "gaia_cells_runtime_adapter": "implemented-v1-runtime-optional",
     "gaia_cells_bpf_lsm": "implemented-mandatory-astraeaos",
+    "ephemeral_parser_cells": "implemented-v1-helper-optional-default-off",
     "transaction_engine_v2": "implemented",
     "integrity_v2": "implemented",
     "persistent_hardening_profiles": "implemented",

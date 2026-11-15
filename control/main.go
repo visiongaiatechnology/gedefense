@@ -17,7 +17,7 @@ import (
 	"time"
 )
 
-const version = "5.2.0"
+const version = "6.0.0"
 
 func detectInterface(requested string) (string, error) {
 	if requested != "" && requested != "auto" {
@@ -572,6 +572,17 @@ func main() {
 	}
 	if policyErr == nil && policyEnvelope.Enforcement == "enforce" {
 		state.AddEvent(Event{Severity: "info", Kind: "release.startup_retained", Source: "release-gate", Message: "Signed policy states enforcement; the kernel state was retained and verified instead of being emptied"})
+		if policy.Status().Verified {
+			if updatedSettings, activated, armErr := settings.ApplySafeV6DefaultsOnEnforce(); armErr != nil {
+				log.Printf("v6 startup auto-arm settings update failed: %v", armErr)
+			} else if activated {
+				state.SetSettings(updatedSettings)
+				state.AddEvent(Event{
+					Severity: "info", Kind: "v6.auto_armed", Source: "release-gate",
+					Message: "GeDefense V6 safe defaults activated on startup enforce (styx=monitor, titan_exec=contain, parser_cells=enabled, lockdown=auto_arm; witness remains opt-in)",
+				})
+			}
+		}
 	} else if policyErr == nil && (policyEnvelope.Enforcement != "" || policyEnvelope.XDRMode != "") {
 		state.AddEvent(Event{Severity: "info", Kind: "release.startup_observe", Source: "release-gate", Message: "Signed policy intent was loaded, but beta startup remains observe until runtime promotion gates pass"})
 	}
@@ -635,12 +646,26 @@ func main() {
 		log.Fatalf("xdr initialization: %v", err)
 	}
 	xdr.SetReleaseController(release)
+	// POINT 2 / P2-T3: the ephemeral parser-cell manager. It is constructed even
+	// when the namespace is disabled (it then stays completely inert); the
+	// bootstrap section only carries socket/key/staging paths and deadlines. The
+	// helper is never started from here - it is its own root unit.
+	parserCells := NewParserCellManager(cfg.ParserCells, state, settings, newParserCellKernel(core, settings), xdr.Airlock())
+	if err := state.AttachParserCells(parserCells); err != nil {
+		log.Fatalf("parser cell manager attachment: %v", err)
+	}
+	xdr.AttachParserCells(parserCells)
 	// Project the persisted Host Security namespace onto the RASP, deception and
 	// Airlock engines before anything can observe them, so a restart genuinely
 	// activates the stored revision.
 	if err := xdr.ApplyRuntimeSettings(settings.Get()); err != nil {
 		log.Fatalf("host security settings: %v", err)
 	}
+	release.SetEnforceSettingsHook(func(updated RuntimeSettings) {
+		if err := xdr.ApplyRuntimeSettings(updated); err != nil {
+			log.Printf("v6 auto-arm runtime settings apply: %v", err)
+		}
+	})
 	// The API server owns the boot evidence collector, so only the policy trust
 	// store is projected here; the boot evidence namespace is applied where that
 	// collector is constructed.
@@ -887,6 +912,50 @@ func main() {
 	srv.AttachKernelExposure(kernelExposure)
 	srv.AttachMitigationGuard(mitigationGuard)
 	srv.AttachCellGuard(cellGuard)
+	// POINT 5 / P5-T3: the Emergency Lockdown engine. It is constructed even while
+	// the namespace is disabled (it then stays completely inert: no core command, no
+	// ticker traffic, no event) and it owns the authenticated latch document. The
+	// state is sealed with the same storage master key as the other state stores.
+	lockdownStorage, lockdownStorageErr := NewStorageCipher(cfg.Runtime.StorageKeyFile, cfg.Node.Name)
+	if lockdownStorageErr != nil {
+		log.Fatalf("lockdown state encryption: %v", lockdownStorageErr)
+	}
+	lockdownEngine, lockdownErr := NewLockdownEngine(LockdownEngineConfig{
+		Storage: lockdownStorage, Settings: settings, State: state, Core: core, CellGuard: cellGuard,
+	})
+	if lockdownErr != nil {
+		log.Fatalf("lockdown engine: %v", lockdownErr)
+	}
+	// The boot-trust reconcile uses the same bounded collector as /api/v1/boot-trust,
+	// so the operator never sees two verdicts for the same boot.
+	lockdownEngine.AttachBootTrust(srv.bootTrustVerdict)
+	srv.AttachLockdown(lockdownEngine)
+	xdr.AttachLockdown(lockdownEngine)
+	go lockdownEngine.Run(xdrCtx)
+	// POINT 4 / P4-T2: the Out-of-Band Witness engine. It is constructed even while
+	// the namespace is disabled (it then stays completely inert: no ticker, no
+	// request, no checkpoint and no event) and it owns the authenticated outbox and
+	// acknowledgement documents below <stateDir>/witness/. The ledger key stays in
+	// the ledger; the engine only receives the signing callback it already hands
+	// out through WitnessCheckpointSigner.
+	witnessStorage, witnessStorageErr := NewStorageCipher(cfg.Runtime.StorageKeyFile, cfg.Node.Name)
+	if witnessStorageErr != nil {
+		log.Fatalf("witness state encryption: %v", witnessStorageErr)
+	}
+	witnessEngine, witnessErr := NewWitnessEngine(WitnessEngineConfig{
+		NodeID: cfg.Node.Name, Ledger: evidence, Settings: settings, State: state,
+		Storage:     witnessStorage,
+		OutboxPath:  filepath.Join(evidenceDir, "witness", "outbox.enc"),
+		AckPath:     filepath.Join(evidenceDir, "witness", "ack.enc"),
+		BootTrust:   func() BootTrustReport { return srv.bootTrust.Collect() },
+		SensorState: state.XDRSensorState,
+		Lockdown:    lockdownEngine,
+	})
+	if witnessErr != nil {
+		log.Fatalf("witness engine: %v", witnessErr)
+	}
+	srv.AttachWitness(witnessEngine)
+	go witnessEngine.Run(xdrCtx)
 	if l7Engine != nil {
 		srv.AttachL7(l7Engine)
 	}

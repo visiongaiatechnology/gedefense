@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# VGT GeDefense 5.2.0 source-self-contained one-click bootstrap installer
+# VGT GeDefense 6.0.0 source-self-contained one-click bootstrap installer
 set -Eeuo pipefail
 umask 0077
 
-readonly PRODUCT_VERSION="5.2.0"
+readonly PRODUCT_VERSION="6.0.0"
 readonly PAYLOAD_SHA256="__SOURCE_PAYLOAD_SHA256__"
 readonly GO_VERSION="1.27.4"
 readonly GO_LINUX_AMD64_SHA256="7226736c2339719cda28fbf3a54d71aa63bcefe376e98cef00034268dab24840"
@@ -36,14 +36,14 @@ trap cleanup EXIT
 
 usage(){
   cat <<'USAGE'
-VGT GeDefense 5.2.0 One-Click Installer
+VGT GeDefense 6.0.0 One-Click Installer
 
 Usage:
-  ./GeDefense-5.2.0-OneClick.run              Install or upgrade GeDefense
-  ./GeDefense-5.2.0-OneClick.run --self-test  Verify this installer and inspect host readiness without modifying the host
-  ./GeDefense-5.2.0-OneClick.run --verify     Alias for --self-test
-  ./GeDefense-5.2.0-OneClick.run --allow-downgrade  Explicit recovery downgrade (still blocked below the release floor)
-  ./GeDefense-5.2.0-OneClick.run --help       Show this help
+  ./GeDefense-6.0.0-OneClick.run              Install or upgrade GeDefense
+  ./GeDefense-6.0.0-OneClick.run --self-test  Verify this installer and inspect host readiness without modifying the host
+  ./GeDefense-6.0.0-OneClick.run --verify     Alias for --self-test
+  ./GeDefense-6.0.0-OneClick.run --allow-downgrade  Explicit recovery downgrade (still blocked below the release floor)
+  ./GeDefense-6.0.0-OneClick.run --help       Show this help
 
 The installer verifies the embedded signed release index with the pinned
 Ed25519 release public key and enforces semantic version monotonicity before any
@@ -232,8 +232,12 @@ extract_and_verify_payload(){
   [[ $(tr -d '\r\n' < "$SOURCE_ROOT/VERSION") == "$PRODUCT_VERSION" ]] || fail "Payload VERSION mismatch."
   for required in \
     control/go.mod gateway/go.mod rust/Cargo.lock \
+    rust/gedefense-cell-helper/Cargo.toml \
     scripts/oneclick-installer-header.sh \
     packaging/systemd/gedefense-core.service \
+    packaging/systemd/gedefense-cell-helper.service \
+    packaging/templates/parser-profiles.conf \
+    packaging/tmpfiles/vgt-gedefense.conf \
     integration/linux/gedefense-app gedefense.toml; do
     [[ -f "$SOURCE_ROOT/$required" ]] || fail "Required payload file is missing: $required"
   done
@@ -332,6 +336,9 @@ make_inner_payload(){
   for f in README.md VALIDATION.md SECURITY.md THIRD-PARTY-LICENSES.md CRYPTOGRAPHY.md TOOLCHAINS.lock; do install -m 0644 "$SOURCE_ROOT/$f" "$payload/share/$f"; done
   install -m 0644 "$SOURCE_ROOT"/packaging/systemd/* "$payload/systemd/"
   install -m 0644 "$SOURCE_ROOT/packaging/tmpfiles/vgt-gedefense-l7.conf" "$payload/tmpfiles/vgt-gedefense-l7.conf"
+  # POINT 2: helper staging/ledger/profile contract for the inner installer.
+  install -m 0644 "$SOURCE_ROOT/packaging/tmpfiles/vgt-gedefense.conf" "$payload/tmpfiles/vgt-gedefense.conf"
+  install -m 0644 "$SOURCE_ROOT/packaging/templates/parser-profiles.conf" "$payload/templates/parser-profiles.conf"
   install -m 0644 "$SOURCE_ROOT/gedefense.toml" "$payload/templates/gedefense.toml"
   install -m 0644 "$SOURCE_ROOT/malware-hashes.sha256" "$payload/templates/malware-hashes.sha256"
   if [[ -f "$SOURCE_ROOT/geoip.csv" ]]; then
@@ -361,6 +368,7 @@ build_inner_installer(){
     -e "s/__PAYLOAD_SHA256__/$payload_sha/g" \
     -e "s/__CONTROL_SHA256__/$control_sha/g" \
     -e "s/__ACCESS_SHA256__/$access_sha/g" \
+    -e "s/__HELPER_SHA256__/source-built/g" \
     "$SOURCE_ROOT/scripts/oneclick-installer-header.sh" > "$header"
   # The release index and verifier are base64 blobs. Passing them as sed
   # replacement arguments can exceed ARG_MAX on a real installation, so the

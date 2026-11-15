@@ -68,7 +68,7 @@ for binary in gedefense-control gedefense-access; do
 done
 [[ $("$ROOT/dist/gedefense-control" --version) == "$VERSION" ]]
 [[ $("$ROOT/dist/gedefense-access" --version) == "${VERSION}-access" ]]
-for artifact in gedefense-core gedefense-ebpf; do
+for artifact in gedefense-core gedefense-ebpf gedefense-cell-helper; do
   [[ -f "$ROOT/dist/$artifact" ]] || { echo "missing release artifact dist/$artifact - run 'make rust' with the pinned Rust toolchains first (fail closed)" >&2; exit 1; }
 done
 ldd "$ROOT/dist/gedefense-access" | grep -q 'libargon2.so.1'
@@ -76,7 +76,7 @@ ldd "$ROOT/dist/gedefense-access" | grep -q 'libargon2.so.1'
 
 echo "== deterministic source archive =="
 python3 "$ROOT/scripts/pack_release_zip.py" --out-dir "$OUT" --epoch "$EPOCH" --verify-twice
-SOURCE_NAME="VGT_GeDefense_Beta_v5_${VERSION}_Source.zip"
+SOURCE_NAME="VGT_GeDefense_V6_${VERSION}_Source.zip"
 python3 - "$OUT/$SOURCE_NAME" "$OUT/SOURCE-MANIFEST.sha256" <<'PY'
 import sys, zipfile
 from pathlib import Path
@@ -94,6 +94,7 @@ mkdir -p "$RELEASE_STAGE"
 install -m 0755 "$ROOT/dist/gedefense-control" "$RELEASE_STAGE/gedefense-control"
 install -m 0755 "$ROOT/dist/gedefense-access" "$RELEASE_STAGE/gedefense-access"
 install -m 0755 "$ROOT/dist/gedefense-core" "$RELEASE_STAGE/gedefense-core"
+install -m 0755 "$ROOT/dist/gedefense-cell-helper" "$RELEASE_STAGE/gedefense-cell-helper"
 install -m 0644 "$ROOT/dist/gedefense-ebpf" "$RELEASE_STAGE/gedefense-ebpf"
 
 echo "== SBOM + provenance =="
@@ -101,12 +102,14 @@ release_tool sbom --repo "$ROOT" --out "$RELEASE_STAGE/sbom.spdx.json" --epoch "
   --artifact "gedefense-control=$RELEASE_STAGE/gedefense-control" \
   --artifact "gedefense-access=$RELEASE_STAGE/gedefense-access" \
   --artifact "gedefense-core=$RELEASE_STAGE/gedefense-core" \
+  --artifact "gedefense-cell-helper=$RELEASE_STAGE/gedefense-cell-helper" \
   --artifact "gedefense-ebpf=$RELEASE_STAGE/gedefense-ebpf" > "$WORK/sbom.json"
 release_tool provenance --repo "$ROOT" --out "$RELEASE_STAGE/build-provenance.json" --epoch "$EPOCH" \
   --sbom "$RELEASE_STAGE/sbom.spdx.json" --source-manifest "$OUT/SOURCE-MANIFEST.sha256" \
   --artifact "gedefense-control=$RELEASE_STAGE/gedefense-control" \
   --artifact "gedefense-access=$RELEASE_STAGE/gedefense-access" \
   --artifact "gedefense-core=$RELEASE_STAGE/gedefense-core" \
+  --artifact "gedefense-cell-helper=$RELEASE_STAGE/gedefense-cell-helper" \
   --artifact "gedefense-ebpf=$RELEASE_STAGE/gedefense-ebpf" > "$WORK/provenance.json"
 
 echo "== sign canonical release manifest (Go-compatible schema) =="
@@ -122,6 +125,9 @@ PAYLOAD="$WORK/payload"
 mkdir -p "$PAYLOAD/bin" "$PAYLOAD/rust" "$PAYLOAD/share" "$PAYLOAD/systemd" "$PAYLOAD/tmpfiles" "$PAYLOAD/templates" "$PAYLOAD/integration/linux" "$PAYLOAD/integration/nginx"
 install -m 0755 "$ROOT/dist/gedefense-control" "$PAYLOAD/bin/gedefense-control"
 install -m 0755 "$ROOT/dist/gedefense-access" "$PAYLOAD/bin/gedefense-access"
+# POINT 2: the cell helper is shipped prebuilt (like control/access) and its
+# hash is rendered into the installer header by render-installer-header.py.
+install -m 0755 "$ROOT/dist/gedefense-cell-helper" "$PAYLOAD/bin/gedefense-cell-helper"
 cp -a "$ROOT/rust/." "$PAYLOAD/rust/"
 rm -rf "$PAYLOAD/rust/target"
 for f in README.md VALIDATION.md SECURITY.md THIRD-PARTY-LICENSES.md CRYPTOGRAPHY.md TOOLCHAINS.lock; do install -m 0644 "$ROOT/$f" "$PAYLOAD/share/$f"; done
@@ -130,6 +136,10 @@ install -m 0644 "$RELEASE_STAGE/sbom.spdx.json" "$PAYLOAD/share/sbom.spdx.json"
 install -m 0644 "$RELEASE_STAGE/build-provenance.json" "$PAYLOAD/share/build-provenance.json"
 install -m 0644 "$ROOT"/packaging/systemd/* "$PAYLOAD/systemd/"
 install -m 0644 "$ROOT/packaging/tmpfiles/vgt-gedefense-l7.conf" "$PAYLOAD/tmpfiles/vgt-gedefense-l7.conf"
+install -m 0644 "$ROOT/packaging/tmpfiles/vgt-gedefense.conf" "$PAYLOAD/tmpfiles/vgt-gedefense.conf"
+# POINT 2: header-only parser profile default; the installer copies it to
+# /etc/vgt/gedefense/parser-profiles.conf only when that file is missing.
+install -m 0644 "$ROOT/packaging/templates/parser-profiles.conf" "$PAYLOAD/templates/parser-profiles.conf"
 install -m 0644 "$ROOT/gedefense.toml" "$PAYLOAD/templates/gedefense.toml"
 install -m 0644 "$ROOT/malware-hashes.sha256" "$PAYLOAD/templates/malware-hashes.sha256"
 if [[ -f "$ROOT/geoip.csv" ]]; then install -m 0644 "$ROOT/geoip.csv" "$PAYLOAD/templates/geoip.csv"; fi
@@ -145,6 +155,7 @@ release_tool tar-gz --dir "$PAYLOAD" --out "$PAYLOAD_TAR" --epoch "$EPOCH" > "$W
 PAYLOAD_SHA=$(python3 -c "import json;print(json.load(open('$WORK/payload.json'))['sha256'])")
 CONTROL_SHA=$(sha256sum "$PAYLOAD/bin/gedefense-control" | awk '{print $1}')
 ACCESS_SHA=$(sha256sum "$PAYLOAD/bin/gedefense-access" | awk '{print $1}')
+HELPER_SHA=$(sha256sum "$PAYLOAD/bin/gedefense-cell-helper" | awk '{print $1}')
 
 echo "== assemble signed release index =="
 ASSETS="$WORK/assets"
@@ -152,6 +163,7 @@ mkdir -p "$ASSETS"
 cp "$RELEASE_STAGE/gedefense-control" "$ASSETS/gedefense-control"
 cp "$RELEASE_STAGE/gedefense-access" "$ASSETS/gedefense-access"
 cp "$RELEASE_STAGE/gedefense-core" "$ASSETS/gedefense-core"
+cp "$RELEASE_STAGE/gedefense-cell-helper" "$ASSETS/gedefense-cell-helper"
 cp "$RELEASE_STAGE/gedefense-ebpf" "$ASSETS/gedefense-ebpf"
 cp "$RELEASE_STAGE/sbom.spdx.json" "$ASSETS/sbom.spdx.json"
 cp "$RELEASE_STAGE/build-provenance.json" "$ASSETS/build-provenance.json"
@@ -182,10 +194,11 @@ python3 "$ROOT/scripts/render-installer-header.py" \
   --trust-mode prebuilt \
   --payload-sha256 "$PAYLOAD_SHA" \
   --control-sha256 "$CONTROL_SHA" \
-  --access-sha256 "$ACCESS_SHA"
+  --access-sha256 "$ACCESS_SHA" \
+  --helper-sha256 "$HELPER_SHA"
 grep -q '^__VGT_PAYLOAD_BELOW__$' "$HEADER"
 head -n "$(awk '/^__VGT_PAYLOAD_BELOW__$/{print NR; exit}' "$HEADER")" "$HEADER" | bash -n
-RUN_NAME="VGT_GeDefense_Beta_v5_${VERSION}_OneClick.run"
+RUN_NAME="VGT_GeDefense_V6_${VERSION}_OneClick.run"
 cat "$HEADER" "$PAYLOAD_TAR" > "$OUT/$RUN_NAME"
 chmod 0755 "$OUT/$RUN_NAME"
 python3 "$ROOT/scripts/tests/verify_rendered_installer.py" \
@@ -193,7 +206,7 @@ python3 "$ROOT/scripts/tests/verify_rendered_installer.py" \
   --expected-version "$VERSION" --expected-payload-sha "$PAYLOAD_SHA" >/dev/null
 
 echo "== publish signed artifacts to $OUT =="
-for asset in gedefense-control gedefense-access gedefense-core gedefense-ebpf \
+for asset in gedefense-control gedefense-access gedefense-core gedefense-cell-helper gedefense-ebpf \
              sbom.spdx.json build-provenance.json release-manifest.signed.json \
              payload.tar.gz release-index.signed.json; do
   cp "$ASSETS/$asset" "$OUT/$asset"

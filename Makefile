@@ -4,7 +4,7 @@ CARGO ?= cargo
 RUST_STABLE ?= 1.97.1
 RUST_NIGHTLY ?= nightly-2026-07-16
 
-.PHONY: all test test-race fuzz-smoke security-audit go gateway rust-ebpf rust-core rust full clean
+.PHONY: all test test-race fuzz-smoke security-audit go gateway rust-ebpf rust-core rust-helper rust full clean
 all: test go gateway
 
 test:
@@ -28,6 +28,13 @@ fuzz-smoke:
 	cd control && $(GO) test -run=^$$ -fuzz=FuzzL7NormalizerNeverPanics -fuzztime=3s
 	cd control && $(GO) test -run=^$$ -fuzz=FuzzL7ResponseInspectionPreservesWireBytes -fuzztime=3s
 	cd control && $(GO) test -run=^$$ -fuzz=FuzzL7InlineUpstreamParserNeverEscapesLocalHost -fuzztime=3s
+	cd control && $(GO) test -run=^$$ -fuzz=FuzzCoreStyxFlowParser -fuzztime=3s
+	cd control && $(GO) test -run=^$$ -fuzz=FuzzCoreTitanExecParser -fuzztime=3s
+	cd control && $(GO) test -run=^$$ -fuzz=FuzzCoreLockdownStatusParser -fuzztime=3s
+	cd control && $(GO) test -run=^$$ -fuzz=FuzzCoreLockdownEventsParser -fuzztime=3s
+	cd control && $(GO) test -run=^$$ -fuzz=FuzzParserCellPayload -fuzztime=3s
+	cd control && $(GO) test -run=^$$ -fuzz=FuzzWitnessCheckpointDecode -fuzztime=3s
+	cd control && $(GO) test -run=^$$ -fuzz=FuzzWitnessReceiptDecode -fuzztime=3s
 
 go:
 	mkdir -p dist
@@ -48,7 +55,14 @@ rust-core:
 	mkdir -p dist
 	install -m 0755 rust/target/release/gedefense-core dist/gedefense-core
 
-rust: rust-ebpf rust-core
+# POINT 2: privileged ephemeral parser-cell helper (own root systemd unit).
+rust-helper:
+	$(CARGO) +$(RUST_STABLE) test --locked --manifest-path rust/Cargo.toml -p gedefense-cell-helper
+	$(CARGO) +$(RUST_STABLE) build --locked --manifest-path rust/Cargo.toml -p gedefense-cell-helper --release
+	mkdir -p dist
+	install -m 0755 rust/target/release/gedefense-cell-helper dist/gedefense-cell-helper
+
+rust: rust-ebpf rust-core rust-helper
 full: test go gateway rust
 
 clean:

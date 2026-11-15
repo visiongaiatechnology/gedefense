@@ -1,0 +1,96 @@
+# STATUS: DIAMANT VGT SUPREME
+#
+# POINT 2 (docs/POINT2-PARSER-CELLS.md §4.9/§7): privileged ephemeral
+# "parser-ephemeral" cell helper. It is the ONLY process that spawns, freezes,
+# burns and exports parser cells; Go-Control stays unprivileged (CapEff=0) and
+# talks to it over the authenticated VGTGC2 Unix socket.
+#
+# @RELEASE@ is the packaging placeholder rendered to /opt/vgt/gedefense/current
+# by PKGBUILD/installers (same convention as gedefense-access.service.in). An
+# unrendered unit must never be installed: the placeholder stays visible on
+# purpose instead of defaulting to a wrong path.
+[Unit]
+Description=VGT GeDefense Ephemeral Parser-Cell Helper (privileged sandbox spawner)
+Documentation=file:/usr/share/gedefense/README.md
+DefaultDependencies=no
+After=local-fs.target
+After=gedefense-provision.service
+Wants=gedefense-provision.service
+Before=gedefense-control.service
+RequiresMountsFor=/etc /var/lib /run
+# Optional infrastructure, not a boot dependency: no unit Requires= the helper.
+# A missing/failed helper must only degrade parser cells to runtime-unavailable
+# (fail-closed, spec §8) and must never block core/control boot or recovery.
+ConditionPathExists=@RELEASE@/libexec/gedefense-cell-helper
+StartLimitIntervalSec=120
+StartLimitBurst=4
+
+[Service]
+Type=simple
+# The sandbox contract (§4) needs root: mount/pid/ipc/uts/net namespace creation,
+# tmpfs/pivot_root mounts, setuid/setgid to the cell UID, cgroup-v2 creation and
+# pidfd/cgroup.kill. The capability set below is exactly what those operations
+# need and nothing more.
+User=root
+# The shared runtime directory /run/vgt-gedefense and the VGTGC2 socket are
+# root:gedefense (0660) so the unprivileged control plane can connect. Keep the
+# group even though the helper itself runs as root.
+Group=gedefense
+RuntimeDirectory=vgt-gedefense
+RuntimeDirectoryMode=0750
+# gedefense-core.service also owns /run/vgt-gedefense (core.sock). A helper
+# restart must never remove that shared runtime tree underneath the core, so the
+# directory is preserved on stop.
+RuntimeDirectoryPreserve=yes
+ExecStart=@RELEASE@/libexec/gedefense-cell-helper --socket=/run/vgt-gedefense/cell-helper.sock --key-file=/etc/vgt/gedefense/secrets/cell-helper.key --profiles=/etc/vgt/gedefense/parser-profiles.conf --staging-inputs=/var/lib/vgt/gedefense/parser-inputs --staging-exports=/var/lib/vgt/gedefense/parser-exports --ledger=/var/lib/vgt/gedefense/parser-burn-ledger.jsonl --cgroup-root=/sys/fs/cgroup/vgt-cells --cell-root=/run/vgt-gedefense/cells --max-cells=16
+Restart=on-failure
+RestartSec=3s
+TimeoutStartSec=20s
+TimeoutStopSec=30s
+LimitNOFILE=8192
+LimitNPROC=512
+UMask=0077
+NoNewPrivileges=yes
+# CAP_SYS_ADMIN: namespaces, mounts, cgroup-v2 subtree and pidfd; SETUID/SETGID:
+# drop cell children to nobody/session UID; CHOWN: the sandbox chowns the copied
+# input file and the private export target to the cell UID (fchown/chown on
+# tmpfs); KILL: burned cells; SYS_RESOURCE: rlimits and memory.max/pids.max/cpu.max.
+CapabilityBoundingSet=CAP_SYS_ADMIN CAP_SETUID CAP_SETGID CAP_KILL CAP_SYS_RESOURCE CAP_CHOWN
+AmbientCapabilities=CAP_SYS_ADMIN CAP_SETUID CAP_SETGID CAP_KILL CAP_SYS_RESOURCE CAP_CHOWN
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+# ProtectControlGroups= MUST stay disabled: the helper is the only writer of the
+# dedicated /sys/fs/cgroup/vgt-cells subtree, and ReadWritePaths pins it below.
+RestrictAddressFamilies=AF_UNIX
+# Only the namespace types the sandbox contract actually creates. User
+# namespaces stay unavailable (root helper, no unprivileged userns trick):
+# a space-separated allowlist is the correct systemd syntax here - the "~"
+# form would DENY the required types instead of denying all others.
+RestrictNamespaces=mnt pid ipc uts net
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+# @system-service covers the process/setuid/resource/timer/file/network-io set
+# the helper needs; @mount adds mount/umount2/pivot_root/chroot for the private
+# mount namespace, seccomp installs the per-cell filter.
+SystemCallFilter=@system-service @mount seccomp
+SystemCallErrorNumber=EPERM
+# Read-only everywhere except the two bounded staging roots, the append-only
+# burn ledger, the dedicated cgroup subtree and the ephemeral runtime cell tree
+# (VGTGC2 socket + per-cell tmpfs roots). No host path is writable.
+ReadWritePaths=/sys/fs/cgroup/vgt-cells
+ReadWritePaths=/var/lib/vgt/gedefense/parser-inputs /var/lib/vgt/gedefense/parser-exports
+ReadWritePaths=/var/lib/vgt/gedefense/parser-burn-ledger.jsonl
+ReadWritePaths=/run/vgt-gedefense
+# Defense in depth: the helper and its cells must never speak IP networking.
+IPAddressDeny=any
+
+[Install]
+WantedBy=multi-user.target

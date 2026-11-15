@@ -126,7 +126,7 @@ PY
 if (( have_git == 1 )); then
   echo "== deterministic packaging: two builds byte-identical =="
   "$PYTHON" "$ROOT/scripts/release-tool.py" pack-source --repo "$ROOT" --out-dir "$work/pack" --epoch 1785110400 --verify-twice --allow-dirty >"$work/pack.json"
-  "$PYTHON" "$ROOT/scripts/release-tool.py" verify-archive --archive "$work/pack/VGT_GeDefense_Beta_v5_$(tr -d '\r\n' < "$ROOT/VERSION")_Source.zip" >/dev/null
+  "$PYTHON" "$ROOT/scripts/release-tool.py" verify-archive --archive "$work/pack/VGT_GeDefense_V6_$(tr -d '\r\n' < "$ROOT/VERSION")_Source.zip" >/dev/null
   archive=$(find "$work/pack" -name '*_Source.zip' -print -quit)
   "$PYTHON" - "$archive" <<'PY'
 import sys, zipfile

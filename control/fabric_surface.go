@@ -297,6 +297,13 @@ func decodeSettingsBundle(bundle SettingsBundle, current RuntimeSettings) (Runti
 var fabricModuleSnapshotOrder = []string{
 	"kinetic", "network", "protection", "xdr", "l7",
 	"threat_intel", "hardening", "integrity", "boot_trust", "policy_trust", "forensics", "system",
+	// POINT 2 / P2-T3: the parser-cell namespace participates in the settings
+	// export/search/drift surface like every other administrable namespace.
+	"parser_cells",
+	// POINT 4 / P4-T2: the Out-of-Band Witness namespace participates in the same
+	// deterministic export/search/drift surface. It carries no secret: the export
+	// contains the transport file paths and bounds, never a token or a key body.
+	"witness",
 }
 
 // fabricRevisionDiff diffs two full revisions module by module, keeping only the

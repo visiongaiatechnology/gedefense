@@ -15,6 +15,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 )
 
 type protectedObject struct {
@@ -56,14 +57,50 @@ type XDREngine struct {
 	responses        *ResponseEngine
 	deception        *DeceptionEngine
 	styx             *StyxEngine
-	morpheus         *MorpheusRASP
-	airlock          *AirlockInspector
-	l7Recent         *L7CorrelationStore
-	chronos          *ChronosScanner
-	degraded         bool
-	degradeWhy       string
-	degradeCauses    map[string]string
-	recoveryGate     chan struct{}
+	// POINT 3 / P3-T5: the kernel-side StyX detector and the policy syncer are
+	// separate from the Go-side StyxEngine above (which remains a MONITORED
+	// userspace evaluator). Their state is reported separately and never folded
+	// into the XDR sensor string.
+	styxBeacon *StyxBeaconEngine
+	styxPolicy *styxPolicySyncer
+	// styxFlowMu guards the kernel flow-health sample; the detector keeps its own
+	// mutexes and is never accessed through this one.
+	styxFlowMu            sync.Mutex
+	styxFlowHealth        CoreStyxFlowHealth
+	styxFlowHealthAt      time.Time
+	styxFlowHealthErr     string
+	styxLastPrune         time.Time
+	styxLastOverflowEvent time.Time
+	// POINT 1 / P1-T5: the Titan exec-gate policy syncer and the bounded kernel
+	// decision drain. The syncer owns its own retry/epoch loop like the StyX one;
+	// everything below is the read-only projection behind the API, guarded by
+	// titanExecMu so a drain can never hold up a status render.
+	titanExec                  *titanExecPolicySyncer
+	titanExecMu                sync.Mutex
+	titanExecCapability        string
+	titanExecDrainErr          string
+	titanExecHealth            CoreTitanExecHealth
+	titanExecHealthAt          time.Time
+	titanExecHealthErr         string
+	titanExecHistory           []CoreTitanExecEvent
+	titanExecStats             titanExecEventCounters
+	titanExecLastOverflowEvent time.Time
+	// POINT 2 / P2-T3: the ephemeral parser-cell manager. It owns its own helper
+	// client and supervisor loop; the XDR engine only attaches it, starts it with the
+	// engine context and projects the settings revision onto it.
+	parserCells *ParserCellManager
+	// POINT 5 / P5-T3: the Emergency Lockdown engine observes the incident stream
+	// through appendIncident. It is optional: without it the XDR path is unchanged
+	// and no lockdown event is ever created.
+	lockdown      *LockdownEngine
+	morpheus      *MorpheusRASP
+	airlock       *AirlockInspector
+	l7Recent      *L7CorrelationStore
+	chronos       *ChronosScanner
+	degraded      bool
+	degradeWhy    string
+	degradeCauses map[string]string
+	recoveryGate  chan struct{}
 	// updateWindow is the only sanctioned way to replace this installation's own binaries
 	// while XDR runs. It is opened exclusively by BeginSignedUpdateWindow after a signed
 	// release manifest verified; see selfTamper/checkProtected.
@@ -318,6 +355,7 @@ func NewXDREngine(cfg Config, state *State, core *CoreClient, feeds *FeedManager
 		protected:  map[string]protectedObject{}, cellPolicies: map[uint64]uint8{},
 		degradeCauses: map[string]string{}, recoveryGate: make(chan struct{}, 1),
 		highJobs: make(chan evaluationJob, highCap), normalJobs: make(chan evaluationJob, normalCap),
+		titanExecCapability: titanExecCapabilityUnknown,
 	}
 	e.recoveryGate <- struct{}{}
 	if err := logger.Healthy(); err != nil {
@@ -409,6 +447,30 @@ func NewXDREngine(cfg Config, state *State, core *CoreClient, feeds *FeedManager
 	if feeds != nil {
 		e.styx.SetThreatIndex(feeds.BlockIndex())
 	}
+	// POINT 3 / P3-T5: the kernel-side StyX detector (aggregated per-cgroup flow
+	// telemetry, docs/POINT3-EGRESS-BEACON.md §8.2) and the policy syncer. Both are
+	// constructed inert: the detector only runs once the operator namespace enables
+	// it and the core proved the capability, and the syncer only pushes what the
+	// persisted revision says. The detector's sink is the only path from a beacon
+	// finding into XDR.
+	e.styxBeacon = NewStyxBeaconEngine(StyxBeaconConfig{
+		Enabled:                 false,
+		FlowCapabilityKnown:     false,
+		DNSObservationAvailable: false,
+		CanaryCorrelation:       e.styxCanaryCorrelation,
+	}, e.correlator, e.emitStyxBeaconIncident)
+	e.applyStyxBeaconSettings(runtime)
+	e.styxPolicy = NewStyxPolicySyncer(core, state, runtime)
+	// POINT 1 / P1-T5: the Titan exec-gate policy syncer is independent of the XDR
+	// detection state for the same reason the StyX syncer is: the kernel policy is
+	// not an XDR feature, and a slow or absent core must never roll back an
+	// operator's settings revision. A nil core stays an honest "no client" fact
+	// instead of a typed-nil interface that would panic on first use.
+	var titanExecCore titanExecPolicyCore
+	if core != nil {
+		titanExecCore = core
+	}
+	e.titanExec = NewTitanExecPolicySyncer(titanExecCore, state, runtime, titanExecPlanDeps{})
 	e.morpheus = NewMorpheusRASP("", e.correlator, func(inc XDRIncident) error {
 		e.appendIncident(inc)
 		return nil
@@ -460,6 +522,38 @@ func (e *XDREngine) Chronos() *ChronosScanner {
 
 func (e *XDREngine) PlatformCaps() PlatformCapabilities {
 	return e.platformCaps
+}
+
+// AttachParserCells binds the ephemeral parser-cell manager to the engine lifetime.
+// Additive: without wiring the status payload stays byte-identical and no helper
+// socket is ever opened.
+func (e *XDREngine) AttachParserCells(manager *ParserCellManager) {
+	e.parserCells = manager
+}
+
+// ParserCells exposes the wired manager (nil without P2-T3 wiring) to the API and
+// to the automatic CellGuard dispatch.
+func (e *XDREngine) ParserCells() *ParserCellManager {
+	if e == nil {
+		return nil
+	}
+	return e.parserCells
+}
+
+// AttachLockdown binds the Emergency Lockdown engine (POINT 5 / P5-T3). Every
+// incident recorded through appendIncident is offered to the engine's closed
+// trigger vocabulary; without the wiring the XDR path is byte-identical.
+func (e *XDREngine) AttachLockdown(engine *LockdownEngine) {
+	e.lockdown = engine
+}
+
+// Lockdown exposes the wired engine (nil without POINT 5 wiring) so the settings
+// module can report its honest runtime projection.
+func (e *XDREngine) Lockdown() *LockdownEngine {
+	if e == nil {
+		return nil
+	}
+	return e.lockdown
 }
 
 func (e *XDREngine) Correlator() *IncidentCorrelator {
@@ -623,6 +717,26 @@ func (e *XDREngine) Run(ctx context.Context) {
 	// reversible responses without any manual API call.
 	StartCanarySensor(ctx, e.core, e.deception, e.state)
 
+	// The StyX policy syncer owns its own retry/epoch loop. Driving it from a
+	// sensor tick would let a slow core delay event processing; it also has to work
+	// when the XDR engine itself is disabled, because egress enforcement is a
+	// kernel policy and not an XDR detection feature.
+	if e.styxPolicy != nil {
+		go e.styxPolicy.Run(ctx)
+	}
+	// POINT 1 / P1-T5: the Titan exec-gate syncer owns the same independent
+	// retry/epoch loop; it also has to work when the XDR engine is disabled,
+	// because the kernel exec policy is not an XDR detection feature.
+	if e.titanExec != nil {
+		go e.titanExec.Run(ctx)
+	}
+	// POINT 2 / P2-T3: the parser-cell manager owns the same independent supervisor
+	// loop (helper health, TTL deadlines, ledger reconcile). It is inert while the
+	// namespace is disabled, so this goroutine costs one ticker and no request.
+	if e.parserCells != nil {
+		go e.parserCells.Run(ctx)
+	}
+
 	runtime := e.runtimeSettings()
 	scanTick := time.NewTicker(time.Duration(runtime.ScanIntervalMillis) * time.Millisecond)
 	execTick := time.NewTicker(100 * time.Millisecond)
@@ -685,6 +799,16 @@ func (e *XDREngine) Run(ctx context.Context) {
 	var malwareRetryAfter time.Time
 	var cellLSMEventRetryAfter time.Time
 	var cellLSMPolicyRetryAfter time.Time
+	// POINT 3 / P3-T5: independent rate limits for the kernel flow channel. The
+	// 100 ms tick stays the clock, but the flow drain/health polls run on their own
+	// 1 s / 10 s cadence so they can never delay exec, egress or malware ingestion.
+	var styxFlowRetryAfter time.Time
+	var styxHealthRetryAfter time.Time
+	// POINT 1 / P1-T5: the kernel exec-gate drain/health own their rate limits too;
+	// the 100 ms tick is only the clock, so neither can delay exec, egress or
+	// malware ingestion.
+	var titanExecDrainRetryAfter time.Time
+	var titanExecHealthRetryAfter time.Time
 	for {
 		select {
 		case <-ctx.Done():
@@ -741,6 +865,20 @@ func (e *XDREngine) Run(ctx context.Context) {
 						e.recordCellLSMDeny(event)
 					}
 				}
+			}
+			// POINT 1 / P1-T5: drain the kernel exec-gate decisions on their own
+			// bounded cadence. The records are kernel enforcement telemetry, not an
+			// XDR detection feature, so the drain deliberately runs before the XDR
+			// enablement gate: an operator pausing detection must not make the
+			// kernel ring overflow and lose enforcement evidence.
+			if e.core != nil && !now.Before(titanExecDrainRetryAfter) {
+				payload, drainErr := e.core.TitanExecEvents()
+				titanExecDrainRetryAfter = now.Add(e.consumeTitanExecDrain(payload, drainErr, now))
+			}
+			if e.core != nil && !now.Before(titanExecHealthRetryAfter) && e.titanExecCapabilityKnown() {
+				health, healthErr := e.core.TitanExecHealth()
+				e.consumeTitanExecHealth(health, healthErr, now)
+				titanExecHealthRetryAfter = now.Add(titanExecHealthInterval)
 			}
 			if !runtime.XDREnabled {
 				continue
@@ -801,6 +939,46 @@ func (e *XDREngine) Run(ctx context.Context) {
 						}
 					}
 				}
+			}
+			// POINT 3 / P3-T5: drain the kernel's aggregated flow telemetry on its own
+			// bounded cadence. A failure here degrades only this sensor's own cause and
+			// never delays the ingress/egress channels above.
+			if runtime.XDREnabled && e.core != nil && !now.Before(styxFlowRetryAfter) {
+				if !e.styxFlowPollEnabled() {
+					// The operator namespace is disabled: nothing to drain, no claim.
+					styxFlowRetryAfter = now.Add(10 * time.Second)
+				} else {
+					events, dropped, flowErr := e.core.StyxFlowEvents()
+					switch {
+					case errors.Is(flowErr, ErrStyxUnavailable):
+						// A pre-StyX core is a capability fact, never an XDR degradation.
+						e.setStyxBeaconCapability(false)
+						styxFlowRetryAfter = now.Add(10 * time.Second)
+					case flowErr != nil:
+						e.recordStyxFlowHealthFailure(flowErr)
+						e.noteVerificationFailure("styx_flow_sensor", "kernel styx flow telemetry unavailable: "+flowErr.Error())
+						styxFlowRetryAfter = now.Add(10 * time.Second)
+					default:
+						e.noteVerificationSuccess("styx_flow_sensor")
+						e.setStyxBeaconCapability(true)
+						e.recordStyxFlowBatch(events, dropped, now)
+						styxFlowRetryAfter = now.Add(time.Second)
+					}
+				}
+			}
+			if runtime.XDREnabled && e.core != nil && !now.Before(styxHealthRetryAfter) && e.styxFlowCapabilityKnown() {
+				health, healthErr := e.core.StyxFlowHealth()
+				if healthErr != nil {
+					if errors.Is(healthErr, ErrStyxUnavailable) {
+						e.setStyxBeaconCapability(false)
+					} else {
+						e.recordStyxFlowHealthFailure(healthErr)
+						e.noteVerificationFailure("styx_flow_sensor", "kernel styx flow health unavailable: "+healthErr.Error())
+					}
+				} else {
+					e.recordStyxFlowHealth(health, now)
+				}
+				styxHealthRetryAfter = now.Add(10 * time.Second)
 			}
 			if now.Before(egressRetryAfter) {
 				continue
@@ -1281,6 +1459,12 @@ func (e *XDREngine) appendIncident(incident XDRIncident) {
 		}
 	}
 	e.state.AddIncident(incident)
+	// POINT 5 / P5-T3: the Emergency Lockdown observes the incident stream. The
+	// hook is optional and inert unless the operator enabled the namespace; it never
+	// changes the incident record and never fails the XDR path.
+	if e.lockdown != nil {
+		e.lockdown.ObserveIncident(incident)
+	}
 }
 
 func (e *XDREngine) recordMalwareEvent(event CoreMalwareEvent) {
@@ -1862,5 +2046,430 @@ func (e *XDREngine) ApplyRuntimeSettings(settings RuntimeSettings) error {
 		e.behavior.Configure(settings.XDRFabric)
 	}
 	hardening := effectiveHardeningSettings(settings)
-	return applyHardeningPolicy(hardening, e.morpheus, e.airlock, e.deception)
+	if err := applyHardeningPolicy(hardening, e.morpheus, e.airlock, e.deception); err != nil {
+		return err
+	}
+	// POINT 3 / P3-T5: project the StyX namespace onto the detector immediately and
+	// hand the desired kernel policy to the syncer. The syncer is asynchronous on
+	// purpose: an old core or a temporary IPC failure must never roll back an
+	// operator's settings revision. It reports applied/pending/failed/capability-
+	// missing in its own status instead of pretending consent.
+	e.applyStyxBeaconSettings(settings)
+	if e.styxPolicy != nil {
+		e.styxPolicy.Configure(settings)
+	}
+	// POINT 1 / P1-T5: hand the desired exec-gate revision to its syncer. It is
+	// asynchronous on purpose: a pre-TitanExec core or a transient IPC failure must
+	// never roll back the operator's settings, and the syncer reports
+	// applied/pending/inactive/capability-missing in its own status.
+	if e.titanExec != nil {
+		e.titanExec.Configure(settings)
+	}
+	// POINT 2 / P2-T3: project the parser-cell namespace onto the manager. It never
+	// contacts the helper here; the supervisor applies the revision asynchronously.
+	if e.parserCells != nil {
+		e.parserCells.Configure(settings)
+	}
+	return nil
+}
+
+// ------------------------------------------------- Titan exec-gate projection
+//
+// POINT 1 / P1-T5: read-only accessors for the kernel exec gate. None of them
+// derives an enforcement claim: the sync status reports what the core applied,
+// the sensor state reports whether decisions are actually being drained, and the
+// kernel facts (path/lsm/offsets) are carried through verbatim.
+
+// TitanExecPolicyStatus returns the structured sync status of the exec-gate
+// policy syncer. It is the method fabric_settings.go's titanExecStatusSource
+// detects, so the settings module recognizes the wired runtime automatically.
+// Without a wired syncer the honest unavailable state is returned.
+func (e *XDREngine) TitanExecPolicyStatus() TitanExecSyncStatus {
+	if e == nil || e.titanExec == nil {
+		return titanExecUnavailableStatus()
+	}
+	return e.titanExec.Snapshot()
+}
+
+// titanExecCapabilityKnown reports whether the core proved the TITAN_EXEC_* ABI.
+func (e *XDREngine) titanExecCapabilityKnown() bool {
+	if e == nil {
+		return false
+	}
+	e.titanExecMu.Lock()
+	defer e.titanExecMu.Unlock()
+	return e.titanExecCapability == titanExecCapabilityAvailable
+}
+
+// setTitanExecCapability records the negotiated ABI fact. Only transitions are
+// operator-visible, and a missing capability is a fact, never an XDR degradation
+// (§7.3): an old core must not be reported as a detection outage.
+func (e *XDREngine) setTitanExecCapability(available bool) {
+	if e == nil {
+		return
+	}
+	next := titanExecCapabilityMissing
+	if available {
+		next = titanExecCapabilityAvailable
+	}
+	e.titanExecMu.Lock()
+	previous := e.titanExecCapability
+	e.titanExecCapability = next
+	e.titanExecMu.Unlock()
+	if previous == next || e.state == nil {
+		return
+	}
+	switch {
+	case available && previous == titanExecCapabilityMissing:
+		e.state.AddEvent(Event{Severity: "info", Kind: "titan_exec.capability_available", Source: "titan-exec",
+			Message: "The privileged core advertises the TITAN_EXEC_* command family again; kernel exec-gate decisions are drained"})
+	case !available && previous == titanExecCapabilityAvailable:
+		e.state.AddEvent(Event{Severity: "info", Kind: "titan_exec.capability_missing", Source: "titan-exec",
+			Message: "The privileged core no longer advertises the TITAN_EXEC_* command family; no kernel exec-gate decisions are available. This is a capability fact, not an XDR degradation"})
+	}
+}
+
+// titanExecHealthSnapshot returns the last kernel health sample and the recorded
+// per-channel errors (health command, event drain) for the status view.
+func (e *XDREngine) titanExecHealthSnapshot() (CoreTitanExecHealth, *time.Time, string, string) {
+	if e == nil {
+		return CoreTitanExecHealth{}, nil, "", ""
+	}
+	e.titanExecMu.Lock()
+	defer e.titanExecMu.Unlock()
+	var at *time.Time
+	if !e.titanExecHealthAt.IsZero() {
+		sampled := e.titanExecHealthAt
+		at = &sampled
+	}
+	return e.titanExecHealth, at, e.titanExecHealthErr, e.titanExecDrainErr
+}
+
+// titanExecSensorState derives the honest ingestion state. It never says
+// "active" for a namespace whose kernel hook is not attached: unavailable
+// capability and inactive/unattached sync states win over a configured mode.
+func (e *XDREngine) titanExecSensorState() string {
+	if e == nil || e.titanExec == nil {
+		return "unavailable"
+	}
+	if !e.titanExecCapabilityKnown() {
+		return "unavailable"
+	}
+	sync := e.TitanExecPolicyStatus()
+	switch sync.State {
+	case TitanExecSyncStateCapabilityMissing, TitanExecSyncStateUnavailable:
+		return "unavailable"
+	case TitanExecSyncStateInactive:
+		return "inactive"
+	case TitanExecSyncStateFailed:
+		return "degraded"
+	}
+	if !sync.Enabled || sync.Mode == TitanExecModeOff {
+		return "inactive"
+	}
+	if e.titanExecSensorCauseSet() {
+		return "degraded"
+	}
+	if sync.State == TitanExecSyncStatePending {
+		return "pending"
+	}
+	return "active"
+}
+
+// TitanExecStatusSnapshot builds the bounded field attached to /api/v1/status.
+// It is nil for an engine without exec-gate wiring, so the payload of an
+// installation that never enabled the gate stays byte-identical.
+func (e *XDREngine) TitanExecStatusSnapshot() *TitanExecStatus {
+	if e == nil || e.titanExec == nil {
+		return nil
+	}
+	sync := e.TitanExecPolicyStatus()
+	e.titanExecMu.Lock()
+	stats := e.titanExecStats
+	e.titanExecMu.Unlock()
+	return &TitanExecStatus{
+		State: sync.State, SensorState: e.titanExecSensorState(), Capability: sync.Capability,
+		Enabled: sync.Enabled, Mode: sync.Mode, Path: sync.Path, LSM: sync.LSM, Offsets: sync.Offsets,
+		Entries: sync.Entries, Scopes: sync.Scopes,
+		EventsTotal: stats.EventsTotal, Denies: stats.Denies, Audits: stats.Audits,
+		Dropped: stats.Dropped, ParseErrors: stats.ParseErrors, Incidents: stats.Incidents,
+	}
+}
+
+// TitanExecStatusReport builds the GET /api/v1/titan/exec/status payload.
+func (e *XDREngine) TitanExecStatusReport() TitanExecStatusView {
+	view := TitanExecStatusView{
+		State: TitanExecSyncStateUnavailable, SensorState: "unavailable", Capability: titanExecCapabilityUnknown,
+		Sync:         titanExecUnavailableStatus(),
+		Kernel:       TitanExecKernelView{Path: titanExecPathNone, LSM: titanExecLSMInactive, Offsets: titanExecOffsetsInvalid},
+		HistoryLimit: titanExecEventHistoryLimit,
+	}
+	if e == nil {
+		return view
+	}
+	sync := e.TitanExecPolicyStatus()
+	health, healthAt, healthErr, drainErr := e.titanExecHealthSnapshot()
+	e.titanExecMu.Lock()
+	stats := e.titanExecStats
+	e.titanExecMu.Unlock()
+	view.State = sync.State
+	view.Capability = sync.Capability
+	view.SensorState = e.titanExecSensorState()
+	view.Sync = sync
+	view.Kernel = TitanExecKernelView{
+		Path: sync.Path, LSM: sync.LSM, Offsets: sync.Offsets, Entries: sync.Entries, Scopes: sync.Scopes,
+		Health: health, HealthAt: healthAt, HealthError: healthErr, DrainError: drainErr,
+	}
+	view.Counters = titanExecCountersView(stats)
+	return view
+}
+
+// TitanExecEventsReport builds the bounded GET /api/v1/titan/exec/events payload:
+// the newest `limit` events of the bounded history, newest first.
+func (e *XDREngine) TitanExecEventsReport(limit int) TitanExecEventsView {
+	if limit < 1 {
+		limit = 1
+	}
+	if limit > titanExecEventHistoryLimit {
+		limit = titanExecEventHistoryLimit
+	}
+	view := TitanExecEventsView{Events: []TitanExecEventView{}, Limit: limit, HistoryLimit: titanExecEventHistoryLimit}
+	if e == nil {
+		return view
+	}
+	e.titanExecMu.Lock()
+	history := append([]CoreTitanExecEvent(nil), e.titanExecHistory...)
+	stats := e.titanExecStats
+	e.titanExecMu.Unlock()
+	view.Available = len(history)
+	view.Counters = titanExecCountersView(stats)
+	start := len(history) - limit
+	if start < 0 {
+		start = 0
+	}
+	view.Events = make([]TitanExecEventView, 0, len(history)-start)
+	for index := len(history) - 1; index >= start; index-- {
+		view.Events = append(view.Events, titanExecEventViewOf(history[index]))
+	}
+	return view
+}
+
+func titanExecCountersView(stats titanExecEventCounters) TitanExecEventCountersView {
+	return TitanExecEventCountersView{
+		EventsTotal: stats.EventsTotal, Denies: stats.Denies, Audits: stats.Audits,
+		Dropped: stats.Dropped, ParseErrors: stats.ParseErrors, Incidents: stats.Incidents,
+	}
+}
+
+func titanExecEventViewOf(event CoreTitanExecEvent) TitanExecEventView {
+	return TitanExecEventView{
+		CgroupID: event.CgroupID, TsNS: event.TsNS, Dev: event.Dev, InodeMode: event.InodeMode,
+		Ino: event.Ino, Generation: event.Generation, PID: event.PID, TGID: event.TGID,
+		UID: event.UID, GID: event.GID, Prot: event.Prot, FFlags: event.FFlags,
+		Hook: event.Hook, Action: event.Action, Reason: event.Reason, Flags: event.Flags,
+		Comm: event.Comm, RuleID: titanExecRuleID(event),
+	}
+}
+
+// ------------------------------------------------ Titan exec label helpers
+//
+// The operator-facing names of §3.1. They contain no policy decision; they only
+// make a decoded record readable in evidence and in the event summary.
+
+func titanExecHookName(hook uint8) string {
+	if hook == titanExecHookMmap {
+		return "mmap_file"
+	}
+	return "bprm_check_security"
+}
+
+func titanExecHookVerb(hook uint8) string {
+	if hook == titanExecHookMmap {
+		return "an executable memory mapping"
+	}
+	return "execution"
+}
+
+func titanExecActionName(action uint8) string {
+	if action == titanExecActionDeny {
+		return "denied"
+	}
+	return "audited"
+}
+
+func titanExecReasonName(reason uint8) string {
+	switch reason {
+	case titanExecReasonNone:
+		return "NONE"
+	case titanExecReasonUnlinked:
+		return "UNLINKED"
+	case titanExecReasonTmpfs:
+		return "TMPFS"
+	case titanExecReasonMemfd:
+		return "MEMFD"
+	case titanExecReasonNotAllowlist:
+		return "NOT_ALLOWLISTED"
+	case titanExecReasonWX:
+		return "WX"
+	case titanExecReasonAnonNoJit:
+		return "ANON_NO_JIT"
+	case titanExecReasonReadFailure:
+		return "READ_FAILURE"
+	case titanExecReasonStateNotRdy:
+		return "STATE_NOT_READY"
+	case titanExecReasonCtimeMismatch:
+		return "CTIME_MISMATCH"
+	case titanExecReasonFSHard:
+		return "FS_HARD"
+	default:
+		return "UNKNOWN"
+	}
+}
+
+// sanitizeTitanExecComm renders a raw kernel task name for operator surfaces.
+// PR_SET_NAME lets a process choose arbitrary bytes, so the parser accepts them
+// unconditionally (§3.2 comm contract); this renderer replaces every invalid or
+// non-printable rune with '?' so the value can never forge a line or a field
+// separator, while valid printable UTF-8 stays unchanged. It always terminates
+// and never grows the value beyond its raw byte length.
+func sanitizeTitanExecComm(raw []byte) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var builder strings.Builder
+	builder.Grow(len(raw))
+	for len(raw) > 0 {
+		character, size := utf8.DecodeRune(raw)
+		switch {
+		case character == utf8.RuneError && size == 1:
+			builder.WriteByte('?')
+		case strconv.IsPrint(character):
+			builder.WriteRune(character)
+		default:
+			builder.WriteByte('?')
+		}
+		raw = raw[size:]
+	}
+	return builder.String()
+}
+
+// ------------------------------------------------ Titan exec drain / health
+//
+// The poll classification and the two-hit degradation policy of §7.4. Both are
+// driven from the engine's 100 ms tick through consumeTitanExecDrain and
+// consumeTitanExecHealth; keeping them here (next to the other sensor health
+// paths) is why titan_exec_events.go stays the wire/parser + event bridge.
+
+// consumeTitanExecDrain classifies one TITAN_EXEC_EVENTS answer and returns the
+// delay until the next drain. A capability-missing answer is a fact, not an XDR
+// degradation; only repeated real failures degrade, and only while the operator
+// enabled the namespace.
+func (e *XDREngine) consumeTitanExecDrain(payload string, drainErr error, now time.Time) time.Duration {
+	if e == nil {
+		return titanExecDrainBackoff
+	}
+	enabled := effectiveTitanExecFabricSettings(e.runtimeSettings()).Enabled
+	switch {
+	case errors.Is(drainErr, ErrTitanExecUnavailable):
+		// The capability fact replaces a previously recorded transient error: a
+		// downgraded core is not an event-drain failure any more.
+		e.setTitanExecCapability(false)
+		e.titanExecMu.Lock()
+		e.titanExecDrainErr = ""
+		e.titanExecMu.Unlock()
+		return titanExecDrainBackoff
+	case drainErr != nil:
+		text := boundedTitanExecText(drainErr)
+		e.titanExecMu.Lock()
+		e.titanExecDrainErr = text
+		e.titanExecMu.Unlock()
+		if enabled {
+			e.noteTitanExecSensorFailure("kernel titan exec event drain unavailable: " + text)
+		}
+		return titanExecDrainBackoff
+	}
+	e.setTitanExecCapability(true)
+	e.titanExecMu.Lock()
+	e.titanExecDrainErr = ""
+	e.titanExecMu.Unlock()
+	events, dropped, parseErr := parseCoreTitanExecEvents(payload)
+	if parseErr != nil {
+		text := boundedTitanExecText(parseErr)
+		e.titanExecMu.Lock()
+		e.titanExecStats.ParseErrors++
+		e.titanExecMu.Unlock()
+		if enabled {
+			e.noteTitanExecSensorFailure("kernel titan exec event payload rejected: " + text)
+		}
+		return titanExecDrainBackoff
+	}
+	if e.recordTitanExecBatch(events, dropped, now) {
+		e.noteTitanExecSensorSuccess()
+	}
+	if enabled {
+		return titanExecDrainInterval
+	}
+	return titanExecDrainBackoff
+}
+
+// consumeTitanExecHealth stores the last kernel counter sample. The health
+// channel is diagnostic: events are the authoritative ingestion path, so a
+// failing health command is reported in the status view but never creates a
+// second degradation cause for the same sensor.
+func (e *XDREngine) consumeTitanExecHealth(health CoreTitanExecHealth, healthErr error, now time.Time) {
+	if e == nil {
+		return
+	}
+	if errors.Is(healthErr, ErrTitanExecUnavailable) {
+		e.setTitanExecCapability(false)
+		return
+	}
+	e.titanExecMu.Lock()
+	defer e.titanExecMu.Unlock()
+	if healthErr != nil {
+		e.titanExecHealthErr = boundedTitanExecText(healthErr)
+		return
+	}
+	e.titanExecHealth = health
+	e.titanExecHealthAt = now
+	e.titanExecHealthErr = ""
+}
+
+// noteTitanExecSensorFailure applies the two-hit policy of the existing engine:
+// the first failure is journaled, a repeated one degrades this module only, and
+// the transition is reported as an event.
+func (e *XDREngine) noteTitanExecSensorFailure(reason string) {
+	if e == nil || e.state == nil {
+		return
+	}
+	wasDegraded, _ := e.degradedState()
+	e.noteVerificationFailure(titanExecSensorCause, reason)
+	if degraded, degradedReason := e.degradedState(); !wasDegraded && degraded {
+		e.state.AddEvent(Event{Severity: "critical", Kind: "xdr.titan_exec_sensor_degraded", Source: "titan-exec",
+			Message: "Titan exec-gate XDR ingestion degraded after repeated failures; kernel enforcement is unaffected on its own path: " + degradedReason})
+	}
+}
+
+// noteTitanExecSensorSuccess clears the failure counter and any cause this module
+// set, and reports the recovery once.
+func (e *XDREngine) noteTitanExecSensorSuccess() {
+	if e == nil || e.state == nil {
+		return
+	}
+	wasSet := e.titanExecSensorCauseSet()
+	e.noteVerificationSuccess(titanExecSensorCause)
+	if wasSet && !e.titanExecSensorCauseSet() {
+		e.state.AddEvent(Event{Severity: "info", Kind: "xdr.titan_exec_sensor_recovered", Source: "titan-exec",
+			Message: "Titan exec-gate XDR ingestion recovered after a clean drain"})
+	}
+}
+
+func (e *XDREngine) titanExecSensorCauseSet() bool {
+	if e == nil {
+		return false
+	}
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	_, set := e.degradeCauses[titanExecSensorCause]
+	return set
 }

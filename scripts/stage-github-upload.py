@@ -122,7 +122,7 @@ EXCLUDED_SUFFIXES = (
 
 def release_asset_names(version: str) -> tuple[str, ...]:
     """Derive release asset names from VERSION (no channel/version drift)."""
-    base = f"VGT_GeDefense_Beta_v5_{version}"
+    base = f"VGT_GeDefense_V6_{version}"
     return (
         f"{base}_OneClick.run",
         f"{base}_OneClick.run.sha256",
@@ -130,6 +130,7 @@ def release_asset_names(version: str) -> tuple[str, ...]:
         f"{base}_Source.zip.sha256",
         "release-index.signed.json",
         "release-manifest.signed.json",
+        "gedefense-cell-helper",
         "sbom.spdx.json",
         "build-provenance.json",
         "SHA256SUMS",

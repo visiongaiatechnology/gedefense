@@ -96,6 +96,7 @@ type ReleaseController struct {
 	// transition silently dropped the validated threat-intelligence publication
 	// until the next refresh window.
 	kernelReconciledHook func()
+	enforceSettingsHook  func(RuntimeSettings)
 }
 
 // markSinceLocked records a phase transition for the wall clock (for the API) and the
@@ -388,7 +389,12 @@ func (r *ReleaseController) refreshLocked() {
 
 func (r *ReleaseController) Transition(target, confirmation, reason string) (ReleaseStatus, error) {
 	r.mu.Lock()
-	defer r.mu.Unlock()
+	locked := true
+	defer func() {
+		if locked {
+			r.mu.Unlock()
+		}
+	}()
 	target = strings.ToLower(strings.TrimSpace(target))
 	if target != ReleasePhaseObserve && target != ReleasePhaseCanary && target != ReleasePhaseEnforce {
 		return cloneReleaseStatus(r.status), errors.New("target phase must be observe, canary, or enforce")
@@ -463,10 +469,33 @@ func (r *ReleaseController) Transition(target, confirmation, reason string) (Rel
 	// This is the only kind of path that may end the startup quarantine (FIND-013); the
 	// forensic copy of the unverifiable document is kept.
 	r.clearPolicyQuarantineLocked("release transition to " + target)
+	var enforceHook func(RuntimeSettings)
+	var updatedSettings RuntimeSettings
+	v6Activated := false
+	if newEnforcement == "enforce" && r.settings != nil {
+		var armErr error
+		updatedSettings, v6Activated, armErr = r.settings.ApplySafeV6DefaultsOnEnforce()
+		if armErr != nil {
+			log.Printf("release: v6 safe auto-arm settings update failed: %v", armErr)
+		} else if v6Activated {
+			enforceHook = r.enforceSettingsHook
+			r.state.SetSettings(updatedSettings)
+			r.state.AddEvent(Event{
+				Severity: "info", Kind: "v6.auto_armed", Source: "release-gate",
+				Message: "GeDefense V6 safe defaults activated on enforce (styx=monitor, titan_exec=contain, parser_cells=enabled, lockdown=auto_arm; witness remains opt-in)",
+			})
+		}
+	}
 	r.state.SetReleaseStatus(r.status)
 	r.state.AddEvent(Event{Severity: "high", Kind: "release.transition", Source: "release-gate", Message: fmt.Sprintf("Beta phase changed from %s to %s: %s", old.Phase, target, strings.TrimSpace(reason))})
 	_ = oldXDR
-	return cloneReleaseStatus(r.status), nil
+	ret := cloneReleaseStatus(r.status)
+	r.mu.Unlock()
+	locked = false
+	if v6Activated && enforceHook != nil {
+		enforceHook(updatedSettings)
+	}
+	return ret, nil
 }
 
 // InitializeStartup establishes the kernel state the platform starts from.
@@ -758,6 +787,14 @@ func (r *ReleaseController) SetKernelReconciledHook(hook func()) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.kernelReconciledHook = hook
+}
+
+// SetEnforceSettingsHook installs the callback invoked (outside r.mu) after
+// Transition(enforce) promotes untouched V6 subsystems into their safe armed modes.
+func (r *ReleaseController) SetEnforceSettingsHook(hook func(RuntimeSettings)) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.enforceSettingsHook = hook
 }
 
 func (r *ReleaseController) notifyKernelReconciledLocked() {

@@ -35,6 +35,11 @@ readonly SECRETS_DIR="${CONFIG_DIR}/secrets"
 readonly TLS_DIR="${CONFIG_DIR}/tls"
 readonly ACCESS_CONFIG_DIR="${ROOT}/etc/vgt/gedefense-access"
 readonly STATE_DIR="${ROOT}/var/lib/vgt/gedefense"
+readonly PARSER_PROFILE_CONF="${CONFIG_DIR}/parser-profiles.conf"
+readonly PARSER_PROFILE_TEMPLATE="${ROOT}/usr/share/gedefense/parser-profiles.conf"
+readonly PARSER_INPUTS_DIR="${STATE_DIR}/parser-inputs"
+readonly PARSER_EXPORTS_DIR="${STATE_DIR}/parser-exports"
+readonly PARSER_LEDGER="${STATE_DIR}/parser-burn-ledger.jsonl"
 readonly ACCESS_STATE_PARENT="${ROOT}/var/lib/vgt/gedefense-access"
 readonly ACCESS_STATE_DIR="${ACCESS_STATE_PARENT}/state"
 readonly SCAN_RUN_DIR="${ROOT}/run/gedefense-scan"
@@ -173,6 +178,80 @@ ensure_raw_key() {
     chown "$owner:$group" -- "$temporary"
   fi
   mv -T -- "$temporary" "$path"
+  changes=$((changes + 1))
+}
+
+# POINT 2: the append-only parser-cell burn ledger is a file, not a directory.
+# It only has to exist with the packaged mode/owner; the helper creates the
+# content later via O_APPEND (0640 root:gedefense is enforced by the unit's
+# ReadWritePaths contract, so a missing file would abort the helper start).
+ensure_empty_regular_file() {
+  local path=$1 mode=$2 owner=$3 group=$4
+  require_regular_or_absent "$path" || return
+  if [[ -f $path ]]; then
+    check_mode_file "$path" "$mode" "file"
+    if (( ! check_only )); then
+      chmod "$mode" -- "$path"
+      if [[ $SKIP_OWNER != 1 ]]; then
+        chown "$owner:$group" -- "$path"
+      fi
+    fi
+    return
+  fi
+  if (( check_only )); then
+    problem "file $path is missing"
+    return
+  fi
+  # The parent directory is provisioned by the explicit directory list above
+  # (a 0755 re-create here would silently reset the 1770 STATE contract).
+  [[ -d $(dirname -- "$path") ]] || fail "parent directory for $path is missing"
+  if [[ $SKIP_OWNER == 1 ]]; then
+    install -m "${mode#0}" -- /dev/null "$path"
+  else
+    install -m "${mode#0}" -o "$owner" -g "$group" -- /dev/null "$path"
+  fi
+  changes=$((changes + 1))
+}
+
+# POINT 2: /etc/vgt/gedefense/parser-profiles.conf is package-managed and
+# intentionally header-only by default (spec §7: no invented parser profiles).
+# It is only created when missing; an operator-edited profile file is never
+# rewritten or quarantined here (the helper validates it at startup instead).
+ensure_parser_profile() {
+  require_regular_or_absent "$PARSER_PROFILE_CONF" || return
+  if [[ -f $PARSER_PROFILE_CONF ]]; then
+    check_mode_file "$PARSER_PROFILE_CONF" 0640 "parser profile file"
+    if (( ! check_only )); then
+      chmod 0640 -- "$PARSER_PROFILE_CONF"
+      if [[ $SKIP_OWNER != 1 ]]; then
+        chown root:root -- "$PARSER_PROFILE_CONF"
+      fi
+    fi
+    return
+  fi
+  if (( check_only )); then
+    problem "parser profile default $PARSER_PROFILE_CONF is missing"
+    return
+  fi
+  local temporary
+  temporary=$(mktemp -- "${PARSER_PROFILE_CONF}.new.XXXXXXXX")
+  if [[ -f $PARSER_PROFILE_TEMPLATE && ! -L $PARSER_PROFILE_TEMPLATE ]]; then
+    install -m 0640 -- "$PARSER_PROFILE_TEMPLATE" "$temporary"
+  else
+    printf '%s\n' \
+      '# /etc/vgt/gedefense/parser-profiles.conf' \
+      '#' \
+      '# POINT 2 parser-cell profiles. The packaged default intentionally' \
+      '# contains NO parser profile: the helper starts, reports profiles=[] and' \
+      '# every CELL_CREATE is refused with ERR profile-unknown until an' \
+      '# operator/package adds a verified profile (docs/POINT2-PARSER-CELLS.md §4).' \
+      >"$temporary"
+    chmod 0640 -- "$temporary"
+  fi
+  if [[ $SKIP_OWNER != 1 ]]; then
+    chown root:root -- "$temporary"
+  fi
+  mv -T -- "$temporary" "$PARSER_PROFILE_CONF"
   changes=$((changes + 1))
 }
 
@@ -479,6 +558,14 @@ fi
 # 0640 root:CONTROL_GROUP key files; 0700 made every preflight fail with EACCES.
 # Source of truth: packaging/tmpfiles/vgt-gedefense.conf (asserted by
 # packaging/tests/install-smoke.sh).
+#
+# POINT 2 helper staging roots: parser-inputs is control-owned
+# (0730 ${CONTROL_USER}:${CONTROL_GROUP}) per the helper staging-dir contract
+# (Owner = Control-UID, no world bits); the control plane stages its 0640 input
+# files by name without listing the directory. parser-exports stays
+# root:${CONTROL_GROUP} 0750 because only the privileged helper writes exports.
+# parser-imports is the control-plane-owned untrusted import copy (T5 fix: the
+# control plane must never write into parser-exports).
 for directory in \
   "/etc/vgt/gedefense:0750:root:${CONTROL_GROUP}" \
   "/etc/vgt/gedefense/secrets:0750:root:${CONTROL_GROUP}" \
@@ -489,6 +576,9 @@ for directory in \
   "/var/lib/vgt/gedefense/quarantine:0700:root:${CONTROL_GROUP}" \
   "/var/lib/vgt/gedefense/quarantine/objects:0700:root:${CONTROL_GROUP}" \
   "/var/lib/vgt/gedefense/canaries:0750:root:${CONTROL_GROUP}" \
+  "/var/lib/vgt/gedefense/parser-inputs:0730:${CONTROL_USER}:${CONTROL_GROUP}" \
+  "/var/lib/vgt/gedefense/parser-exports:0750:root:${CONTROL_GROUP}" \
+  "/var/lib/vgt/gedefense/parser-imports:0750:${CONTROL_USER}:${CONTROL_GROUP}" \
   "/var/lib/vgt/gedefense-access:0750:${CONTROL_USER}:${ACCESS_GROUP}" \
   "/var/lib/vgt/gedefense-access/state:0700:${ACCESS_USER}:${ACCESS_GROUP}" \
   "/run/gedefense-scan:0750:root:${CONTROL_GROUP}"; do
@@ -499,6 +589,11 @@ done
 ensure_raw_key "${SECRETS_DIR}/core-ipc.key" 0640 root "${CONTROL_GROUP}"
 ensure_raw_key "${SECRETS_DIR}/storage-master.key" 0640 root "${CONTROL_GROUP}"
 ensure_raw_key "${SECRETS_DIR}/gaia-cells.key" 0640 root "${CONTROL_GROUP}"
+# POINT 2: VGTGC2 HMAC key for the privileged peek parser-cell helper
+# (0640 root:gedefense, exactly 32 bytes; generated only when missing).
+ensure_raw_key "${SECRETS_DIR}/cell-helper.key" 0640 root "${CONTROL_GROUP}"
+ensure_empty_regular_file "${PARSER_LEDGER}" 0640 root "${CONTROL_GROUP}"
+ensure_parser_profile
 ensure_raw_key "${STATE_DIR}/xdr-log.key" 0600 "${CONTROL_USER}" "${CONTROL_GROUP}"
 ensure_raw_key "${STATE_DIR}/runtime-settings.key" 0600 "${CONTROL_USER}" "${CONTROL_GROUP}"
 ensure_session_key

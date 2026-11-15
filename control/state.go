@@ -98,18 +98,35 @@ type Snapshot struct {
 	// Readiness is only attached to the dashboard-facing snapshot (APIServer.clientSnapshot).
 	// The release controller owns it, not the state; nil means this snapshot came straight from the
 	// state and does not carry the readiness projection.
-	Readiness      *ReleaseReadinessSet `json:"readiness,omitempty"`
-	Settings       RuntimeSettings      `json:"settings"`
-	Evidence       EvidenceStatus       `json:"evidence"`
-	FIM            FIMStatus            `json:"fim"`
-	Titan          TitanStatus          `json:"titan"`
-	Cases          CaseStatus           `json:"cases"`
-	Cells          GaiaCellsStatus      `json:"cells"`
-	Kinetic        KineticTelemetry     `json:"kinetic"`
-	Coverage       SystemCoverage       `json:"coverage"`
-	Stream         StreamDiagnostics    `json:"stream"`
-	DetectionRules DetectionRulesCount  `json:"detection_rules"`
-	Protection     ProtectionStatus     `json:"protection"`
+	Readiness *ReleaseReadinessSet `json:"readiness,omitempty"`
+	Settings  RuntimeSettings      `json:"settings"`
+	Evidence  EvidenceStatus       `json:"evidence"`
+	FIM       FIMStatus            `json:"fim"`
+	Titan     TitanStatus          `json:"titan"`
+	// TitanExec is the bounded kernel exec-gate projection (POINT 1 / P1-T5). It
+	// stays nil when the engine carries no exec-gate wiring, so the status payload
+	// of an installation that never enabled the gate stays unchanged.
+	TitanExec *TitanExecStatus `json:"titan_exec,omitempty"`
+	// ParserCells is the bounded ephemeral parser-cell projection (POINT 2 / P2-T3).
+	// It stays nil when the control plane carries no parser-cell manager, so the
+	// status payload of an installation that never enabled the namespace is
+	// unchanged and no helper is ever contacted for it.
+	ParserCells *ParserCellsStatus `json:"parser_cells,omitempty"`
+	// Lockdown is the bounded Emergency Lockdown projection (POINT 5 / P5-T3). It
+	// stays nil when the control plane carries no lockdown engine, so the status
+	// payload of an installation that never enabled the namespace is unchanged.
+	Lockdown       *LockdownStatusView `json:"lockdown,omitempty"`
+	Cases          CaseStatus          `json:"cases"`
+	Cells          GaiaCellsStatus     `json:"cells"`
+	Kinetic        KineticTelemetry    `json:"kinetic"`
+	Coverage       SystemCoverage      `json:"coverage"`
+	Stream         StreamDiagnostics   `json:"stream"`
+	DetectionRules DetectionRulesCount `json:"detection_rules"`
+	Protection     ProtectionStatus    `json:"protection"`
+	// Witness is the bounded Out-of-Band Witness projection (POINT 4 / P4-T2). It
+	// stays nil when the control plane carries no witness engine, so the status
+	// payload of an installation that never enabled the namespace is unchanged.
+	Witness *WitnessStatus `json:"witness,omitempty"`
 	// Startup is the bounded startup self-check view published by
 	// StartupSupervisor.publish via startup_supervisor.go. Nil until the
 	// supervisor has produced its first report.
@@ -184,6 +201,7 @@ type State struct {
 	transactions        *TransactionEngine
 	cases               *CaseEngine
 	cells               *GaiaCellsAdapter
+	parserCells         *ParserCellManager
 	kinetic             KineticTelemetry
 	sensors             map[string]SensorCoverage
 	streamDiagnostics   StreamDiagnostics
@@ -967,6 +985,15 @@ func (s *State) EvidenceLedger() *EvidenceLedger {
 	return s.evidence
 }
 
+// XDRSensorState returns the current XDR sensor label under the state lock. The
+// witness engine maps it onto the checkpoint enum; the label itself never leaves
+// the host.
+func (s *State) XDRSensorState() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.xdr.Sensor
+}
+
 func (s *State) AttachFIM(engine *FIMEngine) error {
 	if engine == nil {
 		return errors.New("FIM engine is required")
@@ -1049,6 +1076,25 @@ func (s *State) Cells() *GaiaCellsAdapter {
 	return s.cells
 }
 
+// AttachParserCells binds the ephemeral parser-cell manager. It is additive next
+// to the legacy Gaia Cells adapter: both report separately, neither can claim the
+// other's cells.
+func (s *State) AttachParserCells(manager *ParserCellManager) error {
+	if manager == nil {
+		return errors.New("parser cell manager is required")
+	}
+	s.mu.Lock()
+	s.parserCells = manager
+	s.mu.Unlock()
+	return nil
+}
+
+func (s *State) ParserCells() *ParserCellManager {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.parserCells
+}
+
 func (s *State) Subscribe() (<-chan Event, func()) {
 	ch := make(chan Event, 32)
 	s.mu.Lock()
@@ -1106,6 +1152,7 @@ func (s *State) Snapshot() Snapshot {
 	}
 	cases := s.cases
 	cells := s.cells
+	parserCells := s.parserCells
 	titan := s.titan
 	snapshot := Snapshot{Version: s.version, NodeName: s.nodeName, NodeMode: s.nodeMode, Enforcement: s.enforcement, StartedAt: s.started,
 		UptimeSeconds: int64(time.Since(s.started).Seconds()), CoreConnected: s.coreConnected, CoreMode: s.coreMode, AllowlistReady: s.allowlistReady,
@@ -1181,6 +1228,12 @@ func (s *State) Snapshot() Snapshot {
 	}
 	if cells != nil {
 		snapshot.Cells = cells.Status(false)
+	}
+	if parserCells != nil {
+		// Local snapshot only: Status never contacts the helper, and a disabled
+		// namespace reports itself without any request.
+		status := parserCells.Status()
+		snapshot.ParserCells = &status
 	}
 	if titan != nil {
 		snapshot.Titan = titan.Status()

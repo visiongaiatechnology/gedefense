@@ -1,0 +1,16 @@
+[package]
+name = "gedefense-cell-helper"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "gedefense-cell-helper"
+path = "src/main.rs"
+
+[dependencies]
+libc = "=0.2.189"
+hex = "=0.4.3"
+hmac = "=0.12.1"
+sha2 = "=0.10.9"
+base64 = "=0.22.1"

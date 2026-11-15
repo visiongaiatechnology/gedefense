@@ -140,12 +140,53 @@ func (g *CellGuard) scan() {
 		if g.coolingDown(incident.CellCgroupID) {
 			continue
 		}
+		// POINT 2 / P2-T3: a managed parser-ephemeral cell is burned, never frozen
+		// or network-revoked - its contract is ephemeral destruction, and freezing
+		// would keep the parser document and process state around.
+		if handled, _ := g.dispatchParserCellBurn(incident.CellCgroupID, incident.Score, incident.ID); handled {
+			continue
+		}
 		reason := fmt.Sprintf("automatic: incident %s scored %d (threshold %d)", incident.ID, incident.Score, threshold)
 		if _, err := g.Confine(incident.CellCgroupID, g.cfg.AutoConfineAction, reason); err != nil {
 			g.recordRefusal(incident.CellCgroupID, err)
 			continue
 		}
 	}
+}
+
+// dispatchParserCellBurn hands one incident to the ParserCellManager. It returns
+// true when the cgroup belongs to a managed parser cell, independent of whether the
+// burn succeeded: the legacy freeze/revoke path must never run for such a cell.
+// A refusal after the dispatch is recorded here so the cooldown applies.
+func (g *CellGuard) dispatchParserCellBurn(cgroupID uint64, score int, incidentID string) (bool, error) {
+	if g == nil || g.state == nil || cgroupID == 0 {
+		return false, nil
+	}
+	manager := g.state.ParserCells()
+	if manager == nil {
+		return false, nil
+	}
+	handled, err := manager.BurnForIncident(cgroupID, score, incidentID,
+		fmt.Sprintf("automatic: incident %s scored %d", incidentID, score))
+	if !handled {
+		return false, nil
+	}
+	if err != nil {
+		g.recordRefusal(cgroupID, err)
+		return true, err
+	}
+	g.mu.Lock()
+	g.last[cgroupID] = g.now()
+	g.isolated++
+	g.recent = append([]CellConfineResult{{At: g.now(), CgroupID: cgroupID, Action: "burn",
+		State: "burned", Note: "parser-ephemeral cell burned instead of frozen"}}, g.recent...)
+	if len(g.recent) > 10 {
+		g.recent = g.recent[:10]
+	}
+	g.mu.Unlock()
+	g.emit("high", "cells.parser.incident_burned",
+		fmt.Sprintf("Incident %s burned the parser-ephemeral cell for cgroup %d instead of freezing it", incidentID, cgroupID))
+	return true, nil
 }
 
 func (g *CellGuard) coolingDown(cgroupID uint64) bool {
@@ -293,6 +334,17 @@ func (g *CellGuard) ConfineIncident(incidentID, action, reason string) (CellConf
 		}
 		if incident.CellCgroupID == 0 {
 			return CellConfineResult{}, fmt.Errorf("incident %s carries no cell cgroup; the workload runs outside a Gaia Cell", incidentID)
+		}
+		// POINT 2 / P2-T3: the manual path uses the same dispatch. An operator naming
+		// an incident on a parser cell burns that cell (score 250 = threshold always
+		// met for an explicit action) instead of freezing it.
+		if handled, burnErr := g.dispatchParserCellBurn(incident.CellCgroupID, 250, incidentID); handled {
+			result := CellConfineResult{At: g.now(), CgroupID: incident.CellCgroupID, Action: "burn", State: "burned"}
+			if burnErr != nil {
+				result.State = "refused"
+				return result, burnErr
+			}
+			return result, nil
 		}
 		return g.Confine(incident.CellCgroupID, action, boundReason(reason))
 	}

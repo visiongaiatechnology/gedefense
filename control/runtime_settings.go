@@ -37,10 +37,25 @@ type CustomRule struct {
 	Score    int    `json:"score"`
 }
 
-// The settings document stays at version 10: the detection module is additive and optional, so a
-// document written before it existed loads unchanged and receives the module's defaults. A version
-// bump would move every migration gate for a change that has nothing to migrate.
-const fabricSettingsVersion = 12
+// The settings document version is bumped only when an upgrade actually has to
+// migrate something. v13 adds the StyX kernel-egress namespace: a document
+// written before it existed loads unchanged, receives the namespace with
+// enabled=false/mode=off and therefore keeps the exact kernel behaviour of 5.2.0.
+// v14 adds the Titan exec-gate namespace (docs/POINT1-TITAN-EXEC-GATE.md §7.1) with
+// the same additive contract: enabled=false/mode=off and empty lists leave the
+// kernel behaviour of a 5.2.0 node unchanged.
+// v15 adds the ephemeral parser-cell namespace (docs/POINT2-PARSER-CELLS.md §6):
+// enabled=false and no cell may be created; the helper is not contacted and the
+// upgrade changes no host behaviour at all.
+// v16 adds the Emergency Lockdown namespace (docs/POINT5-LOCKDOWN.md §7): enabled=false
+// means no LOCKDOWN_* command, no trigger ticker traffic and no event; an upgrade keeps
+// the exact host behaviour of 5.2.0 and the namespace is named in the migration record
+// for a v15 document.
+// v17 adds the Out-of-Band Witness namespace (docs/POINT4-WITNESS.md §7): enabled=false
+// and mode=off mean no checkpoint, no witness request, no export and no event; an
+// upgrade keeps the exact host behaviour of 5.2.0 and the namespace is named in the
+// migration record for a v16 document.
+const fabricSettingsVersion = 17
 const runtimeSettingsHistoryLimit = 32
 
 type KineticRuntimeSettings struct {
@@ -157,6 +172,32 @@ type RuntimeSettings struct {
 	Forensics *ForensicsFabricSettings `json:"forensics,omitempty"`
 	// System follows the same rule for the control plane's own bounds.
 	System *SystemFabricSettings `json:"system,omitempty"`
+	// Styx is the operator namespace for kernel-level per-cgroup egress
+	// enforcement and flow telemetry (docs/POINT3-EGRESS-BEACON.md §8.3, §12).
+	// It is a pointer for the same reason as every other namespace: a document
+	// persisted before it existed must still authenticate byte-identically.
+	Styx *StyxFabricSettings `json:"styx,omitempty"`
+	// TitanExec is the operator namespace for the kernel exec/library gate
+	// (docs/POINT1-TITAN-EXEC-GATE.md §7.1). Same pointer contract: an upgrade
+	// seeds it disabled/off and changes no kernel behaviour.
+	TitanExec *TitanExecFabricSettings `json:"titan_exec,omitempty"`
+	// ParserCells is the operator namespace for ephemeral parser cells
+	// (docs/POINT2-PARSER-CELLS.md §6). Same pointer contract: an upgrade seeds it
+	// disabled and no privileged helper is contacted until an operator enables it.
+	ParserCells *ParserCellsFabricSettings `json:"parser_cells,omitempty"`
+	// Lockdown is the operator namespace for the anti-physical-extraction
+	// Emergency Lockdown (docs/POINT5-LOCKDOWN.md §7). Same pointer contract: an
+	// upgrade seeds it disabled and no LOCKDOWN_* command is issued until an
+	// operator enables it.
+	Lockdown *LockdownFabricSettings `json:"lockdown,omitempty"`
+	// Witness is the operator namespace for the Out-of-Band Witness
+	// (docs/POINT4-WITNESS.md §7). Same pointer contract: an upgrade seeds it
+	// disabled/off and no checkpoint, request or export is produced until an
+	// operator enables it.
+	Witness *WitnessFabricSettings `json:"witness,omitempty"`
+	// V6AutoArmedApplied records whether GeDefense V6 safe defaults were applied
+	// upon entering enforce so explicit subsequent operator overrides stay preserved.
+	V6AutoArmedApplied bool `json:"v6_auto_armed_applied,omitempty"`
 }
 
 type runtimeSettingsEnvelope struct {
@@ -188,6 +229,11 @@ func defaultRuntimeSettings(cfg Config) RuntimeSettings {
 	policyTrust.RequireSigned = cfg.Policy.RequireSigned
 	forensics := defaultForensicsFabricSettings()
 	system := defaultSystemFabricSettings(cfg)
+	styx := defaultStyxFabricSettings()
+	titanExec := defaultTitanExecFabricSettings()
+	parserCells := defaultParserCellsFabricSettings()
+	lockdown := defaultLockdownFabricSettings()
+	witness := defaultWitnessFabricSettings()
 	return RuntimeSettings{
 		FabricVersion:          fabricSettingsVersion,
 		Revision:               1,
@@ -239,6 +285,11 @@ func defaultRuntimeSettings(cfg Config) RuntimeSettings {
 		PolicyTrust: &policyTrust,
 		Forensics:   &forensics,
 		System:      &system,
+		Styx:        &styx,
+		TitanExec:   &titanExec,
+		ParserCells: &parserCells,
+		Lockdown:    &lockdown,
+		Witness:     &witness,
 	}
 }
 
@@ -445,6 +496,36 @@ func cloneRuntimeSettings(in RuntimeSettings) RuntimeSettings {
 	} else {
 		out.System = nil
 	}
+	if in.Styx != nil {
+		styx := cloneStyxFabricSettings(*in.Styx)
+		out.Styx = &styx
+	} else {
+		out.Styx = nil
+	}
+	if in.TitanExec != nil {
+		titanExec := cloneTitanExecFabricSettings(*in.TitanExec)
+		out.TitanExec = &titanExec
+	} else {
+		out.TitanExec = nil
+	}
+	if in.ParserCells != nil {
+		parserCells := cloneParserCellsFabricSettings(*in.ParserCells)
+		out.ParserCells = &parserCells
+	} else {
+		out.ParserCells = nil
+	}
+	if in.Lockdown != nil {
+		lockdown := cloneLockdownFabricSettings(*in.Lockdown)
+		out.Lockdown = &lockdown
+	} else {
+		out.Lockdown = nil
+	}
+	if in.Witness != nil {
+		witness := cloneWitnessFabricSettings(*in.Witness)
+		out.Witness = &witness
+	} else {
+		out.Witness = nil
+	}
 	return out
 }
 
@@ -496,6 +577,69 @@ func upgradeRuntimeSettings(settings *RuntimeSettings, defaults RuntimeSettings)
 	if settings.System == nil {
 		system := systemDefaults(defaults)
 		settings.System = &system
+	}
+	// v13: the StyX kernel-egress namespace. Seeding it is deliberately silent for
+	// documents older than v12 (they receive several namespaces at once, exactly like
+	// the earlier additive modules); a v12 document is the real upgrade path this
+	// release ships to, so there the new namespace is named in the migration record -
+	// an upgrade must never look like it changed the operator's configuration.
+	if settings.Styx == nil {
+		styx := styxDefaults(defaults)
+		settings.Styx = &styx
+		if settings.FabricVersion >= 12 {
+			settings.Migrations = append(settings.Migrations,
+				"styX namespace added with enabled=false and mode=off: kernel egress behaviour is unchanged until an operator enables it (docs/POINT3-EGRESS-BEACON.md §12)")
+		}
+	}
+	// v14: the Titan exec-gate namespace. Seeding it is silent for documents older
+	// than v13 (they receive several namespaces at once, exactly like the earlier
+	// additive modules); a v13 document is the real upgrade path this release ships
+	// to, so there the new namespace is named in the migration record - an upgrade
+	// must never look like it changed the operator's configuration.
+	if settings.TitanExec == nil {
+		titanExec := titanExecDefaults(defaults)
+		settings.TitanExec = &titanExec
+		if settings.FabricVersion >= 13 {
+			settings.Migrations = append(settings.Migrations,
+				"titan_exec namespace added with enabled=false and mode=off: kernel exec behaviour is unchanged until an operator enables it (docs/POINT1-TITAN-EXEC-GATE.md §7.1)")
+		}
+	}
+	// v15: the ephemeral parser-cell namespace. A v14 document is the real upgrade
+	// path this release ships to, so the seeded namespace is named in the migration
+	// record; older documents receive several namespaces at once, exactly like the
+	// earlier additive modules. Nothing is claimed and no helper is contacted while
+	// the namespace stays disabled (docs/POINT2-PARSER-CELLS.md §6, §8).
+	if settings.ParserCells == nil {
+		parserCells := parserCellsDefaults(defaults)
+		settings.ParserCells = &parserCells
+		if settings.FabricVersion >= 14 {
+			settings.Migrations = append(settings.Migrations,
+				"parser_cells namespace added with enabled=false: no parser cell is created, no privileged helper is contacted and host behaviour is unchanged until an operator enables it (docs/POINT2-PARSER-CELLS.md §6)")
+		}
+	}
+	// v16: the Emergency Lockdown namespace. A v15 document is the real upgrade path
+	// this release ships to, so the seeded namespace is named in the migration record;
+	// older documents receive several namespaces at once, exactly like the earlier
+	// additive modules. Nothing is armed and no core command is issued while the
+	// namespace stays disabled (docs/POINT5-LOCKDOWN.md §7, §9).
+	if settings.Lockdown == nil {
+		lockdown := lockdownDefaults(defaults)
+		settings.Lockdown = &lockdown
+		if settings.FabricVersion >= 15 {
+			settings.Migrations = append(settings.Migrations, lockdownMigrationNote)
+		}
+	}
+	// v17: the Out-of-Band Witness namespace. A v16 document is the real upgrade
+	// path this release ships to, so the seeded namespace is named in the migration
+	// record; older documents receive several namespaces at once, exactly like the
+	// earlier additive modules. Nothing is checkpointed, sent or exported while the
+	// namespace stays disabled (docs/POINT4-WITNESS.md §1, §7).
+	if settings.Witness == nil {
+		witness := witnessDefaults(defaults)
+		settings.Witness = &witness
+		if settings.FabricVersion >= 16 {
+			settings.Migrations = append(settings.Migrations, witnessMigrationNote)
+		}
 	}
 	// v10 narrows one feed action.
 	//
@@ -817,6 +961,47 @@ func validateRuntimeSettings(settings *RuntimeSettings) error {
 		}
 		settings.System = &system
 	}
+	if settings.Styx != nil {
+		styx := cloneStyxFabricSettings(*settings.Styx)
+		if err := validateStyxFabricSettings(&styx); err != nil {
+			return fmt.Errorf("styX settings: %w", err)
+		}
+		settings.Styx = &styx
+	}
+	if settings.TitanExec != nil {
+		titanExec := cloneTitanExecFabricSettings(*settings.TitanExec)
+		if err := validateTitanExecFabricSettings(&titanExec); err != nil {
+			return fmt.Errorf("titan exec settings: %w", err)
+		}
+		settings.TitanExec = &titanExec
+	}
+	if settings.ParserCells != nil {
+		parserCells := cloneParserCellsFabricSettings(*settings.ParserCells)
+		if err := validateParserCellsFabricSettings(&parserCells); err != nil {
+			return fmt.Errorf("parser cell settings: %w", err)
+		}
+		settings.ParserCells = &parserCells
+	}
+	if settings.Lockdown != nil {
+		// Reject-not-repair: the emergency-lockdown bounds are enforced before the
+		// revision can be persisted, so an accepted document is always one the engine
+		// can honour without clamping a safety switch.
+		lockdown := cloneLockdownFabricSettings(*settings.Lockdown)
+		if err := validateLockdownFabricSettings(&lockdown); err != nil {
+			return fmt.Errorf("lockdown settings: %w", err)
+		}
+		settings.Lockdown = &lockdown
+	}
+	if settings.Witness != nil {
+		// Reject-not-repair: the witness transport anchors and bounds are enforced
+		// before the revision can be persisted, so an accepted document is always
+		// one the engine can honour without repairing a trust anchor.
+		witness := cloneWitnessFabricSettings(*settings.Witness)
+		if err := validateWitnessFabricSettings(&witness); err != nil {
+			return fmt.Errorf("witness settings: %w", err)
+		}
+		settings.Witness = &witness
+	}
 	if settings.FabricVersion >= fabricSettingsVersion {
 		k := &settings.Kinetic
 		if k.EnforcementMode != "observe" && k.EnforcementMode != "contain" && k.EnforcementMode != "block" {
@@ -1109,4 +1294,72 @@ func (s *SettingsStore) RemoveAllowlist(target string) (RuntimeSettings, string,
 		return cloneRuntimeSettings(s.current), "", err
 	}
 	return cloneRuntimeSettings(s.current), normalized, nil
+}
+
+// ApplySafeV6DefaultsOnEnforce enables the non-breaking V6 defense subsystems
+// when GeDefense arms into enforce (unless previously applied or already configured):
+// StyX moves to monitor (with flow telemetry for C2/beacon detection), Titan Exec
+// moves to contain, Parser Cells enables fail-closed admission, and Lockdown arms
+// host/hotplug watches; Witness remains opt-in since it needs an external endpoint.
+func (s *SettingsStore) ApplySafeV6DefaultsOnEnforce() (RuntimeSettings, bool, error) {
+	if s == nil {
+		return RuntimeSettings{}, false, nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.current.V6AutoArmedApplied {
+		return cloneRuntimeSettings(s.current), false, nil
+	}
+	next := cloneRuntimeSettings(s.current)
+	activated := false
+
+	styx := effectiveStyxFabricSettings(next)
+	if !styx.Enabled && styx.Mode == StyxModeOff {
+		styx.Enabled = true
+		styx.Mode = StyxModeMonitor
+		styx.LogFlows = true
+		next.Styx = &styx
+		activated = true
+	}
+
+	titan := effectiveTitanExecFabricSettings(next)
+	if !titan.Enabled && titan.Mode == TitanExecModeOff {
+		titan.Enabled = true
+		titan.Mode = TitanExecModeContain
+		next.TitanExec = &titan
+		activated = true
+	}
+
+	parserCells := effectiveParserCellsSettings(next)
+	if !parserCells.Enabled {
+		parserCells.Enabled = true
+		next.ParserCells = &parserCells
+		activated = true
+	}
+
+	lockdown := effectiveLockdownSettings(next)
+	if !lockdown.Enabled {
+		lockdown.Enabled = true
+		lockdown.AutoArm = true
+		next.Lockdown = &lockdown
+		activated = true
+	}
+
+	next.V6AutoArmedApplied = true
+	next.FabricVersion = fabricSettingsVersion
+	if err := validateRuntimeSettings(&next); err != nil {
+		return cloneRuntimeSettings(s.current), false, err
+	}
+	next.Revision = s.current.Revision + 1
+	next.UpdatedAt = time.Now().UTC()
+	oldHistory := cloneRuntimeSettingsHistory(s.history)
+	s.history = append(s.history, cloneRuntimeSettings(s.current))
+	if len(s.history) > runtimeSettingsHistoryLimit {
+		s.history = append([]RuntimeSettings(nil), s.history[len(s.history)-runtimeSettingsHistoryLimit:]...)
+	}
+	if err := s.persistLocked(next); err != nil {
+		s.history = oldHistory
+		return cloneRuntimeSettings(s.current), false, err
+	}
+	return cloneRuntimeSettings(s.current), activated, nil
 }

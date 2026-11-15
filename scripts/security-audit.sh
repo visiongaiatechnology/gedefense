@@ -9,7 +9,7 @@ pass(){ printf '  PASS  %s\n' "$*"; }
 for cmd in python3 grep find; do command -v "$cmd" >/dev/null 2>&1 || fail "missing tool: $cmd"; done
 cd "$ROOT"
 
-echo 'VGT GeDefense Beta 5 static security regression audit'
+echo 'VGT GeDefense V6 static security regression audit'
 
 python3 - "$ROOT" <<'PY'
 from pathlib import Path
@@ -687,7 +687,8 @@ required={
         '["EGRESS_EVENTS"]', 'take_egress_events',
     ],
     'privileged GaiaCells LSM broker': [
-        'Btf::from_sys_fs()', 'program.load("socket_create", &btf)',
+        'Btf::from_sys_fs()', 'attach_cell_socket_lsm',
+        'program.load("socket_create", btf)?',
         '["CELL_POLICY_EPOCH"]', '["CELL_POLICY_SET", cgroup_id, flags]',
         '["CELL_POLICY_DEL", cgroup_id]', '["CELL_LSM_EVENTS"]',
         'flag("require-bpf-lsm")',
@@ -746,6 +747,1312 @@ if missing:
 PY
 pass 'kernel exec EDR, GaiaCells BPF-LSM and signed-package integrity controls present'
 
+# POINT 3 (P3-T6, docs/POINT3-EGRESS-BEACON.md): mandatory anchors for the
+# per-cgroup egress enforcement and the beacon/exfiltration detector. Every
+# anchor pins a definition, a decision or a default - never a bare comment or a
+# test fixture - so removing a control cannot be compensated elsewhere.
+python3 - "$ROOT" <<'PYSTYX'
+from pathlib import Path
+import re, sys
+root=Path(sys.argv[1])
+missing=[]
+
+def read(relative):
+    return (root/relative).read_text(encoding='utf-8')
+
+def need(component, text, anchor):
+    if anchor not in text:
+        missing.append(f'{component}: {anchor}')
+
+def need_match(component, text, label, pattern):
+    if re.search(pattern, text, re.S) is None:
+        missing.append(f'{component}: {label}')
+
+common_lib=read('rust/gedefense-common/src/lib.rs')
+common_flow=read('rust/gedefense-common/src/styx_flow.rs')
+ebpf=read('rust/gedefense-ebpf/src/main.rs')
+core=read('rust/gedefense-core/src/main.rs')
+core_flow=read('rust/gedefense-core/src/styx_flow.rs')
+ipc=read('control/coreipc.go')
+beacon=read('control/styx_beacon.go')
+# The Go StyX policy/sync anchors live across the VGT line-limit split
+# (styx_settings.go, styx_policy_plan.go, styx_syncer.go,
+# styx_syncer_status.go, styx_policy.go). Concatenate every production
+# control/styx_*.go file so the anchors stay pinned to the whole subsystem and a
+# future split into even more files cannot silently satisfy the gate with an
+# empty file set.
+styx_sources=sorted((root/'control').glob('styx_*.go'))
+styx_sources=[path for path in styx_sources if not path.name.endswith('_test.go')]
+if 'styx_policy.go' not in {path.name for path in styx_sources}:
+    missing.append('go-policy: control/styx_policy.go missing from the StyX source set')
+policy='\n'.join(path.read_text(encoding='utf-8') for path in styx_sources)
+xdr=read('control/xdr.go')
+runtime=read('control/runtime_settings.go')
+schema=read('control/fabric_schema.go')
+server=read('control/server.go')
+
+# ABI-1: one shared, exactly 104-byte FlowEvent contract with a rejecting decoder.
+need('rust-common', common_lib, 'mod styx_flow;')
+need('rust-common', common_lib, 'pub use styx_flow::*;')
+need('rust-common', common_flow, 'pub const STYX_FLOW_EVENT_WIRE_BYTES: usize = 104;')
+need('rust-common', common_flow, '#[repr(C)]')
+need('rust-common', common_flow, 'pub struct FlowEvent {')
+need('rust-common', common_flow, 'pub fn decode_styx_flow_event(bytes: &[u8]) -> Option<FlowEvent> {')
+need('rust-common', common_flow, 'if bytes.len() != STYX_FLOW_EVENT_WIRE_BYTES {')
+need('rust-common', common_flow, 'verdict > STYX_VERDICT_DEFAULT_DENY')
+need('rust-common', common_flow, 'pub const STYX_MODE_OFF: u8 = 0;')
+need('rust-common', common_flow, 'pub const STYX_FLAG_LOG_FLOWS: u8 = 1 << 6;')
+
+# ABI-2: the egress hook keeps the legacy verdict/event path and adds the StyX maps.
+need('rust-ebpf', ebpf, '#[cgroup_skb(egress)]')
+need('rust-ebpf', ebpf, 'pub fn gedefense_egress(ctx: SkBuffContext) -> i32 {')
+need('rust-ebpf', ebpf, 'EGRESS_EVENTS.output::<EgressDropEvent>(&event, 0);')
+need('rust-ebpf', ebpf, 'static CELL_EGRESS_MODE: HashMap<u64, u8> =')
+need('rust-ebpf', ebpf, 'static STYX_GLOBAL: Array<u64> = Array::with_max_entries(1, 0);')
+need('rust-ebpf', ebpf, 'static STYX_RESOLVED: LruHashMap<u64, [u8; 16]> =')
+need('rust-ebpf', ebpf, 'static FLOW_AGG_V4: LruPerCpuHashMap<[u8; 16], [u8; 40]> =')
+need('rust-ebpf', ebpf, 'static FLOW_EVENTS: RingBuf = RingBuf::with_byte_size(')
+need('rust-ebpf', ebpf, 'FLOW_EVENTS.reserve::<FlowEvent>(0)')
+need('rust-ebpf', ebpf, 'entry.submit(0);')
+need('rust-ebpf', ebpf, 'let global = match STYX_GLOBAL.get(STYX_GLOBAL_INDEX) {')
+need('rust-ebpf', ebpf, 'increment_counter(&FLOW_RING_DROPS);')
+need('rust-ebpf', ebpf, 'STYX_VERDICT_METADATA_VETO')
+need('rust-ebpf', ebpf, 'STYX_VERDICT_DNS_PIN')
+need_match('rust-ebpf', ebpf,
+           'default-off shortcut returns the byte-identical 5.2.0 verdict path',
+           r'if global_mode == STYX_MODE_OFF && \(global_flags & STYX_FLAG_LOG_FLOWS\) == 0 \{.*?return legacy_inspect_egress\(ctx\);')
+
+# Rust core: validate before one map write, seed the mandatory veto, drain honestly.
+need('rust-core', core, 'mod styx_flow;')
+need('rust-core', core, 'ebpf.take_map("STYX_GLOBAL").ok_or("STYX_GLOBAL missing")?')
+need('rust-core', core, 'ebpf.take_map("FLOW_EVENTS").ok_or("FLOW_EVENTS missing")?')
+need('rust-core', core, 'seed_styx_mandatory_veto(&mut styx_block_v4, &mut styx_block_v6)?;')
+need('rust-core', core, 'encode_styx_global(styx_epoch as u32, STYX_MODE_OFF, 0)')
+need('rust-core', core, 'CgroupAttachMode::AllowOverride')
+need('rust-core', core, '["STYX_VERSION"] => core.styx_version(),')
+need('rust-core', core, '["STYX_GLOBAL", args @ ..] => core.styx_set_global(args),')
+need('rust-core', core, '["STYX_MODE_SET", args @ ..] => core.styx_mode_set(args),')
+need('rust-core', core, '["STYX_FLOW_EVENTS"] => core.styx_take_flow_events(),')
+need('rust-core', core, '["STYX_FLOW_HEALTH"] => core.styx_flow_health(),')
+need('rust-core', core, 'let Some(event) = decode_styx_flow_event(&item) else {')
+need('rust-core', core, 'self.styx_flow_rejected = self.styx_flow_rejected.saturating_add(1);')
+need('rust-core', core_flow, 'pub const STYX_GLOBAL_FLAG_LOG_FLOWS: u8 = 1 << 0;')
+need('rust-core', core_flow, 'Ok(if flags & STYX_GLOBAL_FLAG_LOG_FLOWS != 0 { STYX_FLAG_LOG_FLOWS } else { 0 })')
+need('rust-core', core_flow, 'pub fn encode_styx_global(epoch: u32, mode: u8, flags: u8) -> u64 {')
+need('rust-core', core_flow, 'pub fn encode_styx_flow_event_text(event: &FlowEvent) -> Option<String> {')
+
+# Go: capability-gated commands, all-or-nothing parser, beacon detector, syncer.
+need('go-ipc', ipc, 'func parseCoreStyxFlowEvents(response string) ([]CoreStyxFlowEvent, uint64, error) {')
+need('go-ipc', ipc, '"STYX_VERSION"')
+need('go-ipc', ipc, '"STYX_GLOBAL"')
+need('go-ipc', ipc, '"STYX_MODE_SET"')
+need('go-ipc', ipc, '"STYX_FLOW_EVENTS"')
+need('go-ipc', ipc, 'ErrStyxUnavailable')
+need_match('go-ipc', ipc, 'batch and payload limits pinned on the control-plane side',
+           r'maxStyxFlowEventsPerResponse = 8.*?maxStyxFlowPayloadBytes = 2048')
+need('go-beacon', beacon, 'type StyxBeaconEngine struct {')
+need('go-beacon', beacon, 'CausalEdge: EdgeEgressAttempted')
+need_match('go-beacon', beacon, 'signal 3 can never fire without a DNS capability (no fake)',
+           r'if b\.cfg\.DNSObservationAvailable && !aggregate\.lastDNSSeen')
+need_match('go-beacon', beacon, 'a degraded sensor suppresses incidents instead of claiming absence',
+           r'if b\.degraded \{\s*b\.suppressed\+\+\s*return false')
+need_match('go-beacon', beacon, 'a repeated overflow poll series degrades the sensor',
+           r'b\.overflowPolls\+\+.*?if b\.overflowPolls >= 3 \{\s*b\.degraded = true')
+need('go-policy', policy, 'type styxPolicySyncer struct {')
+need('go-policy', policy, 'func (s *styxPolicySyncer) SyncIfDue(ctx context.Context) StyxSyncStatus {')
+need('go-policy', policy, 's.core.StyxGlobal(0, 0)')
+need('go-policy', policy, 's.core.StyxModeSet(cell.CgroupID, cell.Mode, cell.Flags)')
+need_match('go-policy', policy, 'default namespace is disabled and off (no behaviour change)',
+           r'func defaultStyxFabricSettings\(\) StyxFabricSettings \{.*?Enabled:\s+false,.*?Mode:\s+StyxModeOff,')
+need('go-policy', policy, 'IPv6 cell rules cannot carry port/protocol restrictions in phase 1')
+need('go-policy', policy, 'a port rule requires a host CIDR (/32 or /128)')
+need('go-policy', policy, 'port range must be a single port or 0-65535')
+need('go-xdr', xdr, 'e.styxBeacon = NewStyxBeaconEngine(StyxBeaconConfig{')
+need('go-xdr', xdr, 'e.styxPolicy = NewStyxPolicySyncer(core, state, runtime)')
+need('go-xdr', xdr, 'events, dropped, flowErr := e.core.StyxFlowEvents()')
+need('go-xdr', xdr, 'e.recordStyxFlowBatch(events, dropped, now)')
+need('go-xdr', xdr, 'noteVerificationFailure("styx_flow_sensor"')
+need('go-settings', runtime, 'Styx *StyxFabricSettings `json:"styx,omitempty"`')
+need('go-settings', runtime, 'styX namespace added with enabled=false and mode=off')
+need('go-schema', schema, '{module: "styx", group: "Kernel Egress Enforcement", key: "enabled"')
+need('go-api', server, 'mux.HandleFunc("GET /api/v1/styx/status", s.auth(s.styxKernelStatus))')
+need('go-api', server, 'mux.HandleFunc("GET /api/v1/styx/beacons", s.auth(s.styxBeacons))')
+
+if missing:
+    raise SystemExit('Point 3 egress/beacon anchors missing:\n'+'\n'.join(missing))
+PYSTYX
+pass 'Point 3 per-cgroup egress, flow telemetry, beacon detector, policy syncer and default-off guards present'
+
+# POINT 1 (P1-T6, docs/POINT1-TITAN-EXEC-GATE.md): mandatory anchors for the
+# Titan eBPF-LSM exec/library gate. Every anchor pins a definition, a decision, a
+# fail-safe default or an honest-status boundary - never a bare comment or a test
+# fixture - so removing a control cannot be compensated elsewhere. The ELF gate
+# below additionally proves the shipped object carries both LSM hooks and maps.
+python3 - "$ROOT" <<'PYP1'
+from pathlib import Path
+import re, sys
+root=Path(sys.argv[1])
+missing=[]
+
+def read(relative):
+    return (root/relative).read_text(encoding='utf-8')
+
+def need(component, text, anchor):
+    if anchor not in text:
+        missing.append(f'{component}: {anchor}')
+
+def need_match(component, text, label, pattern):
+    if re.search(pattern, text, re.S) is None:
+        missing.append(f'{component}: {label}')
+
+common_lib=read('rust/gedefense-common/src/lib.rs')
+common_titan=read('rust/gedefense-common/src/titan_exec.rs')
+ebpf=read('rust/gedefense-ebpf/src/main.rs')
+core=read('rust/gedefense-core/src/main.rs')
+core_titan=read('rust/gedefense-core/src/titan_exec.rs')
+btf=read('rust/gedefense-core/src/btf_offsets.rs')
+ipc=read('control/coreipc.go')
+xdr=read('control/xdr.go')
+settings=read('control/titan_exec_settings.go')
+syncer=read('control/titan_exec_syncer.go')
+syncer_status=read('control/titan_exec_syncer_status.go')
+events=read('control/titan_exec_events.go')
+runtime=read('control/runtime_settings.go')
+schema=read('control/fabric_schema.go')
+server=read('control/server.go')
+state=read('control/state.go')
+
+# ABI-1: one shared, exactly 88-byte TitanExecEvent contract with a rejecting decoder.
+need('rust-common', common_lib, 'mod titan_exec;')
+need('rust-common', common_lib, 'pub use titan_exec::*;')
+need('rust-common', common_titan, 'pub const TITAN_EXEC_EVENT_WIRE_BYTES: usize = 88;')
+need('rust-common', common_titan, '#[repr(C)]')
+need('rust-common', common_titan, 'pub struct TitanExecEvent {')
+need('rust-common', common_titan, 'pub fn decode_titan_exec_event(bytes: &[u8]) -> Option<TitanExecEvent> {')
+need('rust-common', common_titan, 'if bytes.len() != TITAN_EXEC_EVENT_WIRE_BYTES {')
+need('rust-common', common_titan, 'reason > TITAN_EXEC_REASON_MAX')
+need('rust-common', common_titan, 'pub fn encode_titan_exec_event(event: &TitanExecEvent) -> [u8; TITAN_EXEC_EVENT_WIRE_BYTES] {')
+need('rust-common', common_titan, 'TITAN_EXEC_MODE_STRICT: u8 = 3;')
+
+# ABI-2: both LSM hooks, the five maps/ring and the direct-reservation event write.
+need('rust-ebpf', ebpf, '#[lsm(hook = "bprm_check_security")]')
+need('rust-ebpf', ebpf, '#[lsm(hook = "mmap_file")]')
+need('rust-ebpf', ebpf, 'pub fn gedefense_titan_exec_bprm(ctx: LsmContext) -> i32 {')
+need('rust-ebpf', ebpf, 'pub fn gedefense_titan_exec_mmap(ctx: LsmContext) -> i32 {')
+need('rust-ebpf', ebpf, 'static TITAN_EXEC_STATE: Array<u64> = Array::with_max_entries(1, 0);')
+need('rust-ebpf', ebpf, 'static TITAN_EXEC_OFFSETS: Array<u32> = Array::with_max_entries(TITAN_EXEC_OFFSETS_ENTRIES, 0);')
+need('rust-ebpf', ebpf, 'static TITAN_EXEC_MODE: HashMap<u64, u8> =')
+need('rust-ebpf', ebpf, 'static TITAN_EXEC_POLICY: HashMap<[u8; 16], [u8; 16]> =')
+need('rust-ebpf', ebpf, 'static TITAN_EXEC_EVENTS: RingBuf = RingBuf::with_byte_size(TITAN_EXEC_EVENT_RING_BYTES, 0);')
+need('rust-ebpf', ebpf, 'TITAN_EXEC_EVENTS.reserve::<TitanExecEvent>(0)')
+need('rust-ebpf', ebpf, 'entry.submit(0);')
+need('rust-ebpf', ebpf, 'core::ptr::addr_of_mut!((*event).f_flags).write(0);')
+need('rust-ebpf', ebpf, 'bpf_probe_read_kernel(address).ok()')
+need('rust-ebpf', ebpf, 'increment_counter(&TITAN_EXEC_EVENTS_EMITTED);')
+need('rust-ebpf', ebpf, 'increment_counter(&TITAN_EXEC_RING_DROPS);')
+# The kernel-side gate must never grow a userland command/shell execution sink.
+for forbidden in ('std::process::Command', 'Command::new', 'libc::exec', 'libc::system', '/bin/sh', '/bin/bash'):
+    if forbidden in ebpf:
+        missing.append(f'rust-ebpf: forbidden execution primitive {forbidden}')
+
+# Rust core: active-LSM probe, validated BTF/arity, both attaches, honest status,
+# reject-not-repair IPC arms and the fail-closed enforcement-unavailable path.
+need('rust-core', core, 'let bpf_lsm_active = match titan_exec::bpf_lsm_active_from_sys_fs() {')
+need('rust-core', core_titan, 'pub fn bpf_lsm_active_from_list(list: &str) -> bool {')
+need('rust-core', core_titan, 'pub fn bpf_lsm_active_from_sys_fs() -> Result<bool, String> {')
+need('rust-core', core_titan, 'pub const ENFORCEMENT_UNAVAILABLE: &str = "enforcement-unavailable";')
+need('rust-core', core, 'fn attach_titan_exec_lsm(ebpf: &mut Ebpf, btf: &Btf) -> Result<(), BoxError> {')
+need('rust-core', core, '("gedefense_titan_exec_bprm", "bprm_check_security"),')
+need('rust-core', core, '("gedefense_titan_exec_mmap", "mmap_file"),')
+need('rust-core', core, '["TITAN_EXEC_VERSION"] => core.titan_exec.version(),')
+need('rust-core', core, '["TITAN_EXEC_SET_GLOBAL", mode, flags] => core.titan_exec.set_global(mode, flags),')
+need('rust-core', core, '["TITAN_EXEC_ALLOW_ADD", path] => core.titan_exec.allow_add(path),')
+need('rust-core', core, '["TITAN_EXEC_EVENTS"] => core.titan_exec.take_events(),')
+need('rust-core', core, 'let Some(event) = decode_titan_exec_event(&item) else {')
+need('rust-core', core, 'self.rejected_events = self.rejected_events.saturating_add(1);')
+need('rust-core', core, 'fn enforcement_available(&self) -> bool {')
+need('rust-core', core, 'if mode != TITAN_EXEC_MODE_OFF && !self.enforcement_available() {')
+need('rust-core', core, 'return Err(titan_exec::ENFORCEMENT_UNAVAILABLE.into());')
+need('rust-core', core, 'ebpf.take_map("TITAN_EXEC_STATE").ok_or("TITAN_EXEC_STATE missing")?')
+# P1-T3 moved the hard attach shape out of `btf_offsets::matches_ebpf_slots` into
+# the core predicate `titan_exec_offsets_match_ebpf_slots` (main.rs). Read both
+# core files so the gate survives such a move, and pin the 1/4 arity condition
+# itself: the looser 3..=5 BTF plausibility range is deliberately NOT the attach
+# shape (only bprm=1/mmap=4 may ever be attached).
+core_btf = core + '\n' + btf
+need_match('rust-core', core_btf, 'the eBPF slot/arity predicate exists in a core file',
+           r'fn\s+\w*(?:match|matches)_ebpf_slots\w*\s*\([^)]*\)\s*->\s*bool\s*\{')
+need_match('rust-core', core_btf, 'the hard attach shape pins bprm arity 1 and mmap arity 4',
+           r'bprm_nargs\s*==\s*1[\s\S]{0,200}?mmap_nargs\s*==\s*4')
+need('rust-core', core, 'titan_exec_offsets_match_ebpf_slots(&offsets)')
+need('rust-core', btf, 'u16::from_le_bytes')
+need('rust-core', btf, 'u32::from_le_bytes')
+need('rust-core', btf, 'pub const MAX_VMLINUX_BTF_BYTES: usize = 64 * 1024 * 1024;')
+need_match('rust-core', core, 'Titan hooks attach only on active BPF LSM, valid offsets and supported hook arity',
+           r'if titan_exec\.offsets_valid && titan_slots_supported && bpf_lsm_active \{.*?attach_titan_exec_lsm\(&mut ebpf, btf\)')
+# P3 fix in the core: `attached` is only true after an active-LSM attach, and
+# `+bpf-lsm-cell`/`cell_lsm=attached` are gated on that boolean.
+need('rust-core', core, 'if cell_lsm_attached {')
+need_match('rust-core', core, 'the bpf-lsm-cell PING token is gated on the real attach',
+           r'if cell_lsm_attached \{\s*mode\.push_str\("\+bpf-lsm-cell"\);')
+need('rust-core', core, '"BPF LSM is not active (or its BTF is missing); Gaia Cell host socket reinforcement optional-unavailable, bpf-lsm-cell not claimed"')
+need('rust-core', core, 'fn require_cell_lsm(&self) -> Result<(), BoxError> {')
+
+# Go control plane: settings namespace (v14, default off), read-only status/event
+# API, strict parsers, capability sentinel and the fail-closed enforcement gate.
+need('go-ipc', ipc, 'var ErrTitanExecUnavailable = errors.New("titan-exec capability unavailable")')
+need('go-ipc', ipc, 'func (c *CoreClient) TitanExecEvents() (string, error) {')
+need('go-ipc', ipc, 'func (c *CoreClient) TitanExecStatus() (TitanExecCoreStatus, error) {')
+need('go-ipc', ipc, 'func parseTitanExecCoreStatus(payload string) (TitanExecCoreStatus, error) {')
+need('go-events', events, 'func parseCoreTitanExecEvents(payload string) (events []CoreTitanExecEvent, dropped uint64, err error) {')
+need('go-settings', settings, 'func defaultTitanExecFabricSettings() TitanExecFabricSettings {')
+need_match('go-settings', settings, 'titan_exec defaults are disabled and off',
+           r'func defaultTitanExecFabricSettings\(\) TitanExecFabricSettings \{.*?Enabled:\s+false,.*?Mode:\s+TitanExecModeOff,')
+# POINT 2 (P2-T3) raised the settings schema to v15 (parser_cells namespace);
+# the P1 anchor must follow the current schema version instead of pinning 14,
+# otherwise a legitimate v15 upgrade fails the P1 gate. The titan_exec migration
+# note below still proves the P1 namespace migration exists in v15.
+need_match('go-settings', runtime, 'settings schema version is at least v15 (P2 parser_cells migration)',
+           r'const fabricSettingsVersion = (?:1[5-9]|[2-9][0-9])')
+need('go-settings', runtime, 'titan_exec namespace added with enabled=false and mode=off')
+need('go-schema', schema, '{module: "titan_exec", group: "Kernel Exec Gate", key: "enabled"')
+need('go-syncer', syncer, 'type titanExecPolicySyncer struct {')
+need('go-syncer', syncer, 'func NewTitanExecPolicySyncer(')
+need('go-syncer', syncer_status, 'func titanExecEnforcementUnavailable(plan titanExecPolicyPlan, status TitanExecCoreStatus) (reason, state string, unavailable bool) {')
+need('go-syncer', syncer_status, 'if plan.Mode == 0 {')
+need('go-syncer', syncer_status, 'BPF-LSM is not active in the running kernel; add bpf to the lsm= kernel command line and reboot before enforcing')
+need('go-syncer', syncer_status, 'func (s *titanExecPolicySyncer) finishEnforcementUnavailable(')
+need('go-syncer', syncer_status, 'TitanExecSyncStateInactive')
+need('go-xdr', xdr, 'func (e *XDREngine) TitanExecPolicyStatus() TitanExecSyncStatus {')
+need('go-xdr', xdr, 'e.titanExec = NewTitanExecPolicySyncer(titanExecCore, state, runtime, titanExecPlanDeps{})')
+need('go-xdr', xdr, 'func (e *XDREngine) titanExecSensorState() string {')
+need('go-xdr', xdr, 'case errors.Is(drainErr, ErrTitanExecUnavailable):')
+need_match('go-state', state, 'status snapshot carries the bounded titan_exec field',
+           r'TitanExec\s+\*TitanExecStatus')
+need('go-api', server, 'mux.HandleFunc("GET /api/v1/titan/exec/status", s.auth(s.titanExecStatus))')
+need('go-api', server, 'mux.HandleFunc("GET /api/v1/titan/exec/events", s.auth(s.titanExecEvents))')
+# P3 activation fix in the control plane: a configured Cell LSM is reported as
+# `cell-lsm-unavailable`, never as a working `bpf-lsm-cell`.
+need('go-xdr', xdr, 'mode = "cell-lsm-unavailable+" + mode')
+need('go-xdr', xdr, 'mode = "bpf-lsm-cell+" + mode')
+
+if missing:
+    raise SystemExit('Point 1 Titan exec-gate anchors missing:\n'+'\n'.join(missing))
+PYP1
+pass 'Point 1 Titan exec-gate ABI, LSM attach gate, fail-closed status and P3 claim fix present'
+
+# POINT 1 T7-FAIL fix (2026-11-15): modern kernels store inode ctime as split
+# `i_ctime_sec`/`i_ctime_nsec`; the core publishes the real nsec width via
+# OFFSETS[28] and keeps the legacy timespec64 pair as fallback, while the hook
+# reads 4/8 bytes accordingly and saturates the sum (never a fake match).
+python3 - "$ROOT" <<'PYP1CTIME'
+from pathlib import Path
+import sys
+root=Path(sys.argv[1])
+missing=[]
+
+def read(relative):
+    return (root/relative).read_text(encoding='utf-8')
+
+def need(component, text, anchor):
+    if anchor not in text:
+        missing.append(f'{component}: {anchor}')
+
+ebpf=read('rust/gedefense-ebpf/src/main.rs')
+core=read('rust/gedefense-core/src/main.rs')
+btf=read('rust/gedefense-core/src/btf_offsets.rs')
+
+need('rust-core', btf, 'pub const OFF_INODE_I_CTIME_NSEC_WIDTH: usize = 28;')
+need('rust-core', btf, 'self.field_ref(inode, &["i_ctime_sec"])')
+need('rust-core', btf, 'self.field_ref(inode, &["i_ctime", "tv_sec"])')
+need('rust-core', core, 'table[btf_offsets::OFF_INODE_I_CTIME_NSEC_WIDTH] = offsets.inode_i_ctime_nsec_width;')
+need('rust-ebpf', ebpf, 'const TITAN_OFF_INODE_CTIME_NSEC_WIDTH: u32 = 28;')
+need('rust-ebpf', ebpf, 'let nsec: u64 = if offsets.ctime_nsec_width == TITAN_CTIME_NSEC_WIDTH_32 {')
+need('rust-ebpf', ebpf, 'seconds_ns.saturating_add(nsec)')
+
+if missing:
+    raise SystemExit('Point 1 T7 ctime anchors missing:\n'+'\n'.join(missing))
+PYP1CTIME
+pass 'Point 1 T7 fix (a): split-inode ctime layout, real nsec width and saturating compare present'
+
+# POINT 1 T7-Befund fix (b) + precision (c) (2026-11-15): the kernel task name is
+# process-controlled (PR_SET_NAME), so the parser accepts every raw byte sequence
+# and only enforces the NUL-padding shape; hostile names must never suppress a
+# batch and are sanitised only for output. The inert-policy ban applies to an
+# ENABLED namespace whose mode is off; a disabled draft stays allowed.
+python3 - "$ROOT" <<'PYP1COMM'
+from pathlib import Path
+import re, sys
+root=Path(sys.argv[1])
+missing=[]
+
+def read(relative):
+    return (root/relative).read_text(encoding='utf-8')
+
+def need(component, text, anchor):
+    if anchor not in text:
+        missing.append(f'{component}: {anchor}')
+
+def need_match(component, text, label, pattern):
+    if re.search(pattern, text, re.S) is None:
+        missing.append(f'{component}: {label}')
+
+events=read('control/titan_exec_events.go')
+xdr=read('control/xdr.go')
+settings=read('control/titan_exec_settings.go')
+
+need('go-events', events, 'func decodeTitanExecComm(field string) (string, error) {')
+need('go-events', events, 'sanitizeTitanExecComm(decoded[:end])')
+need('go-xdr', xdr, 'func sanitizeTitanExecComm(raw []byte) string {')
+need_match('go-settings', settings, 'enabled mode=off policies with rules are rejected (drafts stay allowed)',
+           r'if in\.Enabled && mode == 0 &&[\s\S]{0,220}?len\(in\.ExecRoots\) > 0')
+
+if missing:
+    raise SystemExit('Point 1 T7 comm/inert-policy anchors missing:\n'+'\n'.join(missing))
+PYP1COMM
+pass 'Point 1 T7 fix (b/c): raw-comm contract and enabled-only inert-policy ban present'
+
+# POINT 2 (docs/POINT2-PARSER-CELLS.md): ephemeral "parser-ephemeral" Gaia cells.
+# Additive gate only - every pre-existing Point 1/Point 3 anchor above stays
+# unchanged. It pins the privilege split (only the Rust helper spawns/executes),
+# the VGTGC2 auth protocol, fail-closed/default-off behaviour and the packaging
+# boundary (unit sandbox, tmpfiles, provisioning, installer/release/deployment).
+python3 - "$ROOT" <<'PYP2'
+from pathlib import Path
+import re
+import sys
+
+root = Path(sys.argv[1])
+missing = []
+
+def read(relative):
+    path = root / relative
+    if not path.is_file():
+        missing.append(f'missing file: {relative}')
+        return ''
+    return path.read_text(encoding='utf-8')
+
+def need(component, text, anchor):
+    if anchor not in text:
+        missing.append(f'{component}: {anchor}')
+
+def need_match(component, text, label, pattern):
+    if re.search(pattern, text, re.S) is None:
+        missing.append(f'{component}: {label}')
+
+# --- L1: privileged Rust helper crate (only spawner and only execve sink) ---
+workspace = read('rust/Cargo.toml')
+helper_cargo = read('rust/gedefense-cell-helper/Cargo.toml')
+need('rust-workspace', workspace, '"gedefense-cell-helper",')
+need('helper-cargo', helper_cargo, 'name = "gedefense-cell-helper"')
+for forbidden_dependency in ('serde', 'toml'):
+    if forbidden_dependency in helper_cargo:
+        missing.append(f'helper-cargo: forbidden dependency {forbidden_dependency} (offline text contract)')
+
+helper_sources = {}
+for source_path in sorted((root / 'rust' / 'gedefense-cell-helper' / 'src').glob('*.rs')):
+    helper_sources[source_path.name] = source_path.read_text(encoding='utf-8')
+for required in ('main.rs', 'protocol.rs', 'config.rs', 'lifecycle.rs', 'export.rs', 'types.rs', 'sandbox.rs', 'seccomp.rs'):
+    if required not in helper_sources:
+        missing.append(f'helper-crate: missing source {required}')
+sandbox = helper_sources.get('sandbox.rs', '')
+seccomp = helper_sources.get('seccomp.rs', '')
+protocol = helper_sources.get('protocol.rs', '')
+config = helper_sources.get('config.rs', '')
+export = helper_sources.get('export.rs', '')
+lifecycle = helper_sources.get('lifecycle.rs', '')
+types = helper_sources.get('types.rs', '')
+main = helper_sources.get('main.rs', '')
+
+# Sandbox contract (spec §4): namespaces, tmpfs/read-only mounts, credential and
+# capability drop, no_new_privs and a single pinned execve as the last child step.
+for anchor in (
+    'libc::CLONE_NEWNS', 'libc::CLONE_NEWPID', 'libc::CLONE_NEWIPC', 'libc::CLONE_NEWUTS', 'libc::CLONE_NEWNET',
+    'libc::MS_REC | libc::MS_PRIVATE', 'c"tmpfs"', 'hidepid=2',
+    'libc::MS_NOSUID | libc::MS_NODEV | libc::MS_NOEXEC', 'libc::MS_RDONLY', 'libc::chroot',
+    'libc::setgroups(0, std::ptr::null())', 'libc::setresgid', 'libc::setresuid',
+    'libc::PR_CAPBSET_DROP', 'PR_CAP_AMBIENT', 'libc::PR_SET_NO_NEW_PRIVS',
+    'libc::PR_SET_PDEATHSIG', 'libc::umask(0o077)',
+    'libc::execve(plan.binary.as_ptr()', 'display_unavailable',
+    'GEDEFENSE_INPUT_FD', 'GEDEFENSE_EXPORT_FD',
+):
+    need('helper-sandbox', sandbox, anchor)
+need_match('helper-sandbox', sandbox, 'X11 display variables are always refused', r'XAUTHORITY')
+for reserved in ('HOME', 'USER', 'LOGNAME', 'PATH', 'TMPDIR', 'XDG_RUNTIME_DIR', 'WAYLAND_DISPLAY', 'PIPEWIRE_REMOTE'):
+    need('helper-sandbox', sandbox, f'"{reserved}"')
+
+# Seccomp contract (§4.4): arch check, no_new_privs before install, exact deny
+# list with EPERM (not ENOSYS) and AF_UNIX-only sockets.
+for anchor in (
+    'pub const AUDIT_ARCH_X86_64: u32 = 0xC000_003E;', 'SECCOMP_SET_MODE_FILTER',
+    'libc::PR_SET_NO_NEW_PRIVS', 'libc::SYS_seccomp', 'libc::AF_UNIX', 'RET_ERRNO | libc::EPERM as u32',
+):
+    need('helper-seccomp', seccomp, anchor)
+for denied in (
+    'ptrace', 'process_vm_readv', 'process_vm_writev', 'bpf', 'perf_event_open', 'userfaultfd',
+    'io_uring_setup', 'io_uring_enter', 'io_uring_register', 'mount', 'umount2', 'pivot_root',
+    'chroot', 'unshare', 'setns', 'clone', 'clone3', 'fork', 'vfork', 'keyctl', 'add_key',
+    'request_key', 'kexec_load', 'init_module', 'finit_module', 'delete_module',
+    'open_by_handle_at', 'name_to_handle_at',
+):
+    need('helper-seccomp', seccomp, f'libc::SYS_{denied}')
+
+# VGTGC2 wire contract (§3): HMAC-SHA256, SO_PEERCRED, bounded timestamp/replay,
+# size limits and exactly one SCM_RIGHTS FD.
+for anchor in (
+    'VGTGC2', 'VGTGC2R', 'fn verify_mac', 'fn parse_request', 'libc::SO_PEERCRED',
+    'libc::SCM_RIGHTS', 'REPLAY_CACHE_CAPACITY', 'MAX_REQUEST_BYTES', 'MAX_REQUESTS_PER_CONNECTION',
+):
+    need('helper-protocol', protocol, anchor)
+need_match('helper-protocol', protocol, 'timestamp window is bounded to +-30s', r'abs_diff\(ts\) > TIME_WINDOW_SECS')
+need('helper-protocol', protocol, 'pub fn parse_response')
+need('helper-protocol', protocol, 'fn encode_line')
+
+# Profile/input/export validation (§4): root-owned 0640 config, O_NOFOLLOW,
+# 32-byte key, sha256-pinned binaries, bounded staging, sealed memfd broker.
+for anchor in (
+    'pub const KEY_FILE_LEN: u64 = 32;', 'pub const MAX_PROFILE_FILE_BYTES: u64 = 256 * 1024;',
+    'md.mode() & 0o777 != 0o640', 'libc::O_NOFOLLOW', 'pub fn validate_staging_dirs',
+    'pub fn validate_input', 'pub fn validate_export_dir',
+):
+    need('helper-config', config, anchor)
+need_match('helper-config', config, 'parser binaries are sha256-pinned', r'sha256')
+need('helper-export', export, 'create_new(true)')
+for anchor in ('libc::F_SEAL_WRITE', 'libc::F_SEAL_GROW', 'libc::F_SEAL_SHRINK', 'libc::SYS_memfd_create', 'copy_bounded'):
+    need('helper-export', export, anchor)
+for anchor in (
+    'pub const CGROUP_PREFIX: &str = "parser-";', 'memory.max', 'pids.max', 'cpu.max',
+    'cgroup.freeze', 'cgroup.kill', 'sweep_orphans', 'pub const LEDGER_MAX_BYTES',
+):
+    need('helper-lifecycle', lifecycle, anchor)
+for code in (
+    'bad-request', 'bad-mac', 'stale', 'replay', 'unknown-command', 'capability-missing',
+    'profile-unknown', 'profile-invalid', 'input-invalid', 'input-missing', 'sandbox-unavailable',
+    'cell-limit', 'unknown-cell', 'stale-generation', 'export-missing', 'export-overflow',
+    'burn-failed', 'internal',
+):
+    need('helper-types', types, f'"{code}"')
+# T5-Fix (P2-T1): capability self-check + non-root cgroup probe. The helper must
+# never probe the kernel root cgroup for cgroup.kill (CFTYPE_NOT_ON_ROOT); it
+# probes a throwaway child under the CLI cgroup-root and fails closed with clear
+# diagnostic codes when the capability or cgroup support is missing.
+need('helper-types', types, 'REQUIRED_CAPABILITIES')
+need('helper-types', types, '("CAP_CHOWN", 0)')
+need('helper-types', types, 'pub fn missing_capabilities')
+need('helper-main', main, 'static CGROUP_PROBE_OK')
+need('helper-main', main, 'fn probe_cgroup_root')
+need('helper-main', main, '"cgroup-root-missing"')
+need('helper-main', main, '"cgroup-unavailable"')
+need('helper-main', main, 'caps={}/{}')
+need('helper-main', main, 'probe_cgroup_root(&cli.cgroup_root)')
+need('helper-main', main, 'capability-check-failed missing=')
+if 'Path::new("/sys/fs/cgroup/cgroup.kill")' in main:
+    missing.append('helper-main: cgroup.kill must be probed in a child of the CLI cgroup-root, not the kernel root cgroup')
+need('helper-main', main, 'VGTGC2 listener')
+
+# execve may only exist in sandbox.rs; no helper module other than sandbox.rs may
+# contain a shell/command sink (the pre-existing daemon gate above is untouched).
+for name, source in helper_sources.items():
+    if name == 'sandbox.rs':
+        continue
+    if 'libc::execve' in source:
+        missing.append(f'helper-crate: libc::execve outside sandbox.rs: {name}')
+for name, source in helper_sources.items():
+    body = re.sub(r'#\s*\[\s*cfg\s*\(\s*test\s*\)\s*\]', '', source)
+    for pattern in (r'std::process::Command', r'\bCommand::new\b', r'libc::system\b', r'["\'`]/bin/(?:ba)?sh\b'):
+        if re.search(pattern, body):
+            missing.append(f'helper-crate: forbidden execution primitive in {name}: {pattern}')
+
+# --- Go control plane: VGTGC2 client, manager, settings, API, host layers ----
+client = read('control/parser_cells_client.go')
+manager = read('control/parser_cells_manager.go')
+manager_ops = read('control/parser_cells_manager_ops.go')
+settings = read('control/parser_cells_settings.go')
+kernel = read('control/parser_cells_kernel.go')
+api = read('control/parser_cells_api.go')
+runtime_settings = read('control/runtime_settings.go')
+server = read('control/server.go')
+guard = read('control/cell_guard.go')
+bootstrap = read('control/config.go')
+for anchor in (
+    'parserCellFrameTag          = "VGTGC2"', 'parserCellResponseTag       = "VGTGC2R"',
+    'parserCellTimestampSkewSecs = 30', 'syscall.SO_PEERCRED', 'syscall.Recvmsg',
+    'syscall.ParseUnixRights', 'syscall.CmsgSpace', 'ErrParserCellsRuntimeUnavailable',
+    'ErrParserCellsPeer', '"capability-missing"', '"sandbox-unavailable"', '"export-overflow"',
+):
+    need('go-client', client, anchor)
+need_match('go-client', client, 'exactly one export FD is accepted for CELL_EXPORT_READ only',
+           r'len\(fds\) == 1 && command != parserCellCommandExportRead')
+need('go-client', client, 'parserCellCloseFDs')
+for anchor in (
+    'type ParserCellManager struct {', 'parserCellKindBurnIntent  = "cells.parser.burn.intent"',
+    'state.RecordEvidence', 'Helper: "disabled"', 'capability-missing', 'parserCellStateBurned',
+):
+    need('go-manager', manager, anchor)
+need('go-manager', manager_ops, 'm.evidence(EvidenceRecord{Severity: "high", Kind: kind')
+need('go-settings', settings, 'parserCellsClassEphemeral = "parser-ephemeral"')
+need_match('go-settings', settings, 'parser_cells defaults to disabled', r'Enabled:\s+false,')
+# POINT 5 (P5-T3) raised the schema to v16 (lockdown namespace). This P2 anchor
+# must follow the current schema version instead of pinning 15, exactly like the
+# P1 anchor above; the parser_cells migration proof below is unchanged.
+need_match('go-runtime', runtime_settings, 'settings schema version is at least v16 (POINT 5 lockdown migration)',
+           r'const fabricSettingsVersion = (?:1[6-9]|[2-9][0-9])')
+need('go-runtime', runtime_settings, 'parser_cells namespace added with enabled=false')
+for anchor in (
+    'CELL_POLICY_SET(cgroup, DENY_NON_UNIX_SOCKET)', 'StyxModeSet', 'TitanExecScopeSet',
+    'parserCellLayerUnavailable + ":bpf-lsm-inactive"', 'parserCellLayerUnavailable + ":styx-disabled"',
+):
+    need('go-kernel', kernel, anchor)
+need('go-api', api, 'request.Confirm != "BURN "+uuid')
+need('go-api', api, 'parserCellListLimit')
+need('go-api', api, 'Content-Disposition')
+need('go-api', api, 'X-Content-Type-Options')
+need('go-api', api, '"nosniff"')
+for route in (
+    'mux.HandleFunc("GET /api/v1/parser-cells/status", s.auth(s.parserCellsStatus))',
+    'mux.HandleFunc("GET /api/v1/parser-cells", s.auth(s.parserCellsList))',
+    'mux.HandleFunc("POST /api/v1/parser-cells/inputs", s.auth(s.parserCellsInput))',
+    'mux.HandleFunc("POST /api/v1/parser-cells/open", s.auth(s.parserCellsOpen))',
+    'mux.HandleFunc("POST /api/v1/parser-cells/{uuid}/burn", s.auth(s.parserCellsBurn))',
+    'mux.HandleFunc("POST /api/v1/parser-cells/{uuid}/freeze", s.auth(s.parserCellsFreeze))',
+    'mux.HandleFunc("POST /api/v1/parser-cells/{uuid}/unfreeze", s.auth(s.parserCellsUnfreeze))',
+    'mux.HandleFunc("GET /api/v1/parser-cells/{uuid}/export", s.auth(s.parserCellsExport))',
+):
+    need('go-server', server, route)
+need('go-guard', guard, 'manager.BurnForIncident(cgroupID, score, incidentID,')
+need('go-guard', guard, 'parser-ephemeral cell burned instead of frozen')
+need('go-bootstrap', bootstrap, '"/run/vgt-gedefense/cell-helper.sock"')
+need('go-bootstrap', bootstrap, '"/etc/vgt/gedefense/secrets/cell-helper.key"')
+need('go-bootstrap', bootstrap, 'PeerUID:              0')
+# T5-Fixes (P2-T3): control-owned import sink, adopt-reassert, route-scoped body
+# limit and the Wayland capability boundary.
+need('go-bootstrap', bootstrap, 'ImportsDir:')
+need('go-bootstrap', bootstrap, '"/var/lib/vgt/gedefense/parser-imports"')
+need('go-manager-ops', manager_ops, 'm.cfg.ImportsDir')
+need('go-manager-ops', manager_ops, 'durable copy is written to the control-owned parser-imports root')
+need('go-manager-ops', manager_ops, 'No stored claim without the mandatory evidence record')
+need('go-kernel', kernel, 'func (k *parserCellKernel) Reassert(settings RuntimeSettings, active []uint64)')
+need('go-supervision', read('control/parser_cells_supervision.go'), 'm.kernel.Reassert(m.runtimeSettings(), activeCgroups)')
+need('go-api', api, 'parserCellInputBodyLimit int64 = 12 << 20')
+need('go-api', api, '12 MiB base64 request bound')
+need('go-client', client, 'Wayland')
+need('go-client-codec', read('control/parser_cells_client_codec.go'), 'parseParserCellCapabilitiesPayload')
+
+# --- packaging/deployment boundary ------------------------------------------
+unit = read('packaging/systemd/gedefense-cell-helper.service')
+for directive in (
+    'ConditionPathExists=@RELEASE@/libexec/gedefense-cell-helper',
+    'User=root', 'NoNewPrivileges=yes', 'ProtectSystem=strict', 'ProtectHome=yes',
+    'PrivateTmp=yes', 'RestrictAddressFamilies=AF_UNIX', 'RestrictNamespaces=mnt pid ipc uts net',
+    'CapabilityBoundingSet=CAP_SYS_ADMIN CAP_SETUID CAP_SETGID CAP_KILL CAP_SYS_RESOURCE CAP_CHOWN',
+    'ReadWritePaths=/var/lib/vgt/gedefense/parser-inputs /var/lib/vgt/gedefense/parser-exports',
+    'ReadWritePaths=/var/lib/vgt/gedefense/parser-burn-ledger.jsonl',
+    'IPAddressDeny=any', 'UMask=0077', 'Restart=on-failure', 'StartLimitIntervalSec=120',
+    'SystemCallFilter=@system-service @mount seccomp',
+):
+    need('systemd-helper-unit', unit, directive)
+if 'ProtectControlGroups=yes' in unit:
+    missing.append('systemd-helper-unit: ProtectControlGroups=yes would block the dedicated cgroup subtree')
+# T5 fix: the control-plane-owned parser-imports directory must never be in the
+# helper unit's writable set - the helper only writes inputs/exports/ledger.
+if 'parser-imports' in unit:
+    missing.append('systemd-helper-unit: parser-imports must not be a helper ReadWritePath (control-owned import copy)')
+tmpfiles = read('packaging/tmpfiles/vgt-gedefense.conf')
+for line in (
+    'd /var/lib/vgt/gedefense/parser-inputs 0730 gedefense gedefense -',
+    'd /var/lib/vgt/gedefense/parser-exports 0750 root gedefense -',
+    'd /var/lib/vgt/gedefense/parser-imports 0750 gedefense gedefense -',
+    'f /var/lib/vgt/gedefense/parser-burn-ledger.jsonl 0640 root gedefense -',
+    'C /etc/vgt/gedefense/parser-profiles.conf 0640 root root - /usr/share/gedefense/parser-profiles.conf',
+):
+    need('tmpfiles', tmpfiles, line)
+provision = read('packaging/scripts/gedefense-provision')
+need('provision', provision, 'ensure_raw_key "${SECRETS_DIR}/cell-helper.key" 0640 root "${CONTROL_GROUP}"')
+need('provision', provision, '"/var/lib/vgt/gedefense/parser-inputs:0730:${CONTROL_USER}:${CONTROL_GROUP}"')
+need('provision', provision, '"/var/lib/vgt/gedefense/parser-imports:0750:${CONTROL_USER}:${CONTROL_GROUP}"')
+need('provision', provision, 'ensure_parser_profile')
+templates = read('packaging/templates/parser-profiles.conf')
+if re.search(r'(?m)^\[profile ', templates):
+    missing.append('parser-profiles template: packaged default must not invent an active parser profile')
+pkgbuild = read('packaging/arch/PKGBUILD')
+need('pkgbuild', pkgbuild, 'packaging/systemd/gedefense-cell-helper.service')
+need('pkgbuild', pkgbuild, 'dist/gedefense-cell-helper')
+need('makefile', read('Makefile'), 'rust-helper')
+need('release-build', read('scripts/package-artifacts.sh'), 'gedefense-cell-helper')
+installer = read('scripts/oneclick-installer-header.sh')
+for anchor in (
+    'readonly HELPER_SHA256="__HELPER_SHA256__"',
+    '--artifact-file "gedefense-cell-helper=$PAYLOAD/bin/gedefense-cell-helper"',
+    'libexec/gedefense-cell-helper',
+    'cell-helper.key',
+    'parser-profiles.conf',
+    'gedefense-cell-helper.service',
+):
+    need('installer-prebuilt', installer, anchor)
+source_bootstrap = read('scripts/oneclick-source-bootstrap-header.sh')
+for anchor in (
+    'packaging/systemd/gedefense-cell-helper.service',
+    'packaging/templates/parser-profiles.conf',
+    '__HELPER_SHA256__/source-built',
+):
+    need('installer-source', source_bootstrap, anchor)
+need('install-smoke', read('packaging/tests/install-smoke.sh'), 'gedefense-cell-helper.service')
+need('validate-systemd', read('scripts/validate-systemd.sh'), 'gedefense-cell-helper.service')
+installed_gate = read('scripts/validate-installed-linux-host.sh')
+need('installed-host-gate', installed_gate, 'release-manifest.signed.json')
+need('installed-host-gate', installed_gate, 'deployment drift detected')
+need('installed-host-gate', installed_gate, 'parser_cells enabled but runtime unavailable')
+need('installed-host-gate', installed_gate, 'PARSER_CELLS_LSM_WARNING')
+need('astraeaos-provision', read('integration/astraeaos/gedefense-astraeaos-provision'), 'CELL_HELPER_KEY')
+need('astraeaos-contract', read('integration/astraeaos/contract.json'), 'ephemeral_parser_cells')
+
+if missing:
+    raise SystemExit('Point 2 parser-cell anchors missing:\n' + '\n'.join(missing))
+PYP2
+pass 'Point 2 parser-cell helper boundary, VGTGC2 control integration, default-off and packaging gates present'
+
+# POINT 5 (docs/POINT5-LOCKDOWN.md §3-§9, §12): Emergency Lockdown /
+# anti-physical-extraction. Additive gate only - every pre-existing Point 1/2/3
+# anchor above stays unchanged. It pins the shared ABI, the OFF/fail-safe eBPF
+# fastpath in all three hooks, the core LOCKDOWN_* dispatch/state/re-arm, the
+# honest phase and unsupported vocabulary, the default-off authenticated Go
+# latch/API, and the exact unit grant set (no capability/address-family/syscall
+# widening). Source-only anchors are paired with the shipped-object readelf
+# check below.
+python3 - "$ROOT" <<'PYP5'
+from pathlib import Path
+import re
+import sys
+
+root = Path(sys.argv[1])
+missing = []
+
+def read(relative):
+    path = root / relative
+    if not path.is_file():
+        missing.append(f'missing file: {relative}')
+        return ''
+    return path.read_text(encoding='utf-8')
+
+def need(component, text, anchor):
+    if anchor not in text:
+        missing.append(f'{component}: {anchor}')
+
+def need_match(component, text, label, pattern):
+    if re.search(pattern, text, re.S) is None:
+        missing.append(f'{component}: {label}')
+
+def forbid(component, text, pattern, label):
+    if re.search(pattern, text, re.S) is not None:
+        missing.append(f'{component}: forbidden {label}')
+
+# --- ABI-1: shared constants, epoch/flag word and the 64-byte event (§3) -----
+common_lib = read('rust/gedefense-common/src/lib.rs')
+common = read('rust/gedefense-common/src/lockdown.rs')
+if 'mod lockdown;' not in common_lib or 'pub use lockdown::*;' not in common_lib:
+    missing.append('rust-common-lib: lockdown module is not exported')
+for anchor in (
+    'pub const LOCKDOWN_STATE_MAGIC: u8 = 0x4C;', 'pub const LOCKDOWN_STATE_ABI: u8 = 1;',
+    'pub const LOCKDOWN_FLAG_DROP_ALL: u8 = 1 << 0;', 'pub const LOCKDOWN_FLAG_ALLOW_LOOPBACK: u8 = 1 << 1;',
+    'pub const LOCKDOWN_FLAG_HARDENING_APPLIED: u8 = 1 << 3;',
+    'pub const LOCKDOWN_FLAG_USB_LOCKED: u8 = 1 << 4;', 'pub const LOCKDOWN_FLAG_TB_LOCKED: u8 = 1 << 5;',
+    'pub const fn encode_lockdown_word(epoch: u32, mode: u8, flags: u8) -> u64 {',
+    'pub const fn decode_lockdown_word(word: u64) -> Option<LockdownWord> {',
+    'pub const LOCKDOWN_EVENT_WIRE_BYTES: usize = 64;',
+    'pub const LOCKDOWN_REASON_POLICY: u8 = 8;', 'pub const LOCKDOWN_SOURCE_TIMER: u8 = 4;',
+    'pub const LOCKDOWN_PHASE_DM: u8 = 8;', 'pub const LOCKDOWN_OUTCOME_PARTIAL: u8 = 5;',
+    'pub reserved: [u8; 24],',
+    'assert!(core::mem::size_of::<LockdownEvent>() == LOCKDOWN_EVENT_WIRE_BYTES);',
+    'assert!(core::mem::offset_of!(LockdownEvent, reserved) == 40);',
+):
+    need('rust-common-lockdown', common, anchor)
+
+# --- ABI-2: eBPF fastpath in XDP, TC-ingress and cgroup egress (§4) ----------
+# Default word 0 = OFF; a foreign magic/ABI/mode or a zero word returns None so
+# the pre-existing verdict path stays byte-identical (fail-safe, no claim).
+ebpf = read('rust/gedefense-ebpf/src/main.rs')
+for anchor in (
+    'static LOCKDOWN_STATE: Array<u64> = Array::with_max_entries(1, 0);',
+    'static LOCKDOWN_DROPS: PerCpuArray<u64> = PerCpuArray::with_max_entries(1, 0);',
+    'static LOCKDOWN_WITNESS_PASSES: PerCpuArray<u64> = PerCpuArray::with_max_entries(1, 0);',
+    'if magic != LOCKDOWN_STATE_MAGIC || abi != LOCKDOWN_STATE_ABI || mode != LOCKDOWN_MODE_ARMED {',
+    'fn lockdown_drop_active() -> bool {',
+    'fn lockdown_egress_verdict(ctx: &SkBuffContext) -> Option<i32> {',
+    'fn lockdown_loopback_packet(ctx: &SkBuffContext) -> Option<bool> {',
+    'increment_counter(&LOCKDOWN_DROPS);', 'increment_counter(&LOCKDOWN_WITNESS_PASSES);',
+    'src[0] == 127 && dst[0] == 127',
+):
+    need('rust-ebpf', ebpf, anchor)
+need_match('rust-ebpf', ebpf, 'XDP drops before the pre-existing inspect pipeline',
+           r'pub fn gedefense_xdp\(ctx: XdpContext\) -> u32 \{.*?if lockdown_drop_active\(\) \{.*?return xdp_action::XDP_DROP;.*?match inspect\(&ctx\)')
+need_match('rust-ebpf', ebpf, 'TC-ingress shots before the pre-existing policy pipeline',
+           r'pub fn gedefense_tc_ingress\(ctx: TcContext\) -> i32 \{.*?if lockdown_drop_active\(\) \{.*?return TC_ACT_SHOT;.*?match inspect_tc_ingress\(&ctx\)')
+need_match('rust-ebpf', ebpf, 'cgroup egress consults the lockdown verdict before the Point 3 policy',
+           r'pub fn gedefense_egress\(ctx: SkBuffContext\) -> i32 \{.*?if let Some\(verdict\) = lockdown_egress_verdict\(&ctx\) \{.*?match inspect_egress\(&ctx\)')
+
+# --- ABI-3: core LOCKDOWN_* command family, state file and re-arm (§5) -------
+core = read('rust/gedefense-core/src/main.rs')
+lockdown = read('rust/gedefense-core/src/lockdown.rs')
+usb = read('rust/gedefense-core/src/lockdown_usb.rs')
+uevent = read('rust/gedefense-core/src/lockdown_uevent.rs')
+hardening = read('rust/gedefense-core/src/lockdown_hardening.rs')
+brokers = read('rust/gedefense-core/src/lockdown_brokers.rs')
+for command in (
+    '["LOCKDOWN_VERSION"] => Ok(core.version().to_owned()),',
+    '["LOCKDOWN_EPOCH"] => Ok(format!("{:08x}", core.epoch())),',
+    '["LOCKDOWN_STATUS"] => Ok(lockdown_status(core)),',
+    '["LOCKDOWN_ARM", mode, reason, flags] => {',
+    '["LOCKDOWN_TRIGGER", source, reason, flags] => {',
+    '["LOCKDOWN_CLEAR", expected_epoch, reason] => {',
+    '["LOCKDOWN_SET_MODE", mode] => {',
+    '["LOCKDOWN_EVENTS"] => lockdown_events(core),',
+    '["LOCKDOWN_HEALTH"] => lockdown_health(core),',
+    '["LOCKDOWN_PHASE", phase, state] => {',
+):
+    need('rust-core', core, command)
+need('rust-core', core, '[command, ..] if command.starts_with("LOCKDOWN_") => {')
+need('rust-core', core, 'ebpf.take_map("LOCKDOWN_STATE").ok_or("LOCKDOWN_STATE missing")?')
+need('rust-core', core, 'ebpf.take_map("LOCKDOWN_DROPS").ok_or("LOCKDOWN_DROPS missing")?')
+need('rust-core', core, 'ebpf.take_map("LOCKDOWN_WITNESS_PASSES").ok_or("LOCKDOWN_WITNESS_PASSES missing")?')
+need('rust-core', core, 'let lockdown_state_path = arg("lockdown-state", lockdown::DEFAULT_STATE_FILE);')
+for anchor in (
+    'pub(crate) const VERSION: &str = "lockdown-v1";',
+    'pub(crate) const DEFAULT_STATE_FILE: &str = "/var/lib/vgt/gedefense/LOCKDOWN.state";',
+    'pub(crate) const DELEGATED: u8 = 0x80;',
+    'pub(crate) const REASON_SESSIONS: &str = "no-dbus-session-lock";',
+    'pub(crate) const REASON_DM: &str = "no-device-mapper";',
+    'pub(crate) fn startup_rearm(&mut self) -> Result<String, String> {',
+    'self.epoch = new_epoch(self.epoch)?;',
+    'fn new_epoch(previous: u32) -> Result<u32, String> {',
+    'pub(crate) fn state_text(&self) -> &\'static str {',
+    'LOCKDOWN_PHASE_CELLS => (DELEGATED, "delegated-to-control"),',
+):
+    need('rust-core-lockdown', lockdown, anchor)
+need('rust-core', core, 'fn write_lockdown_state_atomic(path: &Path, content: &str) -> Result<(), String> {')
+need('rust-core', core, '.mode(0o640)')
+need('rust-core', core, 'fn load_lockdown_state(path: &Path) -> LockdownStateLoad {')
+need('rust-core', core, 'if core.phase_outcome(LOCKDOWN_PHASE_CELLS) == lockdown::DELEGATED {')
+need('rust-core', core, '[LOCKDOWN_PHASE_SESSIONS, LOCKDOWN_PHASE_DM]')
+need('rust-core', core, 'const LOCKDOWN_KERNEL_LOCKDOWN_REASON: &str = "boot-parameter-immutable";')
+
+# --- USB/Thunderbolt policy + lossy uevent handling + rescan (§6.2) ---------
+for anchor in (
+    'self.sys_root.join("bus/usb/drivers_autoprobe")',
+    'self.sys_root.join("bus/thunderbolt/devices")',
+    'const CLASS_HID: u8 = 0x03;', 'const CLASS_HUB: u8 = 0x09;',
+    'fn is_power_only(dir: &Path, device_class: Option<u8>, num_interfaces: Option<u32>) -> bool {',
+    'DevicePolicy::PowerOnly', 'DevicePolicy::Console',
+    'pub(crate) fn apply_usb(paths: &UsbPaths) -> PolicyReport {',
+    'pub(crate) fn release_usb(paths: &UsbPaths) -> PolicyReport {',
+    'pub(crate) fn apply_tb_device(paths: &UsbPaths, devpath: &str) -> Result<(), &\'static str> {',
+):
+    need('rust-core-usb', usb, anchor)
+for anchor in (
+    'pub(crate) const UEVENT_GROUP: u32 = 1;',
+    'Some(libc::ENOBUFS) => Poll::Rescan,',
+    'fn rescan(shared: &LockdownShared, usb_paths: &lockdown_usb::UsbPaths) {',
+    'Poll::Rescan => rescan(shared, usb_paths),',
+    'if shared.auto_network_drop().is_err() {',
+):
+    need('rust-core-uevent', uevent, anchor)
+
+# --- Hardening: observation always, opt-in writes, modules_disabled never auto
+for anchor in (
+    'pub(crate) fn hardening_phase(&mut self, explicit: bool) -> (u8, &\'static str) {',
+    'modules-disabled-auto-forbidden',
+    'pub(crate) fn modules_disabled_auto_state() -> &\'static str {',
+    'paths.kexec()', 'paths.sysrq()', 'paths.modules()',
+    'Write::Blocked',
+):
+    need('rust-core-hardening', hardening, anchor)
+
+# --- Broker freeze: reversible SIGSTOP/SIGCONT, honest frozen-not-locked -----
+for anchor in (
+    'pub(crate) const BROKER_STATUS: &str = "frozen-not-locked";',
+    'pub(crate) const BROKER_NAMES: &[&str] =',
+    'pub(crate) const BROKER_TTL: Duration = Duration::from_secs(300);',
+    'libc::SIGSTOP', 'libc::SIGCONT', 'pidfd_signal',
+):
+    need('rust-core-brokers', brokers, anchor)
+need('rust-core', core, 'fn lockdown_modules_never_use_shell_or_kill_primitives() {')
+
+# --- Go control plane: default-off settings, latch, triggers, API (§7) --------
+settings = read('control/lockdown_settings.go')
+runtime_settings = read('control/runtime_settings.go')
+engine = read('control/lockdown.go')
+engine_ops = read('control/lockdown_engine.go')
+phases = read('control/lockdown_phases.go')
+triggers = read('control/lockdown_triggers.go')
+api = read('control/lockdown_api.go')
+status = read('control/lockdown_status.go')
+coreipc = read('control/coreipc.go')
+server = read('control/server.go')
+xdr = read('control/xdr.go')
+main = read('control/main.go')
+state = read('control/state.go')
+schema = read('control/fabric_schema.go')
+fabric_settings = read('control/fabric_settings.go')
+need_match('go-settings', settings, 'lockdown defaults are disabled and disarmed (inert upgrade)',
+           r'func defaultLockdownFabricSettings\(\) LockdownFabricSettings \{.*?Enabled:\s+false,.*?AutoArm:\s+false,')
+need_match('go-settings', settings, 'the panic loopback drop is opt-in and hardening is off by default',
+           r'DropLoopback:\s+false,.*?HardeningApply:\s+false,')
+for anchor in (
+    'func validateLockdownFabricSettings(', 'func cloneLockdownFabricSettings(',
+    'func effectiveLockdownSettings(',
+    'lockdownConfirmationTrigger = "TRIGGER LOCKDOWN"',
+    'lockdownConfirmationClear   = "CLEAR:LOCKDOWN"',
+    'lockdownMaxRequireSources   = 4', 'lockdownMaxTargetsCap',
+):
+    need('go-settings', settings, anchor)
+need_match('go-runtime', runtime_settings, 'settings schema version is at least v16 (lockdown namespace)',
+           r'const fabricSettingsVersion = (?:1[6-9]|[2-9][0-9])')
+need('go-runtime', runtime_settings, 'Lockdown *LockdownFabricSettings `json:"lockdown,omitempty"`')
+need('go-runtime', runtime_settings, 'if settings.Lockdown == nil {')
+need('go-runtime', runtime_settings, 'settings.Migrations = append(settings.Migrations, lockdownMigrationNote)')
+need('go-runtime', runtime_settings, 'if err := validateLockdownFabricSettings(&lockdown); err != nil {')
+for anchor in (
+    'type LockdownEngine struct {', 'func NewLockdownEngine(',
+    'lockdownEngineStatePath = "/var/lib/vgt/gedefense/lockdown-engine.state"',
+    'lockdownEnginePurpose = "lockdown-engine"',
+    'e.storage.Decrypt(e.path, lockdownEnginePurpose, raw, nil)',
+    'e.storage.Encrypt(e.path, lockdownEnginePurpose, e.doc.Revision, plaintext)',
+    'e.addEvent("critical", "lockdown.state.corrupt",',
+    'errLockdownCapabilityMiss',
+):
+    need('go-engine', engine, anchor)
+for anchor in (
+    'func (e *LockdownEngine) Arm(', 'func (e *LockdownEngine) Trigger(',
+    'func (e *LockdownEngine) Clear(',
+    'lockdown.trigger.intent', 'lockdown.trigger.outcome',
+    'lockdown.clear.intent', 'lockdown.clear.outcome',
+    '"lockdown.phase."+phase.Phase',
+    'lockdown.state.persist_failed',
+    'engine.Reverse(id, "REVERSE "+id)',
+    'lockdown.cells.resume_failed', 'lockdown.cells.resumed',
+    'func lockdownCoreFlags(settings LockdownFabricSettings) uint8 {',
+):
+    need('go-engine', engine_ops, anchor)
+for anchor in (
+    'lockdownPhaseUnsupported', 'lockdownPhaseNameSessions', 'lockdownPhaseNameDM',
+    'lockdownPhaseNameKernelLockdown', 'uid-0 process excluded by settings',
+    'func (e *LockdownEngine) runCorePhases(',
+):
+    need('go-phases', phases, anchor)
+for anchor in (
+    'func lockdownIncidentCandidate(', 'func lockdownCanaryUnauthorizedProbe(',
+    'func lockdownFingerprint(', 'func (e *LockdownEngine) applyTriggerGuards(',
+    'errLockdownCooldown', 'errLockdownSourcesPending',
+    'func (e *LockdownEngine) reconcileBootTrust(',
+    'func (e *LockdownEngine) pollDuress(',
+):
+    need('go-triggers', triggers, anchor)
+need('go-api', api, 'POST /api/v1/lockdown/trigger  {confirmation: "TRIGGER LOCKDOWN", reason, source?}')
+need('go-api', api, 'strings.TrimSpace(in.Confirmation) != lockdownConfirmationTrigger')
+need('go-api', api, 'strings.TrimSpace(in.Confirmation) != lockdownConfirmationClear')
+need('go-api', api, 'view := s.lockdown.StatusView()')
+for route in (
+    'mux.HandleFunc("GET /api/v1/lockdown/status", s.auth(s.lockdownStatus))',
+    'mux.HandleFunc("POST /api/v1/lockdown/arm", s.auth(s.lockdownArm))',
+    'mux.HandleFunc("POST /api/v1/lockdown/trigger", s.auth(s.lockdownTrigger))',
+    'mux.HandleFunc("POST /api/v1/lockdown/clear", s.auth(s.lockdownClear))',
+):
+    need('go-server', server, route)
+need('go-server', server, '"/api/v1/lockdown/trigger",')
+need('go-server', server, '"/api/v1/lockdown/clear":')
+need('go-server', server, 's.lockdownLimiter = NewRateLimiter(1, 1)')
+need('go-server', server, 'snapshot.Lockdown = &lockdownView')
+need('go-state', state, 'Lockdown       *LockdownStatusView `json:"lockdown,omitempty"`')
+need('go-xdr', xdr, 'func (e *XDREngine) AttachLockdown(engine *LockdownEngine) {')
+need('go-xdr', xdr, 'e.lockdown.ObserveIncident(incident)')
+need('go-main', main, 'lockdownEngine, lockdownErr := NewLockdownEngine(LockdownEngineConfig{')
+need('go-main', main, 'lockdownEngine.AttachBootTrust(srv.bootTrustVerdict)')
+need('go-main', main, 'go lockdownEngine.Run(xdrCtx)')
+need('go-schema', schema, '{module: "lockdown", group: "Emergency Lockdown", key: "enabled"')
+need('go-fabric-settings', fabric_settings, 'case "lockdown":')
+for anchor in (
+    'var ErrLockdownUnavailable = errors.New("lockdown capability unavailable")',
+    'func (c *CoreClient) LockdownStatus() (CoreLockdownStatus, error) {',
+    'func (c *CoreClient) LockdownTrigger(source, reason string, flags uint8) (CoreLockdownTriggerResult, error) {',
+    'func (c *CoreClient) LockdownClear(expectedEpoch, reason string) (string, error) {',
+    'func parseCoreLockdownStatus(payload string) (CoreLockdownStatus, error) {',
+    'lockdownPhaseNameCells',
+):
+    need('go-coreipc', coreipc, anchor)
+need('go-triggers', triggers, 'func parseCoreLockdownEvents(payload string) ([]CoreLockdownEvent, uint64, error) {')
+
+# --- packaging boundary: exact grants, unchanged cap/af/syscall contract -----
+# /sys/devices is required in addition to the bus paths because
+# /sys/bus/usb/devices and /sys/bus/thunderbolt/devices are sysfs symlinks: a
+# per-device "authorized" write resolves into /sys/devices/** and would be
+# EROFS with a bus-only grant (fail-safe but ineffective).
+unit = read('packaging/systemd/gedefense-core.service')
+for directive in (
+    'ReadWritePaths=-/sys/bus/usb -/sys/bus/thunderbolt/devices -/sys/devices',
+    'ReadWritePaths=-/proc/sys/kernel/kexec_load_disabled -/proc/sys/kernel/sysrq -/proc/sys/kernel/modules_disabled',
+    'ReadWritePaths=/var/lib/vgt/gedefense',
+    'CapabilityBoundingSet=CAP_BPF CAP_NET_ADMIN CAP_PERFMON CAP_SYS_ADMIN CAP_SYS_RESOURCE CAP_KILL',
+    'AmbientCapabilities=CAP_BPF CAP_NET_ADMIN CAP_PERFMON CAP_SYS_ADMIN CAP_SYS_RESOURCE CAP_KILL',
+    'RestrictAddressFamilies=AF_UNIX AF_NETLINK',
+    'SystemCallFilter=@system-service bpf perf_event_open pidfd_open pidfd_send_signal fanotify_init fanotify_mark',
+):
+    need('systemd-core-unit', unit, directive)
+# No further /sys node may be granted: the complete writable sysfs set is the
+# pre-existing bpffs mount plus the three reviewed lockdown nodes.
+sys_grants = set()
+for line in unit.splitlines():
+    if not line.startswith('ReadWritePaths='):
+        continue
+    for token in line.split('=', 1)[1].split():
+        token = token.lstrip('-')
+        if token == '/sys' or token.startswith('/sys/'):
+            sys_grants.add(token)
+if sys_grants != {'/sys/bus/usb', '/sys/bus/thunderbolt/devices', '/sys/devices', '/sys/fs/bpf'}:
+    missing.append('systemd-core-unit: unexpected writable sysfs set: ' + ', '.join(sorted(sys_grants)))
+if len(re.findall(r'(?m)^CapabilityBoundingSet=', unit)) != 1:
+    missing.append('systemd-core-unit: CapabilityBoundingSet must stay one reviewed line')
+if re.search(r'(?m)^CapabilityBoundingSet=.*(?:CAP_SYS_PTRACE|CAP_SYS_MODULE|CAP_DAC_READ_SEARCH|CAP_SYS_RAWIO)', unit):
+    missing.append('systemd-core-unit: lockdown must not widen the capability set (ptrace/module/DAC/rawio)')
+if re.search(r'(?m)^RestrictAddressFamilies=.*(?:AF_INET|AF_PACKET|AF_BLUETOOTH)', unit):
+    missing.append('systemd-core-unit: lockdown must not widen the address families')
+if re.search(r'ReadWritePaths=(?:[^\n]*\s)?/sys(?:\s|$)', unit):
+    missing.append('systemd-core-unit: /sys must not be granted writable as a whole (lockdown grants exact bus paths only)')
+tmpfiles = read('packaging/tmpfiles/vgt-gedefense.conf')
+need('tmpfiles', tmpfiles, 'd /var/lib/vgt/gedefense 1770 root gedefense -')
+need('pkgbuild', read('packaging/arch/PKGBUILD'), '"${_source_root}/packaging/systemd/gedefense-core.service"')
+need('validate-systemd', read('scripts/validate-systemd.sh'), 'POINT 5')
+need('install-smoke', read('packaging/tests/install-smoke.sh'), 'POINT 5')
+
+if missing:
+    raise SystemExit('Point 5 lockdown anchors missing:\n' + '\n'.join(missing))
+PYP5
+pass 'Point 5 lockdown ABI, fail-safe eBPF fastpath, core state/re-arm, Go latch/API and packaging grants present'
+
+# POINT 4 (P4-T3, docs/POINT4-WITNESS.md §3-§8, §11): mandatory anchors for the
+# Out-of-Band Witness. Additive gate only - every pre-existing Point 1/2/3/5
+# anchor above stays unchanged. Each anchor pins a definition, a decision, a
+# hard bound or an honest capability boundary (never a bare comment or a test
+# fixture), so removing a control cannot be compensated elsewhere. The witness is
+# unprivileged Go control: it ships no daemon, no unit and no new
+# capability/address-family/syscall contract, and the external witness server is
+# deliberately not part of the repository (Phase 2, no fake server).
+python3 - "$ROOT" <<'PYP4'
+from pathlib import Path
+import re
+import sys
+
+root = Path(sys.argv[1])
+missing = []
+
+def read(relative):
+    path = root / relative
+    if not path.is_file():
+        missing.append(f'missing file: {relative}')
+        return ''
+    return path.read_text(encoding='utf-8')
+
+def need(component, text, anchor):
+    if anchor not in text:
+        missing.append(f'{component}: {anchor}')
+
+def need_match(component, text, label, pattern):
+    if re.search(pattern, text, re.S) is None:
+        missing.append(f'{component}: {label}')
+
+def forbid(component, text, pattern, label):
+    if re.search(pattern, text, re.S) is not None:
+        missing.append(f'{component}: forbidden {label}')
+
+# --- ABI-1: persistent ledger epoch + atomic checkpoint view (§3) ------------
+ledger = read('control/evidence_ledger.go')
+rotation = read('control/evidence_rotation.go')
+for anchor in (
+    'LedgerEpoch uint64 `json:"ledger_epoch,omitempty"`',
+    'func (l *EvidenceLedger) Checkpoint() (EvidenceCheckpointView, error) {',
+    'func (l *EvidenceLedger) Head() (EvidenceCheckpointView, error) {',
+    'func (l *EvidenceLedger) PublicKeyFingerprint() (string, error) {',
+    'func (l *EvidenceLedger) WitnessCheckpointSigner() WitnessCheckpointSigner {',
+    'Records: l.sequence,',
+    'LedgerEpoch: l.ledgerEpoch, PublicKeyFingerprint: evidencePublicKeyFingerprint(l.publicKey),',
+    'checkpoint.LedgerEpoch != ledgerEpoch',
+):
+    need('go-ledger', ledger, anchor)
+# A rotation increments the epoch before the fresh sequence: a legitimate
+# rotation must never look like a rollback to a witness. Crash recovery reads the
+# epoch back from the authenticated head instead of resetting it.
+for anchor in (
+    'nextEpoch := l.ledgerEpoch + 1',
+    'if err := writeEvidenceCheckpoint(l.headPath, 0, "", nextEpoch, l.crypto); err != nil {',
+    'l.ledgerEpoch = nextEpoch',
+    'ledgerEpoch: checkpoint.LedgerEpoch}',
+):
+    need('go-rotation', rotation, anchor)
+
+# --- ABI-2: signed checkpoint contract, domains and rejecting decoder (§3) ---
+checkpoint = read('control/witness_checkpoint.go')
+for anchor in (
+    'WitnessCheckpointSchema = "vgt-gedefense-witness-checkpoint-v1"',
+    'witnessCheckpointDomain = "VGT-GEDEFENSE-WITNESS-CHECKPOINT-V1\\x00"',
+    'witnessQuoteKindNone = "none"',
+    'witnessCheckpointMaxCounter = 1 << 53',
+    'witnessCheckpointMaxBytes = 64 << 10',
+    'func DecodeWitnessCheckpoint(data []byte) (WitnessCheckpoint, error) {',
+    'func SignWitnessCheckpoint(checkpoint WitnessCheckpoint, signer WitnessCheckpointSigner) (WitnessCheckpoint, error) {',
+    'func VerifyWitnessCheckpoint(checkpoint WitnessCheckpoint, publicKey ed25519.PublicKey) error {',
+    'func BootPostureDigest(report BootTrustReport) string {',
+    'func PolicyDigest(settings RuntimeSettings) (string, error) {',
+    'if _, allowed := witnessCheckpointAllowedFields[name]; !allowed {',
+    'if _, duplicate := seen[name]; duplicate {',
+    'return WitnessCheckpoint{}, errors.New("witness checkpoint contains trailing data")',
+    'if checkpoint.Records != checkpoint.Sequence {',
+    'if checkpoint.QuoteKind != witnessQuoteKindNone {',
+    'if checkpoint.LedgerEpoch > witnessCheckpointMaxCounter || checkpoint.Sequence > witnessCheckpointMaxCounter ||',
+):
+    need('go-checkpoint', checkpoint, anchor)
+need('go-checkpoint', checkpoint, 'witnessBootPostures = map[string]struct{}{"VERIFIED": {}, "OBSERVE": {}, "NOT_SUPPORTED": {}}')
+need('go-checkpoint', checkpoint, 'witnessSensorStates = map[string]struct{}{"online": {}, "degraded": {}, "offline": {}, "disabled": {}}')
+# Privacy contract: the checkpoint is the only artifact that leaves the host, so
+# it must carry hashes/fingerprints/enums/counters only - never a path, token,
+# key material, target/IP or free-form boot evidence. The signed payload must not
+# contain its own signature field (the signature separates from the payload).
+if 'type witnessCheckpointPayload struct {' not in checkpoint:
+    missing.append('go-checkpoint: signed payload type is missing')
+else:
+    checkpoint_struct = checkpoint.split('type WitnessCheckpoint struct {', 1)[-1].split('}', 1)[0]
+    checkpoint_payload = checkpoint.split('type witnessCheckpointPayload struct {', 1)[-1].split('}', 1)[0]
+    if 'json:"signature"' in checkpoint_payload:
+        missing.append('go-checkpoint: the signed payload must not contain its own signature field')
+    if re.search(r'json:"[a-z_]*(?:path|file|cmdline|evidence|source|target|token|ip|private|secret)[a-z_]*"', checkpoint_struct):
+        missing.append('go-checkpoint: checkpoint must not carry paths, tokens, key material or free-form evidence/PII fields')
+forbid('go-checkpoint', checkpoint, r'item\.(?:Source|Evidence|Summary|Command|Cmdline)', 'boot-posture digest must hash {id,state,digest} only')
+
+# --- ABI-3: hardened witness HTTPS client (Mode A, §4) -----------------------
+client = read('control/witness_client.go')
+for anchor in (
+    'Proxy: nil,',
+    'CheckRedirect: func(*http.Request, []*http.Request) error {',
+    'return errWitnessRedirectRefused',
+    'if splitErr != nil || port != "443" {',
+    'tls.Config{MinVersion: tls.VersionTLS12}',
+    'witnessMaxResponseBytes = 64 << 10',
+    'io.LimitReader(response.Body, c.maxResponse+1)',
+    'response exceeds the 64 KiB bound',
+    'func witnessSPKIPinMatches(pin []byte, cert *x509.Certificate) bool {',
+    'subtle.ConstantTimeCompare(sum[:], pin) == 1',
+    'func readWitnessPrivateFile(path string, max int64) ([]byte, error) {',
+    'if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {',
+    'if info.Mode().Perm()&0o077 != 0 {',
+    'tls.LoadX509KeyPair(settings.ClientCertFile, settings.ClientKeyFile)',
+    'witnessChallengeMaxHexBytes = 128',
+    'if receipt.CheckpointID != checkpoint.CheckpointID {',
+    'if receipt.WitnessSeq <= c.lastSeq {',
+):
+    need('go-witness-client', client, anchor)
+need('go-witness-client', client, 'case response.StatusCode == http.StatusUnauthorized || response.StatusCode == http.StatusForbidden:')
+need('go-witness-client', client, 'case response.StatusCode >= 400 && response.StatusCode < 500:')
+need('go-witness-client', client, 'case response.StatusCode >= 300 && response.StatusCode < 400:')
+forbid('go-witness-client', client, r'ProxyFromEnvironment', 'environment proxy (the transport must keep Proxy: nil)')
+
+# --- ABI-4: signed receipts, monotonic acknowledgment (§4/§5) ----------------
+export = read('control/witness_export.go')
+for anchor in (
+    'witnessReceiptSchema = "vgt-gedefense-witness-receipt-v1"',
+    'witnessReceiptDomain = "VGT-GEDEFENSE-WITNESS-RECEIPT-V1\\x00"',
+    'func ValidateWitnessReceipt(receipt WitnessReceipt) error {',
+    'func DecodeWitnessReceipt(data []byte) (WitnessReceipt, error) {',
+    'func VerifyWitnessReceipt(receipt WitnessReceipt, publicKey ed25519.PublicKey) error {',
+    'func (e *WitnessEngine) ImportReceipt(_ context.Context, raw []byte) (WitnessReceipt, error) {',
+    'if receipt.WitnessSeq <= ack.LastWitnessSeq {',
+    'if receipt.CheckpointID != export.CheckpointID {',
+    'e.flagEquivocation("rollback")',
+):
+    need('go-receipt', export, anchor)
+
+# --- ABI-5: bounded, authenticated, fail-closed outbox (§4) ------------------
+outbox = read('control/witness_outbox.go')
+for anchor in (
+    'witnessOutboxPurpose = "witness-outbox"',
+    'errWitnessOutboxFull = errors.New("witness outbox is full")',
+    'if o.maxEntries > 0 && len(o.entries)+1 > o.maxEntries {',
+    'atomicWriteFile(o.path, sealed, 0o600)',
+    'cipher.Decrypt(path, witnessOutboxPurpose, raw, nil)',
+    'if entry.LocalSeq == 0 || entry.LocalSeq <= sequence {',
+    'return 0, errWitnessOutboxFull',
+):
+    need('go-outbox', outbox, anchor)
+engine = read('control/witness_engine.go')
+for anchor in (
+    'func (e *WitnessEngine) checkpointLocked(ctx context.Context) (WitnessCheckpoint, error) {',
+    'if settings.Mode == witnessModeHTTP && e.outbox != nil && e.outbox.full() {',
+    'e.markOutboxFull()',
+    'e.recordEvent("info", "witness.checkpoint.created",',
+    'e.recordEvent("info", "witness.acked",',
+    'witnessAckPurpose = "witness-ack"',
+    'func (e *WitnessEngine) recordAck(receipt WitnessReceipt, checkpoint WitnessCheckpoint) {',
+    'func saveWitnessAckState(path string, cipher *StorageCipher, state witnessAckState) error {',
+):
+    need('go-witness-engine', engine, anchor)
+
+# --- ABI-6: equitable detection: fork/rollback, rotation is NOT an alarm -----
+for anchor in (
+    'func (e *WitnessEngine) observeHead(head witnessHead) {',
+    'func compareWitnessHeads(previous, head witnessHead) string {',
+    'if head.epoch > previous.epoch {',
+    'return "" // a rotation is legitimate',
+    'func (e *WitnessEngine) flagEquivocation(kind string) {',
+    'if settings.TriggerLockdownOnEquivocation && lockdown != nil {',
+    'lockdown.TriggerWitnessEquivocation(fingerprint)',
+    'func witnessEquivocationFingerprint(kind string) string {',
+    'state.AddIncident(XDRIncident{',
+):
+    need('go-witness-engine', engine, anchor)
+lockdown_triggers = read('control/lockdown_triggers.go')
+need('go-lockdown', lockdown_triggers, 'func (e *LockdownEngine) TriggerWitnessEquivocation(fingerprint string) error {')
+need('go-lockdown', lockdown_triggers, 'if !settings.TriggerWitnessEquivocation {')
+need('go-lockdown', read('control/lockdown_settings.go'), 'lockdownReasonWitnessEquivocation = "witness-equivocation"')
+need('go-lockdown', read('control/lockdown_settings.go'), 'TriggerWitnessEquivocation bool `json:"trigger_witness_equivocation"`')
+
+# --- ABI-7: default-off engine, honest capability vocabulary (§7/§8) ---------
+witness_core = read('control/witness.go')
+for anchor in (
+    'errWitnessDisabled = errors.New("witness is disabled")',
+    'func NewWitnessEngine(cfg WitnessEngineConfig) (*WitnessEngine, error) {',
+    'func (e *WitnessEngine) Run(ctx context.Context) {',
+    'func (e *WitnessEngine) ApplyRuntimeSettings(settings RuntimeSettings) error {',
+    'e.failClosed = "witness outbox is corrupt"',
+    'e.failClosed = "witness ack baseline is corrupt"',
+    'e.recordEventOnce("outbox-full", "critical", "witness.outbox_full",',
+    'e.recordEventOnce("ack-corrupt", "critical", "witness.push.failed",',
+    'return errors.New("witness returned a nonce it already issued")',
+):
+    need('go-witness', witness_core, anchor)
+need_match('go-witness', witness_core, 'software key binding is honest (no hardware claim)', r'witnessKeyBinding\s+=\s+"software"')
+need_match('go-witness', witness_core, 'event cooldown bounds a repeated condition', r'witnessEventCooldown\s+=\s+5 \* time\.Minute')
+
+# --- ABI-8: Settings v17, default off, reject-not-repair (§7) ----------------
+witness_settings = read('control/witness_settings.go')
+for anchor in (
+    'func defaultWitnessFabricSettings() WitnessFabricSettings {',
+    'func validateWitnessFabricSettings(in *WitnessFabricSettings) error {',
+    'if in.PinnedServerKeyFile == "" && in.PinnedServerSPKI == "" {',
+    'return errors.New("witness is enabled but mode is off")',
+    'if parsed.Scheme != "https" {',
+    'if port := parsed.Port(); port != "" && port != "443" {',
+    'if (in.ClientCertFile == "") != (in.ClientKeyFile == "") {',
+    'witnessOutboxFloorBytes = 64 << 10',
+    'witnessOutboxCeilingBytes = 64 << 20',
+    'func witnessModeActive(settings WitnessFabricSettings) bool {',
+    'witnessMigrationNote = "witness namespace added with enabled=false and mode=off',
+):
+    need('go-witness-settings', witness_settings, anchor)
+need_match('go-witness-settings', witness_settings, 'witness defaults are enabled=false and mode=off', r'func defaultWitnessFabricSettings\(\) WitnessFabricSettings \{.*?Enabled:\s+false,.*?Mode:\s+witnessModeOff,')
+runtime_settings = read('control/runtime_settings.go')
+need_match('go-runtime', runtime_settings, 'settings schema version is at least v17 (POINT 4 witness migration)', r'const fabricSettingsVersion = (?:1[7-9]|[2-9][0-9])')
+need('go-runtime', runtime_settings, 'Witness *WitnessFabricSettings `json:"witness,omitempty"`')
+schema = read('control/fabric_schema.go')
+need('go-schema', schema, '{module: "witness", group: "Transport", key: "enabled", label: "Out-of-Band Witness", kind: FabricTypeBoolean, def: false')
+need('go-schema', schema, '{module: "witness", group: "Escalation", key: "trigger_lockdown_on_equivocation", label: "Lockdown on Equivocation", kind: FabricTypeBoolean, def: false')
+need('go-schema', schema, 'key: "outbox_max_bytes"')
+
+# --- ABI-9: operator API, evidence gate, status projection (§7) --------------
+server = read('control/server.go')
+for route in (
+    'mux.HandleFunc("GET /api/v1/witness/status", s.auth(s.witnessStatus))',
+    'mux.HandleFunc("GET /api/v1/witness/export", s.auth(s.witnessExport))',
+    'mux.HandleFunc("POST /api/v1/witness/checkpoint", s.auth(s.witnessCheckpoint))',
+    'mux.HandleFunc("POST /api/v1/witness/push", s.auth(s.witnessPush))',
+    'mux.HandleFunc("POST /api/v1/witness/challenge", s.auth(s.witnessChallenge))',
+    'mux.HandleFunc("POST /api/v1/witness/import", s.auth(s.witnessImport))',
+):
+    need('go-server', server, route)
+if 'func evidenceGateExempt(path string) bool {' not in server:
+    missing.append('go-server: evidenceGateExempt is missing')
+else:
+    gate_block = server.split('func evidenceGateExempt(path string) bool {', 1)[-1].split('\n}', 1)[0]
+    if 'witness' in gate_block:
+        missing.append('go-server: witness routes must not be exempt from the evidence gate (only the four documented exits are)')
+witness_api = read('control/witness_api.go')
+for anchor in (
+    'witnessPushConfirmation = "PUSH WITNESS"',
+    'witnessImportMaxBytes = 16 << 10',
+    's.witnessLimiter = NewRateLimiter(12, 4)',
+    'r.Body = http.MaxBytesReader(w, r.Body, witnessImportMaxBytes)',
+    'func (e *WitnessEngine) StatusView() WitnessStatus {',
+    'QuoteKind: witnessQuoteKindNone, KeyBinding: witnessKeyBinding,',
+):
+    need('go-witness-api', witness_api, anchor)
+need('go-state', read('control/state.go'), 'Witness *WitnessStatus `json:"witness,omitempty"`')
+main_go = read('control/main.go')
+need('go-main', main_go, 'srv.AttachWitness(witnessEngine)')
+need('go-main', main_go, 'go witnessEngine.Run(xdrCtx)')
+need('go-main', main_go, 'filepath.Join(evidenceDir, "witness", "outbox.enc")')
+need('go-main', main_go, 'filepath.Join(evidenceDir, "witness", "ack.enc")')
+
+# --- no fake witness server: production code has no test server/listener -----
+witness_prod = [path for path in sorted((root / 'control').glob('witness*.go')) if not path.name.endswith('_test.go')]
+if not witness_prod:
+    missing.append('control: witness production file set is empty')
+for path in witness_prod:
+    body = read('control/' + path.name)
+    if re.search(r'\bnet\.Listen\(|\bListenAndServe\(|"net/http/httptest"', body):
+        missing.append(f'{path.name}: production witness code must not contain a witness test server or listener')
+need('go-witness-client-test', read('control/witness_client_test.go'), 'httptest.NewTLSServer')
+
+# --- bounds: VGT 500-line rule for the new files + report limit --------------
+for path in sorted((root / 'control').glob('witness*.go')):
+    lines = len(path.read_text(encoding='utf-8').splitlines())
+    if lines > 500:
+        missing.append(f'{path.name}: {lines} lines exceed the VGT 500-line rule')
+report = read('docs/POINT4-PHASE1-REPORT.md')
+report_lines = len(report.splitlines())
+if report_lines == 0 or report_lines > 180:
+    missing.append(f'docs/POINT4-PHASE1-REPORT.md: {report_lines} lines (limit 180)')
+need('docs-report', report, 'NOT_TESTED')
+need('docs-report', report, 'Checkpoint+Receipt')
+
+# --- documentation + packaging boundary -------------------------------------
+p4doc = read('docs/POINT4-WITNESS.md')
+for anchor in (
+    '**Status:** IMPLEMENTIERT (Phase 1)',
+    '## 13. Umsetzungsabweichungen',
+    'ledger_epoch+1',
+    'quote_kind="none"',
+    'key_binding="software"',
+    'vgtw1',
+    'Witness-Server',
+    'Evidence-Gate',
+):
+    need('docs-p4', p4doc, anchor)
+need('docs-architecture', read('ARCHITECTURE.md'), '### 3.38 Point 4')
+if (root / 'Next.md').is_file():
+    need('next-md', read('Next.md'), 'Checkpoint 007')
+control_unit = read('packaging/systemd/gedefense-control.service')
+for directive in (
+    'User=gedefense',
+    'NoNewPrivileges=true',
+    'ProtectSystem=strict',
+    'ReadWritePaths=/var/lib/vgt/gedefense',
+    'RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK',
+):
+    need('systemd-control-unit', control_unit, directive)
+forbid('systemd-control-unit', control_unit, r'(?m)^(?:AmbientCapabilities|CapabilityBoundingSet)=', 'a witness capability grant (the client needs none)')
+forbid('systemd-control-unit', control_unit, r'ReadWritePaths=[^\n]*/witness', 'a witness-specific ReadWritePaths exception (state stays inside /var/lib/vgt/gedefense)')
+core_unit = read('packaging/systemd/gedefense-core.service')
+need('systemd-core-unit', core_unit, 'ReadWritePaths=/var/lib/vgt/gedefense')
+forbid('systemd-core-unit', core_unit, r'ReadWritePaths=[^\n]*/witness', 'a witness state grant in the core unit (the state belongs to the control plane)')
+witness_units = sorted(path.name for path in (root / 'packaging' / 'systemd').glob('*witness*'))
+if witness_units:
+    missing.append('packaging/systemd: no dedicated witness unit may ship (unprivileged Go control only): ' + ', '.join(witness_units))
+need('tmpfiles', read('packaging/tmpfiles/vgt-gedefense.conf'), 'd /var/lib/vgt/gedefense 1770 root gedefense -')
+need('validate-systemd', read('scripts/validate-systemd.sh'), 'POINT 4')
+need('install-smoke', read('packaging/tests/install-smoke.sh'), 'POINT 4')
+need('makefile', read('Makefile'), 'FuzzWitnessCheckpointDecode')
+need('makefile', read('Makefile'), 'FuzzWitnessReceiptDecode')
+
+if missing:
+    raise SystemExit('Point 4 out-of-band witness anchors missing:\n' + '\n'.join(missing))
+PYP4
+pass 'Point 4 witness epoch/checkpoint, hardened client, receipts, bounded outbox, export/import, equivocation, v17 default-off and privacy/no-server boundaries present'
+
 if [[ -f "$ROOT/dist/gedefense-ebpf" ]]; then
   # The release host may not ship LLVM alongside the bpf-linker toolchain. Both
   # llvm-objdump and readelf prove the same things (section names + symbol table);
@@ -766,6 +2073,39 @@ if [[ -f "$ROOT/dist/gedefense-ebpf" ]]; then
       fail "built eBPF object is missing ${symbol}"
   done
   pass 'built eBPF object contains the GaiaCells socket LSM and policy maps'
+  # POINT 3 (P3-T6): the Point 3 hook and maps must be present in the shipped
+  # object as well, not only in the source tree. Sections prove the hook is
+  # compiled; symbols prove the core can take the maps it depends on at startup.
+  grep -Eq '[[:space:]]cgroup_skb/egress[[:space:]]' <<<"$ebpf_sections" ||
+    fail 'built eBPF object has no cgroup_skb/egress section'
+  for symbol in CELL_EGRESS_MODE FLOW_EVENTS STYX_GLOBAL STYX_RESOLVED FLOW_AGG_V4; do
+    grep -Fq -- "$symbol" <<<"$ebpf_symbols" ||
+      fail "built eBPF object is missing Point 3 map ${symbol}"
+  done
+  pass 'built eBPF object contains the cgroup_skb/egress hook and Point 3 maps'
+  # POINT 1 (P1-T6): both Titan exec-gate LSM sections and every map/ring the core
+  # takes by name at startup must exist in the shipped object. A source-only
+  # anchor would not catch a build that silently dropped a hook or a map.
+  for section in lsm/bprm_check_security lsm/mmap_file; do
+    grep -Eq "[[:space:]]${section}[[:space:]]" <<<"$ebpf_sections" ||
+      fail "built eBPF object has no ${section} section"
+  done
+  for symbol in TITAN_EXEC_STATE TITAN_EXEC_OFFSETS TITAN_EXEC_MODE TITAN_EXEC_POLICY \
+                TITAN_EXEC_EVENTS gedefense_titan_exec_bprm gedefense_titan_exec_mmap; do
+    grep -Fq -- "$symbol" <<<"$ebpf_symbols" ||
+      fail "built eBPF object is missing Titan exec-gate symbol ${symbol}"
+  done
+  pass 'built eBPF object contains both Titan exec-gate LSM hooks and the map/ring set'
+  # POINT 5 (P5-T4): the lockdown fastpath map and both drop/witness counters must
+  # exist in the shipped object. The core takes them by name at startup and fails
+  # loudly on a stale object; a source-only anchor would miss a dropped map.
+  for symbol in LOCKDOWN_STATE LOCKDOWN_DROPS LOCKDOWN_WITNESS_PASSES; do
+    grep -Fq -- "$symbol" <<<"$ebpf_symbols" ||
+      fail "built eBPF object is missing Point 5 lockdown symbol ${symbol}"
+  done
+  grep -Eq '[[:space:]]xdp[[:space:]]' <<<"$ebpf_sections" ||
+    fail 'built eBPF object has no XDP section (lockdown external-ingress drop)'
+  pass 'built eBPF object contains the Point 5 lockdown state map, counters and XDP drop path'
 fi
 
 printf 'SECURITY AUDIT PASS\n'

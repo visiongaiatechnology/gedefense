@@ -1,12 +1,17 @@
 [workspace]
 resolver = "2"
-members = ["gedefense-common", "gedefense-ebpf", "gedefense-core"]
+members = [
+    "gedefense-common",
+    "gedefense-ebpf",
+    "gedefense-core",
+    "gedefense-cell-helper",
+]
 
 [patch.crates-io]
 aya = { path = "vendor/aya" }
 
 [workspace.package]
-version = "5.2.0"
+version = "6.0.0"
 edition = "2021"
 license = "AGPL-3.0-only"
 authors = ["VisionGaia Technology"]

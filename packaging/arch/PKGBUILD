@@ -2,8 +2,8 @@
 # Maintainer: VisionGaia Technology
 
 pkgname=gedefense
-pkgver=5.2.0
-_release=5.2.0
+pkgver=6.0.0
+_release=6.0.0
 pkgrel=1
 pkgdesc='GeDefense Linux security platform: XDP, XDR, evidence and response plane'
 arch=('x86_64')
@@ -28,9 +28,12 @@ prepare() {
     control/go.mod \
     gateway/go.mod \
     rust/Cargo.lock \
+    rust/gedefense-cell-helper/Cargo.toml \
     malware-hashes.sha256 \
     packaging/systemd/gedefense-control.service \
+    packaging/systemd/gedefense-cell-helper.service \
     packaging/systemd/gedefense-provision.service \
+    packaging/templates/parser-profiles.conf \
     packaging/scripts/gedefense-provision \
     packaging/tests/install-smoke.sh; do
     [[ -f "${_source_root}/${required}" ]] || {
@@ -69,6 +72,13 @@ check() {
     grep -Fq -- "${symbol}" <<<"${ebpf_symbols}"
   done
 
+  # POINT 2: the privileged parser-cell helper is a release component; the
+  # package must not ship a stack that claims parser cells without it.
+  [[ -x "${_source_root}/dist/gedefense-cell-helper" ]] || {
+    printf 'Missing dist/gedefense-cell-helper (POINT 2 cell helper)\n' >&2
+    return 1
+  }
+
   # F-05 / CHAIN-005 install smoke test: validates the package contract and
   # exercises the first-boot provisioning script against the real access binary.
   bash "${_source_root}/packaging/tests/install-smoke.sh" \
@@ -84,6 +94,10 @@ package() {
     "${release_root}/bin/gedefense-access"
   install -Dm755 "${_source_root}/dist/gedefense-core" \
     "${release_root}/libexec/gedefense-core"
+  # POINT 2: privileged ephemeral parser-cell helper (root unit; the Go control
+  # plane never spawns cells itself).
+  install -Dm755 "${_source_root}/dist/gedefense-cell-helper" \
+    "${release_root}/libexec/gedefense-cell-helper"
   install -Dm644 "${_source_root}/dist/gedefense-ebpf" \
     "${release_root}/lib/gedefense/gedefense-ebpf"
 
@@ -140,6 +154,18 @@ package() {
   install -Dm644 \
     "${_source_root}/packaging/systemd/gedefense-control.service" \
     "${pkgdir}/usr/lib/systemd/system/gedefense-control.service"
+  # POINT 2: privileged parser-cell helper unit (@RELEASE@ placeholder rendered
+  # to the release symlink) plus the packaged header-only profile default. The
+  # live /etc profile is created by tmpfiles/provisioning only when missing, so
+  # operator-added profiles survive package upgrades.
+  sed \
+    -e 's#@RELEASE@#/opt/vgt/gedefense/current#g' \
+    "${_source_root}/packaging/systemd/gedefense-cell-helper.service" \
+    > "${srcdir}/gedefense-cell-helper.service"
+  install -Dm644 "${srcdir}/gedefense-cell-helper.service" \
+    "${pkgdir}/usr/lib/systemd/system/gedefense-cell-helper.service"
+  install -Dm644 "${_source_root}/packaging/templates/parser-profiles.conf" \
+    "${pkgdir}/usr/share/gedefense/parser-profiles.conf"
 
   sed \
     -e 's#@RELEASE@#/opt/vgt/gedefense/current#g' \

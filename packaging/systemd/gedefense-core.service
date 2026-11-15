@@ -12,6 +12,7 @@ User=root
 Group=gedefense
 RuntimeDirectory=vgt-gedefense
 RuntimeDirectoryMode=0750
+RuntimeDirectoryPreserve=yes
 ExecStart=/opt/vgt/gedefense/current/libexec/gedefense-core --interface=auto --bpf-object=/opt/vgt/gedefense/current/lib/gedefense/gedefense-ebpf --socket=/run/vgt-gedefense/core.sock --scan-socket=/run/gedefense-scan/scan.sock --auth-key=/etc/vgt/gedefense/secrets/core-ipc.key --storage-key=/etc/vgt/gedefense/secrets/storage-master.key --quarantine-dir=/var/lib/vgt/gedefense/quarantine/objects --canary-root=/var/lib/vgt/gedefense/canaries --control-user=gedefense --malware-hashes=/etc/vgt/gedefense/malware-hashes.sha256
 Restart=on-failure
 RestartSec=3s
@@ -53,6 +54,29 @@ ReadWritePaths=-/proc/sys/net/ipv6/conf/all/accept_redirects -/proc/sys/net/ipv6
 # single node is granted explicitly instead of weakening the sandbox for all of
 # /proc/sys. The "-" prefix keeps hosts without MPTCP support starting cleanly.
 ReadWritePaths=-/proc/sys/net/mptcp/enabled
+# POINT 5 (docs/POINT5-LOCKDOWN.md §8): deterministic, exact writable nodes for
+# the Emergency Lockdown phases. ProtectKernelTunables=true makes /sys and
+# /proc/sys read-only for the service, so the USB/Thunderbolt authorized /
+# drivers_autoprobe policy (DMA/hotplug defense) and the reversible hardening
+# sysctls need explicit single-node exceptions instead of widening the sandbox.
+# Minimum privilege: no new capability, no AddressFamily, no SystemCallFilter
+# change; modules_disabled is granted only for the explicit operator phase and
+# is never written by the automatic trigger path.
+# Risk note: /sys/bus/usb/devices and /sys/bus/thunderbolt/devices are sysfs
+# symlinks into the device tree, so the kernel resolves every per-device
+# "authorized" write to /sys/devices/**. A ReadWritePaths grant on the bus
+# symlink alone would leave the resolved target read-only (EROFS) and the
+# policy would fail safe but be ineffective. /sys/devices must therefore be
+# writable as well. That is deliberately broader than the bus paths; the core
+# only writes the allowlisted authorized/drivers_autoprobe attributes and no
+# capability, address-family or syscall contract is widened.
+ReadWritePaths=-/sys/bus/usb -/sys/bus/thunderbolt/devices -/sys/devices
+ReadWritePaths=-/proc/sys/kernel/kexec_load_disabled -/proc/sys/kernel/sysrq -/proc/sys/kernel/modules_disabled
+# The kernel lockdown latch (/var/lib/vgt/gedefense/LOCKDOWN.state) is persisted
+# atomically: temporary file plus rename in the same 1770 root:gedefense directory
+# provisioned by tmpfiles. Granting the directory (not a non-existent file) is the
+# minimal write that also lets the core create the document on first trigger.
+ReadWritePaths=/var/lib/vgt/gedefense
 UMask=0077
 
 [Install]

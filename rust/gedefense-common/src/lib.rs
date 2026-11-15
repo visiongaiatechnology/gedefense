@@ -13,6 +13,15 @@ pub const CANARY_PATH_BYTES: usize = 64;
 pub const INGRESS_EVENT_WIRE_BYTES: usize = 64;
 pub const NETWORK_PROTOCOL_TCP: u8 = 6;
 
+mod styx_flow;
+pub use styx_flow::*;
+
+mod titan_exec;
+pub use titan_exec::*;
+
+mod lockdown;
+pub use lockdown::*;
+
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct DeceptionAccessEvent {

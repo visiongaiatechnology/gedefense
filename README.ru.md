@@ -7,8 +7,8 @@
 ### Linux Security Fabric - Your Entenprise System
 
 [![License](https://img.shields.io/badge/License-AGPL--3.0--only-blue?style=for-the-badge)](https://www.gnu.org/licenses/agpl-3.0)
-[![Version](https://img.shields.io/badge/Version-5.2.0-orange?style=for-the-badge)](#)
-[![Status](https://img.shields.io/badge/Status-Release_v5.2.0-yellow?style=for-the-badge)](#)
+[![Version](https://img.shields.io/badge/Version-6.0.0-orange?style=for-the-badge)](#)
+[![Status](https://img.shields.io/badge/Status-Release_V6_(6.0.0)-brightgreen?style=for-the-badge)](#)
 [![Installer](https://img.shields.io/badge/Installer-Universal_Linux-green?style=for-the-badge)](#-быстрый-старт)
 [![Platform](https://img.shields.io/badge/Platform-Linux_x86__64-lightgrey?style=for-the-badge&logo=linux)](#)
 [![Data Plane](https://img.shields.io/badge/Data_Plane-Rust_eBPF%2FXDP-red?style=for-the-badge&logo=rust)](#-архитектура)
@@ -18,7 +18,7 @@
 [![Linux](https://img.shields.io/badge/Linux-APT%20%7C%20DNF%20%7C%20pacman%20%7C%20Zypper-cyan?style=for-the-badge&logo=linux)](#-универсальная-интеграция-с-linux)
 [![AstraeaOS](https://img.shields.io/badge/AstraeaOS-Native_Ready-7de3ff?style=for-the-badge)](#-интеграция-с-astraeaos)
 [![Architecture](https://img.shields.io/badge/Architecture-Specification-9cf?style=for-the-badge&logo=blueprint)](ARCHITECTURE.md)
-[![Security Audit](https://img.shields.io/badge/Security-Audit_Beta_5-success?style=for-the-badge&logo=shield)](SECURITY.md)
+[![Security Audit](https://img.shields.io/badge/Security-Audit_V6-success?style=for-the-badge&logo=shield)](SECURITY.md)
 [![VGT](https://img.shields.io/badge/VGT-VisionGaiaTechnology-cyan?style=for-the-badge)](https://visiongaiatechnology.de)
 
 **СЕТЕВАЯ ЗАЩИТА НА УРОВНЕ ЯДРА · ХОСТОВЫЙ XDR · ЗАШИФРОВАННЫЕ ДОКАЗАТЕЛЬСТВА · ОБРАТИМОЕ УЖЕСТОЧЕНИЕ (HARDENING) · БЕЗ ОБЛАЧНОЙ ПАНЕЛИ УПРАВЛЕНИЯ**
@@ -30,19 +30,16 @@
 
 <br />
 
-⬇️ **Прямые ссылки на установщики (v5.2.0):**  
-[**OneClick-установщик (`.run`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v5.2.0/VGT_GeDefense_Beta_v5_5.2.0_OneClick.run) · [`.sha256`](https://github.com/visiongaiatechnology/gedefense/releases/download/v5.2.0/VGT_GeDefense_Beta_v5_5.2.0_OneClick.run.sha256) · [**Desktop Tray (`.run`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v5.2.0/GeDefense-5.2.0-Desktop-OneClick.run) · [`.sha256`](https://github.com/visiongaiatechnology/gedefense/releases/download/v5.2.0/GeDefense-5.2.0-Desktop-OneClick.run.sha256) · [**Исходный код (`.zip`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v5.2.0/VGT_GeDefense_Beta_v5_5.2.0_Source.zip) · [**Релиз v5.2.0**](https://github.com/visiongaiatechnology/gedefense/releases/tag/v5.2.0) · [Быстрый старт](#-быстрый-старт)
+⬇️ **Прямые ссылки на установщики (v6.0.0 / V6):**  
+[**OneClick-установщик (`.run`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.0.0/VGT_GeDefense_V6_6.0.0_OneClick.run) · [`.sha256`](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.0.0/VGT_GeDefense_V6_6.0.0_OneClick.run.sha256) · [**Desktop Tray (`.run`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.0.0/GeDefense-6.0.0-Desktop-OneClick.run) · [`.sha256`](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.0.0/GeDefense-6.0.0-Desktop-OneClick.run.sha256) · [**Исходный код (`.zip`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.0.0/VGT_GeDefense_V6_6.0.0_Source.zip) · [**Релиз v6.0.0**](https://github.com/visiongaiatechnology/gedefense/releases/tag/v6.0.0) · [Быстрый старт](#-быстрый-старт)
 
 </div>
 
-> **Обновление 5.2.0 (14.11.2026) — Security Release**
+> **GeDefense V6 (`6.0.0`, 15.11.2026) — Архитектура защиты от шпионского ПО и суверенитета хоста**
 >
-> - **Релиз безопасности:** независимый глубокий аудит VGT-AUDIT-20261114-GD51 выявил 36 находок в шести цепочках атак и заблокировал release-gate 5.1.0-beta.3; 5.2.0 устраняет все 36 находок в установщике/цепочке поставок, аттестации загрузки, шлюзе/аутентификации, политике/криминалистике/хранилище, API/L7, фидах/airlock, самозащите, трее рабочего стола, ядре Rust и eBPF. Подробности в `CHANGELOG.md` и `RELEASE-NOTES.md`.
->
-> - **Самовосстанавливающийся threat-intelligence фид:** отсутствующий trust anchor подписи фида создаётся из локального ключа оператора (opt-in) через rotation-safe маркер; просроченные манифесты переподписываются. Ротированный ключ со старым маркером остаётся fail-closed.
-> - **CVE-2026-98432 / CVE-2026-99999:** управляемые меры user-namespace и MPTCP активно удерживаются; экспозиция ядра остаётся видимой до установки исправления Ubuntu.
-> - **Mitigation guard:** пробы с ограниченными правами теперь явно помечаются как UNOBSERVED, а не пропускаются молча, и не вызывают ложный auto-revert.
-> - **Подписанный релиз:** 5.2.0 поставляется как подписанный OneClick-установщик и воспроизводимый архив исходников.
+> - **Пятипунктная архитектура anti-spyware:** **StyX Egress + обнаружение C2/Beacon**, **Titan + eBPF-LSM Exec/Library Gate**, **эфемерные ячейки парсинга** (`gedefense-cell-helper.service`), **внешний Witness-клиент** и **Emergency Lockdown** поверх усиленной базы 5.2.0 (Settings **v17**).
+> - **Безопасная авто-активация при постановке на охрану (`enforce`, без отдельного V6 Web UI):** В `observe` / `canary` модули V6 отключены. При переходе в **`enforce`** Go Control автоматически включает безопасный базовый профиль (**StyX=`monitor`**, **Titan Exec=`contain`**, **Parser Cells=`enabled`**, **Lockdown=`enabled` + `auto_arm`**), тогда как **Witness** остаётся opt-in, а ручные переопределения через API сохраняются.
+> - **Честная телеметрия и совместимость с Kernel 7.0:** Честно сообщает `inactive` без `bpf` в `/sys/kernel/security/lsm`, поддерживает split-`ctime` BTF в Kernel 7.0.x, отклоняет комбинированные BadUSB-устройства, замораживает брокеры по 15-байтовому `/proc/*/comm`, блокирует SSRF/DNS-rebinding в Witness и фильтрует переменные загрузчика в `gedefense-cell-helper`.
 
 
 <img width="1536" height="1024" alt="GeDefense_ Real Security, Many Feathers" src="https://github.com/user-attachments/assets/dc56735e-b2b2-45c9-a363-97554a92ae0a" />
@@ -62,25 +59,46 @@ GeDefense — единая локальная security-fabric для Linux, Wind
 | [![Android](https://img.shields.io/badge/Android-22D3EE?style=flat-square&logo=android&logoColor=0B1220)](https://github.com/visiongaiatechnology/gedefenseandroid) **GeDefense Android** | Нативная платформа безопасности Android: локальное VPN-принуждение, телеметрия конечных точек, корреляция XDR/EDR, threat intelligence, анализ рисков приложений и зашифрованные доказательства. |
 | [![WordPress](https://img.shields.io/badge/WordPress-1F8FFF?style=flat-square&logo=wordpress&logoColor=ffffff)](https://github.com/visiongaiatechnology/gedefensewp) **GeDefense WordPress** | Open-core набор AGPL-3.0 для WordPress: ZEUS WAF, глубокая проверка пакетов AEGIS, TRINITY XDR, блокировка ThroneGuard и маскировка админки HADES. |
 
-## 🆕 Выпуск 5.1.0-beta.3 — самовосстановление фидов, реакция на CVE и подписанный релиз (29.10.2026)
+## 🚀 GeDefense V6 (`6.0.0`) — Что нового, ПК vs. Сервер и взаимодействие модулей
 
-Подписанный threat-intelligence фид теперь сам восстанавливает отсутствующий trust anchor/bootstrap манифеста, управляемые меры user-namespace и MPTCP удерживаются вместе, а релизные артефакты подписаны новым офлайн-ключом. Подробности в `CHANGELOG.md`, `RELEASE-NOTES.md` и последних release-активах.
+> [!NOTE]
+> **Отдельный Web UI для V6 пока отсутствует — безопасная авто-активация при `enforce`:**  
+> Все пять подсистем V6 управляются через Runtime Settings **v17** и REST API (`/api/v1/styx/...`, `/api/v1/titan/exec/...`, `/api/v1/parser-cells/...`, `/api/v1/lockdown/...`, `/api/v1/witness/...`), без выделенных панелей Web UI в релизе 6.0.0. В режимах `observe` и `canary` подсистемы V6 выключены. **Как только GeDefense переводится в `enforce` (или запускается в `enforce`), Go Control автоматически включает безопасный профиль:** `styx=monitor` (+ flow-телеметрия), `titan_exec=contain`, `parser_cells=enabled` и `lockdown=enabled` (`auto_arm=true`, с сохранением loopback и root-восстановления). **Witness** остаётся opt-in (требует внешний сервер и pinning). Ручные настройки через API сохраняются после перезапуска.
 
-## 🆕 Выпуск 5.1.0-beta.2 — усиление безопасности (27.10.2026)
+### 🆕 Что нового в V6 (`6.0.0`)
 
-Security-хотфикс для 5.1.0-beta.1. **Обновление рекомендуется до публикации моста.**
+1. **Пункт 1 — Titan + eBPF-LSM Exec/Library Gate (`docs/POINT1-TITAN-EXEC-GATE.md`):**
+   Контроль `bprm_check_security` и `mmap_file` (`PROT_EXEC`) на уровне eBPF LSM с живыми BTF-смещениями ядра (включая split-`ctime` в Kernel 7.0) и синхронизацией политик через VGT3. Блокирует/аудирует `memfd_create`, unlinked-бинарники, исполнение из `tmpfs` и `W^X`. Без активного `bpf` в LSM честно сообщает `inactive`.
+2. **Пункт 2 — Эфемерные ячейки парсинга (`docs/POINT2-PARSER-CELLS.md`):**
+   Изолированные одноразовые песочницы (Qubes-light) через выделенный root-helper `gedefense-cell-helper.service` и HMAC-сокет `VGTGC2`: пространства имён user/mount/pid/net/ipc/uts, приватный `tmpfs` + `pivot_root`, seccomp (`AF_UNIX`-only), запрет X11, фильтрация `LD_*`, лимиты `cgroup v2`, sealed-`memfd` и авто-уничтожение.
+3. **Пункт 3 — StyX Egress и обнаружение C2/Beacon (`docs/POINT3-EGRESS-BEACON.md`):**
+   Egress-движок в `cgroup_skb/egress` с LPM-списками, защитой от обхода через IPv4-mapped IPv6, DNS-pinning, кольцевым буфером `styx_flow`, анализом периодичности (Welford CV) и учётом эксфильтрации (нулевой оверхед при `mode=off`).
+4. **Пункт 4 — Внешний Witness-клиент (`docs/POINT4-WITNESS.md`):**
+   Подписанные Ed25519 контрольные точки журнала (`ledger_epoch` против ложных тревог ротации), защищённый HTTPS-клиент на порт 443 (блокировка SSRF/DNS-rebinding, SPKI + Ed25519 receipt pinning, опционально mTLS, шифрованный outbox) и офлайн-экспорт `vgtw1`.
+5. **Пункт 5 — Emergency Lockdown (`docs/POINT5-LOCKDOWN.md`):**
+   Мгновенная блокировка XDP/TC egress (`LOCKDOWN_STATE` с сохранением loopback-доступа), строгая фильтрация BadUSB (отклонение составных `HID+Storage`/`HID+CDC`), заморозка секрет-брокеров (`SIGSTOP`, с учётом 15-байтового усечения `/proc/*/comm`) и снятие только оператором.
+6. **Усиленная база 5.2.0:**
+   Включает все 36 исправлений аудита **VGT-AUDIT-20261114-GD51** (предпроверка Ed25519 в OneClick, Argon2id-миграция, строгий AEAD/HistoryMAC, plain-text Qt-трей, атомарный коммит карантина Rust и точный учёт пакетов eBPF).
 
-- **Область trusted editor сужена:** только точные VGT preview/save действия и маршруты сохранения постов могут подавлять семейство XSS-ложных срабатываний. SQLi, LFI, PHP-tag и все остальные семейства, а также проверки протокола, кодирования, загрузок и ответов остаются активными.
-- **Чувствительные лимиты L7 сохраняются для master-lease:** login/XML-RPC и другие чувствительные маршруты больше не обходятся; настроенный ослабленный клиентский бюджет CMS теперь применяется вместо полного обхода.
-- **Усиление revocation/replay:** отзыв сохраняется после перезапуска; события старше watermark отзыва игнорируются; loopback master leases отклоняются; границы lease/профилей/событий и fail-closed ужесточены.
-- **Усиление WordPress-моста:** требуется разблокированная master-сессия ThroneGuard, отклоняются слабые/default/дублирующиеся соли, отправляется logout-revocation и отклоняются loopback master events; обычный администратор не может назначить мастера при уже существующем.
-- **Усиление installer:** каталоги gateway создаются до secrets/TLS, python3 устанавливается до trust-проверки, допускаются только `prebuilt`/`source-signed`, ownership при rollback исправлен.
-- **ALPHA:** мост GeDefense WP ↔ Linux остаётся alpha-функцией, не готовой для production. См. `SECURITY.md` и `CHANGELOG.md`.
+### 💻 Настольный ПК / Рабочая станция vs. 🖥️ Linux-сервер
+
+| Среда | Ключевые угрозы | Что делает V6 при `enforce` |
+| --- | --- | --- |
+| **Linux ПК / Рабочая станция** | Zero-click уязвимости в парсерах документов/медиа, BadUSB-импланты, дамп ключей брокеров, беcфайловая нагрузка в памяти (`memfd`/`PROT_EXEC`), скрытые C2-маяки | **Parser Cells** изолируют опасный парсинг; **Lockdown** блокирует составные BadUSB и замораживает брокеры ключей; **StyX (`monitor`)** выявляет периодические C2-маяки; **Titan Exec (`contain`)** контролирует unlinked/`memfd` (при активном `bpf` LSM) |
+| **Linux-сервер (Web / API / Compute)** | Пост-RCE закрепление в памяти, исходящий C2 и утечка данных из скомпрометированных cgroup, запуск вне пакетных путей, подмена логов | **Titan Exec (`contain`/`strict` через `StrictCgroups`)** ограничивает рабочие cgroup; **StyX** отслеживает egress/маяки по cgroup без замедления L7-ingress; **Lockdown** моментально перекрывает XDP/TC egress при срабатывании Morpheus/Canary; **Witness** фиксирует доказательства вовне |
+
+### 🔗 Взаимодействие с текущими модулями GeDefense
+
+- **XDP / TC Data Plane (`gedefense-ebpf` & `gedefense-core`):** Общий бинарный контракт и карты eBPF с **StyX** (`cgroup_skb/egress`) и **Lockdown** (`LOCKDOWN_STATE`).
+- **Host XDR & Titan FIM:** События `TitanExecEvent`, корреляции `styx_flow`, burn-события Parser Cells и тревоги Witness поступают в единый конвейер верификации XDR.
+- **Kinetic / TransactionEngine / CellGuard:** Изоляция и заморозка cgroup остаются обратимыми, доказательными и подчинёнными `ReleaseController`.
+- **EvidenceLedger:** Все события V6 фиксируются в цепочке AES-256-GCM/Ed25519 с защитой `ledger_epoch` при ротации.
+- **L7 WAF / Threat Intel / Hardening Guard:** Продолжают защищать HTTP/CMS и sysctl, пока V6 закрывает исполнение кода, парсинг, исходящий трафик и физический периметр.
 
 ---
 
 > [!WARNING]
-> **ПУБЛИЧНАЯ БЕТА — НЕ ДЛЯ ПРОИЗВОДСТВА (Версия 5.2.0).**  
+> **ПУБЛИЧНАЯ БЕТА — НЕ ДЛЯ ПРОИЗВОДСТВА (Версия 6.0.0 / V6).**  
 > GeDefense Titan и Linux Security Fabric находятся в активной разработке.
 > Бета предназначена только для тестовых и квалификационных хостов.
 > Архитектура проверяется автоматическими release-gates, но публичная
@@ -494,17 +512,17 @@ Observe ──→ Canary ──→ Enforce
 
 ```bash
 # Загрузить инсталлятор
-wget https://github.com/visiongaiatechnology/gedefense/releases/download/v5.2.0/VGT_GeDefense_Beta_v5_5.2.0_OneClick.run
+wget https://github.com/visiongaiatechnology/gedefense/releases/download/v6.0.0/VGT_GeDefense_V6_6.0.0_OneClick.run
 
 # Проверить SHA-256
-sha256sum --check VGT_GeDefense_Beta_v5_5.2.0_OneClick.run.sha256
+sha256sum --check VGT_GeDefense_V6_6.0.0_OneClick.run.sha256
 
 # Установить (требуются права root)
-chmod 700 VGT_GeDefense_Beta_v5_5.2.0_OneClick.run
-sudo ./VGT_GeDefense_Beta_v5_5.2.0_OneClick.run
+chmod 700 VGT_GeDefense_V6_6.0.0_OneClick.run
+sudo ./VGT_GeDefense_V6_6.0.0_OneClick.run
 ```
 
-> **Доступность инсталлятора:** Официальные автономные установочные ассеты v5.2.0 (`VGT_GeDefense_Beta_v5_5.2.0_OneClick.run`) будут опубликованы вместе с подписанным GitHub Release.
+> **Доступность инсталлятора:** Официальные автономные установочные ассеты v6.0.0 (`VGT_GeDefense_V6_6.0.0_OneClick.run`) будут опубликованы вместе с подписанным GitHub Release.
 
 > Инсталлятор и контрольные суммы публикуются только после успешного прохождения всех этапов GitHub CI и квалификационных проверок целевого хоста. Никогда не запускайте непроверенные файлы RUN.
 
@@ -538,7 +556,7 @@ sudo ./VGT_GeDefense_Beta_v5_5.2.0_OneClick.run
 
 ---
 
-## 🚧 Известные ограничения (5.2.0)
+## 🚧 Известные ограничения (6.0.0 / V6)
 
 - Отсутствие поддержки Swarm / Mesh
 - Отсутствие разгрузки QUIC
@@ -551,10 +569,21 @@ sudo ./VGT_GeDefense_Beta_v5_5.2.0_OneClick.run
 - Отложена изолированная служба киберобмана (Isolated Deception Service)
 - Замена защищённого релизного компонента сообщается с высокой серьёзностью и не разоружает платформу; ротация реестров требует, чтобы её архивный каталог принадлежал службе и имел режим `0700`, и отказывается работать, вместо того чтобы писать в общий каталог
 - Ядро Rust считает и протоколирует пропущенные записи ингресса, но пока не сообщает их число в ответе о состоянии, поэтому показатель виден в журнале службы, а не на панели
+- **Отсутствие выделенного V6 Web UI:** StyX, Titan Exec Gate, Parser Cells, Emergency Lockdown и Witness настраиваются через Settings v17 и REST API; при переходе в `enforce` автоматически включается безопасный профиль (Witness остаётся opt-in).
+- **Требование `bpf` LSM (Пункт 1 и Cell Socket LSM):** Принудительная блокировка (`bprm_check_security` / `mmap_file`) требует `bpf` в `/sys/kernel/security/lsm` (`lsm=...,bpf` + перезагрузка); иначе статус честно остаётся `inactive`.
+- **Parser Cells (Пункт 2):** Поставляется с пустым списком профилей парсеров (настраивается оператором); проброс Wayland/PipeWire отнесён к Phase 2.
+- **Witness и TPM-аттестация (Пункт 4):** Включает клиент Mode A и офлайн-пакеты `vgtw1` (без внешнего Witness-сервера в репозитории); без TPM2/UEFI отчитывается как `quote_kind="none"` и `key_binding="software"`.
+- **Границы Emergency Lockdown Phase 2 (Пункт 5):** Приостановка LUKS, блокировка графической сессии и зануление RAM перенесены в Phase 2 (`unsupported`); управление USB/TB sysfs требует прав доступа в `gedefense-core.service`.
 
 ---
 
 ## 📋 Журнал изменений (Changelog)
+
+### v6.0.0 — GeDefense V6: Архитектура защиты от шпионского ПО и суверенитета *(Текущий релиз — 15.11.2026)*
+
+- **Пятипунктная архитектура anti-spyware:** Добавлены StyX Egress + C2/Beacon (Пункт 3), Titan + eBPF-LSM Exec/Library Gate с динамическими BTF-смещениями и поддержкой split-`ctime` на Kernel 7.0 (Пункт 1), эфемерные ячейки парсинга через `gedefense-cell-helper.service` (Пункт 2), внешний Witness-клиент с `ledger_epoch` и SSRF-защитой (Пункт 4) и Emergency Lockdown с XDP/TC drop latch, фильтром BadUSB и заморозкой брокеров по 15-байтовому `comm` (Пункт 5).
+- **Безопасная авто-активация при `enforce`:** Поскольку отдельные панели V6 Web UI ещё не добавлены, при постановке на охрану (`enforce`) автоматически включается безопасный профиль (`styx=monitor`, `titan_exec=contain`, `parser_cells=enabled`, `lockdown=enabled+auto_arm`), `witness` остаётся opt-in, а ручные переопределения API сохраняются.
+- **Интегрированная база 5.2.0:** Включает все 36 исправлений аудита `VGT-AUDIT-20261114-GD51`, проверку Ed25519 в OneClick, Argon2id-миграцию и подписанные артефакты.
 
 ### v5.0.0-beta.1 — Автоматическая изоляция Gaia Cells, защищённая kernel-митигация и оперативное PHP/L7-усиление *(Предыдущая версия)*
 
@@ -820,6 +849,6 @@ sudo python3 scripts/update-geoip-db.py /var/lib/vgt/gedefense/geoip.csv
 
 [![VGT](https://img.shields.io/badge/VisionGaia-Technology-cyan?style=for-the-badge)](https://visiongaiatechnology.de)
 
-*VGT GeDefense 5.2.0 — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
+*VGT GeDefense 6.0.0 (V6) — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
 
 </div>

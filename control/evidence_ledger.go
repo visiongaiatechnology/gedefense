@@ -61,6 +61,11 @@ type evidenceCheckpoint struct {
 	Version  int    `json:"version"`
 	Sequence uint64 `json:"sequence"`
 	HeadHash string `json:"head_hash"`
+	// LedgerEpoch is the rotation generation of the chain this checkpoint seals. The field is
+	// additive: a checkpoint written before it existed decodes as epoch 0, so every old .head
+	// stays readable. A rotation increments it, which is what lets an out-of-band witness tell a
+	// legitimate sequence reset apart from a rollback or a fork (docs/POINT4-WITNESS.md §2, §3).
+	LedgerEpoch uint64 `json:"ledger_epoch,omitempty"`
 }
 
 // errEvidenceBudgetExhausted is a capacity condition, not an integrity condition.
@@ -94,6 +99,11 @@ type EvidenceStatus struct {
 	VerifyScope string `json:"verify_scope,omitempty"`
 	// FullVerifiedAt is when the whole history was last covered.
 	FullVerifiedAt *time.Time `json:"full_verified_at,omitempty"`
+	// LedgerEpoch is the persistent rotation generation and PublicKeyFingerprint is the
+	// SHA-256 over the Ed25519 public key. Both are additive witness fields: they identify a
+	// chain generation and a signing identity without exposing key material or content.
+	LedgerEpoch          uint64 `json:"ledger_epoch"`
+	PublicKeyFingerprint string `json:"public_key_fingerprint,omitempty"`
 }
 
 type EvidenceLedger struct {
@@ -128,6 +138,10 @@ type EvidenceLedger struct {
 	// verification pass compares against after its walk, so a rotation that happened while the
 	// pass ran is told apart from damage: the pass must not quarantine a chain it never read.
 	generation uint64
+	// ledgerEpoch is the rotation generation persisted in the authenticated checkpoint. It is
+	// read from that checkpoint at construction, incremented when a rotation replaces the chain,
+	// and written with every append, so a witness can order checkpoints across rotations.
+	ledgerEpoch uint64
 }
 
 func NewEvidenceLedger(path, keyPath, storageKeyPath, nodeName string, maxBytes int64) (*EvidenceLedger, error) {
@@ -212,6 +226,17 @@ func NewEvidenceLedger(path, keyPath, storageKeyPath, nodeName string, maxBytes 
 	ledger.expectedSize = size
 	ledger.integrityErr = verifyErr
 	ledger.verifyScope = scope
+	if verifyErr == nil {
+		// The epoch belongs to the authenticated checkpoint, not to the chain walk, so it is read
+		// from the checkpoint the bounded verification just accepted. A missing checkpoint is the
+		// normal empty-ledger state and means epoch 0; any other read failure is an integrity
+		// condition and must not silently become a witness-visible epoch.
+		if checkpoint, checkpointErr := readEvidenceCheckpoint(ledger.headPath, storage); checkpointErr == nil {
+			ledger.ledgerEpoch = checkpoint.LedgerEpoch
+		} else if !errors.Is(checkpointErr, os.ErrNotExist) {
+			ledger.integrityErr = checkpointErr
+		}
+	}
 	if scope == "full" && sequence > 0 && verifyErr == nil {
 		// The bounded window covered the whole chain, so coverage is complete and the
 		// authenticated watermark may say so. Later passes then only have to cover what is
@@ -467,7 +492,7 @@ func verifyEvidenceChain(path string, publicKey ed25519.PublicKey, storage *Stor
 //
 // It is the operator's and the first-run path, not a startup path: see
 // verifyEvidenceFilesBounded for what runs when the service comes up.
-func verifyEvidenceFiles(path, headPath string, publicKey ed25519.PublicKey, storage *StorageCipher, maxBytes int64) (string, uint64, []EvidenceRecord, int64, error) {
+func verifyEvidenceFiles(path, headPath string, publicKey ed25519.PublicKey, storage *StorageCipher, maxBytes int64, ledgerEpoch uint64) (string, uint64, []EvidenceRecord, int64, error) {
 	if _, err := os.Lstat(path); errors.Is(err, os.ErrNotExist) {
 		if _, headErr := os.Lstat(headPath); !errors.Is(headErr, os.ErrNotExist) {
 			if headErr != nil {
@@ -481,7 +506,7 @@ func verifyEvidenceFiles(path, headPath string, publicKey ed25519.PublicKey, sto
 	if err != nil {
 		return "", 0, nil, size, err
 	}
-	if err := verifyEvidenceCheckpoint(headPath, sequence, head, storage); err != nil {
+	if err := verifyEvidenceCheckpoint(headPath, sequence, head, ledgerEpoch, storage); err != nil {
 		return "", 0, nil, size, err
 	}
 	return head, sequence, recent, size, nil
@@ -687,7 +712,7 @@ func recoverUnsealedEvidenceTail(path, headPath string, publicKey ed25519.Public
 	if line != nil {
 		if record, decodeErr := decodeEvidenceRecord(line); decodeErr == nil {
 			if verifyErr := verifyEvidenceRecord(record, sequence, checkpoint.HeadHash, publicKey); verifyErr == nil {
-				if err := writeEvidenceCheckpoint(headPath, sequence, record.Hash, storage); err != nil {
+				if err := writeEvidenceCheckpoint(headPath, sequence, record.Hash, checkpoint.LedgerEpoch, storage); err != nil {
 					return "", fmt.Errorf("seal the recovered record: %w", err)
 				}
 				return "adopted", nil
@@ -829,7 +854,7 @@ func verifyEvidenceFilesBounded(path, headPath string, publicKey ed25519.PublicK
 	return previous, lines, recent, info.Size(), scope, nil
 }
 
-func verifyEvidenceCheckpoint(path string, sequence uint64, headHash string, storage *StorageCipher) error {
+func verifyEvidenceCheckpoint(path string, sequence uint64, headHash string, ledgerEpoch uint64, storage *StorageCipher) error {
 	data, err := readBoundedPrivateFile(path, 128<<10)
 	if errors.Is(err, os.ErrNotExist) {
 		if sequence == 0 && headHash == "" {
@@ -861,14 +886,14 @@ func verifyEvidenceCheckpoint(path string, sequence uint64, headHash string, sto
 	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
 		return errors.New("evidence checkpoint contains trailing data")
 	}
-	if checkpoint.Version != evidenceRecordVersion || checkpoint.Sequence != sequence || checkpoint.HeadHash != headHash {
+	if checkpoint.Version != evidenceRecordVersion || checkpoint.Sequence != sequence || checkpoint.HeadHash != headHash || checkpoint.LedgerEpoch != ledgerEpoch {
 		return errors.New("evidence checkpoint does not match verified ledger head")
 	}
 	return nil
 }
 
-func writeEvidenceCheckpoint(path string, sequence uint64, headHash string, storage *StorageCipher) error {
-	data, err := json.Marshal(evidenceCheckpoint{Version: evidenceRecordVersion, Sequence: sequence, HeadHash: headHash})
+func writeEvidenceCheckpoint(path string, sequence uint64, headHash string, ledgerEpoch uint64, storage *StorageCipher) error {
+	data, err := json.Marshal(evidenceCheckpoint{Version: evidenceRecordVersion, Sequence: sequence, HeadHash: headHash, LedgerEpoch: ledgerEpoch})
 	if err != nil {
 		return err
 	}
@@ -946,7 +971,7 @@ func (l *EvidenceLedger) Append(record EvidenceRecord) (EvidenceRecord, error) {
 	if closeErr != nil {
 		return EvidenceRecord{}, closeErr
 	}
-	if err := writeEvidenceCheckpoint(l.headPath, record.Sequence, record.Hash, l.crypto); err != nil {
+	if err := writeEvidenceCheckpoint(l.headPath, record.Sequence, record.Hash, l.ledgerEpoch, l.crypto); err != nil {
 		l.integrityErr = fmt.Errorf("evidence checkpoint commit failed: %w", err)
 		return EvidenceRecord{}, l.integrityErr
 	}
@@ -964,7 +989,7 @@ func (l *EvidenceLedger) verifyUnchangedLocked() error {
 	if err := rejectSymlink(l.path); err != nil {
 		return err
 	}
-	if err := verifyEvidenceCheckpoint(l.headPath, l.sequence, l.headHash, l.crypto); err != nil {
+	if err := verifyEvidenceCheckpoint(l.headPath, l.sequence, l.headHash, l.ledgerEpoch, l.crypto); err != nil {
 		return err
 	}
 	info, err := os.Lstat(l.path)
@@ -1035,7 +1060,7 @@ func (l *EvidenceLedger) Verify() error {
 	// boot as "exceeds its size budget" - the ledger they had just been told to enlarge,
 	// refused by the process that was told to accept it. One budget, read the same way
 	// from both sides.
-	head, sequence, _, size, err := verifyEvidenceFiles(l.path, l.headPath, l.publicKey, l.crypto, l.effectiveMaxBytesLocked())
+	head, sequence, _, size, err := verifyEvidenceFiles(l.path, l.headPath, l.publicKey, l.crypto, l.effectiveMaxBytesLocked(), l.ledgerEpoch)
 	if err == nil && (head != l.headHash || sequence != l.sequence || size != l.expectedSize) {
 		err = errors.New("evidence ledger advanced outside the trusted writer")
 	}
@@ -1273,6 +1298,7 @@ func (l *EvidenceLedger) Status() EvidenceStatus {
 		HeadHash: l.headHash, PublicKey: hex.EncodeToString(l.publicKey),
 		MaxBytes: l.effectiveMaxBytesLocked(), StoredBytes: l.expectedSize,
 		VerifyScope: l.verifyScope, FullVerifiedAt: l.fullVerifiedAt,
+		LedgerEpoch: l.ledgerEpoch, PublicKeyFingerprint: evidencePublicKeyFingerprint(l.publicKey),
 	}
 	// The effective budget is reported, not the compiled-in one: an operator who raised
 	// the retention limit needs to see the limit that is actually in force.
@@ -1284,6 +1310,92 @@ func (l *EvidenceLedger) Status() EvidenceStatus {
 		status.Error = "evidence integrity unavailable"
 	}
 	return status
+}
+
+// EvidenceCheckpointView is one coherent, durable view of the ledger head as of one lock
+// acquisition. It is what an out-of-band witness checkpoint is built from.
+type EvidenceCheckpointView struct {
+	LedgerEpoch uint64 `json:"ledger_epoch"`
+	Sequence    uint64 `json:"sequence"`
+	HeadHash    string `json:"head_hash"`
+	// Records is the number of records in the live chain. A hash chain numbers its records, so
+	// it equals Sequence; it is reported separately because a witness protocol speaks of records.
+	Records              uint64 `json:"records"`
+	PublicKeyFingerprint string `json:"public_key_fingerprint"`
+}
+
+// Checkpoint returns the authenticated ledger head as one atomic, durable view.
+//
+// Everything a witness needs is read under a single l.mu acquisition, so the epoch, sequence,
+// head and record count always belong together. Append commits the .head checkpoint before it
+// advances the in-memory head, so the in-memory head is already durable; this method re-verifies
+// that the file still seals it instead of trusting that ordering blindly. A ledger whose head
+// moved outside the trusted writer, or one that is quarantined, refuses instead of returning a
+// head a witness would record as fact.
+func (l *EvidenceLedger) Checkpoint() (EvidenceCheckpointView, error) {
+	if l == nil {
+		return EvidenceCheckpointView{}, errors.New("evidence ledger is not configured")
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.integrityErr != nil {
+		return EvidenceCheckpointView{}, fmt.Errorf("evidence ledger is quarantined: %w", l.integrityErr)
+	}
+	if err := l.verifyUnchangedLocked(); err != nil {
+		l.integrityErr = err
+		return EvidenceCheckpointView{}, err
+	}
+	fingerprint := evidencePublicKeyFingerprint(l.publicKey)
+	if fingerprint == "" {
+		err := errors.New("evidence public key is not available")
+		l.integrityErr = err
+		return EvidenceCheckpointView{}, err
+	}
+	return EvidenceCheckpointView{
+		LedgerEpoch: l.ledgerEpoch, Sequence: l.sequence, HeadHash: l.headHash,
+		Records: l.sequence, PublicKeyFingerprint: fingerprint,
+	}, nil
+}
+
+// Head is the compact alias for Checkpoint. It exists because a caller that only needs the head
+// should not have to know which of the two names is canonical.
+func (l *EvidenceLedger) Head() (EvidenceCheckpointView, error) {
+	return l.Checkpoint()
+}
+
+// PublicKeyFingerprint returns SHA-256 over the Ed25519 public key as 64 lowercase hex chars.
+// It identifies the evidence signing key without exporting any key material.
+func (l *EvidenceLedger) PublicKeyFingerprint() (string, error) {
+	if l == nil {
+		return "", errors.New("evidence ledger is not configured")
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	fingerprint := evidencePublicKeyFingerprint(l.publicKey)
+	if fingerprint == "" {
+		return "", errors.New("evidence public key is not available")
+	}
+	return fingerprint, nil
+}
+
+// WitnessCheckpointSigner returns the callback a witness checkpoint is signed with. The ledger
+// stays the only owner of the private key: the callback signs a checkpoint digest and a
+// quarantined ledger refuses to sign, so a damaged chain cannot produce witness claims.
+func (l *EvidenceLedger) WitnessCheckpointSigner() WitnessCheckpointSigner {
+	return func(digest []byte) ([]byte, error) {
+		if l == nil {
+			return nil, errors.New("evidence ledger is not configured")
+		}
+		if len(digest) != sha256.Size {
+			return nil, errors.New("witness checkpoint digest is not SHA-256 sized")
+		}
+		l.mu.Lock()
+		defer l.mu.Unlock()
+		if l.integrityErr != nil {
+			return nil, fmt.Errorf("evidence ledger is quarantined: %w", l.integrityErr)
+		}
+		return ed25519.Sign(l.privateKey, digest), nil
+	}
 }
 
 func (l *EvidenceLedger) Recent(limit int) []EvidenceRecord {

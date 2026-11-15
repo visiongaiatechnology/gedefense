@@ -127,6 +127,21 @@ type APIServer struct {
 	mitigationGuard *MitigationGuard
 	// cellGuard owns the automatic Gaia Cell isolation. Optional for the same reason.
 	cellGuard *CellGuard
+	// lockdown is the Emergency Lockdown engine (POINT 5 / P5-T3). Optional: a
+	// server built without it reports an honest unavailable status instead of a
+	// fake idle lockdown.
+	lockdown *LockdownEngine
+	// lockdownLimiter is the dedicated 1/min budget of the emergency trigger. It is
+	// separate from the global budget so the most destructive endpoint cannot be
+	// reached by exhausting the general operator budget.
+	lockdownLimiter *RateLimiter
+	// witness is the Out-of-Band Witness engine (POINT 4 / P4-T2). Optional: a
+	// server built without it reports an honest disabled/unwired status instead
+	// of creating checkpoints it cannot send.
+	witness *WitnessEngine
+	// witnessLimiter is the dedicated push budget. A checkpoint push leaves the
+	// host, so one operator click is fine but a loop of them is not.
+	witnessLimiter *RateLimiter
 	// Rate limits for the destructive entry-point and isolation actions: one operator click is fine,
 	// a loop of them is not. Confirmation phrases prove intent, the budget proves restraint.
 	mitigationLimiter *RateLimiter
@@ -222,6 +237,23 @@ func NewAPIServer(cfg Config, state *State, core *CoreClient, feeds *FeedManager
 	// (G-WEB-05 / F-23).
 	mux.HandleFunc("GET /assets/{name...}", s.asset)
 	mux.HandleFunc("GET /api/v1/status", s.auth(s.status))
+	// POINT 5 / P5-T3: the Emergency Lockdown surface. Status is read-only and
+	// bounded; the two emergency routes are exempted from the evidence gate below
+	// because the gate must never be able to seal the way out of its own condition.
+	mux.HandleFunc("GET /api/v1/lockdown/status", s.auth(s.lockdownStatus))
+	mux.HandleFunc("POST /api/v1/lockdown/arm", s.auth(s.lockdownArm))
+	mux.HandleFunc("POST /api/v1/lockdown/trigger", s.auth(s.lockdownTrigger))
+	mux.HandleFunc("POST /api/v1/lockdown/clear", s.auth(s.lockdownClear))
+	// POINT 4 / P4-T2: the Out-of-Band Witness surface. Status and export are
+	// read-only and bounded; every POST goes through the same authentication,
+	// replay and evidence gate as any other operator mutation, and push adds its
+	// own confirmation phrase plus a dedicated rate budget.
+	mux.HandleFunc("GET /api/v1/witness/status", s.auth(s.witnessStatus))
+	mux.HandleFunc("GET /api/v1/witness/export", s.auth(s.witnessExport))
+	mux.HandleFunc("POST /api/v1/witness/checkpoint", s.auth(s.witnessCheckpoint))
+	mux.HandleFunc("POST /api/v1/witness/push", s.auth(s.witnessPush))
+	mux.HandleFunc("POST /api/v1/witness/challenge", s.auth(s.witnessChallenge))
+	mux.HandleFunc("POST /api/v1/witness/import", s.auth(s.witnessImport))
 	mux.HandleFunc("GET /api/v1/startup", s.auth(s.startupStatus))
 	mux.HandleFunc("GET /api/v1/boot-trust", s.auth(s.bootTrustStatus))
 	mux.HandleFunc("GET /api/v1/hardening/posture", s.auth(s.hardeningPosture))
@@ -245,6 +277,11 @@ func NewAPIServer(cfg Config, state *State, core *CoreClient, feeds *FeedManager
 	mux.HandleFunc("POST /api/v1/titan/events/{id}/review", s.auth(s.titanReview))
 	mux.HandleFunc("GET /api/v1/titan/quarantine", s.auth(s.titanQuarantine))
 	mux.HandleFunc("POST /api/v1/titan/contain", s.auth(s.titanContain))
+	// POINT 1 / P1-T5: read-only status and bounded recent-decision history for
+	// the kernel Titan exec gate. Both are additive: the existing /titan/* routes
+	// above keep their exact semantics (Go-side TitanEngine).
+	mux.HandleFunc("GET /api/v1/titan/exec/status", s.auth(s.titanExecStatus))
+	mux.HandleFunc("GET /api/v1/titan/exec/events", s.auth(s.titanExecEvents))
 	mux.HandleFunc("POST /api/v1/malware/scan", s.auth(s.malwareScan))
 	mux.HandleFunc("GET /api/v1/transactions", s.auth(s.transactionStatus))
 	mux.HandleFunc("POST /api/v1/transactions/preview", s.auth(s.transactionPreview))
@@ -256,6 +293,17 @@ func NewAPIServer(cfg Config, state *State, core *CoreClient, feeds *FeedManager
 	mux.HandleFunc("POST /api/v1/cases/{id}/status", s.auth(s.caseSetStatus))
 	mux.HandleFunc("GET /api/v1/cells", s.auth(s.cellsStatus))
 	mux.HandleFunc("POST /api/v1/cells/preview", s.auth(s.cellsPreview))
+	// POINT 2 / P2-T3: ephemeral parser cells. All routes are auth-gated like every
+	// other operator surface; POST additionally takes the replay guard and evidence
+	// gate from s.auth. GET status/list answer locally even when the helper is absent.
+	mux.HandleFunc("GET /api/v1/parser-cells/status", s.auth(s.parserCellsStatus))
+	mux.HandleFunc("GET /api/v1/parser-cells", s.auth(s.parserCellsList))
+	mux.HandleFunc("POST /api/v1/parser-cells/inputs", s.auth(s.parserCellsInput))
+	mux.HandleFunc("POST /api/v1/parser-cells/open", s.auth(s.parserCellsOpen))
+	mux.HandleFunc("POST /api/v1/parser-cells/{uuid}/burn", s.auth(s.parserCellsBurn))
+	mux.HandleFunc("POST /api/v1/parser-cells/{uuid}/freeze", s.auth(s.parserCellsFreeze))
+	mux.HandleFunc("POST /api/v1/parser-cells/{uuid}/unfreeze", s.auth(s.parserCellsUnfreeze))
+	mux.HandleFunc("GET /api/v1/parser-cells/{uuid}/export", s.auth(s.parserCellsExport))
 	mux.HandleFunc("GET /api/v1/stream", s.auth(s.stream))
 	mux.HandleFunc("GET /api/v1/policy", s.auth(s.policyStatus))
 	mux.HandleFunc("GET /api/v1/xdr/profiles", s.auth(s.behaviorProfiles))
@@ -318,6 +366,11 @@ func NewAPIServer(cfg Config, state *State, core *CoreClient, feeds *FeedManager
 	mux.HandleFunc("POST /api/v1/deception/test-access", s.auth(s.deceptionTestAccess))
 	mux.HandleFunc("GET /api/v1/styx/rules", s.auth(s.styxRules))
 	mux.HandleFunc("POST /api/v1/styx/rules", s.auth(s.addStyxRule))
+	// POINT 3 / P3-T5: read-only status for the kernel-side StyX enforcement and the
+	// aggregated flow telemetry. Auth required, no mutation, bounded payloads; the
+	// existing /styx/rules endpoints above keep their exact semantics (Go evaluator).
+	mux.HandleFunc("GET /api/v1/styx/status", s.auth(s.styxKernelStatus))
+	mux.HandleFunc("GET /api/v1/styx/beacons", s.auth(s.styxBeacons))
 	mux.HandleFunc("POST /api/v1/airlock/inspect", s.auth(s.airlockInspect))
 	mux.HandleFunc("GET /api/v1/chronos/status", s.auth(s.chronosStatus))
 	mux.HandleFunc("POST /api/v1/gateway/auth-denials", s.auth(s.gatewayAuthDenials))
@@ -358,6 +411,11 @@ func (s *APIServer) ensureLimiters() {
 		}
 		if s.healthLimiter == nil {
 			s.healthLimiter = NewRateLimiter(healthRatePerMinute, healthRateBurst)
+		}
+		if s.lockdownLimiter == nil {
+			// One emergency trigger per minute is a deliberate ceiling, not a
+			// suggestion: the latch is idempotent, so a second press changes nothing.
+			s.lockdownLimiter = NewRateLimiter(1, 1)
 		}
 	})
 }
@@ -849,8 +907,17 @@ func (s *APIServer) secure(next http.Handler) http.Handler {
 		// Every mutating body passes this ceiling before any handler sees it. A
 		// handler that accepts less still accepts less; the administrable value can
 		// only tighten, so one revision cannot widen every endpoint at once.
+		//
+		// POINT 2 / P2-T3: the parser-cell input route carries a document rather
+		// than a control command and therefore has one explicit, fixed 12 MiB
+		// base64 body bound (decoded <= MaxInputBytes <= 8 MiB). It is the only
+		// exemption; every other mutating route keeps the global ceiling unchanged.
 		if r.Method != http.MethodGet && r.Method != http.MethodHead && r.Body != nil {
-			r.Body = http.MaxBytesReader(w, r.Body, s.apiPayloadLimit())
+			limit := s.apiPayloadLimit()
+			if isParserCellInputRequest(r) {
+				limit = parserCellInputBodyLimit
+			}
+			r.Body = http.MaxBytesReader(w, r.Body, limit)
 		}
 		w.Header().Set("Cache-Control", "no-store")
 		if r.TLS != nil {
@@ -894,7 +961,13 @@ func evidenceGateExempt(path string) bool {
 	switch path {
 	case "/api/v1/release/emergency-stop", // stopping the platform cannot need its audit trail
 		"/api/v1/l7/selftest",        // a diagnostic must survive the condition it diagnoses
-		"/api/v1/settings/integrity": // the remedy for a full ledger is itself a mutation
+		"/api/v1/settings/integrity", // the remedy for a full ledger is itself a mutation
+		// POINT 5 / P5-T3: an emergency lockdown trigger must not be blocked by a
+		// broken audit trail, and the clear is the only way out of the latch the
+		// trigger created. Both commit their own intent evidence before acting, so
+		// the audit guarantee is documented-degraded rather than silently dropped.
+		"/api/v1/lockdown/trigger",
+		"/api/v1/lockdown/clear":
 		return true
 	}
 	return false
@@ -1465,6 +1538,24 @@ func (s *APIServer) clientSnapshot() Snapshot {
 	for index := range snapshot.Incidents {
 		snapshot.Incidents[index].AttackStory = nil
 	}
+	// POINT 1 / P1-T5: a bounded Titan exec-gate projection is attached when the
+	// engine carries the syncer. It is a separate field on purpose - it never
+	// feeds xdrSensorMode or the enforcement label, and without wiring the payload
+	// stays byte-identical to before.
+	snapshot.TitanExec = s.xdr.TitanExecStatusSnapshot()
+	// POINT 5 / P5-T3: the bounded Emergency Lockdown projection. It stays absent
+	// when no engine is wired into this composition, so an installation that never
+	// enabled the namespace keeps its exact status payload.
+	if s.lockdown != nil {
+		lockdownView := s.lockdown.StatusView()
+		snapshot.Lockdown = &lockdownView
+	}
+	// POINT 4 / P4-T2: the bounded Out-of-Band Witness projection. It stays absent
+	// when no engine is wired, and it carries no path, endpoint, token or key.
+	if s.witness != nil {
+		witnessView := s.witness.StatusView()
+		snapshot.Witness = &witnessView
+	}
 	// The startup self-check answers "why is protection not armed yet". It is a
 	// bounded projection (startup_supervisor.go) and carries no secrets; a
 	// supervisor that has not published yet leaves the field absent instead of
@@ -1485,7 +1576,19 @@ func (s *APIServer) clientSnapshot() Snapshot {
 }
 
 func (s *APIServer) status(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, s.clientSnapshot())
+	snapshot := s.clientSnapshot()
+	// POINT 3 / P3-T5: a bounded StyX projection is attached when the engine carries
+	// the kernel sensor. It is a separate field on purpose - SetXDRStatus/xdrSensorMode
+	// are test-pinned and a kernel egress sensor must not overwrite the XDR sensor
+	// label. Without StyX wiring the payload stays byte-identical to before.
+	if styx := s.xdr.StyxStatusSnapshot(); styx != nil {
+		writeJSON(w, http.StatusOK, struct {
+			Snapshot
+			Styx *StyxStatus `json:"styx,omitempty"`
+		}{Snapshot: snapshot, Styx: styx})
+		return
+	}
+	writeJSON(w, http.StatusOK, snapshot)
 }
 
 func (s *APIServer) bootTrustStatus(w http.ResponseWriter, _ *http.Request) {
@@ -3155,6 +3258,86 @@ func (s *APIServer) addStyxRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusCreated, map[string]any{"ok": true, "rule": rule})
+}
+
+// styxStatusView assembles the read-only StyX kernel status. It joins the sync
+// state (applied/pending/failed/capability-missing), the kernel flow health and the
+// detector's bounded sensor view. Nothing here is derived from a secret, and no
+// unbounded list leaves the process.
+func (s *APIServer) styxStatusView() StyxStatusView {
+	view := StyxStatusView{
+		State: StyxSyncStateUnavailable, SensorState: "unavailable", Capability: styxCapabilityUnknown,
+		Sync:   StyxSyncStatus{State: StyxSyncStateUnavailable, Capability: styxCapabilityUnknown},
+		Beacon: StyxBeaconView{Top: []StyxBeaconFlowSnapshot{}},
+	}
+	if s.xdr == nil {
+		return view
+	}
+	sync := s.xdr.StyxPolicyStatus()
+	beacon := s.xdr.StyxBeaconSnapshot()
+	health, at, healthErr := s.xdr.StyxFlowHealthStatus()
+	view.State = sync.State
+	view.SensorState = beacon.SensorState
+	view.Capability = sync.Capability
+	view.Sync = sync
+	view.KernelHealth = health
+	if !at.IsZero() {
+		healthAt := at
+		view.KernelHealthAt = &healthAt
+	}
+	view.KernelHealthError = healthErr
+	view.Beacon = styxBeaconView(beacon)
+	if engine := s.xdr.Styx(); engine != nil {
+		drops, metadataHits := engine.Stats()
+		view.GoRuleCount = len(engine.Rules())
+		view.GoRuleDrops = drops
+		view.GoRuleMetadata = metadataHits
+	}
+	return view
+}
+
+// styxKernelStatus serves GET /api/v1/styx/status: sync state, kernel health, the
+// bounded beacon sensor view and the Go evaluator's counters in one read.
+func (s *APIServer) styxKernelStatus(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, s.styxStatusView())
+}
+
+// styxBeacons serves GET /api/v1/styx/beacons: the detector's bounded Top-10 view
+// plus its counters and the kernel visibility counters. A degraded sensor is named
+// as degraded; it never implies "no beacons".
+func (s *APIServer) styxBeacons(w http.ResponseWriter, _ *http.Request) {
+	view := s.styxStatusView()
+	writeJSON(w, http.StatusOK, StyxBeaconsView{
+		State: view.Sync.State, SensorState: view.SensorState, Capability: view.Capability,
+		SyncState: view.Sync.State, Epoch: view.Sync.Epoch,
+		Beacon: view.Beacon, KernelHealth: view.KernelHealth,
+		KernelHealthAt: view.KernelHealthAt, KernelHealthError: view.KernelHealthError,
+	})
+}
+
+// titanExecStatus serves GET /api/v1/titan/exec/status: the exec-gate sync state,
+// the kernel facts with the last health sample and the bounded ingestion counters.
+// The report is derived from the engine's own projection, so a namespace without
+// wiring, on a core without the ABI, or on a kernel without BPF-LSM never claims
+// an active sensor or an applied enforcement state.
+func (s *APIServer) titanExecStatus(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, s.xdr.TitanExecStatusReport())
+}
+
+// titanExecEvents serves GET /api/v1/titan/exec/events?limit=N: the newest
+// decoded kernel decisions from the bounded history (max 64). It is read-only;
+// the history contains kernel facts only (no tokens, no credentials, no argv).
+func (s *APIServer) titanExecEvents(w http.ResponseWriter, r *http.Request) {
+	limit := titanExecEventHistoryLimit
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		value, err := strconv.Atoi(raw)
+		if err != nil || value < 1 {
+			writePublicError(w, http.StatusBadRequest, "limit must be a positive integer")
+			return
+		}
+		limit = value
+	}
+	writeJSON(w, http.StatusOK, s.xdr.TitanExecEventsReport(limit))
 }
 
 func (s *APIServer) airlockInspect(w http.ResponseWriter, r *http.Request) {

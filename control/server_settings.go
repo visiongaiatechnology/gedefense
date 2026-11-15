@@ -506,6 +506,11 @@ func (s *APIServer) applyRuntimeSettings(previous, updated RuntimeSettings, modu
 			return fmt.Errorf("apply threat intelligence settings: %w", err)
 		}
 	}
+	if s.witness != nil {
+		if err := s.witness.ApplyRuntimeSettings(updated); err != nil {
+			return fmt.Errorf("apply witness settings: %w", err)
+		}
+	}
 	var chronos *ChronosScanner
 	if s.xdr != nil {
 		chronos = s.xdr.Chronos()

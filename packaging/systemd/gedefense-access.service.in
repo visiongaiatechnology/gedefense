@@ -46,8 +46,12 @@ MemoryDenyWriteExecute=true
 SystemCallArchitectures=native
 SystemCallFilter=@system-service
 SystemCallErrorNumber=EPERM
-ReadOnlyPaths=@RELEASE@ /etc/vgt/gedefense-access
-ReadWritePaths=/var/lib/vgt/gedefense-access
+# ProtectSystem=strict stays in force and the release tree stays read-only. The gateway's own
+# credential directory is the only added write exception: after a successful login the Argon2id
+# migration atomically replaces the legacy PBKDF2 record in /etc/vgt/gedefense-access (temp file
+# plus rename in that directory), which needs write access to exactly that directory.
+ReadOnlyPaths=@RELEASE@
+ReadWritePaths=/var/lib/vgt/gedefense-access /etc/vgt/gedefense-access
 UMask=0077
 
 [Install]

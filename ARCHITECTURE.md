@@ -1,9 +1,12 @@
-# Architecture Map: VGT GeDefense (4.2.5)
+# Architecture Map: VGT GeDefense (5.2.0)
 
 // STATUS: DIAMANT VGT SUPREME
 // CLASSIFICATION: TECHNICAL ARCHITECTURE SPECIFICATION & DATA TREE
 // SYSTEM: VISIONGAIATECHNOLOGY MASTER INTELLIGENCE SYSTEM
-// TARGET RELEASE: V4.2.5 FAIL-CLOSED KINETIC REWORK & PERSISTENT SECURITY FABRIC
+// TARGET RELEASE: V5.2.0 FAIL-CLOSED KINETIC REWORK & PERSISTENT SECURITY FABRIC
+// POINT 3 PHASE 1 (PER-CGROUP EGRESS + BEACON/EXFIL-DETEKTION) IMPLEMENTIERT, DEFAULT OFF
+// POINT 1 PHASE 1 (TITAN eBPF-LSM EXEC/LIBRARY-GATE) IMPLEMENTIERT, DEFAULT OFF;
+// AKTIVIERUNG NUR MIT BOOT-CMDLINE `lsm=...,bpf` + REBOOT (ZIELSERVER AKTUELL OHNE bpf-LSM ⇒ STATUS inactive)
 
 ---
 
@@ -33,7 +36,7 @@
    - [3.19 Correlated Security Cases & Self-Repair Store (`cases.go`)](#319-correlated-security-cases--self-repair-store-casesgo)
    - [3.20 Encrypted File Quarantine Broker (`quarantine.go`)](#320-encrypted-file-quarantine-broker-quarantinego)
    - [3.21 Honeytoken Deception Fabric (`deception.go`)](#321-honeytoken-deception-fabric-deceptiongo)
-   - [3.22 Styx Outbound Egress Enforcement (`styx_egress.go`)](#322-styx-outbound-egress-enforcement-styx_egressgo)
+   - [3.22 Styx Outbound Egress Enforcement (`styx_egress.go`, `styx_beacon.go`, `styx_policy.go`)](#322-styx-outbound-egress-enforcement-styx_egressgo-styx_beacongo-styx_policygo)
    - [3.23 Morpheus RASP (Runtime Application Self-Protection) (`morpheus_rasp.go`)](#323-morpheus-rasp-runtime-application-self-protection-morpheus_raspgo)
    - [3.24 Staged Release Controller & Fail-Closed Safety Gates (`release.go`, `release_manifest.go`)](#324-staged-release-controller--fail-closed-safety-gates-releasego-release_manifestgo)
    - [3.25 AstraeaOS Gaia Cells Isolation Fabric (`cells.go`, `cells_transaction.go`)](#325-astraeaos-gaia-cells-isolation-fabric-cellsgo-cells_transactiongo)
@@ -45,6 +48,11 @@
    - [3.31 Shared Kernel/Userspace Protocol Library (`rust/gedefense-common`)](#331-shared-kerneluserspace-protocol-library-rustgedefense-common)
    - [3.32 OS Integration & Desktop Environments (`integration/`)](#332-os-integration--desktop-environments-integration)
    - [3.33 Packaging, Systemd Hierarchy & Release Engineering (`packaging/`, `scripts/`)](#333-packaging-systemd-hierarchy--release-engineering-packaging-scripts)
+   - [3.34 Point 3 — Styx Egress Enforcement & Beacon Detection (Phase 1)](#334-point-3--styx-egress-enforcement--beacon-detection-phase-1)
+   - [3.35 Point 1 — Titan eBPF-LSM Exec-/Library-Gate (Phase 1)](#335-point-1--titan-ebpf-lsm-exec-library-gate-phase-1)
+   - [3.36 Point 2 — Ephemere Parser-Zellen (Phase 1)](#336-point-2--ephemere-parser-zellen-phase-1)
+   - [3.37 Point 5 — Emergency Lockdown / Anti-Physical-Extraction (Phase 1)](#337-point-5--emergency-lockdown--anti-physical-extraction-phase-1)
+   - [3.38 Point 4 — Out-of-Band Witness / Witness-Attestation (Phase 1)](#338-point-4--out-of-band-witness--witness-attestation-phase-1)
 4. [Detailed Dashboard Views Documentation](#4-detailed-dashboard-views-documentation)
    - [4.1 Dashboard -> Overview (`overview`)](#41-dashboard---overview-overview)
    - [4.2 Dashboard -> Protection Center (`protection`)](#42-dashboard---protection-center-protection)
@@ -74,7 +82,7 @@
 ## 1. Global Architecture Tree
 
 ```text
-VGT GeDefense System (v4.2.5 — Fail-Closed Kinetic Rework & Security Fabric)
+VGT GeDefense System (v5.2.0 — Fail-Closed Kinetic Rework & Security Fabric, Point 3 Egress/Beacon Phase 1, Point 1 Titan-Exec-Gate Phase 1)
 │
 ├── 1. PUBLIC ACCESS GATEWAY (Go · Unprivileged Reverse Proxy · gateway/)
 │   ├── TLS 1.3 Termination (Curve Preferences: X25519MLKEM768, X25519, P-256)
@@ -135,7 +143,7 @@ VGT GeDefense System (v4.2.5 — Fail-Closed Kinetic Rework & Security Fabric)
 │   ├── Correlated Security Case Engine (Fingerprint Deduplication & Self-Repairing Storage)
 │   ├── Encrypted File Quarantine Broker (AES-256-GCM Storage Orchestration via Core IPC)
 │   ├── Honeytoken Deception Fabric (HMAC Canary Tokens: SSH Keys, AWS Tokens, .env Decoys)
-│   ├── Styx Outbound Egress Enforcement (Policy Parsing & Cgroup Network Filtering)
+│   ├── Styx Egress Telemetry & Policy Orchestration (Go-Evaluator, XDR-Beacon-Detektor, Policy-Syncer zu VGT3-STYX_*)
 │   ├── Morpheus RASP (Process Injection, Ptrace Attach, and Memory Tampering Detection)
 │   ├── Staged Release Controller (Fail-Closed Retention, Anti-Flapping Soak, Automatic Re-Arm)
 │   ├── AstraeaOS Gaia Cells Adapter (VGTGC1 Protocol, Cgroup v2 Isolation, Socket LSM)
@@ -160,7 +168,8 @@ VGT GeDefense System (v4.2.5 — Fail-Closed Kinetic Rework & Security Fabric)
 │   │   └── Kinetic Blocklist Trie (BLOCKLIST_V4 / BLOCKLIST_V6) -> XDP_DROP
 │   ├── Ingress Event Ring Buffer (Perf Event Drain · Explicit Neutral-Marker Wire Contract)
 │   ├── Process Execution Tracepoint (gedefense_sched_process_exec -> RingBuf Telemetry)
-│   ├── Cgroup Outbound Egress Filter (gedefense_egress -> Styx Port/Protocol Enforcement)
+│   ├── Cgroup Outbound Egress Filter (gedefense_egress · Root-Cgroup-cgroup_skb/egress · Legacy-LPM-Allow/Blocklist + Styx-Enforcement-Maps · Default-Off)
+│   ├── Styx Flow Telemetry RingBuf (FLOW_EVENTS · aggregierte 104-Byte-FlowEvents · kein Per-Paket-Dump)
 │   └── Gaia Cells Socket Create LSM Hook (gedefense_cell_socket_create -> AF_UNIX Only Isolation)
 │
 ├── 6. INTEGRATION & PLATFORM FABRIC (integration/)
@@ -221,6 +230,7 @@ control/
   coreipc_egress_test.go                       Testing                        Integration tests for Core IPC egress events and rule enforcement
   coreipc_exec_test.go                         Testing                        Integration tests for Core IPC process execution events
   coreipc_ingress_test.go                      Testing                        Integration tests for Core IPC ingress packet drops and allowlist trie updates
+  coreipc_styx_test.go                         Testing                        Integration tests for Core IPC STYX commands, flow parser and capability sentinel
   coreipc_test.go                              Testing                        Unit tests for Core IPC framing, replay defense, and authentication
   deception.go                                 Deception & Honeypots          Decoy canary tokens (SSH keys, AWS tokens, shadow backups, .env) and access alarms
   deception_test.go                            Testing                        Unit tests for honeytoken generation, hashing, and tripwire alarms
@@ -362,8 +372,20 @@ control/
   state_xdr_causes_test.go                     Testing                        Unit tests for multi-writer XDR cause isolation and clearance hygiene
   storage_crypto.go                            Cryptographic Storage          AES-256-GCM envelope encryption engine for on-disk security databases
   storage_crypto_test.go                       Testing                        Unit tests for storage encryption, key derivation, and nonce uniqueness
-  styx_egress.go                               Egress Enforcement             Styx outbound egress policy manager enforcing port and protocol whitelists
-  styx_egress_test.go                          Testing                        Unit tests for Styx egress rule parsing and cgroup filter configuration
+  styx_api_test.go                             Testing                        Read-only StyX status/beacon API contract tests
+  styx_beacon.go                               Egress Detection               C2-Beacon-/Exfiltrations-Detektor (Welford-CV, TX/RX-Asymmetrie, Direct-IP, LRU/TTL, Dedupe)
+  styx_beacon_exfil_test.go                    Testing                        T7 delta/cumulative exfil thresholds, saturating volume accounting, canary correlation
+  styx_beacon_test.go                          Testing                        Unit tests for beacon signals, bounds, degraded/fail-closed behaviour and causality
+  styx_egress.go                               Egress Enforcement             Styx Go-Evaluator/Telemetrie (Regeln, Incidents, Evidence, EdgeEgressAttempted)
+  styx_egress_test.go                          Testing                        Unit tests for Styx egress rule parsing and incident/evidence emission
+  styx_policy.go                               Egress Policy Bridge           XDR/beacon bridge, sync/beacon status projection and read-only API view types
+  styx_policy_plan.go                          Egress Policy Plan             Pure StyX validation and LPM policy plan (reject instead of silent widening)
+  styx_settings.go                             Egress Settings                StyX settings namespace, defaults and canonicalisation (schema v13; v14 ergänzt titan_exec, default off)
+  styx_settings_test.go                        Testing                        Settings defaults/validation, inert-mode-off rejection and plan mapping tests
+  styx_syncer.go                               Egress Policy Sync             styxPolicySyncer: capability/epoch probe, fail-safe push order, retry and resync
+  styx_syncer_status.go                        Egress Policy Sync             Sync status transitions, operator events and plan predicates
+  styx_syncer_test.go                          Testing                        Sync order/disable/resync/capability tests for the StyX policy syncer
+  styx_xdr_test.go                             Testing                        XDR integration tests for beacon incidents, overflow/degraded and capability gating
   system_fabric.go                             Security Fabric                Security Fabric integration handlers for system diagnostics and cells
   system_fabric_test.go                        Testing                        Unit tests for system fabric configuration options
   system_restart.go                            System Management              Supervised daemon restart coordinator verifying supervisor availability
@@ -374,6 +396,18 @@ control/
   threat_intel_fabric.go                       Security Fabric                Security Fabric integration handlers for threat intelligence settings
   threat_intel_fabric_test.go                  Testing                        Unit tests for threat intelligence fabric settings
   threat_intel_ui_contract_test.go             Testing                        UI contract tests ensuring threat intel dashboard matches backend state
+  titan_exec_api_test.go                       Testing                        Read-only exec-gate status/events API contract, honest-inactive and no-bpf-lsm-cell claim tests
+  titan_exec_coreipc_test.go                   Testing                        Integration tests for Core IPC TITAN_EXEC_* commands, parser bounds and capability sentinel
+  titan_exec_events.go                         Exec Gate Events               Exec-gate event/XDR bridge: §3.3 parser, actor attribution, evidence/incident recording
+  titan_exec_events_test.go                    Testing                        Parser hostile cases, all-or-nothing batches and XDR evidence/incident integration
+  titan_exec_plan.go                           Exec Gate Plan                 Pure allowlist plan compiler (roots/allow paths, package/FIM evidence, caps, fingerprint)
+  titan_exec_plan_test.go                      Testing                        Plan compiler tests for roots, symlinks, dedupe, caps and deterministic fingerprints
+  titan_exec_settings.go                       Exec Gate Settings             Titan exec-gate namespace, defaults (disabled/off), canonicalisation and validation
+  titan_exec_settings_test.go                  Testing                        Settings defaults, v14 migration, inert-policy rejection and fabric module projection
+  titan_exec_syncer.go                         Exec Gate Sync                 titanExecPolicySyncer: capability/epoch probe, fail-safe push order, retry and resync
+  titan_exec_syncer_status.go                  Exec Gate Sync                 Sync status transitions, honest inactive/unavailable projection and operator events
+  titan_exec_syncer_status_test.go             Testing                        Status honesty, capability-missing and enforcement-inactive tests
+  titan_exec_syncer_test.go                    Testing                        Sync order/disable/resync/batch-rejection tests for the Titan exec-gate syncer
   toolchain_security_test.go                   Testing                        Security verification tests ensuring toolchain binaries are pinned and safe
   transactions.go                              Durable Transactions           Durable 6-phase security transactions engine with automatic rollback
   transactions_test.go                         Testing                        Unit tests for transaction lifecycle, preview generation, and error reversal
@@ -429,17 +463,24 @@ control/web/
 rust/gedefense-core/
   Cargo.toml                                   Core Build                     Rust crate manifest for privileged root response core daemon
   src/main.rs                                  Core Daemon                    Root daemon entry point, IPC socket listener, fanotify guard, eBPF loader
+  src/btf_offsets.rs                           Exec Gate Helpers              Mini-BTF parser (little-endian, bounded) and Titan exec-gate runtime offsets (Point 1)
+  src/canary.rs                                Core Security                  Deception-canary broker, path jail, manifest deployment and accessor attribution
   src/malware.rs                               Core Security                  Streaming SHA-256 malware scanner, EICAR detector, zip-bomb expansion guard
   src/process_control.rs                       Core Security                  Race-free process control using Linux pidfd_open and start tick verification
   src/quarantine.rs                            Core Security                  Encrypted quarantine vault using AES-256-GCM, openat2 O_NOFOLLOW, DAC 0700/0600
+  src/styx_flow.rs                             Egress Policy Helpers          STYX argument/CIDR validation, LPM keys, text wire and health encoding (Point 3)
+  src/titan_exec.rs                            Exec Gate Helpers              LSM activation probe, policy/scope store, fd-safe path resolver, event/status encoding
 
 rust/gedefense-ebpf/
   Cargo.toml                                   eBPF Build                     Rust crate manifest for kernel eBPF / XDP data plane (no_std)
-  src/main.rs                                  Kernel Programs                XDP ingress filter, LPM trie matchers, sched_process_exec tracepoint, LSM hooks
+  src/main.rs                                  Kernel Programs                XDP ingress, exec tracepoint, cgroup_skb/egress (legacy + Point 3), LSM hooks (socket + Titan bprm/mmap), ring buffers
 
 rust/gedefense-common/
   Cargo.toml                                   Common Build                   Rust crate manifest for shared kernel-userspace protocol definitions
   src/lib.rs                                   Common Types                   Wire format definitions, IPC messages, event headers, protocol invariants
+  src/styx_flow.rs                             Common Types                   Point 3 ABI-1: 104-byte FlowEvent, STYX_* constants, rejecting flow decoder
+  src/titan_exec.rs                            Common Types                   Point 1 ABI-1: 88-byte TitanExecEvent, TITAN_EXEC_* constants, rejecting decoder
+  src/bin/flow_event_fuzz.rs                   Common Testing                 Seed-corpus fuzz/fixpoint gate for the 104-byte flow-event decoder
   src/bin/xdp_packet_fuzz.rs                   Common Testing                 Fuzzing utility validating packet decoder robustness against malformed headers
 
 integration/
@@ -497,13 +538,17 @@ scripts/
   oneclick-source-bootstrap-header.sh          Installer Header               Source bootstrap shell script header configuring build toolchains on target host
   package-artifacts.sh                         Release Pipeline               Packages compiled binaries, documentation, and systemd units into release tarballs
   pack_release_zip.py                          Release Pipeline               Python utility packaging verified release assets into standardized ZIP bundles
-  publish_release_4.2.1.py                     Release Pipeline               Release publication script for version 4.2.1
-  publish_release_4.2.4.py                     Release Pipeline               Release publication script for version 4.2.4 with checksum manifests
+  release-tool.py                              Release Pipeline               Release tooling (manifest/artifact handling) used by the packaging scripts
+  vgt_release_security.py                      Release Pipeline               Release security checks and evidence verification for VGT artifacts
+  render-installer-header.py                   Installer Header               Renders the self-extracting installer header from templates
+  build-desktop-oneclick.sh                    Build Pipeline                 Desktop one-click bundle build wrapper
+  desktop-oneclick-header.sh                   Installer Header               Self-extracting desktop one-click installer header
+  post-update-rebaseline.sh                    Data Maintenance               Re-baselines on-disk security state after an update (FIM/evidence)
   regenerate-mirror-manifest.py                Release Pipeline               Regenerates SHA-256 release mirror manifests for downstream repositories
+  sca-gate.sh                                  Verification                   Software-composition/security gate for vendored dependencies
   security-audit.sh                            Security Audit                 Comprehensive automated security audit verifying permissions, symbols, and bounds
   stage-github-upload.py                       Release Pipeline               Stages release binaries, source archives, and release notes for GitHub Releases
   sync-astraeaos-gedefense.py                  Platform Sync                  Synchronizes version metadata, contracts, and binaries with AstraeaOS build trees
-  sync_version_4.2.4.py                        Platform Sync                  Python utility synchronizing version 4.2.4 string across all manifests and files
   update-geoip-db.py                           Data Maintenance               Downloads, validates, and parses latest GeoIP/ASN databases into embedded CSV format
   validate-arch-packages.sh                    Verification                   Validates Arch Linux packages generated by PKGBUILD in a clean chroot
   validate-distro-integration.sh               Verification                   Tests systemd units, polkit rules, and sysusers across multiple Linux distributions
@@ -694,7 +739,8 @@ API:
 - GET /api/v1/stream
 - GET /api/v1/health
 - GET /api/v1/metrics
-- POST /api/v1/emergency-stop
+- POST /api/v1/release/emergency-stop
+- POST /api/v1/release/emergency-stop/clear
 - Static asset handlers (/assets/*)
 
 Styles:
@@ -1811,16 +1857,43 @@ control/deception.go
 
 ---
 
-### 3.22 Styx Outbound Egress Enforcement (`styx_egress.go`)
+### 3.22 Styx Outbound Egress Enforcement (`styx_egress.go`, `styx_beacon.go`, `styx_policy.go`)
 
 #### Purpose
-Enforces strict host-level and per-cgroup outbound network egress policies via kernel eBPF cgroup-skb filters, preventing compromised processes from establishing reverse shells or exfiltrating data.
+Enthält die Go-seitige StyX-Schicht: Regel-Evaluator und Telemetrie (`styx_egress.go`),
+den C2-Beacon-/Exfiltrations-Detektor (`styx_beacon.go`) und den Projektor der
+Operator-Settings auf die Kernel-Policy (`styx_policy.go`). Go bleibt unprivilegiert und
+spricht ausschließlich über den authentifizierten VGT3-IPC-Client mit dem Rust-Core; die
+Kernel-Enforcement-Pfade selbst liegen in `rust/gedefense-ebpf`/`rust/gedefense-core`
+(→ §3.34).
 
 #### Fähigkeiten
-- Restricts outbound TCP/UDP traffic to an explicit whitelist of allowed destination ports, IP CIDR ranges, and system user IDs.
-- Attaches kernel eBPF program `gedefense_egress` to root or container cgroup paths (`/sys/fs/cgroup`).
-- Blocks DNS exfiltration by forcing outbound UDP/TCP port 53 through dedicated local resolvers.
-- Generates instant security alerts and evidence ledger records when an unapproved outbound socket connection is attempted.
+- Bewertet Outbound-Regeln (Ports/Protokolle/CIDRs) im Go-Evaluator und erzeugt
+  Incidents/Evidence über die bestehende XDR-Kette; das ist Telemetrie/Detektion, keine
+  Kernel-Durchsetzung.
+- **Beacon-Detektor (`styx_beacon.go`)**: aggregierte Flow-Events aus dem Kernel
+  (Welford-Intervall-CV, TX/RX-Asymmetrie, Direct-IP/DNS-Signal), LRU-/TTL-begrenzt
+  (`MaxTrackedBeaconFlows 8192`, `MaxFlowsPerCgroup 64`, `FlowTTLSeconds 900`), Dedupe
+  und Incident-Rate-Cap (`MaxIncidentsPerMinute 6`); Flow-Volumen wird aus den
+  Kernel-Fenster-Deltas saturierend kumuliert; Signal 3 bleibt in Phase 1 `unknown`
+  (keine DNS-Attribution), `degraded` bei Overflow-Serie ist nie ein „keine
+  Beacons"-Claim, und `mode=off` meldet der Sensor als `off` (nicht `active`).
+- **Policy-Syncer (`styx_settings.go`, `styx_policy_plan.go`, `styx_syncer.go`,
+  `styx_syncer_status.go`)**: validiert den `styx`-Settings-Namespace (Default
+  `enabled=false, mode=off`; inerte `mode=off`-Policies werden abgelehnt), projiziert ihn
+  idempotent und fail-safe (`STYX_GLOBAL(0,0)` vor jeder neuen Policy) über
+  `STYX_*`-Kommandos auf die Kernel-Maps, mit Capability-Gate (`ERR unknown command` ⇒
+  `ErrStyxUnavailable`), 10-s-Retry und Voll-Resync bei Epoch-Wechsel (Core-Neustart).
+  `styx_policy.go` ist die XDR-/Beacon-Bridge und API-Sicht ohne eigene Enforcement-
+  Entscheidung.
+- Attach-/Enforcement-Wahrheit: Der Root-Cgroup-`cgroup_skb/egress`-Hook
+  (`gedefense_egress`) enthält die Legacy-LPM-Allowlist/Blocklist (unverändertes
+  Verhalten) und die Point-3-Styx-Maps; es gibt **kein** `EGRESS_RULES`-Map, kein
+  Map-Pinning und keine Port-/Proto-/UID-Durchsetzung im Legacy-Pfad. Portgenaue
+  Durchsetzung existiert nur in den neuen Point-3-Allow-LPMs (IPv4; IPv6 portlos,
+  siehe §3.34).
+- Generiert Alerts/Evidence-Ledger-Einträge für unerlaubte Outbound-Verbindungen über
+  die bestehenden `EdgeEgressAttempted`-Attack-Story-Knoten.
 
 #### Zugehörige Dateien
 ```text
@@ -1829,11 +1902,21 @@ Frontend:
 
 Backend:
 - control/styx_egress.go
+- control/styx_beacon.go
+- control/styx_settings.go
+- control/styx_policy_plan.go
+- control/styx_syncer.go
+- control/styx_syncer_status.go
+- control/styx_policy.go
+- rust/gedefense-core/src/styx_flow.rs (Validierung/Keys/Text-Wire der STYX-ABI)
+- rust/gedefense-ebpf/src/main.rs (cgroup_skb/egress + Styx-Maps)
 
 API:
 - GET /api/v1/egress/status
 - GET /api/v1/egress/rules
 - POST /api/v1/egress/rules
+- GET /api/v1/styx/status (kernel-seitiger Sync-/Health-Status, read-only)
+- GET /api/v1/styx/beacons (bounded Detektor-Snapshot, read-only)
 
 Styles:
 - control/web/v4.css (Egress rule matrix, protocol pills)
@@ -1843,9 +1926,21 @@ Datenbank / Storage:
 
 Konfiguration:
 - gedefense.toml (styx_egress section)
+- `styx`-Namespace in RuntimeSettings/FabricSettings (Default aus, Schema v13)
 
 Tests:
 - control/styx_egress_test.go
+- control/styx_beacon_test.go
+- control/styx_beacon_exfil_test.go
+- control/styx_settings_test.go
+- control/styx_syncer_test.go
+- control/styx_xdr_test.go
+- control/styx_api_test.go
+- control/coreipc_styx_test.go
+
+Doku:
+- docs/POINT3-EGRESS-BEACON.md (verbindliche ABI/Spec, §13 Abweichungen)
+- docs/POINT3-PHASE1-REPORT.md (Implementierungs-/Verifikationsbericht Phase 1)
 ```
 
 #### Dashboard-Integration
@@ -1854,13 +1949,15 @@ Tests:
 
 #### Abhängigkeiten
 ```text
-control/styx_egress.go
-├── konfiguriert Kernel eBPF Map EGRESS_RULES via rust/gedefense-core
-└── protokolliert Verstöße in control/evidence_ledger.go
+control/styx_egress.go / styx_beacon.go / styx_policy.go
+├── lesen Flow-Events und schreiben Policy über control/coreipc.go (VGT3 STYX_*)
+├── die Kernel-Maps CELL_EGRESS_MODE / STYX_* / FLOW_* gehören rust/gedefense-core + eBPF
+└── protokolliert Verstöße/Beacon-Funde in control/xdr.go + control/evidence_ledger.go
 ```
 
 #### Wird verwendet von
-- Network Policy View, SOC Operatoren.
+- Network Policy View, SOC Operatoren, XDR Engine (Beacon-Incidents), CellGuard (nur über
+  bestehende `CellCgroupID`-Auto-Confine-Policy).
 
 ---
 
@@ -1981,16 +2078,40 @@ control/release.go
 
 ---
 
-### 3.25 AstraeaOS Gaia Cells Isolation Fabric (`cells.go`, `cells_transaction.go`)
+### 3.25 AstraeaOS Gaia Cells Isolation Fabric (`cells.go`, `cells_local.go`, `cells_transaction.go`, `cell_guard.go`)
+
+> **Drift-Korrektur (2026-11-15, POINT 2):** Dieses Kapitel behauptete früher
+> Ressourcen-Caps, Lifecycle-Aktionen (`START`/`KILL`/`DESTROY`), eine
+> `cells-state.json` und per-ID-Action-Routen – **nichts davon existiert im Code**.
+> Der Adapter ist eine Beobachter-/Operator-Oberfläche für eine externe
+> AstraeaOS-Runtime bzw. eine lokale cgroup-v2-Registry; Zell-Erzeugung und echte
+> Prozess-Isolation liefert erst POINT 2 über den privilegierten Helper (§3.36).
 
 #### Purpose
-Integrates with the AstraeaOS micro-containment subsystem (Gaia Cells) using the VGTGC1 protocol, enforcing strict cgroup v2 resource limits, network namespace isolation, and socket LSM restrictions on sandboxed applications.
+Integriert die externe AstraeaOS-Gaia-Cells-Runtime (VGTGC1 über
+`/run/gaia-cells/control.sock`) sowie eine lokale cgroup-v2-Registry
+(`/sys/fs/cgroup/vgt-cells`) als **Beobachter-/Operator-Oberfläche**. Der Adapter
+erzeugt keine Zellen, setzt keine Ressourcen-Limits und behauptet ohne
+Kernel-/Runtime-Fähigkeit keine Isolation.
 
-#### Fähigkeiten
-- Discovers and monitors running Gaia Cells via `/sys/fs/cgroup/gaia-cells/`.
-- Enforces strict network isolation: attaches kernel LSM hook `gedefense_cell_socket_create` restricting sandboxed processes to `AF_UNIX` local sockets only (blocking `AF_INET`/`AF_INET6` raw access).
-- Sets cgroup v2 CPU, memory, and I/O weight caps to prevent denial-of-service against host daemons.
-- Manages transactional cell lifecycle events (`START`, `FREEZE`, `KILL`, `DESTROY`) with rollback capabilities in `cells_transaction.go`.
+#### Fähigkeiten (Ist-Stand)
+- Listet vorhandene Zellen aus der Runtime oder der lokalen cgroup-Registry; die
+  lokale Registry wird vom Control-Unit-`ExecStartPre` (root, einmalig) angelegt,
+  danach schreibt das unprivilegierte Control nur noch `cgroup.freeze`/liest Status
+  – und nur, wenn die DAC-Rechte es erlauben (sonst `unavailable`, keine Attrappe).
+- VGTGC1-Kommunikation mit JSON-MAC-Authentifizierung; die Aktions-Allowlist ist
+  exakt `FREEZE`, `UNFREEZE`, `REVOKE_NETWORK`, `RESTORE_NETWORK`,
+  `SNAPSHOT_EVIDENCE`. Es gibt **kein** `START`, `KILL` oder `DESTROY`.
+- Netzwerk-Isolation nur über die externe Runtime bzw. den eBPF-Cell-LSM-Hook
+  `gedefense_cell_socket_create` (nur bei aktiver `bpf`-LSM-Liste attached; sonst
+  Status `cell-lsm-unavailable` im Control-Modus).
+- `CellGuard` leitet Incidents in Freeze/Revoke-Aktionen ab (Cooldown/Score); für
+  POINT-2-Zellen (`parser-ephemeral`) dispatcht er stattdessen einen Helper-Burn
+  (§3.36) – ohne Umbau der bestehenden TransactionEngine-Signaturen.
+- **Nicht vorhanden:** cgroup-CPU-/Memory-/IO-Caps, Zell-Spawn/Kill, persistente
+  `cells-state.json`, `handleCellAction`-Funktion, `/api/v1/cells/{id}`-Routen.
+  Der Zustand ist ein reiner In-Memory-Snapshot; Aktionen/Incidents landen bei
+  Bedarf im Evidence Ledger.
 
 #### Zugehörige Dateien
 ```text
@@ -1998,42 +2119,47 @@ Frontend:
 - control/web/app.js (Node Diagnostics & Gaia Cells view)
 
 Backend:
-- control/cells.go
-- control/cells_transaction.go
+- control/cells.go (Adapter, VGTGC1, Validierung)
+- control/cells_local.go (lokale cgroup-Registry, freeze/list)
+- control/cells_transaction.go (GaiaCellApplier für Netzwerk-Isolation/Rollback)
+- control/cell_guard.go (Auto-Confine/Incident-Dispatch)
 
 API:
 - GET /api/v1/cells
-- GET /api/v1/cells/{id}
-- POST /api/v1/cells/{id}/action (freeze / thaw / kill)
+- POST /api/v1/cells/preview
+- GET /api/v1/cells/confinement
 
 Styles:
-- control/web/v4.css (Gaia Cells status cards, cgroup utilization meters)
+- control/web/v4.css (Gaia Cells status cards)
 
 Datenbank / Storage:
-- /var/lib/vgt/gedefense/cells-state.json
+- N/A (nur In-Memory-Snapshot; keine cells-state.json)
 
 Konfiguration:
-- gedefense.toml (cells section)
+- gedefense.toml ([cells]-Sektion) bzw. Runtime-Settings-Namespace `cells`
 
 Tests:
 - control/cells_test.go
+- control/cells_local_test.go
 - control/cells_transaction_test.go
+- control/cell_guard_test.go
 ```
 
 #### Dashboard-Integration
 - Integrated into the "Node Diagnostics & Gaia Cells" view (`system`).
-- Displays running sandboxes, resource consumption, and container control actions.
+- Zeigt vorhandene Sandboxes/Status und erlaubt Freeze/Thaw, soweit die Runtime
+  oder die DAC-Rechte es zulassen; keine Spawn/Kill/Destroy-Buttons.
 
 #### Abhängigkeiten
 ```text
 control/cells.go
-├── interagiert mit Linux Cgroup v2 (/sys/fs/cgroup/)
-├── konfiguriert Kernel LSM Hook gedefense_cell_socket_create
-└── protokolliert Container-Aktionen in control/evidence_ledger.go
+├── interagiert mit Linux Cgroup v2 (/sys/fs/cgroup/vgt-cells) bzw. externer Runtime
+├── nutzt Kernel-LSM-Hook gedefense_cell_socket_create (nur mit bpf-LSM)
+└── protokolliert Aktionen/Incidents in control/evidence_ledger.go
 ```
 
 #### Wird verwendet von
-- Node Diagnostics View, AstraeaOS Desktop Shell.
+- Node Diagnostics View, AstraeaOS Desktop Shell; CellGuard-Dispatch für POINT-2-Burns.
 
 ---
 
@@ -2211,6 +2337,7 @@ The high-privilege Rust daemon running as `root`. Executes security actions requ
 - **Streaming Malware Scanner**: Computes streaming SHA-256 hashes against known malicious signatures, detects EICAR strings, polyglot files, and zip bomb decompression ratios.
 - **Race-Free Process Control**: Terminates or suspends malicious processes using Linux `pidfd_open` combined with process start-time verification to prevent killing recycled PIDs.
 - **Kernel eBPF Management**: Uses the Aya pure-Rust eBPF framework to load, attach, and maintain maps for XDP, tracepoints, and cgroup-skb filters.
+- **Titan-Exec-Gate (Point 1, default-off)**: Prüft `/sys/kernel/security/lsm` auf das `bpf`-Token, löst die vmlinux-BTF-Offsets über einen eigenen Mini-Parser validiert auf und attacht `bprm_check_security`/`mmap_file` ausschließlich bei aktiver LSM-Liste und unterstützter Hook-Arität. Ohne Aktivierung bleibt der Status ehrlich `inactive`/`unavailable` (`path=none`), `SET_GLOBAL(mode>0)` wird mit `enforcement-unavailable` abgelehnt (§3.35).
 - **Encrypted Quarantine Vault**: Safely isolates files using `openat2` with `O_NOFOLLOW` and encrypts chunks via AES-256-GCM.
 
 #### Zugehörige Dateien
@@ -2220,13 +2347,13 @@ Frontend:
 
 Backend:
 - rust/gedefense-core/src/main.rs
-- rust/gedefense-core/src/ipc.rs
-- rust/gedefense-core/src/scanner.rs
-- rust/gedefense-core/src/process.rs
+- rust/gedefense-core/src/btf_offsets.rs
+- rust/gedefense-core/src/canary.rs
+- rust/gedefense-core/src/malware.rs
+- rust/gedefense-core/src/process_control.rs
 - rust/gedefense-core/src/quarantine.rs
-- rust/gedefense-core/src/sysctl.rs
-- rust/gedefense-core/src/ebpf.rs
-- rust/gedefense-core/src/fanotify.rs
+- rust/gedefense-core/src/styx_flow.rs
+- rust/gedefense-core/src/titan_exec.rs
 
 API:
 - Core IPC Protocol VGT3 on /run/vgt/gedefense-core.sock
@@ -2244,9 +2371,10 @@ Konfiguration:
 - gedefense.toml (core section)
 
 Tests:
-- rust/gedefense-core/tests/ipc_test.rs
-- rust/gedefense-core/tests/scanner_test.rs
-- rust/gedefense-core/tests/quarantine_test.rs
+- Inline-Unit-Tests (`#[cfg(test)]`) in `src/main.rs`, `src/canary.rs`,
+  `src/malware.rs`, `src/quarantine.rs`, `src/styx_flow.rs`, `src/btf_offsets.rs`
+  und `src/titan_exec.rs` (`cargo +1.97.1 test --locked -p gedefense-core`);
+  zusätzliche Härtungs-/IPC-Gates in `scripts/security-audit.sh`.
 ```
 
 #### Dashboard-Integration
@@ -2280,9 +2408,26 @@ Executes in-kernel packet filtering, process execution tracing, egress filtering
 - **Process Exec Tracepoint (`gedefense_sched_process_exec`)**:
   - Hooks `sched_process_exec` tracepoint to capture binary executions, PID, PPID, and UID in real time.
 - **Cgroup Egress Filter (`gedefense_egress`)**:
-  - Attaches to cgroup-skb hooks to enforce Styx outbound port and destination restrictions.
+  - Attached am Root-Cgroup (`CgroupSkbAttachType::Egress`, `CgroupAttachMode::AllowOverride`;
+    ersetzt ein Alt-Programm nach Core-Restart, keine Programmansammlung).
+  - Legacy-Pfad (5.2.0): `ALLOWLIST_V4/V6` ⇒ PASS, Threat-Intel-`BLOCKLIST_V4/V6` ⇒ DROP
+    mit unverändertem `EgressDropEvent`. Es gibt **kein** `EGRESS_RULES`-Map und keine
+    Port-/Proto-/UID-Durchsetzung in diesem Pfad.
+  - Point 3 (Default-off): `CELL_EGRESS_MODE`, `CELL_EGRESS_ALLOW_V4/V6`,
+    `STYX_ALLOW_GLOBAL_V4/V6`, `STYX_BLOCK_V4/V6`, `STYX_RESOLVER_V4/V6`, `STYX_GLOBAL`,
+    `STYX_RESOLVED`, `FLOW_AGG_V4/V6`, `FLOW_EVENTS` plus Health-Zähler (→ §3.34).
+  - Default `off` (`STYX_GLOBAL` Mode 0/Flags 0) ⇒ byte-identische 5.2.0-Verdikte über
+    den Legacy-Pfad, kein Flow-Logging; der Shortcut greift vor jeder Zell-Auflösung.
 - **Gaia Cells LSM Hook (`gedefense_cell_socket_create`)**:
   - Hooks kernel socket creation to restrict Gaia Cells sandboxes to `AF_UNIX` sockets.
+  - Wird nur bei aktiver `bpf`-LSM-Liste geladen/attached; der `PING`-Token `+bpf-lsm-cell` wird nur nach echtem Attach gesetzt (P3-Fix, §3.35).
+- **Titan Exec-/Library-Gate (Point 1, default-off)**:
+  - `#[lsm(hook = "bprm_check_security")] pub fn gedefense_titan_exec_bprm(...)` und
+    `#[lsm(hook = "mmap_file")] pub fn gedefense_titan_exec_mmap(...)`; Modi
+    OFF/OBSERVE/CONTAIN/STRICT, Runtime-Offset-Map (BTF-basiert), Per-Cgroup-Scopes,
+    RingBuf `TITAN_EXEC_EVENTS` (88-Byte-`TitanExecEvent`) plus Health-Zähler (→ §3.35).
+  - Ohne aktive `bpf`-LSM-Liste werden diese Programme vom Core **nicht** attached
+    (keine Attrappe, keine Enforcement-Behauptung).
 - **Producer Wire Contract (`FIND-036`)**:
   - Flushes the ingress aggregate at most 255 packets per event (the `attempt_count` wire field is a `u8`), so counters are exact and never saturated; a batch that mixes TCP with non-TCP packets carries the explicit neutral marker (`protocol = 0`, `tcp_flags = 0`) instead of the label of the packet that triggered the flush.
   - Walks the full cgroup-v2 ancestry (bounded to 64 levels) for LSM policies, so a policy pinned on a Gaia Cell cgroup also covers descendant and leaf cgroups.
@@ -2293,26 +2438,27 @@ Frontend:
 - N/A (Kernel bytecode)
 
 Backend:
-- rust/gedefense-ebpf/src/main.rs
-- rust/gedefense-ebpf/src/xdp.rs
-- rust/gedefense-ebpf/src/exec.rs
-- rust/gedefense-ebpf/src/egress.rs
-- rust/gedefense-ebpf/src/lsm.rs
+- rust/gedefense-ebpf/src/main.rs (einzige Program-Datei: XDP, Tracepoint, cgroup_skb/egress, LSM-Socket plus Titan-`bprm_check_security`/`mmap_file`)
 
 API:
-- Kernel eBPF BPF_MAP_* syscalls and perf ring buffers
+- Kernel eBPF BPF_MAP_* syscalls and perf/ring buffers (vom Core verwaltet)
 
 Styles:
 - N/A
 
 Datenbank / Storage:
-- Kernel eBPF Maps (pinned at /sys/fs/bpf/vgt-gedefense/)
+- Kernel-eBPF-Maps leben im geladenen Objekt des Core-Prozesses; **kein Map-Pinning**
+  (keine `bpf_obj_pin`-Pfade). `gedefense-bpffs.service` mountet nur `/sys/fs/bpf` als
+  Laufzeitvoraussetzung.
 
 Konfiguration:
 - rust/gedefense-ebpf/Cargo.toml
 
 Tests:
-- rust/gedefense-ebpf/tests/xdp_test.rs
+- Kein `tests/xdp_test.rs`: Verifikation erfolgt über den Nightly-eBPF-Build
+  (Verifier-Gate, `bpfel-unknown-none`) und das ELF-Gate in
+  `scripts/security-audit.sh` (Sektionen + Map-Symbole inkl. Point 3 und Point 1:
+  `lsm/bprm_check_security`, `lsm/mmap_file`, `TITAN_EXEC_*`).
 ```
 
 #### Dashboard-Integration
@@ -2337,10 +2483,31 @@ rust/gedefense-ebpf
 Defines shared Rust data structures, event payloads, map value structs, and IPC packet formats shared verbatim between `no_std` kernel eBPF bytecode and userspace daemons to guarantee 100% memory layout alignment.
 
 #### Fähigkeiten
-- Defines `#repr(C)` structs for eBPF maps: `Ipv4LpmKey`, `Ipv6LpmKey`, `PacketDropEvent`, `ProcessExecEvent`, `EgressRule`.
+- Defines `#repr(C)` structs for eBPF ring records and shared wire data:
+  `DeceptionAccessEvent`, `ExecEvent`, `EgressDropEvent`, `IngressEvent`,
+  `CellLsmDenyEvent`, `NetworkHeader` sowie in `styx_flow.rs` `FlowEvent`
+  (104 Byte, ABI-1) mit den `STYX_*`-Konstanten (Proto/Verzeichnis/Verdikt/Mode/Flags).
 - Eliminates serialization overhead between kernel and userspace through zero-copy binary casting.
 - Enforces strict endianness safety for network byte order comparisons.
-- **Ingress Wire Decoder (`FIND-036`)**: Validates the producer contract on the userspace side (batch at least one packet, no counter above the batch length, disjoint SYN/ACK classes, `attempt_count == syn_count` for a TCP label, TCP flags only on a TCP label). A record that contradicts the contract is rejected and counted as a lost sample with a drain alarm - it is never rewritten into a neutral label, which previously hid corrupted aggregates instead of reporting them.
+- **Rejecting Wire Decoder**: `decode_ingress_event` (64 Byte) und
+  `decode_styx_flow_event` (104 Byte) validieren die Producer-Verträge und verwerfen
+  ungültige Records statt sie zu reparieren (`None`); der Core zählt sie und bricht den
+  Drain nicht ab.
+- **Ingress Wire Decoder (`FIND-036`)**: Validiert den Producer-Vertrag auf Userspace-Seite
+  (Batch mindestens ein Paket, kein Counter über der Batch-Länge, disjunkte SYN/ACK-Klassen,
+  `attempt_count == syn_count` bei TCP-Label, TCP-Flags nur bei TCP-Label). Ein Record, der
+  den Vertrag verletzt, wird verworfen und als verlorene Probe mit Drain-Alarm gezählt -
+  nie neutral umgeschrieben.
+- **Flow-Event-Contract (Point 3)**: `FlowEvent` ist native-endian, `repr(C)`, exakt 104
+  Byte; `decode_styx_flow_event` erzwingt Länge, Family/Proto/Direction/Verdict-Ranges,
+  `packets>0`, `ts_ns>0`, kanonische IPv4-Ziele (kein 0.0.0.0), keine Ports unter dem
+  neutralen Proto-Marker und NUL-Padding für `comm`.
+- **Titan-Exec-Event-Contract (Point 1)**: `TitanExecEvent` ist native-endian,
+  `repr(C)`, exakt 88 Byte; `decode_titan_exec_event` erzwingt Länge, Hook/Action/
+  Reason-Ranges, `pid>0`, `ts_ns>0`, MMAP-`prot!=0`, DENY nur mit Policy-Grund, NUL-
+  gepolsterte `comm` und die zwei dokumentierten Null-Identitäts-Ausnahmen
+  (READ_FAILURE+AUDIT bzw. MMAP+ANON_NO_JIT+PROT_EXEC). Text-Wire:
+  `<dropped>|<16 Felder>`.
 
 #### Zugehörige Dateien
 ```text
@@ -2349,9 +2516,10 @@ Frontend:
 
 Backend:
 - rust/gedefense-common/src/lib.rs
-- rust/gedefense-common/src/events.rs
-- rust/gedefense-common/src/maps.rs
-- rust/gedefense-common/src/ipc.rs
+- rust/gedefense-common/src/styx_flow.rs
+- rust/gedefense-common/src/titan_exec.rs
+- rust/gedefense-common/src/bin/xdp_packet_fuzz.rs
+- rust/gedefense-common/src/bin/flow_event_fuzz.rs
 
 API:
 - Shared memory structs
@@ -2366,7 +2534,11 @@ Konfiguration:
 - rust/gedefense-common/Cargo.toml
 
 Tests:
-- rust/gedefense-common/tests/layout_test.rs (Verifies struct size and alignment)
+- Inline-Unit-Tests (`#[cfg(test)]`) in `src/lib.rs`, `src/styx_flow.rs` und
+  `src/titan_exec.rs` (Wire-Layout/Offsets, Decoder-Accept/Reject-Matrix inkl.
+  104-/88-Byte-`size_of`-Assert)
+- `src/bin/xdp_packet_fuzz.rs` und `src/bin/flow_event_fuzz.rs`: deterministische
+  Seed-Corpora als Fuzz-/Fixpunkt-Gate
 ```
 
 #### Dashboard-Integration
@@ -2493,7 +2665,7 @@ Datenbank / Storage:
 
 Konfiguration:
 - TOOLCHAINS.lock
-- VERSION (4.2.5)
+- VERSION (5.2.0)
 
 Tests:
 - scripts/validate-systemd.sh
@@ -2516,6 +2688,711 @@ packaging/ und scripts/
 - CI/CD Pipelines, Systemadministratoren, Paketmanagern.
 
 ---
+### 3.34 Point 3 — Styx Egress Enforcement & Beacon Detection (Phase 1)
+
+#### Status & Zweck
+Phase 1 ist implementiert (2026-11-15) und standardmäßig **aus**
+(`styx.enabled=false`, `mode=off`): Ein Upgrade verändert das Kernel-Verhalten nicht, der
+Legacy-Pfad bleibt byte-identisch. Aktivierung ist eine Operator-Entscheidung
+(`monitor` → `enforce`, per-Cell-Regeln). Verbindliche ABI/Spezifikation:
+`docs/POINT3-EGRESS-BEACON.md` (dort §13: Umsetzungsabweichungen/Präzisierungen).
+Kurzüberblick der Architektur:
+
+- **eBPF** (`rust/gedefense-ebpf/src/main.rs`): Hook `gedefense_egress`
+  (`cgroup_skb/egress` am Root-Cgroup, `CgroupAttachMode::AllowOverride`), Map-ABI,
+  geordnete Entscheidungspipeline, Flow-Aggregation + RingBuf (kein Per-Paket-Event).
+- **Rust-Core** (`rust/gedefense-core`): Map-Handles/Attach, Seed der Pflicht-Veto-Liste,
+  `STYX_*`-Kommandos mit vollständiger Validierung vor dem einen Map-Write, Text-Wire,
+  Health-Zähler; keine Shell-/Datei-Aktionen im Enforcement-Pfad.
+- **Go-Control** (`control/`, unprivilegiert): `coreipc.go` (VGT3-Client, strikter Parser,
+  Capability-Gate), `styx_beacon.go` (Detektor), `styx_settings.go`/`styx_policy_plan.go`
+  (Settings-Namespace und pure Policy-Validierung/Plan), `styx_syncer.go`/
+  `styx_syncer_status.go` (`styxPolicySyncer` Sync/Status) und `styx_policy.go`
+  (XDR-/Beacon-Bridge + API-Sicht). Der T5-Split hält jede Datei ≤ 500 Zeilen.
+
+#### Kernel-Maps (Aya; Namen sind ABI, Core schlägt sie beim Start per Namen nach)
+| Map | Typ | Key → Value (Auszug) |
+|---|---|---|
+| `CELL_EGRESS_MODE` | HashMap | cgroup u64 → Mode-Flags u8 (4096) |
+| `CELL_EGRESS_ALLOW_V4` / `_V6` | LpmTrie | cgroup+IPv4+Port+Proto (16 B, max. 120 Bit) bzw. cgroup+IPv6 (24 B, portlos, 192 Bit) |
+| `STYX_ALLOW_GLOBAL_V4` / `_V6` | LpmTrie | IPv4/Port/Proto (8 B, max. 56 Bit) bzw. IPv6/Port/Proto (20 B, max. 152 Bit) |
+| `STYX_BLOCK_V4` / `_V6` | LpmTrie | reine Prefixe (Core seedet Pflicht-Veto beim Start) |
+| `STYX_RESOLVER_V4` / `_V6` | LpmTrie | DNS/DoT-Resolver-Prefixe |
+| `STYX_GLOBAL` | Array(1) | `epoch(low32) · flags<<32 · mode<<40` |
+| `STYX_RESOLVED` | LruHashMap | skb-cgroup → Zell-cgroup+epoch+mode (16384) |
+| `FLOW_AGG_V4` / `_V6` | LruPerCpuHashMap | Flow → Aggregat (first/last ts, tx, packets, pid, tcp_flags, verdict) |
+| `FLOW_EVENTS` | RingBuf | 4 MiB, 104-Byte-`FlowEvent` (aggregiert) |
+| `FLOW_EVENTS_EMITTED`, `FLOW_RING_DROPS`, `FLOW_AGG_INSERT_FAILURES`, `EGRESS_PARSE_ERRORS`, `EGRESS_DROPS_TOTAL`, `EGRESS_POLICY_DROPS` | PerCpuArray(1) | Health-Zähler u64 |
+
+Es gibt **kein Map-Pinning** (die Maps leben im geladenen Objekt des Core-Prozesses; ein
+Core-Neustart leert sie). `gedefense-bpffs.service` stellt nur das bpffs-Mount bereit.
+
+#### VGT3-Kommandos (`STYX_*`, HMAC-authentifiziert, unbekannt ⇒ `ERR unknown command`)
+`STYX_VERSION` (`styx-v1`), `STYX_EPOCH` (16 Hex, random pro Core-Start),
+`STYX_GLOBAL mode flags` (IPC-Flag-Bit 0 = LOG_FLOWS, intern `1<<6`),
+`STYX_MODE_SET cgroup mode flags`, `STYX_MODE_DEL cgroup`,
+`STYX_ALLOW_ADD|DEL family scope cgroup cidr port_lo port_hi proto_mask`,
+`STYX_BLOCK_ADD|DEL family cidr`, `STYX_RESOLVER_ADD|DEL family cidr`,
+`STYX_FLOW_EVENTS` (Text-Wire `<dropped>|<record>[,<record>…]` oder `empty`),
+`STYX_FLOW_HEALTH` (6 Dezimalzähler). Ein Alt-Core ohne diese Familie wird als
+`ErrStyxUnavailable`/`capability-missing` behandelt (kein XDR-Ausfall, Backoff 10 s).
+Ein Core-Neustart erzeugt eine neue Epoch ⇒ Go-Voll-Resync (idempotent).
+
+#### Entscheidungspipeline (`gedefense_egress`, geordnet)
+1. `STYX_GLOBAL` lesen; `mode==OFF && flags==0` ⇒ Legacy-Pfad (5.2.0) und Ende.
+2. L3 parsen; Parse-Fehler zählt `EGRESS_PARSE_ERRORS`, enforce ⇒ DROP (fail-closed).
+3. IPv4-mapped/-compatible IPv6-Ziele als IPv4 normalisieren (Bypass-Schutz).
+4. Cgroup-Attribution: `bpf_skb_cgroup_id` + begrenzter Ancestor-Walk (0..63) gegen
+   `CELL_EGRESS_MODE`, Positiv-Cache in `STYX_RESOLVED` (Epoche).
+5. Flow-Aggregation (nur bei LOG_FLOWS oder mode ≥ monitor) und gebündeltes Emit.
+6. Pflicht-Veto (`STYX_BLOCK_*`, geseedete Metadata/LinkLocal/Multicast-Prefixe; Loopback
+   ausgenommen; ND-Ausnahme nur fe80 bei ICMPv6 NS/NA).
+7. DNS/DoT-Pinning (Ports 53/853 nur zu `STYX_RESOLVER_*` mit DNS-Resolver-Flag).
+8. Allow-Reihenfolge: Zell-LPM → globale Allow-LPM/Legacy-Allowlist (nur mit
+   `ALLOW_HOST_ALLOWLIST`) → Legacy-`BLOCKLIST_*` (DROP, unverändert) → Loopback erlauben.
+9. Default: enforce ⇒ DROP (`DEFAULT_DENY`), monitor ⇒ PASS (`AUDIT_DROP`-Verdikt),
+   off ⇒ PASS. Rückgabe bleibt `0 = DROP`, `1 = PASS`.
+
+#### Default-Off- und Fail-Closed-Matrix
+| Situation | Kernel | Go-Status | XDR/Response |
+|---|---|---|---|
+| Default nach Upgrade (`enabled=false`, `mode=off`) | Legacy-Pfad, kein Flow-Logging | `enabled=false`, `mode=off`, Sync `applied` | keine Aktion, Verhalten wie 5.2.0 |
+| Capability fehlt (Alt-Core) | — | `capability=missing`, Sync `capability-missing`, Backoff | keine Beacon-Incidents |
+| Flow-Ring/Health-Drops | Enforcement unberührt | `beacon.sensor_state=degraded` nach 3 Overflow-Polls | Detektion pausiert, kein „keine Beacons"-Claim |
+| Map-Write/Sync-Fehler | ggf. alter Policy-Stand | `sync.state=failed` + Event, 10-s-Retry | keine neue aktive Response |
+| XDR `degraded`/`observe` | — | — | Beacon-Incident wird aufgezeichnet, `respond()` pausiert |
+| Pflicht-Veto fehlt | Core startet nicht (Seed fatal) | `unavailable` | keine Enforcement-Behauptung |
+
+#### Phasen-Grenzen/Restrisiken (Details in `docs/POINT3-EGRESS-BEACON.md` §13)
+- Kein Allow-All über CIDR: Go akzeptiert nur /4../32 (v4) bzw. /8../128 (v6);
+  „alles erlauben" nur über Modus `off`/Ausnahmen.
+- IPv6-Cell-Allow ohne Port/Proto (Key portlos): Port-/Proto-Regeln werden in Phase 1
+  abgelehnt, nicht still geweitet.
+- Ports nur exakt (mit Host-CIDR) oder 0/65535; beliebige Bereiche werden abgelehnt.
+- Control-Restart bei deaktivierten Settings kann alte PerCell-Map-Einträge nicht
+  enumerieren ⇒ nur fail-safe `STYX_GLOBAL(0,0)`; Alt-Einträge sind bei `off` inert, Maps
+  sind nicht gepinnt (Core-Neustart leert sie).
+- `BLOCKLIST`-Drops bleiben in allen Modi unverändert (fail-closed, unverändertes Event).
+- Loopback wird nie default-denied; ND-Ausnahme nur fe80 — Solicited-Node-Multicast kann
+  vetoed werden (Restrisiko, beobachten).
+- Positiv-Cache kann neu installierte höhere Ancestor-Policy bis Epoch/Eviction verzögert
+  sehen; Negativ-Cache wird bewusst vermieden.
+- DNS-Attribution/Direct-IP-Signal bleibt Phase 1 `unknown` (kein Fake); rx-Bytes und
+  echte DNS-Attribution sind Phase 2; DoH-443 ist kernelseitig nicht attribuierbar.
+- Flow-Overflow/Health ist explizit: `xdr.styx_flow_overflow` (gedrosselt), `degraded`
+  nach Wiederholung, kein stilles OK.
+- Signal 2 nutzt kumulative Fenster-Deltas (eBPF resettet FLOW_AGG nach jedem Emit; Go
+  summiert saturierend); Schwellen gelten auf der Flow-Gesamtsumme. In Phase 1 bleibt
+  Signal 2 ohne rx-Telemetrie (`RxObservationAvailable=false`) fail-closed: volume-only
+  ist `unknown` (kein Score/Incident/Ratio-Claim); nur Volume + Canary-Korrelation
+  (`KD.LINUX.CANARY_ACCESS`) ergibt Score 200, der rx-bekannte Ratio-Pfad ist Phase 2.
+- `mode=off` wird ehrlich als Sensor-Zustand `off` gemeldet, und `enabled=true` +
+  `mode=off` mit PerCell/Allowlist/Resolvern wird fail-visible abgelehnt statt still
+  inert gespeichert.
+- P3-T7-Review: PARTIAL, kein FAIL; behobene Befunde (Signal-2-Delta, SensorState `off`,
+  inerte `mode=off`-Policy) sind testbelegt. Akzeptierte Restrisiken: IPv6-Ext-
+  Header > 4 Hops bzw. Nicht-Erst-Fragmente ohne L4-Header können DNS-Pinning
+  überspringen (IP-Policy/Telemetrie greifen weiter); Core-Restart-Epoch-Fenster
+  ≤ 10 s; Pflicht-Veto-Einträge sind über authentisiertes `STYX_BLOCK_DEL` löschbar
+  (kein Aufrufpfad in der Go-Policy-Schicht); kein Live-Kernel-/Verifier-Load-Test
+  (nur Build + readelf).
+- Datei-Split (VGT ≤ 500 Zeilen): `styx_settings.go` 239, `styx_policy_plan.go` 303,
+  `styx_syncer.go` 403, `styx_syncer_status.go` 189, `styx_policy.go` 353 Zeilen; die
+  Testdateien bleiben ebenfalls ≤ 500 Zeilen.
+
+#### Verifikation (Gates)
+- `scripts/security-audit.sh`: neue Pflicht-Anker für ABI-1/2/3, Detektor, Syncer und
+  Default-Off; die Go-StyX-Anker werden über alle `control/styx_*.go` (ohne `_test.go`)
+  geprüft, damit ein Datei-Split den Gate nicht umgeht; ELF-Gate prüft zusätzlich
+  `cgroup_skb/egress` sowie `CELL_EGRESS_MODE`, `FLOW_EVENTS`, `STYX_GLOBAL`,
+  `STYX_RESOLVED`, `FLOW_AGG_V4` im gebauten Objekt.
+- `cargo +1.97.1 test --offline --locked -p gedefense-common -p gedefense-core`;
+  Nightly-eBPF-Build (`bpfel-unknown-none`, Verifier-Gate); `go vet ./...`;
+  `go test -count=1 -timeout 1800s ./...`; `go test -race -run 'Styx|Beacon|Settings|XDR'`;
+  `node --check control/web/*.js`; `packaging/tests/install-smoke.sh`.
+- T7-Fixbelege: `TestStyxBeaconSlowExfilCumulativeDeltas`,
+  `TestStyxBeaconModeOffIsNotActive`, `TestStyxFabricSettingsRejectsInertModeOffPolicy`;
+  flaky `TestInitFeedSigningProvisioning` behoben (500 Läufe ohne FAIL).
+- Nächster Schritt (damals): Punkt 1 (Titan + eBPF-LSM `bprm_check_security`/`mmap_file`) — umgesetzt in §3.35.
+
+### 3.35 Point 1 — Titan eBPF-LSM Exec-/Library-Gate (Phase 1)
+
+#### Status & Zweck
+Phase 1 ist implementiert (2026-11-15) und standardmäßig **aus**
+(`titan_exec.enabled=false`, `mode=off`): Ein Upgrade verändert das Kernel-Verhalten
+nicht; ohne aktive `bpf`-LSM-Liste wird **nichts attached** und **keine
+Enforcement-Wirkung** behauptet. Aktivierung ist eine Operator-Entscheidung
+(Boot-Cmdline `lsm=...,bpf` + Reboot), nicht Teil der Code-Installation. Verbindliche
+ABI/Spezifikation: `docs/POINT1-TITAN-EXEC-GATE.md` (dort §13:
+Umsetzungsabweichungen/Präzisierungen) und `docs/POINT1-PHASE1-REPORT.md`
+(Implementierungs-/Verifikationsbericht). **T7-Review (2026-11-15): PARTIAL, kein
+offener FAIL** — ctime-BTF-Split-Layout und comm-Härtung sind behoben (§13.13/§13.14),
+die Inert-Policy-Grenze ist präzisiert (§13.15). Kurzüberblick:
+
+- **eBPF** (`rust/gedefense-ebpf/src/main.rs`): zwei LSM-Hooks
+  `gedefense_titan_exec_bprm` (`bprm_check_security`) und
+  `gedefense_titan_exec_mmap` (`mmap_file`), Runtime-Offset-Map, Map-ABI,
+  Modi OFF/OBSERVE/CONTAIN/STRICT, Per-Cgroup-Scopes, RingBuf-Events und Counter.
+- **Rust-Core** (`rust/gedefense-core`, `src/btf_offsets.rs`, `src/titan_exec.rs`):
+  LSM-Aktivierungsprobe, Mini-BTF-Parser + Offset-Validierung, Map-Seed, Attach-Gate,
+  fd-sichere Pfadauflösung, Policy-Store, `TITAN_EXEC_*`-Kommandos mit vollständiger
+  Validierung vor dem ersten Map-Write, Event-Drain/Health, ehrlicher Status und der
+  P3-Attach-Claim-Fix.
+- **Go-Control** (`control/`, unprivilegiert): `titan_exec_settings.go` (Namespace,
+  Default disabled/off, Schema v14), `titan_exec_plan.go` (purer Allowlist-Compiler),
+  `titan_exec_syncer.go`/`titan_exec_syncer_status.go` (`titanExecPolicySyncer`,
+  Fail-safe-Push-Order, Ehrlichkeits-Status), `titan_exec_events.go` (Parser/XDR),
+  `coreipc.go` (VGT3-Client, `ErrTitanExecUnavailable`) und `xdr.go`
+  (Poll, Evidence/Incident, Status). Jede neue Datei bleibt ≤ 500 Zeilen.
+
+#### ABI-1: Wire-Format (`rust/gedefense-common/src/titan_exec.rs`)
+`TitanExecEvent` ist `repr(C)`, native-endian und exakt **88 Byte**
+(`TITAN_EXEC_EVENT_WIRE_BYTES = 88`). Felder: `cgroup_id`, `ts_ns`, `dev`,
+`inode_mode`, `ino`, `generation`, `pid`, `tgid`, `uid`, `gid`, `prot`, `f_flags`
+(Phase 1 immer 0), `hook`, `action`, `reason`, `flags`, `comm[16]`, `reserved[8]`.
+`decode_titan_exec_event` lehnt jede Abweichung ab (`None`): Länge, Hook/Action/
+Reason-Ranges, `pid>0`, `ts_ns>0`, `MMAP ⇒ prot!=0`, `DENY ⇒ reason∉{NONE,
+READ_FAILURE}`, `comm`-Padding; Null-Identität (`dev==0 && ino==0`) ist **nur** für
+(a) `READ_FAILURE`+`AUDIT` und (b) `MMAP`+`ANON_NO_JIT`+`PROT_EXEC` gültig.
+Text-Wire `TITAN_EXEC_EVENTS`: `empty` oder `<dropped>|<record>[,<record>…]`
+(≤ 8 Records, ≤ 2048 Byte, 16 `:`-getrennte Felder, `comm` als Hex).
+**comm-Kontrakt (T7-Fix):** Der Kernel-Name ist via `PR_SET_NAME` prozesskontrolliert
+(beliebige Bytes außer NUL, max. 15 + Terminator); der Go-Parser akzeptiert jede
+Hex-Folge ≤16 B und erzwingt nur die NUL-Padding-Form, die Anzeige sanitisiert
+`sanitizeTitanExecComm` (nicht druckbar ⇒ `?`). Ein hostile `comm` unterdrückt keinen
+Event-Batch; Tests: `TestParseCoreTitanExecEventsAcceptsRawKernelComm`,
+`TestTitanExecHostileCommDoesNotSuppressBatch`.
+
+#### Kernel-Maps (Aya; Namen sind ABI, Core schlägt sie beim Start per Namen nach)
+| Map | Typ | Key → Value |
+|---|---|---|
+| `TITAN_EXEC_STATE` | Array(1) | `epoch(low32) · mode<<32 · flags<<40 · abi<<48(=1) · magic<<56(=0x54)` |
+| `TITAN_EXEC_OFFSETS` | Array(48) | Offset-/ABI-Tabelle (§4.1: 29 belegt inkl. Index 28 = `INODE_I_CTIME_NSEC_WIDTH`, 29..47 reserviert) |
+| `TITAN_EXEC_MODE` | HashMap\<u64,u8\> | cgroup → `(mode<<2) \| scope-flags(bit0 JIT_ALLOW)`, 4096 |
+| `TITAN_EXEC_POLICY` | HashMap\<[u8;16],[u8;16]\> | `dev LE \| ino LE \| pad` → `action@0 \| flags@1 \| reserved@2 \| ctime_ns LE@4..12 \| pad`, 65536 |
+| `TITAN_EXEC_EVENTS` | RingBuf | 1 MiB, 88-Byte-`TitanExecEvent` |
+| `TITAN_EXEC_EVENTS_EMITTED`, `_RING_DROPS`, `_READ_FAILURES`, `_POLICY_DENIES`, `_POLICY_AUDITS`, `_CTIME_REJECTS` | PerCpuArray(1) | Health-Zähler u64 |
+
+Alle Maps werden vom Core **immer** per Namen übernommen (auch bei inaktiver
+LSM-Liste), damit ein veraltetes eBPF-Objekt beim Start laut scheitert statt blind zu
+laufen. Kein Map-Pinning; Core-Restart leert die Maps und erzeugt eine neue Epoch
+(Go-Voll-Resync).
+
+#### ABI-3: VGT3-Kommandos (HMAC-authentifiziert; unbekannt ⇒ `ERR unknown command`)
+`TITAN_EXEC_VERSION` (`titan-exec-v1`), `TITAN_EXEC_EPOCH` (16 Hex, random pro
+Core-Start), `TITAN_EXEC_STATUS` (feste Key-Reihenfolge
+`status;mode;flags;path;lsm;offsets;entries;scopes;epoch`),
+`TITAN_EXEC_SET_GLOBAL mode flags` (Flag-Bit0 REQUIRE_CTIME; `mode>0` nur bei
+enforcement-fähigem Gate, sonst `ERR enforcement-unavailable`),
+`TITAN_EXEC_ALLOW_ADD path` (`added|exists:<dev>:<ino>`),
+`TITAN_EXEC_ALLOW_ADD_BATCH base64url` (`added:<n>;rejected:<n>;error=<token>`,
+Teilakzeptanz = Fehler für den Sync), `TITAN_EXEC_ALLOW_DEL dev ino` (idempotent),
+`TITAN_EXEC_CLEAR`, `TITAN_EXEC_SCOPE_SET cgroup mode flags`,
+`TITAN_EXEC_SCOPE_DEL cgroup`, `TITAN_EXEC_EVENTS`, `TITAN_EXEC_HEALTH`
+(6 Per-CPU-Zähler). Antworten ≤ 2048 Byte; Pfade werden im Core fd-sicher
+(`O_PATH|O_NOFOLLOW` + `fstat`) aufgelöst (Symlink/Nicht-Regular/Nicht-Executable ⇒
+Reject). Ein Alt-Core ohne diese Familie wird als `ErrTitanExecUnavailable` /
+`capability-missing` behandelt (Capability-Fakt, keine XDR-Degradierung).
+
+#### BTF-Offsets und Attach-Gate
+`src/btf_offsets.rs` liest `/sys/kernel/btf/vmlinux` (max. 64 MiB), akzeptiert nur
+`magic=0xeb9f`, Version 1, `hdr_len=24`, parst STRUCT/UNION/FUNC/FUNC_PROTO
+Little-Endian, folgt anonymen Unions rekursiv (Tiefenlimit 16) und löst die
+`TITAN_EXEC_OFFSETS`-Tabelle auf. Jeder Fehler ⇒ `offsets=invalid` ⇒ kein Attach.
+**ctime-Split/Fallback (T7-FAIL-Fix, 2026-11-15):** Moderne Kerne (6.18/7.0) haben
+kein `i_ctime`-timespec64, sondern `i_ctime_sec` (8 B) + `i_ctime_nsec` (4 B). Der
+Core bevorzugt dieses Split-Layout (nsec-Width 4|8 aus dem realen BTF-Feldtyp) und
+fällt nur sonst auf Legacy-`i_ctime.tv_sec/tv_nsec` zurück; die Width wird als
+OFFSETS[28] veröffentlicht. eBPF liest `nsec` gemäß Width (u32 zero-extended/u64),
+`sec` als u64 und bildet `sec*1e9 + nsec` saturierend → kein `__multi3` im BPF-Objekt;
+unplausible Width/Reihenfolge ⇒ `offsets=invalid`/`unavailable`, kein Attach.
+Golden-Werte (x86_64, belegt durch **synthetische BTF-Fixtures + Real-BTF-Host-Test**
+`titan_btf_live_vmlinux_resolves_all_offsets`): `linux_binprm.file=64`,
+`file.f_inode=32`, `inode.i_ino=64`, `inode.i_sb=40`, `inode.i_nlink=72`,
+`inode.i_generation=124`, `super_block.s_dev=16`, `super_block.s_magic=96`,
+`bprm nargs=1`, `mmap nargs=4`. Live-WSL-6.18-Beleg: `i_ctime_sec=104`,
+`i_ctime_nsec=120`, Width 4, `inode_size=608` (übrige Werte unverändert; SKIP des
+Tests nur ohne `/sys/kernel/btf/vmlinux`).
+Attach erfolgt **nur** wenn `bprm_nargs == 1` und `mmap_nargs == 4` samt
+file=0/prot=2/flags=3 und Retval-Slots 1/4 (`titan_exec_offsets_match_ebpf_slots`);
+sonst Status `unavailable` ohne Attach.
+
+#### Modi- und Entscheidungssemantik
+- Globaler Modus aus `TITAN_EXEC_STATE`; Per-Cgroup-`TITAN_EXEC_MODE` überschreibt
+  (Ancestor-Walk 0..63, erster Treffer; Scope auf der Cell-Root-Cgroup).
+- **OFF:** Hooks erlauben sofort (kein Read, kein Event).
+- **OBSERVE:** Entscheidung wie CONTAIN/STRICT, aber `action=AUDIT`, Rückgabe 0.
+- **CONTAIN:** `bprm` DENY bei `i_nlink==0` bzw. TMPFS/DEVTMPFS/PROC/SYSFS, außer
+  es existiert ein Inode-ALLOW; `mmap` nur bei `PROT_EXEC` (DENY bei denselben
+  Bedingungen, bei `PROT_WRITE|PROT_EXEC` = WX und bei anonymem Exec ohne
+  Scope-Flag JIT_ALLOW).
+- **STRICT:** Datei-Exec/mmap nur mit `TITAN_EXEC_POLICY`-ALLOW für `(dev,ino)`;
+  REQUIRE_CTIME zusätzlich ctime-Mismatch ⇒ CTIME_MISMATCH. Anonymer Exec nur mit
+  JIT_ALLOW. Der LSM-Ketten-Retval (`previous`) wird respektiert.
+- Read-/Offsets-Fehler: `READ_FAILURES++`, Fail-safe (kein Block) + AUDIT-Event.
+- Keine Pfad-Strings im Kernel; Go reichert best-effort via `/proc/<pid>/exe` an
+  (ehrlich `unknown`).
+
+#### Go-Control: Settings, Plan, Sync, Events
+`titan_exec`-Namespace (Schema v14, HOT/critical): `enabled`, `mode`
+(`off|observe|contain|strict`), `exec_roots`, `allow_paths`, `dev_roots` (nur
+dokumentiert, keine Kernel-Freigabe), `jit_cgroups`, `strict_cgroups`,
+`max_entries` (Default 8192, max. 65536), `max_scopes` (Default 256, max. 4096),
+`require_ctime`. Defaults `enabled=false, mode=off`, leere Listen ⇒ Upgrade ändert
+kein Kernelverhalten; `mode=off` mit nicht-leeren Regeln wird nur bei
+`enabled=true` fail-visible abgelehnt (ein disabled Entwurf bleibt zulässig, T7-
+Präzisierung). Der Plan-Compiler ist pur (Roots/AllowPaths + Paket-/FIM-Evidenz, Caps,
+deterministischer SHA-256-Fingerprint); der Core liefert die Identität, Go nur Pfade.
+Der Syncer probt Capability/Epoch, pusht fail-safe (`SET_GLOBAL(0,0)` → Allowlist →
+Scopes → `SET_GLOBAL(mode,flags)`; Adds vor Deletes) und meldet `applied` erst nach
+vollständigem Plan. Events laufen über `parseCoreTitanExecEvents` (Alles-oder-Nichts,
+≤ 8, 16 Felder, roher `comm` nur NUL-Padding-geprüft und anzeige-sanitisiert) in
+Evidence zuerst → Dedupe → Incident (`TITAN.EXEC_DENIED` / `TITAN.MMAP_DENIED` /
+`TITAN.EXEC_AUDIT`); read-only API `GET /api/v1/titan/exec/status` und
+`GET /api/v1/titan/exec/events`.
+
+#### Aktivierungs-Check, Fail-Safe-/Ehrlichkeitsmatrix
+| Situation | Kernel-Hook | Core/Go-Status | Behauptung |
+|---|---|---|---|
+| LSM-Liste ohne `bpf` (Zielserver heute) | nicht attached (`path=none`) | `state=inactive`, `lsm=inactive`, Sync `inactive` | keine Wirkung, kein Incident |
+| BTF fehlt/kaputt/Offsets oder ctime-Layout unplausibel | nicht attached | `unavailable`, `offsets=invalid` | keine Wirkung |
+| Hook-Arität nicht unterstützt | nicht attached | `unavailable` (`offsets=valid`) | keine Attrappe |
+| Default-Settings (`off`) | Hooks erlauben sofort | `applied`, `mode=off` | keine Events |
+| `mode>0` bei inaktiver LSM | kein Attach | `SET_GLOBAL` ⇒ `ERR enforcement-unavailable`; Go `inactive` | nie `applied`/enforced |
+| Map-Verlust/Core-Restart | leer ⇒ erlauben | neue Epoch, Go-Voll-Resync | dokumentiertes ≤ 10-s-Fenster |
+| Read-Fehler im Hook | allow (fail-safe) | `READ_FAILURES`+AUDIT | ehrliche Degradierung |
+
+Der Aktivierungs-Check (`bpf_lsm_active_from_list`/`_from_sys_fs`, Token `bpf` in
+`/sys/kernel/security/lsm`) ist eine **harte Vorbedingung** für Attach, Status
+`path=bpf-lsm` und `SET_GLOBAL mode>0`. `--require-bpf-lsm` macht die fehlende
+Aktivierung weiterhin zum Startfehler.
+
+#### P3-Fix (gleicher Change): Cell-Socket-LSM-Claim
+Der frühere Gaia-Cells-Socket-LSM-Claim (`+bpf-lsm-cell`, `attached`) war auf dem
+Zielserver ein wirkungsloser Attach. Jetzt gilt: `cell_lsm_attached` nur nach
+erfolgreichem Attach auf aktiver LSM-Liste; PING/Startlog sonst
+`+bpf-lsm-cell`-frei bzw. `cell_lsm=optional-unavailable`; Cell-LSM-IPC-Kommandos
+werden ohne Attach abgelehnt; Go meldet `cell-lsm-unavailable` statt
+`bpf-lsm-cell`. Details: `docs/POINT3-EGRESS-BEACON.md` §13.20/§13.21.
+
+#### Phasen-Grenzen/Restrisiken (Details in `docs/POINT1-TITAN-EXEC-GATE.md` §13)
+- **Aktivierungsblocker:** echte Wirkung nur mit Boot-Cmdline `lsm=<aktuelle
+  Liste>,bpf` + Reboot (Operator; exakte Liste vorher testen, Rettungs-Kernel
+  bereithalten). Cmdline wird nie automatisch geändert; ohne Aktivierung bleibt der
+  Status `inactive` und es gibt keine Wirkung.
+- Kein Live-Verifier-/Attach-Test in dieser Umgebung (nur Nightly-Build + `readelf`);
+  echtes `bpf()`-Load/Attach + Verifier bleiben Operator-Integrationstest.
+- Kein `file_mprotect`/W^X-Transitionen, kein fs-verity-Enforcement, kein
+  Fanotify-Exec-Fallback (nur dokumentierte Option), Events ohne Pfad,
+  Overlayfs-Copy-up, Inode-Recycling nur über ctime-Mitigation.
+- Dev-Roots sind nicht Kernel-enforced; STRICT erfordert eine vollständige
+  Allowlist (sonst Exec-/SSH-Lockout); Map-Verlust = Fail-open-Fenster bis Resync.
+- Phase 1 hat keine UI-Panels: nur Settings-Namespace + read-only Status/Event-API.
+- Keine Shell-/Exec-Primitive im Rust-Core/eBPF (vom Audit-Gate geprüft); Go bleibt
+  unprivilegiert und spricht ausschließlich VGT3.
+
+#### Verifikation (Gates)
+- `scripts/security-audit.sh`: additive P1-Pflicht-Anker für ABI-1/2 (Common/eBPF/
+  Core/Go), die LSM-Aktivierungs- und Hook-Aritätsprüfung (stabile Anker
+  `bprm_nargs`/`mmap_nargs` + `*match_ebpf_slots` über beide Core-Dateien, 1/4-Bedingung
+  bleibt hart geprüft), den Fail-Closed-`enforcement-unavailable`-Pfad, den P3-Claim-
+  Fix, die T7-Fix-Anker (Split-ctime/NSEC-Width, roher `comm`, Inert-Policy-Grenze) und
+  ELF-Gate-Sektionen/-Symbole `lsm/bprm_check_security`, `lsm/mmap_file`,
+  `TITAN_EXEC_STATE/OFFSETS/MODE/POLICY/EVENTS`. Der bestehende Attach-Signatur-Anker
+  wurde auf `program.load("socket_create", btf)?` aktualisiert (nicht abgeschwächt);
+  Endstand: **Exit 0, 26 PASS-Prüfungen**.
+- `cargo +1.97.1 test --offline --locked -p gedefense-common -p gedefense-core`
+  (Exit 0; common 31 + 2 Bin-Tests, core **83 Tests**, 0 failed); Real-BTF-Host-Test
+  `titan_btf_live_vmlinux_resolves_all_offsets` grün auf WSL 6.18; Nightly-eBPF-Build
+  (`bpfel-unknown-none`, `-Z build-std=core`, Exit 0, **109.384 Byte**, keine
+  `__multi3`-Symbole) + `readelf`-Beleg; `go vet ./...` (Exit 0);
+  `go test -count=1 -run 'Titan|Exec|XDR' ./...` (Exit 0; `-v` 219 RUN/219 PASS/0 FAIL);
+  voller `-v`-Lauf (T7-Stand, selbst ausgeführt) 1420 RUN/1418 PASS/0 FAIL/2 SKIP;
+  `node --check control/web/*.js`.
+- T7-Fixbelege: `titan_btf_split_ctime_layout_publishes_the_nsec_width`,
+  `titan_btf_live_vmlinux_resolves_all_offsets`,
+  `TestParseCoreTitanExecEventsAcceptsRawKernelComm`,
+  `TestTitanExecHostileCommDoesNotSuppressBatch`.
+- Nächster Schritt: Punkt 2 (ephemere Parser-Zellen); P1-T7-Review abgeschlossen
+  (PARTIAL, Fixes umgesetzt), Operator-Aktivierungstest separat.
+
+### 3.36 Point 2 — Ephemere Parser-Zellen (Phase 1)
+
+#### Status & Zweck
+Phase 1 ist implementiert (2026-11-15) und standardmäßig **aus**
+(`parser_cells.enabled=false`, Settings-Schema **v15**, Migration v14→v15): Ein
+Upgrade verändert weder Host-Verhalten noch Kernel-Policy; ein fehlender Helper
+führt nur zu `runtime-unavailable`/`capability-missing`, nie zu einer
+Isolations-Behauptung. Verbindliche ABI/Spezifikation:
+`docs/POINT2-PARSER-CELLS.md` (dort §12: Umsetzungsabweichungen/Präzisierungen);
+Evidenz/Runbook: `docs/POINT2-PHASE1-REPORT.md`.
+
+Ziel: Zero-Click-Parser (PDF/Media/Dokument) laufen in einer **ephemeren,
+wegwerfbaren Zelle** mit eigenem Mount-/PID-/IPC-/UTS-/Netz-Namespace, privater
+tmpfs-Wurzel, ausschließlich read-only eingebundenem Dokument, ohne Host-`$HOME`,
+ohne Netzwerk, mit Capability-/Seccomp-Drop, TTL + Auto-Burn und forensischem,
+größenbeschränktem Export-Broker.
+
+#### Architektur & Privilege Split
+- **Einziger Spawner:** neuer root-Dienst `gedefense-cell-helper`
+  (`rust/gedefense-cell-helper`, eigenes Crate/Binary, eigene Unit). Go-Control
+  (`CapEff=0`), Gateway, Rust-Core und eBPF bleiben unverändert und dürfen
+  weiterhin keine Exec-/Namespace-Primitive enthalten (Audit-Gate). `execve`
+  existiert ausschließlich in `sandbox.rs` auf den hash-gepinnten Profil-Binarypfad.
+- **VGTGC2 (Textzeilen-Protokoll, §3):** Unix-Socket
+  `/run/vgt-gedefense/cell-helper.sock` (0660 root:gedefense), HMAC-SHA256,
+  SO_PEERCRED-UID-Check in beide Richtungen, ±30 s, Replay-Cache, harte
+  Größen-/Feldgrenzen, geschlossene Fehlercodes; genau ein FD per `SCM_RIGHTS` für
+  `CELL_EXPORT_READ` (sealed memfd `F_SEAL_WRITE|GROW|SHRINK`).
+- **L1-Sandbox (Helper):** `clone(CLONE_NEWNS|NEWPID|NEWIPC|NEWUTS|NEWNET)`,
+  privater Mount-Baum + tmpfs-Wurzel, minimales `/dev`, `/proc` mit `hidepid=2`,
+  Input-Materialisierung read-only, Pivot-/Chroot, `setgroups`/`setresgid`/
+  `setresuid` auf `nobody`, Cap-Bounding/Ambient **inkl. `CAP_CHOWN`** (Sandbox
+  chownt Input-Kopie/Export-Ziel auf die Zell-UID; T5-Fix), rlimits, `umask(077)`,
+  `PR_SET_NO_NEW_PRIVS`, klassischer Seccomp-BPF-Filter (Arch-Check x86_64,
+  Deny-Liste mit EPERM, `socket`/`socketpair` nur `AF_UNIX`), X11 verweigert;
+  **Wayland-Phasengrenze:** Phase 1 `wayland=false` (Zell-UID 65534; Helper/Status
+  melden `wayland=false`), ein Profil mit `wayland=true` wird fail-closed als
+  `capability-missing` abgelehnt (kein stiller X11-/Host-Display-Fallback);
+  `[parser_cells] wayland_profiles` ist die package-managed Profil-Liste
+  (Default leer), Wayland/PipeWire für Session-UIDs = Phase 2.
+- **Cgroup v2:** `/sys/fs/cgroup/vgt-cells/parser-<uuid>` mit
+  `memory.max`/`pids.max`/`cpu.max`; Freeze via `cgroup.freeze` + Read-back,
+  Burn via `cgroup.kill` + rmdir, Orphan-Sweep beim Start, append-only Burn-Ledger
+  (`parser-burn-ledger.jsonl`, 1 MiB Rotation).
+- **Go-Control:** `parser_cells_settings.go` (Namespace/Debug-Caps/Defaults),
+  `parser_cells_client.go` (+`_codec`, VGTGC2), `parser_cells_manager.go`
+  (+`_ops`, `_supervision`; Admission, State-Machine
+  `requested→spawned→isolated→expiring→burning→burned|failed`, TTL mit
+  Evidence-first-Burn-Intent, Incident-Dispatch, Export-Import bounded/untrusted),
+  `parser_cells_api.go` (auth + `X-VGT-Request-ID` + Evidence-Gate + strict JSON;
+  Parser-Input-Body-Limit 12 MiB base64 ⇒ decoded ≤ 8 MiB, das globale 1-MiB-Limit
+  der übrigen Routen bleibt unverändert), `parser_cells_kernel.go` (L2 Cell-LSM,
+  L3 StyX-Scope, L4 Titan-Exec-Scope nur mit bpf-LSM; sonst ehrlicher
+  `unavailable`-Status; **Adopt-Reassert** nach Control-Restart: Reconcile
+  re-appliziert Dynamik-Scopes, sonst `degraded`).
+- **Evidence-first:** Vor jedem Burn wird `cells.parser.burn.intent` (bzw.
+  `burned`/`incident_burn`/`export.untrusted`) ins Evidence Ledger committet;
+  Exporte sind untrusted (Airlock/MalwareScan/Quarantäne), werden nie gerendert/
+  ausgeführt. Die Import-Kopie schreibt **ausschließlich Go-Control** in das
+  control-owned `parser-imports` (nie in das Helper-`parser-exports`); „stored“ und
+  Download werden erst nach durable Write (fsync/O_EXCL) **und** Evidence-Commit
+  behauptet, Downloads sind bounded aus `parser-imports`. Burn zerstört nur
+  ephemere Zell-Ressourcen.
+
+#### Kernel-Schichten pro Zelle (keine pauschale Behauptung)
+| Layer | Umsetzung | Voraussetzung | Ohne Voraussetzung |
+|---|---|---|---|
+| L1 Sandbox | Helper (ns/tmpfs/seccomp/caps/nnp/cgroup) | Helper + root + cgroup v2 | `runtime-unavailable`/`capability-missing` |
+| L2 Cell-LSM | `CELL_POLICY_SET(...DENY_NON_UNIX_SOCKET)` | `bpf` in `/sys/kernel/security/lsm` | `cell-lsm-unavailable` |
+| L3 StyX-Egress | `STYX_MODE_SET(cgroup, enforce)` | StyX-Namespace aktiviert | `styx-unavailable` |
+| L4 Titan-Exec | `TITAN_EXEC_SCOPE_SET(cgroup, strict)` | aktiver bpf-LSM-Hook | `titan-exec-unavailable` |
+
+`require_host_layers` (Default false) entscheidet, ob L2–L4 zwingend `applied`
+sein müssen, bevor eine Zelle `isolated` heißt; `enabled=false` kontaktiert den
+Helper nie und erzeugt keine Events.
+
+#### Zugehörige Dateien
+```text
+Frontend:
+- control/web (Settings-Namespace parser_cells; keine eigenen Panels in Phase 1)
+
+Backend / Helper:
+- rust/gedefense-cell-helper/{Cargo.toml,src/{main,types,protocol,config,export,lifecycle,sandbox,seccomp}.rs}
+- control/parser_cells_{settings,client,client_codec,manager,manager_ops,supervision,api,kernel}.go (+ Tests)
+- packaging/systemd/gedefense-cell-helper.service
+- packaging/templates/parser-profiles.conf (header-only Default)
+
+API (alle auth + X-VGT-Request-ID + Evidence-Gate):
+- GET /api/v1/parser-cells/status
+- GET /api/v1/parser-cells
+- POST /api/v1/parser-cells/inputs
+- POST /api/v1/parser-cells/open
+- POST /api/v1/parser-cells/{uuid}/burn (Confirm "BURN <uuid>")
+- POST /api/v1/parser-cells/{uuid}/freeze|unfreeze
+- GET /api/v1/parser-cells/{uuid}/export (untrusted Attachment, no rendering)
+
+Datenbank / Storage:
+- /var/lib/vgt/gedefense/parser-inputs (0730 gedefense:gedefense, Input-Staging)
+- /var/lib/vgt/gedefense/parser-exports (0750 root:gedefense, nur Helper-Originale)
+- /var/lib/vgt/gedefense/parser-imports (0750 gedefense:gedefense, Control-owned untrusted Import-Kopie; T5-Fix)
+- /var/lib/vgt/gedefense/parser-burn-ledger.jsonl (0640 root:gedefense)
+- /sys/fs/cgroup/vgt-cells/parser-<uuid> (nur Helper schreibt)
+
+Konfiguration:
+- /etc/vgt/gedefense/parser-profiles.conf (root:root 0640, INI-artig, SHA-256-gepinnt)
+- /etc/vgt/gedefense/secrets/cell-helper.key (32 B, 0640 root:gedefense)
+- gedefense.toml [parser_cells]-Bootstrap: socket/auth_key_file/input_dir/imports_dir
+  (Default `/var/lib/vgt/gedefense/parser-imports`; früheres `export_dir` entfällt),
+  request_timeout_millis, peer_uid, wayland_profiles (Default leer); Runtime-Settings
+  `parser_cells` v15 (12-MiB-Routenlimit für Input, 8 MiB decoded Cap)
+
+Tests:
+- rust/gedefense-cell-helper/src/*.rs #[cfg(test)] (non-root: 40 passed + 1 root-gated ignored; root-Vollsuite: 40 passed/0 failed/1 ignored; root-gated `--ignored`: 1 passed)
+- control/parser_cells_*_test.go (+ FuzzParserCellPayload in security_fuzz_test.go)
+- packaging/tests/install-smoke.sh, scripts/validate-systemd.sh, scripts/security-audit.sh
+```
+
+#### Deployment/Packaging
+- Release-Artefakt `gedefense-cell-helper` in Release-Manifest/SBOM/Provenance/
+  Release-Index und (prebuilt) im signierten Installer-Header hashgebunden; im
+  Source-Trust-Modus wird der Helper aus dem signierten Quell-Payload gebaut.
+- Unit `@RELEASE@`-Platzhalter, `Restart=on-failure`, StartLimit, Sandbox:
+  `NoNewPrivileges=yes`, `ProtectSystem=strict`, `ProtectHome=yes`,
+  `PrivateTmp=yes`, `RestrictAddressFamilies=AF_UNIX`,
+  `RestrictNamespaces=mnt pid ipc uts net` (Allowlist),
+  `CapabilityBoundingSet=CAP_SYS_ADMIN CAP_SETUID CAP_SETGID CAP_KILL CAP_SYS_RESOURCE CAP_CHOWN`,
+  `IPAddressDeny=any`, `UMask=0077`, `SystemCallFilter=@system-service @mount seccomp`,
+  ReadWritePaths nur cgroup-Subtree, parser-inputs/-exports, Ledger und
+  `/run/vgt-gedefense` (parser-imports ist Control-owned und **nicht** im Helper-Set).
+- tmpfiles/Provisionierung erzeugen Staging-Wurzeln, Ledger, Header-only-Profil und
+  Key nur wenn fehlend; Installer/PKGBUILD/AstraeaOS-Integration erweitert;
+  Deployment-/Installed-Host-Gate prüft Manifest-Konsistenz (core/control/eBPF/
+  helper) und warnt bei fehlendem `bpf`-LSM trotz aktivierter P1/P2-Features.
+
+#### Phasen-Grenzen/Restrisiken
+- Kein root-gated Live-Integrationslauf in dieser Umgebung (nur Build/Tests +
+  fail-closed `--check` als Nicht-root); echte Namespace-/Seccomp-/Cgroup-
+  Durchsetzung bleibt root-gated Operator-Test (SKIP/NOT_TESTED dokumentiert).
+- Classic-BPF kann `connect`/`bind`-Adressen nicht filtern (nur AF_UNIX-Socket-
+  Familie); Parser-Lib-Bind-Whitelist und User-Namespaces sind Phase 2.
+- Keine echte Enforcement-Behauptung ohne `bpf`-LSM: L2/L4 bleiben `unavailable`;
+  L3 hängt an StyX-Aktivierung. Zielserver hat Phase 1 **nicht installiert**.
+- Export-Broker ist bewusst untrusted; Scan/Quarantäne hängt an bestehendem
+  Go-Airlock/Malware-Pfad. Keine UI-Panels in Phase 1 (Settings + API).
+- Helper ist optionale Infrastruktur: kein `Required=`-Boot-Zwang, Default off.
+
+#### Verifikation (Gates)
+- `scripts/security-audit.sh`: additive P2-Pflicht-Anker (Helper-/Sandbox-Account,
+  Seccomp-/Namespace-/Execve-Split, VGTGC2-Client/Manager/API/Kernel-Layer,
+  Default-off, Unit-/tmpfiles-/Provision-/Installer-/Deployment-Gate) – bestehende
+  P1/P3-Anker unverändert, `SECURITY AUDIT PASS` (Exit 0).
+- `cargo +1.97.1 test --offline --locked -p gedefense-cell-helper -p
+  gedefense-common -p gedefense-core` (Exit 0; non-root helper 40 passed + 1
+  root-gated ignored, common 31 (+2 Bin-Tests), core 83 passed); **root-Vollsuite
+  (sudo -n): 40 passed/0 failed/1 ignored**, root-gated **`--ignored`: 1 passed**
+  (kein Soft-SKIP); root-`--check` **Exit 0** (`caps=6/6 cgroup2=ok namespaces=ok
+  bpf_lsm=inactive`), Default-`vgt-cells` in WSL `cgroup-root-missing`
+  (Umgebungs-NOT_TESTED); eBPF-Build byte-identisch zu `dist/gedefense-ebpf`;
+  `go vet ./...`/`go test -count=1 ./...` (Exit 0); `node --check`;
+  `packaging/tests/install-smoke.sh` (64 passed/0 failed) und
+  `scripts/validate-systemd.sh` (Exit 0); Helper-Unit-Assertions und
+  fail-closed `--check`-Smoke enthalten. **T5-Nachprüfung Import-UMask:** Der
+  Import war unter Produktions-`UMask=0077` funktional tot (0600 statt 0640 →
+  Read-back scheiterte); P2-T3 setzt explizit `file.Chmod(0o640)` vor
+  `fsync`/Read-back, Regressionstest unter `umask 0077` **Exit 0**
+  (`TestParserCellsExportImportIsDurableAndDownloadable`); der volle Go-Suite-Lauf
+  stammt vom Fixstand unmittelbar davor.
+- Details/Exitcodes/NOT_TESTED-Zeilen: `docs/POINT2-PHASE1-REPORT.md`.
+- Nächster Schritt: Blueprint-Punkt 5.
+
+### 3.37 Point 5 — Emergency Lockdown / Anti-Physical-Extraction (Phase 1)
+
+#### Status & Zweck
+- **Status:** IMPLEMENTIERT (Phase 1), Default **disabled** (`lockdown.enabled=false`,
+  Settings-Schema **v16**), auf dem Zielserver **nicht deployt**; kein GitHub-Push.
+- Vertrag: `docs/POINT5-LOCKDOWN.md` (§3–§9 ABI, §13 Abweichungen); Evidenz/Runbook:
+  `docs/POINT5-PHASE1-REPORT.md`.
+- Zweck: bei physischem Tamper/DMA/USB-Hotplug oder High-Confidence-Tamper den
+  externen Netzverkehr im Kernel kappen, USB/Thunderbolt-Policy durchsetzen,
+  Key-Broker/Prozesse/Zellen einfrieren, optional reversible Hardening-Sysctls
+  setzen, Evidence-first auditieren und **gelatcht** bleiben, bis ein
+  authentisierter Operator mit Epoch/Confirmation cleart.
+- Bewusst **nicht** Phase 1: LUKS/DM-Suspend, `loginctl lock-sessions`,
+  Kernel-Lockdown-Umschaltung, RAM-Zeroize der Broker (nur Freeze).
+
+#### Architektur & Privilege Split
+- **Rust-Core (root):** besitzt `LOCKDOWN_STATE`-Wort, USB/TB-sysfs-Policy,
+  Uevent-Monitor, Hardening-Beobachtung/-Opt-Write, Broker-`SIGSTOP` und
+  `LOCKDOWN.state`-Persistenz/Re-Arm. Kein neuer Daemon, keine Shell/`Command`.
+- **eBPF:** neuer Fastpath `LOCKDOWN_STATE` (1 Array-Entry) + Counter
+  `LOCKDOWN_DROPS`/`LOCKDOWN_WITNESS_PASSES`; Drop in `gedefense_xdp`,
+  `gedefense_tc_ingress` und `gedefense_egress` (cgroup_skb). Default-Wort 0 = OFF;
+  fremde Magic/ABI/Mode ⇒ byte-identischer Altpfad (fail-safe).
+- **Go-Control (unprivilegiert):** `LockdownEngine` mit Latch, AEAD-State-Document
+  (`/var/lib/vgt/gedefense/lockdown-engine.state`), Triggern
+  (Morpheus-CRITICAL/Canary-Unauthorized/Boot-Trust-Drift/Operator/Duress),
+  Zell-/Parser-Phasen über bestehende CellGuard/TransactionEngine bzw.
+  `ParserCellManager.BurnForIncident`, API und Snapshot.
+- **kein neues Netz-/D-Bus-Privileg:** `RestrictAddressFamilies`, Capability-Set und
+  Syscall-Filter der Core-Unit bleiben unverändert (§3.33/POINT 5 §8).
+
+#### ABI-Kurzfassung
+- State-Wort: `epoch[31:0] | mode[39:32] | flags[47:40] | abi=1[55:48] | magic=0x4C[63:56]`;
+  Flags: DROP_ALL, ALLOW_LOOPBACK, WITNESS_ALLOW (Phase 2), HARDENING_APPLIED,
+  USB_LOCKED, TB_LOCKED.
+- `LockdownEvent` exakt 64 Byte, `reserved[24]` (Offset 40..64, §13.1).
+- VGT3-Kommandos: `LOCKDOWN_VERSION/EPOCH/STATUS/ARM/TRIGGER/CLEAR/SET_MODE/
+  EVENTS/HEALTH/PHASE`; Antworten ≤2048 B, geschlossene Tokens, unbekannt ⇒ `ERR`.
+
+#### Phasen (Reihenfolge, idempotent, je Read-back)
+1. `NET`: DROP_ALL (+ALLOW_LOOPBACK) im eBPF-Wort + Array-Read-back; Fehler ⇒
+   `failed`/`partial`, kein „Netz tot"-Claim.
+2. `USB`/`TB`: `drivers_autoprobe=0`; USB blockt nur non-HID/Hub/non-power-only,
+   Thunderbolt blockt alle (DMA); fehlende sysfs-Knoten ⇒ `unsupported`.
+3. `HARDENING`: Pflicht-Observe; Schreiben nur mit Flag (`kexec_load_disabled=1`,
+   `sysrq=0`); `modules_disabled` **nie** automatisch, nur expliziter Operator-Befehl.
+4. `BROKERS`: feste Name-Liste, pidfd-`SIGSTOP`/`SIGCONT`, Status
+   `frozen-not-locked` (kein Zeroize-Claim), TTL 300 s.
+5. `CELLS`: im Go-Control (TransactionEngine/CellGuard); der Core meldet
+   `cells=delegated`. Parser-Zellen werden geburned, nicht eingefroren.
+6. `SESSIONS`/`DM`/Kernel-Lockdown: ehrlich `unsupported` mit Grund.
+
+#### API und Trigger
+- `GET /api/v1/lockdown/status` (read-only, bounded), `POST /api/v1/lockdown/arm`,
+  `POST /api/v1/lockdown/trigger` (Confirmation `TRIGGER LOCKDOWN`, Rate-Limit
+  1/min), `POST /api/v1/lockdown/clear` (Confirmation `CLEAR:LOCKDOWN` +
+  `expected_epoch`); `GET /api/v1/status` additiv `lockdown`.
+- Trigger-Guards: Fingerprint-Dedupe (5 min), Cooldown (Default 300 s),
+  `RequireSources` (1..4); der Operator-API-Trigger ist explizite Intent und
+  umgeht die Korrelation. `AutoArm` ist Default aus.
+
+#### Packaging / Deployment
+- Core-Unit additiv: `ReadWritePaths=/sys/bus/usb /sys/bus/thunderbolt/devices
+  /sys/devices` (die Bus-Pfade sind sysfs-Symlinks; per-device-`authorized`-Writes
+  werden nach `/sys/devices/**` aufgelöst und wären mit Bus-Grant allein EROFS, also
+  fail-safe aber unwirksam – der breitere Grant ist dokumentiert und im Gate auf
+  genau diesen Satz fixiert), `ReadWritePaths=-/proc/sys/kernel/kexec_load_disabled
+  -/proc/sys/kernel/sysrq -/proc/sys/kernel/modules_disabled`,
+  `ReadWritePaths=/var/lib/vgt/gedefense` (State-Datei, 1770 root:gedefense via
+  tmpfiles); **keine** Capability-, AddressFamily- oder Syscall-Erweiterung.
+  Realer sysfs-Write unter systemd/`ProtectKernelTunables=true` ist in dieser
+  Umgebung **NOT_TESTED**.
+- `security-audit.sh`/`validate-systemd.sh`/`install-smoke.sh` um additive
+  Lockdown-Anker erweitert; `readelf`-Gate prüft die gebaute eBPF-Map/Counter.
+- Nichts deployt; Deploy-/Release-Gate-Hashes unverändert (keine Binaries neu
+  veröffentlicht).
+
+#### Phasen-Grenzen/Restrisiken
+- Kein Map-Pinning: Core-Crash beendet den eBPF-Drop (Fenster bis Re-Arm),
+  dokumentiert; Stale-TC-Altfilter früherer Core-Generationen werden nicht
+  detached (§13.9). uevent ist verlustbehaftet (ENOBUFS ⇒ Rescan, keine
+  Event-Rekonstruktion, §13.6). USB-Power-only/HID ist eine bounded Heuristik
+  (§13.5). Broker-Freeze ist kein Zeroize (§13.11). Zell-Reverse hängt an der
+  Transaction-History; Verlust ⇒ lautes `resume_failed` (§13.13).
+
+#### Verifikation (Gates)
+- `cargo +1.97.1 test --offline --locked -p gedefense-common -p gedefense-core
+  -p gedefense-cell-helper`: **Exit 0** (191 passed, 0 failed, 1 root-gated
+  ignored; helper 40, common 38 lib + 2 Bin, core 111).
+- eBPF-Nightly-Build: **Exit 0**; `readelf -s` enthält `LOCKDOWN_STATE`,
+  `LOCKDOWN_DROPS`, `LOCKDOWN_WITNESS_PASSES`; `dist/gedefense-ebpf` neu gebaut.
+- `cd control && go vet ./...` **Exit 0**, `go test -count=1 -timeout 1800s ./...`
+  **Exit 0**; `node --check control/web/*.js` **Exit 0**.
+- `bash scripts/security-audit.sh` **Exit 0** (`SECURITY AUDIT PASS`, **29
+  PASS-Prüfungen**, inkl. Point-5-Block und exaktem sysfs-Grant-Satz);
+  `packaging/tests/install-smoke.sh` **Exit 0** (**68 passed, 0 failed**) und
+  `scripts/validate-systemd.sh` **Exit 0**. Realer sysfs-Write unter systemd/
+  `ProtectKernelTunables=true` bleibt **NOT_TESTED** (kein root-Zielhost).
+- Details/Exitcodes/NOT_TESTED: `docs/POINT5-PHASE1-REPORT.md`.
+- Nächster Schritt: Blueprint-Punkt 4.
+
+---
+
+### 3.38 Point 4 — Out-of-Band Witness / Witness-Attestation (Phase 1)
+
+#### Status & Zweck
+- **Status:** IMPLEMENTIERT (Phase 1), Default **disabled** (`witness.enabled=false`,
+  `mode=off`, Settings-Schema **v17**), auf dem Zielserver **nicht deployt**; kein GitHub-Push.
+- Vertrag: `docs/POINT4-WITNESS.md` (§3–§8, §11 DoD, §13 Abweichungen); Evidenz/Runbook:
+  `docs/POINT4-PHASE1-REPORT.md`.
+- Zweck: ein externer, kryptografisch verifizierender Zeuge soll **stille Abschaltung,
+  Log-Fork/Rollback und sensorisches Downgrade** erkennen, ohne dass Pfade, Inhalte,
+  Targets, Tokens oder Key-Material das Gerät verlassen.
+- Bewusst **nicht** Phase 1: externer Witness-Server (Phase 2), QR-Encoding
+  (Phase 2), frischer TPM-Quote/TPM-Key-Binding (Zielhost ohne TPM/UEFI ⇒ ehrlich
+  `quote_kind="none"`/`key_binding="software"`), UI-Panels.
+
+#### Architektur & Privilege Split
+- **EvidenceLedger additiv erweitert:** persistenter `ledger_epoch` im authentifizierten
+  `.head` (alte `.head` decodiert als epoch 0); `Rotate()` schreibt `ledger_epoch+1` durable
+  **vor** dem In-Memory-Reset (Rotation ist damit kein Rollback-Alarm); atomare Views
+  `Checkpoint()`/`Head()`, `PublicKeyFingerprint()` (SHA-256 des Pubkeys) und der
+  `WitnessCheckpointSigner()`-Callback. Der Ledger-Key verlässt den Prozess nicht.
+- **Checkpoint** (`vgt-gedefense-witness-checkpoint-v1`, Domänentrennung
+  `VGT-GEDEFENSE-WITNESS-CHECKPOINT-V1\0`): nur `ledger_epoch`, `sequence`, `head_hash`,
+  `records`, `boot_posture` + `boot_posture_digest` (nur `{id,state,digest}`),
+  `policy_revision` + `policy_digest`, `sensor_state`, `signing_key_fp`, `challenge`
+  und die Ed25519-Signatur. Strikter Decoder: unbekannte/doppelte/null-Felder,
+  Trailing-Daten, falsche Enums/Längen und Zähler > 2^53 werden abgelehnt;
+  `records==sequence` ist erzwungen, `quote_kind="none"` ist die einzige akzeptierte Form.
+- **Mode A (HTTPS-Client):** nur absolutes `https://` mit Port 443, `Proxy:nil`
+  (kein Env-Proxy), `CheckRedirect` ⇒ Fehler, TLS ≥ 1.2, 64-KiB-Response-Limit,
+  SHA-256-SPKI-Pin in constant time und/oder gepinnter Ed25519-Receipt-Key aus
+  0600-Dateien; optional mTLS/Bearer (Token nie in Settings). Challenge hex/bounded/
+  single-use mit TTL; Receipt muss `checkpoint_id` binden und `witness_seq` streng
+  monoton steigern.
+- **Outbox/ACK:** AEAD (`witness-outbox` bzw. `witness-ack`), bounded by bytes/entries,
+  atomarer 0600-Write; voll/korrupt ⇒ **fail-closed** (kein neuer Checkpoint,
+  `degraded`, `witness.outbox_full`), nichts wird still verworfen.
+- **Mode B:** `GET /api/v1/witness/export` liefert JSON + `vgtw1:<base64url>` (≤2 KiB);
+  `POST /api/v1/witness/import` akzeptiert only signierte Witness-Receipts, bindet den
+  `checkpoint_id` an den **prozesslokalen** letzten Export, prüft Pin, Monotonie und
+  Epoch-/Sequenz-Regression (⇒ Rollback-Alarm).
+- **Equivocation:** fork (gleiche `(epoch,seq)`, anderer Head) / rollback (niedrigere
+  `(epoch,seq)`) ⇒ kritische Evidence/Incident `witness.equivocation`; optionaler
+  P5-Lockdown nur bei **beiden** Flags (`witness.trigger_lockdown_on_equivocation`
+  und `lockdown.trigger_witness_equivocation`), P5-Guards bleiben unverändert.
+  Unerreichbarkeit ist keine Equivocation.
+- **Privilege Split:** alles im unprivilegierten Go-Control; State unter
+  `<stateDir>/witness/{outbox,ack}.enc` im bereits schreibbaren
+  `/var/lib/vgt/gedefense`. **Keine** neue Unit, kein neues Capability-,
+  AddressFamily- oder Syscall-Recht; der Witness-Server ist extern.
+
+#### API/Wiring
+- Sechs Routen über `s.auth` (Bearer, `X-VGT-Request-ID`-Replay, Evidence-Gate):
+  `GET /api/v1/witness/status|export`, `POST …/checkpoint|push|challenge|import`;
+  Push mit Confirmation `PUSH WITNESS` + eigenem Rate-Budget, Import bounded
+  (16 KiB) und receipt-only. `GET /api/v1/status`/`state.Snapshot` additiv `witness`.
+- Settings-Namespace `witness` (Pointer, Default off), Schema **v17** mit Migration
+  v16→v17; Validierung reject-not-repair (Endpoint/Pin-Pflicht für Mode http,
+  Bounds, absolute Pfade). Events `witness.checkpoint.created|acked|equivocation|
+  outbox_full|push.failed|export_created|import_rejected`.
+
+#### Packaging / Deployment
+- Kein neues systemd-Unit, keine Capability-/AF-/Syscall-Änderung: die Control-Unit
+  behält `RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK` und
+  `ReadWritePaths=/var/lib/vgt/gedefense` (State-Root 1770 root:gedefense via
+  tmpfiles), der Core erhält keinen Witness-Grant. `security-audit.sh` pinnt das
+  (`POINT 4`-Block), `validate-systemd.sh`/`install-smoke.sh` prüfen es additiv.
+  Nichts deployt; Release-Manifest-/Hash-Gates unverändert.
+
+#### Phasen-Grenzen/Restrisiken
+- Kein externer Witness-Server im Repo (Phase 2, keine Attrappe); Tests nutzen
+  `httptest`-Fakes. Kein TPM-Quote: der Checkpoint belegt „gleiche Boot-Posture wie
+  zuletzt gesehen" über einen Boot-Time-Snapshot-Digest, **keine** frische Quote.
+- Die Import-`checkpoint_id`-Bindung ist prozesslokal (nach Control-Restart zuerst
+  exportieren). `require_ack` ist Phase 1 immer wirksam (nur Receipt-Pflichtpfad).
+- Echte mTLS-Zertifikatskette, echter Witness-Server und Live-systemd-Betrieb sind
+  **NOT_TESTED**; Details `docs/POINT4-PHASE1-REPORT.md`.
+
+#### Verifikation (Gates)
+- `cargo +1.97.1 test … -p gedefense-common -p gedefense-core -p gedefense-cell-helper`:
+  **Exit 0** (191 passed, 0 failed, 1 root-gated ignored; helper 40, common 38 lib +
+  2 Bin, core 111).
+- eBPF-Nightly-Build: **Exit 0**; `dist/gedefense-ebpf` 112.176 B
+  (`sha256 c4ba4ca9…97d5`); `readelf`: `lsm/socket_create`, `lsm/bprm_check_security`,
+  `lsm/mmap_file`, `cgroup_skb/egress`, `classifier`, `xdp` + unveränderte Symbol-Sets.
+- `cd control && go vet ./...` **Exit 0**; `go test -count=1 -timeout 1800s ./...`
+  **Exit 0** (`ok … 171.752s`, keine FAIL-Zeile); `go test -race … -run 'Witness|Evidence'`
+  **Exit 0**; `node --check control/web/*.js` **Exit 0** (19 Dateien).
+- `bash scripts/security-audit.sh` **Exit 0** (`SECURITY AUDIT PASS`, **30
+  PASS-Prüfungen**, inkl. Point-4-Block; bestehende P1/P2/P3/P5-Anker unverändert);
+  `packaging/tests/install-smoke.sh` **Exit 0** (**71 passed, 0 failed**, 6
+  NOT_TESTED) und `scripts/validate-systemd.sh` **Exit 0**.
+- Nächster Schritt: finales Gesamt-Review P1–P5 + Deployment-Planung (kein GitHub-Push).
+
+#### Drift-Korrektur
+- Vor Punkt 4 existierte **kein** Witness-/Checkpoint-/Quote-Code im Repo: kein
+  Witness-API, keine Outbox, kein Fingerprint-Helfer und **kein** `ledger_epoch` im
+  `.head`; die frühere Doku beschrieb den Witness ausschließlich als Blueprint.
+- Die P3-Doku (`docs/POINT3-EGRESS-BEACON.md`) listete „Cross-Host-Witness
+  (Punkt 4)" als **Nicht-Ziel von Punkt 3** — das bleibt korrekt: Punkt 4 liefert
+  jetzt Checkpoint/Client/Outbox/Export/Import, aber **keinen** externen
+  Witness-Server (Phase 2, kein Fake-Server im Repo).
+
+---
+
 ## 4. Detailed Dashboard Views Documentation
 
 ### 4.1 Dashboard -> Overview (`overview`)
@@ -2614,45 +3491,55 @@ HTML5 Canvas Rendering & Real-time DOM Updates
 - `rust/gedefense-core` (Fanotify execution guard)
 
 #### API-Aufrufe
-- `GET /api/v1/release/status`
-- `POST /api/v1/release/promote`
-- `POST /api/v1/release/demote`
-- `POST /api/v1/emergency-stop`
+- `GET /api/v1/release`
+- `GET /api/v1/release/readiness`
+- `POST /api/v1/release/transition`
+- `POST /api/v1/release/emergency-stop`
+- `POST /api/v1/release/emergency-stop/clear`
 
 #### Backend Handler
-- `control/release.go:handleReleaseStatus()`
-- `control/release.go:handleReleasePromote()`
-- `control/server.go:handleEmergencyStop()`
+- `control/server.go:releaseStatus()`
+- `control/server.go:releaseEmergencyStop()`
+- `control/server.go:releaseEmergencyStopClear()`
 
 #### Services
 - `ReleaseController` in `control/release.go`
-- `CoreIPCClient` executing emergency commands
+- Nur Datei-Marker + Release-Modus (`/var/lib/vgt/gedefense/EMERGENCY_STOP`), **kein** Kernel-Drop und **kein** `CMD_BLOCK_ALL` (drift-korrigiert, siehe §3.37)
 
 #### Datenbankzugriffe / Storage
 - `/var/lib/vgt/gedefense/release-state.json`
 - `/var/lib/vgt/gedefense/evidence.log` (Append-only action audit)
 
 #### Authentifizierung / Berechtigungen
-- Operator Session + Mandatory Re-authentication Dialog for Emergency Stop.
+- Operator-Bearer + `X-VGT-Request-ID`; Trigger-Begruendung min. 8 Zeichen, Clear nur mit
+  Confirmation `CLEAR:EMERGENCY-STOP` (kein zweiter Faktor im Emergency-Stop-Endpoint).
 
 #### Datenfluss
 ```text
 Operator clicks "Emergency Stop"
        ↓
-protection.js:confirmEmergencyStop() -> Modal confirmation
+protection.js:openEmergencyDialog() -> Modal + Begruendung (min. 8 Zeichen)
        ↓
-POST /api/v1/emergency-stop
+POST /api/v1/release/emergency-stop   (Bearer + X-VGT-Request-ID)
        ↓
-server.go:handleEmergencyStop()
+server.go:releaseEmergencyStop() -> ReleaseController.EmergencyStop(reason)
        ↓
-coreipc.go: dispatch CMD_BLOCK_ALL to gedefense-core
+atomarer Marker /var/lib/vgt/gedefense/EMERGENCY_STOP (0600) + Release-Status Degraded
        ↓
-gedefense-core programs XDP_DROP on all interfaces
+autonome Response-/Promotion-Pfade blockiert; XDR faellt in Observe/Degraded
        ↓
-Evidence Ledger records tamper-evident emergency seal
+GET /api/v1/release + SSE-Status -> UI zeigt "EMERGENCY STOP AKTIV"
        ↓
-SSE Event broadcast to all dashboard clients -> UI enters LOCKED STATE
+Clear nur mit Confirmation "CLEAR:EMERGENCY-STOP" ueber POST /api/v1/release/emergency-stop/clear
 ```
+
+**Drift-Korrektur (evidenzbasiert):** Der Emergency Stop ist **kein** Emergency
+Lockdown. Es gibt keinen `POST /api/v1/emergency-stop`-Endpoint und kein
+`CMD_BLOCK_ALL` im Rust-Core; der Stop schreibt nur den lokalen Marker, stoppt
+autonome Reaktionen und degradiert den Release-Zustand. Ein Netz-Drop,
+USB/Thunderbolt-Sperren, Broker-Freeze oder Latch wird dadurch **nicht**
+ausgeloest. Diese Wirkung hat ausschliesslich der Emergency Lockdown
+(`/api/v1/lockdown/*`, §3.37, `docs/POINT5-LOCKDOWN.md`).
 
 ---
 
@@ -3525,7 +4412,9 @@ Reconnection succeeds within 1.5 seconds -> UI resumes live state
    - Triggered when session expires or when elevation is required.
    - Re-authenticates credentials against `/login` via Argon2id without losing current UI view state.
 2. **Emergency Stop Confirmation (`#modal-emergency-stop`)**:
-   - High-contrast red modal requesting explicit typing of "CONFIRM-LOCKDOWN" before cutting off external traffic.
+   - High-contrast red modal requesting a mandatory reason (min. 8 characters); it writes
+     the release marker and stops autonomous response handling. It does **not** cut
+     external traffic and does **not** start the Emergency Lockdown.
 3. **Synthetic L7 Self-Test Modal (`#modal-l7-selftest`)**:
    - Terminal window executing live attack simulations against local WAF and printing color-coded test outputs.
 4. **Fabric Settings Drift & Import Preview Modal (`#modal-settings-preview`)**:
@@ -3608,7 +4497,7 @@ Defined at `:root` within `control/web/app.css` and `control/web/v4.css`:
 
 ## 6. API Architecture & Endpoint Directory
 
-The following comprehensive directory catalogs all 75+ HTTP REST and Server-Sent Events (SSE) endpoints active in GeDefense 4.2.4.
+The following comprehensive directory catalogs the HTTP REST and Server-Sent Events (SSE) endpoints active in GeDefense 5.2.0.
 
 | Endpoint | Methode | Frontend-Aufrufer | Backend Handler | Service / Subsystem | Datenquelle / Target |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -3619,7 +4508,11 @@ The following comprehensive directory catalogs all 75+ HTTP REST and Server-Sent
 | `/api/v1/stream` | GET | `app.js:connectSSE()` | `control/server.go:handleStream()` | SSE Broadcast Engine | Active Event Channel & Mutex |
 | `/api/v1/health` | GET | Readiness Probes / Scripts | `control/server.go:handleHealth()` | Health Diagnostic | Kernel Subsystem Status |
 | `/api/v1/metrics` | GET | Prometheus Scrapers | `control/server.go:handleMetrics()` | Metrics Exporter | Internal Counters & eBPF Map |
-| `/api/v1/emergency-stop` | POST | `protection.js:emergencyStop()` | `control/server.go:handleEmergencyStop()` | Emergency Containment | Core IPC (`CMD_BLOCK_ALL`) |
+| `/api/v1/release/emergency-stop` | POST | `protection.js:emergencyStop()` | `control/server.go:releaseEmergencyStop()` | Release Safety Gate | Marker `/var/lib/vgt/gedefense/EMERGENCY_STOP` + Degraded (kein Kernel-Drop) |
+| `/api/v1/release/emergency-stop/clear` | POST | `protection.js:clearEmergencyStop()` | `control/server.go:releaseEmergencyStopClear()` | Release Safety Gate | Entfernt Marker nur mit `CLEAR:EMERGENCY-STOP` |
+| `/api/v1/lockdown/status` | GET | `protection.js`/Settings-UI | `control/lockdown_api.go:lockdownStatus()` | Emergency Lockdown Engine | Latch/Phasen/Kernel-Projektion |
+| `/api/v1/lockdown/trigger` | POST | Operator (emergency) | `control/lockdown_api.go:lockdownTrigger()` | Emergency Lockdown Engine | `LOCKDOWN_TRIGGER` + Zell-/Parser-Phasen |
+| `/api/v1/lockdown/clear` | POST | Operator (emergency) | `control/lockdown_api.go:lockdownClear()` | Emergency Lockdown Engine | Epoch-Compare-Set + Latch-Release |
 | `/api/v1/kinetic/status` | GET | `kinetic.js:loadStatus()` | `control/kinetic_runtime.go:handleKineticStatus()` | Kinetic Defense Engine | In-Memory Burst Counters |
 | `/api/v1/kinetic/live` | GET | `kinetic.js:pollLive()` | `control/kinetic_runtime.go:handleKineticLive()` | Live Telemetry Tracker | 1s/5s/60s Sliding Windows |
 | `/api/v1/kinetic/mitigate` | POST | `kinetic.js:applyBlock()` | `control/kinetic_response.go:handleKineticMitigate()` | Wire-Speed Response | Kernel Map `BLOCKLIST_V4/V6` |
@@ -3674,6 +4567,8 @@ The following comprehensive directory catalogs all 75+ HTTP REST and Server-Sent
 | `/api/v1/network/allowlist/{cidr}`| DELETE| `app.js:delAllowlist()`| `control/server.go:handleNetworkAllowlistDel()` | Network Policy Manager | Kernel Map `ALLOWLIST_V4/V6` |
 | `/api/v1/egress/rules` | GET | `app.js:loadEgress()` | `control/styx_egress.go:handleEgressRulesGet()` | Styx Egress Engine | `/var/lib/vgt/gedefense/egress-policy.json` |
 | `/api/v1/egress/rules` | POST | `app.js:saveEgress()` | `control/styx_egress.go:handleEgressRulesPost()` | Styx Egress Engine | Kernel Cgroup Egress Map |
+| `/api/v1/titan/exec/status` | GET | Read-only Operator/API | `control/server.go:titanExecStatus()` | Titan Exec Gate | Sync-/Kernel-Status (bounded; keine Enforcement-Behauptung) |
+| `/api/v1/titan/exec/events` | GET | Read-only Operator/API | `control/server.go:titanExecEvents()` | Titan Exec Gate | Bounded Event-Historie (neueste zuerst) |
 | `/api/v1/policy/status` | GET | `app.js:loadPolicy()` | `control/release.go:handlePolicyStatus()` | Policy Trust Engine | Kernel Policy vs Signed Baseline |
 | `/api/v1/policy/baseline` | GET | `app.js:showBaseline()` | `control/release_manifest.go:handlePolicyBaseline()` | Policy Baseline Repository | `/etc/vgt/gedefense/policy-baseline.json` |
 | `/api/v1/policy/reconcile` | POST | `app.js:reconcile()` | `control/release.go:handlePolicyReconcile()` | Fail-Closed Policy Reconciler | Kernel eBPF Map Synchronization |
@@ -4280,7 +5175,7 @@ sequenceDiagram
 
 ## 10. Technical File & Symbol Cross-Reference
 
-This cross-reference details the core functions, data structures, and constants defining the GeDefense 4.2.4 implementation.
+This cross-reference details the core functions, data structures, and constants defining the GeDefense 5.2.0 implementation.
 
 ### 10.1 Gateway & Authentication
 - `gateway/main.go`:
@@ -4296,10 +5191,15 @@ This cross-reference details the core functions, data structures, and constants 
 
 ### 10.2 Control Plane & API Server
 - `control/server.go`:
-  - `type Server struct`: Master daemon instance holding state tree, mutex, and subsystem pointers.
-  - `func (s *Server) handleStatus(w, r)`: Returns comprehensive JSON state tree snapshot.
-  - `func (s *Server) handleStream(w, r)`: SSE event stream dispatcher with keep-alive heartbeats.
-  - `func (s *Server) handleEmergencyStop(w, r)`: Invokes wire-speed containment via Core IPC.
+  - `type APIServer struct`: Master daemon instance holding state tree, mutex, and subsystem pointers.
+  - `func (s *APIServer) status(w, r)`: Returns comprehensive JSON state tree snapshot.
+  - `func (s *APIServer) stream(w, r)`: SSE event stream dispatcher with keep-alive heartbeats.
+  - `func (s *APIServer) releaseEmergencyStop(w, r)`: Writes the release emergency-stop marker via
+    `ReleaseController.EmergencyStop` (no Core IPC call, no kernel containment; drift-corrected).
+  - `func (s *APIServer) releaseEmergencyStopClear(w, r)`: Requires `CLEAR:EMERGENCY-STOP`.
+  - `func (s *APIServer) lockdownStatus/lockdownArm/lockdownTrigger/lockdownClear(w, r)`:
+    POINT 5 Emergency Lockdown API (`control/lockdown_api.go`); only the trigger/clear routes are
+    evidence-gate exempt and every request is authenticated.
 - `control/sdnotify.go`:
   - `func SdNotifyReady()`: Dispatches `READY=1` to systemd supervisor.
   - `func SdNotifyWatchdog()`: Periodic `WATCHDOG=1` keep-alive dispatcher.
@@ -4370,43 +5270,71 @@ This cross-reference details the core functions, data structures, and constants 
 
 ### 10.8 Core Daemon & eBPF Kernel Data Plane
 - `rust/gedefense-core/src/main.rs`:
-  - `fn run_core_daemon()`: Listens on `/run/vgt/gedefense-core.sock` with `SO_PEERCRED` verification.
-- `rust/gedefense-core/src/process.rs`:
-  - `fn kill_process_pidfd(pid, start_time)`: Race-free process termination via Linux `pidfd_open`.
-- `rust/gedefense-core/src/fanotify.rs`:
-  - `fn handle_fanotify_exec_perm()`: Intercepts `FAN_OPEN_EXEC_PERM` and runs streaming malware scan.
-- `rust/gedefense-ebpf/src/xdp.rs`:
-  - `#[xdp] pub fn gedefense_xdp(ctx: XdpContext) -> u32`: High-speed packet filter returning `XDP_PASS` or `XDP_DROP`.
-- `rust/gedefense-ebpf/src/egress.rs`:
-  - `#[cgroup_skb(egress)] pub fn gedefense_egress(ctx: SkBuffContext) -> i32`: Styx outbound policy hook.
-- `rust/gedefense-ebpf/src/lsm.rs`:
-  - `#[lsm(hook = "socket_create")] pub fn gedefense_cell_socket_create(...) -> i32`: Enforces AF_UNIX for Gaia Cells.
+  - `fn main()`: Root-Daemon, IPC-Socket-Bindung, Capability-/Replay-Guards, eBPF-Load/Attach.
+  - `fn process_command(...)`: VGT3-Dispatch u. a. `STYX_VERSION`, `STYX_GLOBAL`,
+    `STYX_MODE_SET`, `STYX_FLOW_EVENTS`, `STYX_FLOW_HEALTH` (→ §3.34) sowie
+    `TITAN_EXEC_VERSION/EPOCH/STATUS/SET_GLOBAL/ALLOW_ADD(_BATCH)/ALLOW_DEL/CLEAR/
+    SCOPE_SET/SCOPE_DEL/EVENTS/HEALTH` (→ §3.35).
+  - `struct TitanExecGate` + `attach_titan_exec_lsm`: Map-Handles, STATE-/OFFSETS-Seed,
+    LSM-Aktivierungsprobe, Attach-Gate, Event-Drain, ehrlicher Status (Point 1).
+- `rust/gedefense-core/src/titan_exec.rs`:
+  - `bpf_lsm_active_from_list`/`bpf_lsm_active_from_sys_fs`, `TitanExecPolicy`,
+    `resolve_exec_path` (fd-sicher), `decode_allow_batch`, `encode_exec_event_text`,
+    `encode_exec_health`, `encode_exec_status`, `ping_titan_exec_token`.
+- `rust/gedefense-core/src/btf_offsets.rs`:
+  - bounded Mini-BTF-Parser (`MAX_VMLINUX_BTF_BYTES`), `TitanExecOffsets`,
+    `matches_ebpf_slots`, Offset-Tabelle für `TITAN_EXEC_OFFSETS`.
+- `rust/gedefense-core/src/process_control.rs`:
+  - pidfd-basierte Prozesskontrolle mit Start-Tick-Verifikation (`Stop`/`Resume`/`Kill`).
+- `rust/gedefense-core/src/malware.rs`:
+  - Fanotify-Permission-Handler und Streaming-Malware-Scanner (`FAN_OPEN_EXEC_PERM`).
+- `rust/gedefense-core/src/styx_flow.rs`:
+  - `parse_global_request`/`parse_mode_set_request`/`parse_allow_request`,
+    `StyxAllowKey`/`StyxPrefixKey`, `encode_styx_global`,
+    `encode_styx_flow_event_text`, `encode_styx_flow_health`.
+- `rust/gedefense-ebpf/src/main.rs` (einzige Program-Datei, keine `xdp.rs`/`egress.rs`/`lsm.rs`):
+  - `#[xdp] pub fn gedefense_xdp(ctx: XdpContext) -> u32`: Packet-Filter, `XDP_PASS`/`XDP_DROP`.
+  - `#[tracepoint] pub fn gedefense_exec(...) -> u32`: Exec-Telemetrie (`sched_process_exec`).
+  - `#[cgroup_skb(egress)] pub fn gedefense_egress(ctx: SkBuffContext) -> i32`:
+    Root-Cgroup-Egress, Legacy-Allow/Blocklist plus Point-3-Entscheidungspipeline.
+  - `#[lsm(hook = "socket_create")] pub fn gedefense_cell_socket_create(...) -> i32`:
+    AF_UNIX-only für Gaia Cells.
+  - `#[lsm(hook = "bprm_check_security")] pub fn gedefense_titan_exec_bprm(...) -> i32`:
+    Titan-Exec-Gate-Prävention (Point 1, default-off, nur bei aktiver `bpf`-LSM-Liste attached).
+  - `#[lsm(hook = "mmap_file")] pub fn gedefense_titan_exec_mmap(...) -> i32`:
+    Library-/`PROT_EXEC`-Mapping-Gate (Point 1) plus `TITAN_EXEC_*`-Maps/RingBuf.
 
 ---
 
 ## 11. Architectural Anomalies & Audit Findings
 
-During the comprehensive analysis of GeDefense 4.2.5, the following technical anomalies, unused files, and architectural observations were identified. Per VGT Analyticer guidelines, these are strictly documented without unauthorized source code modifications.
+During the comprehensive analysis of the 4.2.x series, the following technical anomalies, unused files, and architectural observations were identified. Per VGT Analyticer guidelines, these are strictly documented without unauthorized source code modifications.
 
-### 11.1 Orphaned Test & QA Scripts in Project Root
-The repository root contains over 65 WSL test and diagnostic shell scripts (`wsl-*.sh`, e.g., `wsl-diag2.sh`, `wsl-final-sweep.sh`, `wsl-tamper-probe.sh`, `wsl-waf-check.sh`, `wsl-phase-*.sh`).
+> **Hinweis (Stand 2026-11-15, 5.2.0):** Die folgenden Befunde sind ein historischer
+> Audit-Trail der 4.2.x-Reihe. Die dort genannten Dateien (`wsl-*.sh`,
+> `publish_release_4.2*.py`, `sync_version_4.2.4.py`, `GEDEFENSE_4.2.1_*`) existieren im
+> 5.2.0-Baum nicht mehr; die zugehörigen Mapping-Einträge wurden entfernt. Die Befunde
+> bleiben als Analyse-Historie erhalten und sind keine Aussage über den aktuellen Baum.
+
+### 11.1 Orphaned Test & QA Scripts in Project Root (historisch)
+Historisch (4.2.x): The repository root contained over 65 WSL test and diagnostic shell scripts (`wsl-*.sh`, e.g., `wsl-diag2.sh`, `wsl-final-sweep.sh`, `wsl-tamper-probe.sh`, `wsl-waf-check.sh`, `wsl-phase-*.sh`). Im 5.2.0-Baum existieren diese Skripte nicht mehr.
 - **Impact**: Clutters the top-level repository namespace.
 - **Architectural Observation**: These are historical diagnostic harnesses from earlier internal testing runs. They are not referenced by `Makefile`, `scripts/build-full-stack.sh`, or any systemd service.
 - **Recommendation**: Relocate obsolete WSL test scripts into a dedicated archival path (e.g., `tests/historical/wsl/`) in a future maintenance cycle.
 
-### 11.2 Historical Release Publisher Scripts in `scripts/`
-Both `scripts/publish_release_4.2.1.py` and `scripts/publish_release_4.2.4.py` exist concurrently.
+### 11.2 Historical Release Publisher Scripts in `scripts/` (historisch)
+Historisch (4.2.x): Both `scripts/publish_release_4.2.1.py` and `scripts/publish_release_4.2.4.py` existed concurrently; im 5.2.0-Baum sind beide entfernt (Release-Tooling: `scripts/release-tool.py`, `scripts/vgt_release_security.py`).
 - **Impact**: Redundancy across point release scripts.
-- **Architectural Observation**: `publish_release_4.2.4.py` is the current, active version matching `VERSION (4.2.4)`. The older 4.2.1 script is preserved for historical auditability.
+- **Architectural Observation**: Historischer Befund; die damalige Version war 4.2.4/4.2.5, heute 5.2.0 (`VERSION`).
 
-### 11.3 Legacy Markdown Specifications in Project Root
-The root directory contains point-in-time design specifications for older releases:
+### 11.3 Legacy Markdown Specifications in Project Root (historisch)
+Historisch (4.2.x) enthielt das Root-Verzeichnis point-in-time design specifications für ältere Releases:
 - `GEDEFENSE_4.2.1_KINETIC_EVIDENCE_SPEC.md`
 - `GEDEFENSE_4.2.1_PROD_BETA_VERIFICATION.md`
 - `GEDEFENSE_4.2.1_RELEASE_NOTES.md`
 - `GeDefense_4.2_SECURITY_FABRIC_CONTROL_PLANE_PLAN.md`
 - **Impact**: Potential confusion regarding authoritative architecture.
-- **Architectural Observation**: `ARCHITECTURE.md` (this document) and `CHANGELOG.md` represent the authoritative source of truth for version 4.2.4. The 4.2.1 markdown files serve as historical design records.
+- **Architectural Observation**: Diese Dateien sind im 5.2.0-Baum nicht mehr vorhanden. `ARCHITECTURE.md` (dieses Dokument) und `CHANGELOG.md` sind die autoritative Quelle für Version 5.2.0.
 
 ### 11.4 Cross-Module Dependencies in `control/web/app.js`
 While modular view controllers (`kinetic.js`, `l7.js`, `protection.js`, `threat-intel.js`, `xdr.js`, `fabric-settings.js`, `fabric-surface.js`) have been factored out, `control/web/app.js` still contains over 1,700 lines of orchestration logic, telemetry canvas rendering fallbacks, and dialog controllers.
@@ -4418,7 +5346,7 @@ The embedded GeoIP resolver relies on `/var/lib/vgt/gedefense/geoip.csv`.
 
 ---
 
-// VGT GeDefense 4.2.5 Architectural Specification Complete.
+// VGT GeDefense 5.2.0 Architectural Specification Complete (Point 3 Phase 1, Point 1 Phase 1).
 
 
 ## Linux overview threat map — WP presentation parity (17.10.2026)

@@ -1,4 +1,4 @@
-name: GeDefense V5 CI
+name: GeDefense V6 CI
 
 on:
   push:
@@ -118,10 +118,14 @@ jobs:
           rustup toolchain install 1.97.1 --profile minimal
           rustup toolchain install nightly-2026-07-16 --profile minimal --component rust-src
           cargo +1.97.1 install bpf-linker --version 0.10.3 --locked
-      - name: Test and build Rust response core
+      - name: Test and build Rust response core and parser-cell helper
         run: |
           cargo +1.97.1 test --locked --manifest-path rust/Cargo.toml -p gedefense-common -p gedefense-core
           cargo +1.97.1 build --locked --release --manifest-path rust/Cargo.toml -p gedefense-core
+          # POINT 2: the privileged ephemeral parser-cell helper is a release
+          # component; it must pass its tests and be staged for the signed manifest.
+          cargo +1.97.1 test --locked --manifest-path rust/Cargo.toml -p gedefense-cell-helper
+          cargo +1.97.1 build --locked --release --manifest-path rust/Cargo.toml -p gedefense-cell-helper
       - name: Build and inspect release eBPF object
         run: |
           cargo +nightly-2026-07-16 build --locked --release --manifest-path rust/Cargo.toml -p gedefense-ebpf --target bpfel-unknown-none -Z build-std=core
@@ -131,12 +135,14 @@ jobs:
         run: |
           mkdir -p dist
           install -m 0755 rust/target/release/gedefense-core dist/gedefense-core
+          install -m 0755 rust/target/release/gedefense-cell-helper dist/gedefense-cell-helper
           install -m 0644 rust/target/bpfel-unknown-none/release/gedefense-ebpf dist/gedefense-ebpf
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: rust-release-artifacts
           path: |
             dist/gedefense-core
+            dist/gedefense-cell-helper
             dist/gedefense-ebpf
           if-no-files-found: error
 
@@ -225,12 +231,12 @@ jobs:
             --expected-version "$VERSION" --require-manifest --check-manifests-artifacts
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: gedefense-v5-test-signed-release-candidate
+          name: gedefense-v6-test-signed-release-candidate
           path: |
-            ${{ runner.temp }}/release/VGT_GeDefense_Beta_v5_*_OneClick.run
-            ${{ runner.temp }}/release/VGT_GeDefense_Beta_v5_*_OneClick.run.sha256
-            ${{ runner.temp }}/release/VGT_GeDefense_Beta_v5_*_Source.zip
-            ${{ runner.temp }}/release/VGT_GeDefense_Beta_v5_*_Source.zip.sha256
+            ${{ runner.temp }}/release/VGT_GeDefense_V6_*_OneClick.run
+            ${{ runner.temp }}/release/VGT_GeDefense_V6_*_OneClick.run.sha256
+            ${{ runner.temp }}/release/VGT_GeDefense_V6_*_Source.zip
+            ${{ runner.temp }}/release/VGT_GeDefense_V6_*_Source.zip.sha256
             ${{ runner.temp }}/release/release-index.signed.json
             ${{ runner.temp }}/release/release-manifest.signed.json
             ${{ runner.temp }}/release/sbom.spdx.json

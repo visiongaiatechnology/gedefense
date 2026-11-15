@@ -14,4 +14,4 @@ Target = gedefense
 Description=Enable the VGT GeDefense service contract
 When=PostTransaction
 Exec=/usr/bin/systemctl daemon-reload
-Exec=/usr/bin/systemctl enable gedefense-provision.service gedefense-bpffs.service gedefense-core.service gedefense-control.service gedefense-access.service
+Exec=/usr/bin/systemctl enable gedefense-provision.service gedefense-bpffs.service gedefense-core.service gedefense-control.service gedefense-access.service gedefense-cell-helper.service

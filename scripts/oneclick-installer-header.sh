@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
-# VGT GeDefense 5.2.0 Universal Linux One-Click Installer
+# VGT GeDefense 6.0.0 Universal Linux One-Click Installer
 set -Eeuo pipefail
 umask 0077
 
-readonly SETUP_VERSION="5.2.0"
-readonly PRODUCT_VERSION="5.2.0"
+readonly SETUP_VERSION="6.0.0"
+readonly PRODUCT_VERSION="6.0.0"
 readonly PAYLOAD_SHA256="__PAYLOAD_SHA256__"
 readonly CONTROL_SHA256="__CONTROL_SHA256__"
 readonly ACCESS_SHA256="__ACCESS_SHA256__"
+# POINT 2: privileged ephemeral parser-cell helper (own root unit).
+readonly HELPER_SHA256="__HELPER_SHA256__"
 readonly RUST_STABLE_TOOLCHAIN="1.97.1"
 readonly RUST_NIGHTLY_TOOLCHAIN="nightly-2026-07-16"
 readonly BPF_LINKER_VERSION="0.10.3"
@@ -39,6 +41,19 @@ readonly STORAGE_KEY_FILE="${SECRETS_DIR}/storage-master.key"
 readonly XDR_KEY_FILE="${STATE}/xdr-log.key"
 readonly RUNTIME_KEY_FILE="${STATE}/runtime-settings.key"
 readonly SESSION_KEY_FILE="${ACCESS_STATE_DIR}/access-session.key"
+# POINT 2 ephemeral parser cells (docs/POINT2-PARSER-CELLS.md §7): the root
+# helper owns spawning/burning; control only orchestrates over VGTGC2.
+readonly CELL_HELPER_KEY="${SECRETS_DIR}/cell-helper.key"
+readonly PARSER_INPUTS_DIR="${STATE}/parser-inputs"
+readonly PARSER_EXPORTS_DIR="${STATE}/parser-exports"
+# T5 fix: untrusted export/import copy is owned by the unprivileged control
+# plane; the helper never writes here (parser-exports stays root:gedefense).
+readonly PARSER_IMPORTS_DIR="${STATE}/parser-imports"
+readonly PARSER_BURN_LEDGER="${STATE}/parser-burn-ledger.jsonl"
+readonly PARSER_PROFILE_FILE="${CONFIG_DIR}/parser-profiles.conf"
+readonly PARSER_PROFILE_TEMPLATE="/usr/share/gedefense/parser-profiles.conf"
+readonly CELL_HELPER_SOCKET="/run/vgt-gedefense/cell-helper.sock"
+readonly CELL_HELPER_UNIT="gedefense-cell-helper.service"
 readonly POLICY_STATE_FILE="${STATE}/policy.json"
 readonly POLICY_PRIVATE_KEY_FILE="${STATE}/policy.ed25519"
 readonly POLICY_PUBLIC_KEY_FILE="${STATE}/policy.ed25519.pub"
@@ -63,6 +78,7 @@ WORK=""
 TRUST_WORK=""
 PAYLOAD=""
 BUILD_ROOT=""
+CELL_HELPER_BIN=""
 ACTIVATING=0
 BACKUP_DIR=""
 OLD_CURRENT=""
@@ -122,9 +138,9 @@ rollback(){
   if (( ACTIVATING == 1 )); then
     set +e
     log "Aktivierung fehlgeschlagen. Automatischer Rollback beginnt."
-    systemctl stop gedefense-access.service gedefense-control.service gedefense-core.service 2>/dev/null || true
+    systemctl stop gedefense-access.service gedefense-control.service gedefense-core.service "${CELL_HELPER_UNIT}" 2>/dev/null || true
 
-    for unit in gedefense-bpffs.service gedefense-core.service gedefense-control.service gedefense-access.service; do
+    for unit in gedefense-bpffs.service gedefense-core.service gedefense-control.service gedefense-access.service gedefense-cell-helper.service; do
       rm -rf -- "/etc/systemd/system/${unit}.d"
       if [[ -f "$BACKUP_DIR/$unit" ]]; then
         cp -f -- "$BACKUP_DIR/$unit" "/etc/systemd/system/$unit"
@@ -162,6 +178,10 @@ rollback(){
     restore_backup_path "$INCIDENT_HEAD_FILE" incidents.jsonl.head
     restore_backup_path "$BEHAVIOR_FILE" behavior-profiles.json
     restore_backup_path "$RUNTIME_SETTINGS_FILE" runtime-settings.json
+    # POINT 2 material: restore pre-update helper key/profile (absent marker
+    # removes a file this failed activation created for the first time).
+    restore_backup_path "$CELL_HELPER_KEY" cell-helper.key
+    restore_backup_path "$PARSER_PROFILE_FILE" parser-profiles.conf
 
     if (( OLD_STATE_LATCH == 1 )) && [[ -f "$BACKUP_DIR/EMERGENCY_STOP.state" ]]; then
       install -o gedefense -g gedefense -m 0600 "$BACKUP_DIR/EMERGENCY_STOP.state" "$STATE/EMERGENCY_STOP"
@@ -213,7 +233,18 @@ release_trust_check(){
   have sha256sum || fail "sha256sum ist für die Signaturprüfung erforderlich."
   EFFECTIVE_TRUST_MODE=$RELEASE_TRUST_MODE
   case "$EFFECTIVE_TRUST_MODE" in
-    prebuilt|source-signed) ;;
+    prebuilt)
+      # A prebuilt installer binds every shipped binary to the signed release
+      # index; an unrendered helper hash must fail closed instead of being
+      # silently skipped.
+      release_placeholder_ok "$HELPER_SHA256" HELPER_SHA256
+      [[ $HELPER_SHA256 =~ ^[0-9a-f]{64}$ ]] || fail "Release-Parser-Cell-Helper-Hash ist ungültig."
+      ;;
+    source-signed)
+      # Source mode builds the helper from the signed source payload; there is no
+      # prebuilt helper hash to claim (documented trust boundary, see spec §7).
+      log "Quell-Trust-Modus: Parser-Cell-Helper wird aus dem signierten Quell-Payload gebaut."
+      ;;
     *) fail "Unbekannter Release-Trust-Modus; nur prebuilt/source-signed sind zulässig." ;;
   esac
   TRUST_WORK=$(mktemp -d "${TMPDIR:-/tmp}/gedefense-release-trust.XXXXXX")
@@ -245,7 +276,8 @@ verify_release_payload(){
       --expected-version "$PRODUCT_VERSION" \
       --artifact-file "payload.tar.gz=$WORK/payload.tar.gz" \
       --artifact-file "gedefense-control=$PAYLOAD/bin/gedefense-control" \
-      --artifact-file "gedefense-access=$PAYLOAD/bin/gedefense-access" >/dev/null \
+      --artifact-file "gedefense-access=$PAYLOAD/bin/gedefense-access" \
+      --artifact-file "gedefense-cell-helper=$PAYLOAD/bin/gedefense-cell-helper" >/dev/null \
       || fail "Payload/Artefakte sind nicht durch den signierten Release-Index gedeckt."
     local manifest="$PAYLOAD/share/release-manifest.signed.json"
     [[ -f $manifest && ! -L $manifest ]] || fail "Signiertes Release-Manifest fehlt im Payload."
@@ -404,6 +436,12 @@ PY
   [[ -f "$PAYLOAD/bin/gedefense-access" && ! -L "$PAYLOAD/bin/gedefense-access" ]] || fail "Gateway-Binary fehlt im Payload."
   [[ $(sha256sum "$PAYLOAD/bin/gedefense-control" | awk '{print $1}') == "$CONTROL_SHA256" ]] || fail "Control-Binary ist beschädigt."
   [[ $(sha256sum "$PAYLOAD/bin/gedefense-access" | awk '{print $1}') == "$ACCESS_SHA256" ]] || fail "Gateway-Binary ist beschädigt."
+  if [[ $EFFECTIVE_TRUST_MODE == "prebuilt" ]]; then
+    [[ -f "$PAYLOAD/bin/gedefense-cell-helper" && ! -L "$PAYLOAD/bin/gedefense-cell-helper" ]] || fail "Parser-Cell-Helper fehlt im Payload."
+    [[ $(sha256sum "$PAYLOAD/bin/gedefense-cell-helper" | awk '{print $1}') == "$HELPER_SHA256" ]] || fail "Parser-Cell-Helper-Binary ist beschädigt."
+  else
+    [[ -f "$PAYLOAD/rust/gedefense-cell-helper/Cargo.toml" ]] || fail "Quell-Payload enthält das Parser-Cell-Helper-Crate nicht."
+  fi
   verify_release_payload
 }
 
@@ -412,8 +450,12 @@ validate_payload_binaries(){
   # distribution runtime libraries, and always after the cryptographic payload
   # verification above - never as a substitute for it.
   chmod 0755 "$PAYLOAD/bin/gedefense-control" "$PAYLOAD/bin/gedefense-access"
+  [[ -f "$PAYLOAD/bin/gedefense-cell-helper" ]] && chmod 0755 "$PAYLOAD/bin/gedefense-cell-helper"
   ldd "$PAYLOAD/bin/gedefense-access" 2>/dev/null | grep -q 'libargon2.so.1' || fail "Gateway benötigt libargon2.so.1."
   ! ldd "$PAYLOAD/bin/gedefense-access" 2>/dev/null | grep -q 'not found' || fail "Gateway-Runtimebibliothek fehlt."
+  if [[ -f "$PAYLOAD/bin/gedefense-cell-helper" ]]; then
+    ! ldd "$PAYLOAD/bin/gedefense-cell-helper" 2>/dev/null | grep -q 'not found' || fail "Parser-Cell-Helper-Runtimebibliothek fehlt."
+  fi
   [[ $("$PAYLOAD/bin/gedefense-control" --version) == "$PRODUCT_VERSION" ]] || fail "Control-Version ist falsch."
   [[ $("$PAYLOAD/bin/gedefense-access" --version) == "${PRODUCT_VERSION}-access" ]] || fail "Gateway-Version ist falsch."
 }
@@ -583,6 +625,19 @@ ensure_user_and_dirs(){
   install -d -o gedefense-access -g gedefense-access -m 0700 "$ACCESS_STATE_DIR"
   install -d -o root -g gedefense -m 0700 "$QUARANTINE_DIR" "$QUARANTINE_OBJECT_DIR"
   install -d -o root -g gedefense -m 0750 "$CONFIG_DIR" "$TLS_DIR" "$SECRETS_DIR" "$STATE/canaries"
+  # POINT 2: helper staging roots. parser-inputs is control-owned
+  # (0730 gedefense:gedefense, helper staging-dir contract: Owner=Control-UID);
+  # parser-exports stays root:gedefense 0750 (helper-only originals);
+  # parser-imports is the control-owned untrusted import copy (T5 fix).
+  install -d -o gedefense -g gedefense -m 0730 "$PARSER_INPUTS_DIR"
+  install -d -o root -g gedefense -m 0750 "$PARSER_EXPORTS_DIR"
+  install -d -o gedefense -g gedefense -m 0750 "$PARSER_IMPORTS_DIR"
+  [[ $(stat -c '%U:%G:%a' "$PARSER_INPUTS_DIR") == 'gedefense:gedefense:730' ]] ||
+    fail "Parser-Inputs-Rechte konnten nicht sicher gesetzt werden."
+  [[ $(stat -c '%U:%G:%a' "$PARSER_EXPORTS_DIR") == 'root:gedefense:750' ]] ||
+    fail "Parser-Exports-Rechte konnten nicht sicher gesetzt werden."
+  [[ $(stat -c '%U:%G:%a' "$PARSER_IMPORTS_DIR") == 'gedefense:gedefense:750' ]] ||
+    fail "Parser-Imports-Rechte konnten nicht sicher gesetzt werden."
   [[ $(stat -c '%U:%G:%a' "$STATE/canaries") == 'root:gedefense:750' ]] ||
     fail "Canary-Verzeichnisrechte konnten nicht sicher gesetzt werden."
   install -d -o gedefense -g gedefense-l7 -m 0750 "$L7_RUNTIME_DIR"
@@ -654,6 +709,57 @@ ensure_storage_key(){
   log "AES-256-GCM Storage-Key: root:gedefense mode=640 bytes=32"
 }
 
+# POINT 2: provision the privileged parser-cell helper material exactly once.
+# - VGTGC2 HMAC key: 32 bytes, 0640 root:gedefense (helper reads it as root, the
+#   control plane signs its requests with it),
+# - append-only burn ledger: 0640 root:gedefense regular file (the helper appends
+#   to it; the unit's ReadWritePaths contract requires it to exist),
+# - /etc/vgt/gedefense/parser-profiles.conf: header-only packaged default, only
+#   created when missing so operator-added verified profiles are never touched.
+ensure_cell_helper_material(){
+  local tmp
+  if [[ ! -f $CELL_HELPER_KEY || -L $CELL_HELPER_KEY || $(stat -c %s "$CELL_HELPER_KEY" 2>/dev/null || echo 0) -ne 32 ]]; then
+    [[ -e $CELL_HELPER_KEY || -L $CELL_HELPER_KEY ]] && mv -f -- "$CELL_HELPER_KEY" "${CELL_HELPER_KEY}.invalid.$(date +%s)" || true
+    tmp=$(mktemp -- "${CELL_HELPER_KEY}.new.XXXXXXXX")
+    head -c 32 /dev/urandom > "$tmp"
+    chown root:gedefense "$tmp"; chmod 0640 "$tmp"
+    mv -fT -- "$tmp" "$CELL_HELPER_KEY"
+  fi
+  chown root:gedefense "$CELL_HELPER_KEY"; chmod 0640 "$CELL_HELPER_KEY"
+  [[ $(stat -c '%U:%G:%a:%s' "$CELL_HELPER_KEY") == 'root:gedefense:640:32' ]] ||
+    fail "Cell-Helper-Schlüsselrechte konnten nicht sicher gesetzt werden."
+
+  if [[ ! -f $PARSER_BURN_LEDGER || -L $PARSER_BURN_LEDGER ]]; then
+    [[ -e $PARSER_BURN_LEDGER || -L $PARSER_BURN_LEDGER ]] && mv -f -- "$PARSER_BURN_LEDGER" "${PARSER_BURN_LEDGER}.invalid.$(date +%s)" || true
+    tmp=$(mktemp -- "${PARSER_BURN_LEDGER}.new.XXXXXXXX")
+    : > "$tmp"
+    chown root:gedefense "$tmp"; chmod 0640 "$tmp"
+    mv -fT -- "$tmp" "$PARSER_BURN_LEDGER"
+  fi
+  chown root:gedefense "$PARSER_BURN_LEDGER"; chmod 0640 "$PARSER_BURN_LEDGER"
+  [[ $(stat -c '%U:%G:%a' "$PARSER_BURN_LEDGER") == 'root:gedefense:640' ]] ||
+    fail "Parser-Burn-Ledger-Rechte konnten nicht sicher gesetzt werden."
+
+  [[ -f "$PAYLOAD/templates/parser-profiles.conf" && ! -L "$PAYLOAD/templates/parser-profiles.conf" ]] ||
+    fail "Parser-Profil-Template fehlt im Payload."
+  install -d -o root -g root -m 0755 /usr/share/gedefense
+  install -o root -g root -m 0644 "$PAYLOAD/templates/parser-profiles.conf" "$PARSER_PROFILE_TEMPLATE"
+  if [[ -L $PARSER_PROFILE_FILE ]]; then
+    fail "Parser-Profilpfad ist ein Symlink: $PARSER_PROFILE_FILE"
+  fi
+  if [[ ! -f $PARSER_PROFILE_FILE ]]; then
+    install -o root -g root -m 0640 "$PARSER_PROFILE_TEMPLATE" "$PARSER_PROFILE_FILE"
+  fi
+  chown root:root "$PARSER_PROFILE_FILE"; chmod 0640 "$PARSER_PROFILE_FILE"
+  [[ $(stat -c '%U:%G:%a' "$PARSER_PROFILE_FILE") == 'root:root:640' ]] ||
+    fail "Parser-Profil-Dateirechte konnten nicht sicher gesetzt werden."
+  if grep -Eq '^\[profile ' "$PARSER_PROFILE_FILE"; then
+    log "Parser-Profile: $(grep -c '^\[profile ' "$PARSER_PROFILE_FILE") operator-/paketverwaltete Profile vorhanden."
+  else
+    log "Parser-Profile: Default ohne Profil (header-only); CELL_CREATE bleibt bis zur Profilpflege profile-unknown."
+  fi
+}
+
 ensure_token(){
   local tmp
   if [[ ! -f $TOKEN_FILE || -L $TOKEN_FILE ]] || ! python3 - "$TOKEN_FILE" <<'PY' >/dev/null 2>&1
@@ -683,6 +789,7 @@ prepare_secrets(){
   ensure_token
   ensure_core_ipc_key
   ensure_storage_key
+  ensure_cell_helper_material
   ensure_raw_key "$XDR_KEY_FILE" 32
   ensure_raw_key "$RUNTIME_KEY_FILE" 32
   ensure_raw_key "$SESSION_KEY_FILE" 32 gedefense-access
@@ -743,6 +850,20 @@ build_rust_stack(){
   [[ -s "$BUILD_ROOT/rust/target/bpfel-unknown-none/release/gedefense-ebpf" ]] || fail "eBPF-Artefakt fehlt."
   [[ -x "$BUILD_ROOT/rust/target/release/gedefense-core" ]] || chmod 0755 "$BUILD_ROOT/rust/target/release/gedefense-core"
   [[ $("$BUILD_ROOT/rust/target/release/gedefense-core" --version) == "$PRODUCT_VERSION" ]] || fail "Rust-Core-Version ist falsch."
+  # POINT 2: prebuilt trust mode ships a hash-bound helper in the payload; source
+  # trust mode builds it from the signed source tree (same cargo invocation
+  # discipline as core/eBPF, --locked against the payload Cargo.lock).
+  if [[ -f "$PAYLOAD/bin/gedefense-cell-helper" && ! -L "$PAYLOAD/bin/gedefense-cell-helper" ]]; then
+    CELL_HELPER_BIN="$PAYLOAD/bin/gedefense-cell-helper"
+    log "Parser-Cell-Helper: signiertes Prebuilt-Artefakt aus dem Payload."
+  else
+    log "Kompiliere privilegierten Parser-Cell-Helper aus dem Quell-Payload."
+    cargo +"$RUST_STABLE_TOOLCHAIN" test --locked --manifest-path "$BUILD_ROOT/rust/Cargo.toml" -p gedefense-cell-helper >>"$LOG_FILE" 2>&1
+    cargo +"$RUST_STABLE_TOOLCHAIN" build --locked --manifest-path "$BUILD_ROOT/rust/Cargo.toml" -p gedefense-cell-helper --release >>"$LOG_FILE" 2>&1
+    CELL_HELPER_BIN="$BUILD_ROOT/rust/target/release/gedefense-cell-helper"
+    [[ -x "$CELL_HELPER_BIN" ]] || fail "Parser-Cell-Helper-Build fehlgeschlagen."
+    log "Parser-Cell-Helper aus dem Quell-Payload gebaut (nicht remote attestiert, dokumentierte Grenze)."
+  fi
 }
 
 write_config_and_baseline(){
@@ -789,9 +910,24 @@ stage_release(){
   install -o root -g root -m 0755 "$PAYLOAD/bin/gedefense-control" "$staging/bin/gedefense-control"
   install -o root -g root -m 0755 "$PAYLOAD/bin/gedefense-access" "$staging/bin/gedefense-access"
   install -o root -g root -m 0755 "$BUILD_ROOT/rust/target/release/gedefense-core" "$staging/libexec/gedefense-core"
+  # POINT 2: the helper is prebuilt in the signed payload or built from the
+  # signed source payload above; it is never rebuilt from untrusted input.
+  install -o root -g root -m 0755 "$CELL_HELPER_BIN" "$staging/libexec/gedefense-cell-helper"
   install -o root -g root -m 0644 "$BUILD_ROOT/rust/target/bpfel-unknown-none/release/gedefense-ebpf" "$staging/lib/gedefense/gedefense-ebpf"
   install -o root -g root -m 0644 "$BUILD_ROOT/rust/Cargo.lock" "$staging/share/Cargo.lock"
   install -o root -g root -m 0644 "$PAYLOAD/share/README.md" "$staging/share/README.md"
+  # POINT 2 deployment-gate input: the signed release manifest travels with the
+  # deployed release so scripts/validate-installed-linux-host.sh can prove that
+  # core/control/eBPF/helper bytes still match the signed manifest.
+  if [[ -f "$PAYLOAD/share/release-manifest.signed.json" ]]; then
+    install -o root -g root -m 0644 "$PAYLOAD/share/release-manifest.signed.json" "$staging/share/release-manifest.signed.json"
+  fi
+  if [[ -f "$PAYLOAD/share/sbom.spdx.json" ]]; then
+    install -o root -g root -m 0644 "$PAYLOAD/share/sbom.spdx.json" "$staging/share/sbom.spdx.json"
+  fi
+  if [[ -f "$PAYLOAD/share/build-provenance.json" ]]; then
+    install -o root -g root -m 0644 "$PAYLOAD/share/build-provenance.json" "$staging/share/build-provenance.json"
+  fi
   install -o root -g root -m 0644 "$PAYLOAD/integration/nginx/gedefense-l7.conf.example" "$staging/share/integration/nginx/gedefense-l7.conf.example"
   install -o root -g root -m 0644 "$PAYLOAD/integration/nginx/README.md" "$staging/share/integration/nginx/README.md"
   printf '%s\n' "$PRODUCT_VERSION" > "$staging/share/VERSION"
@@ -846,7 +982,7 @@ generate_tls(){
 backup_activation_state(){
   BACKUP_DIR="$WORK/activation-backup"
   mkdir -p "$BACKUP_DIR"
-  for unit in gedefense-bpffs.service gedefense-core.service gedefense-control.service gedefense-access.service; do
+  for unit in gedefense-bpffs.service gedefense-core.service gedefense-control.service gedefense-access.service gedefense-cell-helper.service; do
     [[ -f /etc/systemd/system/$unit ]] && cp -a -- "/etc/systemd/system/$unit" "$BACKUP_DIR/$unit" || true
     [[ -d /etc/systemd/system/${unit}.d ]] && cp -a -- "/etc/systemd/system/${unit}.d" "$BACKUP_DIR/${unit}.d" || true
   done
@@ -869,6 +1005,10 @@ backup_activation_state(){
   backup_path "$XDR_KEY_FILE" xdr-log.key
   backup_path "$RUNTIME_KEY_FILE" runtime-settings.key
   backup_path "$SESSION_KEY_FILE" access-session.key
+  # POINT 2: helper key/profile are only created when missing; back them up so a
+  # failed activation restores the pre-update state instead of rotating trust.
+  backup_path "$CELL_HELPER_KEY" cell-helper.key
+  backup_path "$PARSER_PROFILE_FILE" parser-profiles.conf
   backup_path "$POLICY_STATE_FILE" policy.json
   backup_path "$POLICY_PRIVATE_KEY_FILE" policy.ed25519
   backup_path "$POLICY_PUBLIC_KEY_FILE" policy.ed25519.pub
@@ -881,13 +1021,26 @@ backup_activation_state(){
 
 install_units(){
   # Remove stale RC/hotfix drop-ins that could override the full-stack binaries.
-  rm -rf -- /etc/systemd/system/gedefense-bpffs.service.d /etc/systemd/system/gedefense-core.service.d /etc/systemd/system/gedefense-control.service.d /etc/systemd/system/gedefense-access.service.d
+  rm -rf -- /etc/systemd/system/gedefense-bpffs.service.d /etc/systemd/system/gedefense-core.service.d /etc/systemd/system/gedefense-control.service.d /etc/systemd/system/gedefense-access.service.d /etc/systemd/system/gedefense-cell-helper.service.d
   install -o root -g root -m 0644 "$PAYLOAD/systemd/gedefense-bpffs.service" /etc/systemd/system/gedefense-bpffs.service
   sed "s#--interface=auto#--interface=${INTERFACE}#" "$PAYLOAD/systemd/gedefense-core.service" > /etc/systemd/system/gedefense-core.service
   install -o root -g root -m 0644 "$PAYLOAD/systemd/gedefense-control.service" /etc/systemd/system/gedefense-control.service
+  # POINT 2: root helper unit; @RELEASE@ is rendered to the release symlink like
+  # gedefense-access.service in this installer.
+  sed -e "s#@RELEASE@#${BASE}/current#g" "$PAYLOAD/systemd/gedefense-cell-helper.service" > "/etc/systemd/system/${CELL_HELPER_UNIT}"
+  chmod 0644 "/etc/systemd/system/${CELL_HELPER_UNIT}"
+  if grep -q '@RELEASE@' "/etc/systemd/system/${CELL_HELPER_UNIT}"; then
+    fail "Parser-Cell-Helper-Unit enthält einen unaufgelösten @RELEASE@-Platzhalter."
+  fi
   install -o root -g root -m 0644 "$PAYLOAD/tmpfiles/vgt-gedefense-l7.conf" "$L7_TMPFILES_CONFIG"
   systemd-tmpfiles --create "$L7_TMPFILES_CONFIG"
   [[ $(stat -c '%U:%G:%a' "$L7_RUNTIME_DIR") == 'gedefense:gedefense-l7:750' ]] || fail "L7-Runtime-Provisionierung ist inkonsistent."
+  # POINT 2: install the packaged tmpfiles contract so a later boot keeps the
+  # helper staging roots, ledger and header-only profile default provisioned (C
+  # only copies the profile when missing). Not run here: the installer already
+  # provisioned the exact ownership/modes above and must not flip the existing
+  # STATE contract underneath the running control plane.
+  install -o root -g root -m 0644 "$PAYLOAD/tmpfiles/vgt-gedefense.conf" /etc/tmpfiles.d/vgt-gedefense.conf
   # The gateway is internet-facing and runs under its own account, so that it can reach neither the
   # core IPC key nor the storage master key. It refuses any backend token that is not 0600 and its own
   # property, while the control plane's sandbox forbids handing the file over - the unit's root
@@ -925,24 +1078,41 @@ verify_units(){
     /etc/systemd/system/gedefense-bpffs.service \
     /etc/systemd/system/gedefense-core.service \
     /etc/systemd/system/gedefense-control.service \
-    /etc/systemd/system/gedefense-access.service >>"$LOG_FILE" 2>&1
+    /etc/systemd/system/gedefense-access.service \
+    "/etc/systemd/system/${CELL_HELPER_UNIT}" >>"$LOG_FILE" 2>&1
 }
 
 activate_release(){
   archive_old_latch
-  systemctl stop gedefense-access.service gedefense-observe.service gedefense-control.service gedefense-core.service 2>/dev/null || true
+  systemctl stop gedefense-access.service gedefense-observe.service gedefense-control.service gedefense-core.service "${CELL_HELPER_UNIT}" 2>/dev/null || true
   rm -f -- "$PREVIOUS"
   if [[ -n $OLD_CURRENT ]]; then ln -s -- "$OLD_CURRENT" "$PREVIOUS"; fi
   rm -f -- "$CURRENT"; ln -s -- "$RELEASE" "$CURRENT"
   install_units
   systemctl daemon-reload
   verify_units
-  systemctl reset-failed gedefense-bpffs.service gedefense-core.service gedefense-control.service gedefense-access.service || true
-  systemctl enable gedefense-bpffs.service gedefense-core.service gedefense-control.service gedefense-access.service >/dev/null
+  systemctl reset-failed gedefense-bpffs.service gedefense-core.service gedefense-control.service gedefense-access.service "${CELL_HELPER_UNIT}" || true
+  systemctl enable gedefense-bpffs.service gedefense-core.service gedefense-control.service gedefense-access.service "${CELL_HELPER_UNIT}" >/dev/null
   systemctl start gedefense-bpffs.service
   systemctl start gedefense-core.service
   for _ in $(seq 1 40); do [[ -S /run/vgt-gedefense/core.sock ]] && break; sleep .5; done
   [[ -S /run/vgt-gedefense/core.sock ]] || { journalctl -u gedefense-core.service -n 100 --no-pager | tee -a "$LOG_FILE"; fail "Rust-Core-Socket wurde nicht erstellt."; }
+  # POINT 2: the helper is optional infrastructure (default parser_cells.enabled=
+  # false). Start it, but never roll back the whole stack when the sandbox cannot
+  # start on this host: parser cells then stay runtime-unavailable (fail-closed)
+  # and the operator sees the warning + journal. Never claim a working sandbox.
+  if systemctl start "${CELL_HELPER_UNIT}"; then
+    for _ in $(seq 1 20); do [[ -S $CELL_HELPER_SOCKET ]] && break; sleep .5; done
+    if [[ -S $CELL_HELPER_SOCKET ]]; then
+      log "Parser-Cell-Helper aktiv (${CELL_HELPER_SOCKET}); parser_cells bleibt bis zur Operator-Aktivierung inert (enabled=false)."
+    else
+      log "WARNUNG: Parser-Cell-Helper gestartet, aber VGTGC2-Socket ${CELL_HELPER_SOCKET} fehlt; Parser-Zellen bleiben runtime-unavailable."
+    fi
+    chmod 0660 "$CELL_HELPER_SOCKET" 2>/dev/null || true
+    chown root:gedefense "$CELL_HELPER_SOCKET" 2>/dev/null || true
+  else
+    log "WARNUNG: Parser-Cell-Helper konnte nicht starten; Parser-Zellen bleiben runtime-unavailable (Details: journalctl -u ${CELL_HELPER_UNIT})."
+  fi
   if ! systemctl start gedefense-control.service; then
     systemctl --no-pager --full status gedefense-control.service 2>&1 | tee -a "$LOG_FILE" || true
     journalctl -u gedefense-control.service -n 160 --no-pager 2>&1 | tee -a "$LOG_FILE" || true
@@ -985,11 +1155,11 @@ install_manager(){
 #!/usr/bin/env bash
 set -Eeuo pipefail
 case ${1:-status} in
-  status) systemctl --no-pager --full status gedefense-core.service gedefense-control.service gedefense-access.service ;;
-  restart) systemctl restart gedefense-core.service gedefense-control.service gedefense-access.service ;;
-  logs) journalctl -u gedefense-core.service -u gedefense-control.service -u gedefense-access.service -n "${2:-200}" --no-pager ;;
-  stop) systemctl stop gedefense-access.service gedefense-control.service gedefense-core.service ;;
-  start) systemctl start gedefense-core.service gedefense-control.service gedefense-access.service ;;
+  status) systemctl --no-pager --full status gedefense-core.service gedefense-control.service gedefense-access.service gedefense-cell-helper.service ;;
+  restart) systemctl restart gedefense-core.service gedefense-control.service gedefense-access.service gedefense-cell-helper.service ;;
+  logs) journalctl -u gedefense-core.service -u gedefense-control.service -u gedefense-access.service -u gedefense-cell-helper.service -n "${2:-200}" --no-pager ;;
+  stop) systemctl stop gedefense-access.service gedefense-control.service gedefense-core.service gedefense-cell-helper.service ;;
+  start) systemctl start gedefense-core.service gedefense-control.service gedefense-access.service gedefense-cell-helper.service ;;
   *) echo "Usage: vgt-gedefense {status|restart|logs [N]|start|stop}" >&2; exit 2 ;;
 esac
 MANAGER

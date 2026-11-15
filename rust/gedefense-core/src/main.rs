@@ -1,7 +1,7 @@
 use aya::{
     maps::{
         lpm_trie::{Key, LpmTrie},
-        HashMap as AyaHashMap, MapData, MapError, PerCpuArray, RingBuf,
+        Array as AyaArray, HashMap as AyaHashMap, Map, MapData, MapError, PerCpuArray, RingBuf,
     },
     programs::{
         tc, CgroupAttachMode, CgroupSkb, CgroupSkbAttachType, Lsm, SchedClassifier, TcAttachType,
@@ -11,16 +11,27 @@ use aya::{
 };
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use gedefense_common::{
-    decode_ingress_event, CellLsmDenyEvent, EgressDropEvent, ExecEvent, ACTION_DROP,
-    CELL_LSM_DENY_NON_UNIX_SOCKET, EXEC_COMM_BYTES, NETWORK_ADDRESS_BYTES, NETWORK_FAMILY_V4,
-    NETWORK_FAMILY_V6,
+    decode_ingress_event, decode_styx_flow_event, decode_titan_exec_event, CellLsmDenyEvent,
+    EgressDropEvent, ExecEvent, ACTION_DROP, CELL_LSM_DENY_NON_UNIX_SOCKET,
+    EXEC_COMM_BYTES, NETWORK_ADDRESS_BYTES, NETWORK_FAMILY_V4, NETWORK_FAMILY_V6,
+    STYX_FLOW_EVENT_WIRE_BYTES, STYX_MODE_OFF, TITAN_EXEC_EVENT_WIRE_BYTES,
+    TITAN_EXEC_MODE_OFF, TITAN_EXEC_OFFSETS_ABI, TITAN_EXEC_OFFSETS_MAGIC, TITAN_EXEC_SCOPE_FLAG_JIT_ALLOW,
+    TITAN_EXEC_STATE_ABI, TITAN_EXEC_STATE_MAGIC,
 };
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
+mod btf_offsets;
 mod canary;
+mod lockdown;
+mod lockdown_brokers;
+mod lockdown_hardening;
+mod lockdown_uevent;
+mod lockdown_usb;
 mod malware;
 mod process_control;
 mod quarantine;
+mod styx_flow;
+mod titan_exec;
 use canary::{collect_canary_roots, CanaryBroker};
 use malware::{handle_user_scan, MalwareScanner};
 #[cfg(test)]
@@ -41,6 +52,10 @@ use std::{
         net::{UnixListener, UnixStream},
     },
     path::Path,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc, Mutex,
+    },
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
@@ -73,6 +88,23 @@ const MAX_INGRESS_EVENTS_PER_RESPONSE: usize = 12;
 // so it cannot be tripped by ordinary mixed-protocol aggregates.
 const INGRESS_REJECTED_ALARM_THRESHOLD: u64 = 16;
 const MAX_CELL_LSM_EVENTS_PER_RESPONSE: usize = 24;
+// §4 mandatory-veto seed: metadata/link-local/multicast/unspecified ranges that
+// must be blocked from the moment the core is online (127/8 and ::1 stay out so
+// loopback keeps working; the IPv6 ND exception is implemented in the kernel
+// program and applies on top of this list).
+const STYX_MANDATORY_VETO_V4: &[(u32, [u8; 4])] = &[
+    (16, [169, 254, 0, 0]),
+    (32, [100, 100, 100, 200]),
+    (32, [168, 63, 129, 16]),
+    (32, [192, 0, 0, 192]),
+    (8, [0, 0, 0, 0]),
+    (4, [224, 0, 0, 0]),
+];
+const STYX_MANDATORY_VETO_V6: &[(u32, [u8; 16])] = &[
+    (128, [0xfd, 0x00, 0x0e, 0xc2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x02, 0x54]),
+    (10, [0xfe, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
+    (8, [0xff, 0x00, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
+];
 // F-04: one canonical persistence path. The product contract (BETA-TEST-PLAN,
 // READMEs) names 90-vgt-gedefense.conf; read, create, replace, rollback and
 // migration all derive from these constants so they can never diverge again.
@@ -85,6 +117,575 @@ const LEGACY_HARDENING_FILE_NAMES: &[&str] =
     &["99-zzz-vgt-gedefense.conf", "99-vgt-gedefense.conf"];
 const RENAME_NOREPLACE: u32 = 1;
 const RENAME_EXCHANGE: u32 = 2;
+
+// ---------------------------------------------------------------------------
+// Point 5 (§5/§6/§9): Emergency-Lockdown ABI glue.
+//
+// The §5 tokens are parsed and the answers formatted here, next to the existing
+// VGT3 command surface; the typed state machine lives in `lockdown`. The shared
+// telemetry bridge (event queue, counters, arm policy) also lives at the crate
+// root because both the command surface and the uevent monitor thread use it.
+// ---------------------------------------------------------------------------
+
+use gedefense_common::{
+    decode_lockdown_word, encode_lockdown_word, LockdownEvent, LOCKDOWN_FLAG_ALLOW_LOOPBACK,
+    LOCKDOWN_FLAG_DROP_ALL, LOCKDOWN_MODE_ARMED, LOCKDOWN_OUTCOME_APPLIED, LOCKDOWN_OUTCOME_UNSUPPORTED,
+    LOCKDOWN_PHASE_BROKERS, LOCKDOWN_PHASE_CELLS, LOCKDOWN_PHASE_DM, LOCKDOWN_PHASE_HARDENING,
+    LOCKDOWN_PHASE_INTENT, LOCKDOWN_PHASE_NET, LOCKDOWN_PHASE_SESSIONS, LOCKDOWN_PHASE_TB,
+    LOCKDOWN_PHASE_USB, LOCKDOWN_REASON_BOOT_TRUST_DRIFT, LOCKDOWN_REASON_MANUAL,
+    LOCKDOWN_REASON_POLICY, LOCKDOWN_REASON_SCREEN_LOCK, LOCKDOWN_REASON_TAMPER,
+    LOCKDOWN_REASON_TB_UNKNOWN, LOCKDOWN_REASON_USB_UNKNOWN, LOCKDOWN_REASON_XDR_CRITICAL,
+    LOCKDOWN_SOURCE_MANUAL, LOCKDOWN_SOURCE_POLICY, LOCKDOWN_SOURCE_TIMER, LOCKDOWN_SOURCE_UEVENT,
+};
+
+/// Arm mode (§5 `mode=locked|unlocked`): kernel enforcement and uevent blocking
+/// only exist in `locked`; `unlocked` is audit-only (Lade-Kabel-DoS-Schutz).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ArmMode {
+    Unlocked,
+    Locked,
+}
+
+impl ArmMode {
+    pub(crate) fn token(self) -> &'static str {
+        match self {
+            Self::Unlocked => "unlocked",
+            Self::Locked => "locked",
+        }
+    }
+    pub(crate) fn from_token(token: &str) -> Option<Self> {
+        match token {
+            "unlocked" => Some(Self::Unlocked),
+            "locked" => Some(Self::Locked),
+            _ => None,
+        }
+    }
+}
+
+/// Snapshot the uevent monitor acts on; kept in sync by ARM/TRIGGER/SET_MODE.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct UeventPolicy {
+    pub(crate) arm: ArmMode,
+    pub(crate) auto_network_drop: bool,
+    pub(crate) allow_loopback: bool,
+    pub(crate) epoch: u32,
+}
+
+impl Default for UeventPolicy {
+    fn default() -> Self {
+        Self { arm: ArmMode::Unlocked, auto_network_drop: false, allow_loopback: true, epoch: 0 }
+    }
+}
+
+/// Bounded, monotonically sequenced lifecycle event queue (§5 `LOCKDOWN_EVENTS`).
+#[derive(Default)]
+struct LockdownEventQueue {
+    records: VecDeque<LockdownEvent>,
+    seq: u64,
+    dropped: u64,
+    reported: u64,
+}
+
+impl LockdownEventQueue {
+    fn push(&mut self, epoch: u32, source: u8, reason: u8, phase: u8, outcome: u8, detail: u64) {
+        if self.records.len() >= LOCKDOWN_EVENT_QUEUE_CAPACITY {
+            self.dropped = self.dropped.saturating_add(1);
+            return;
+        }
+        let ts_ms = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|value| value.as_millis().min(u128::from(u64::MAX)) as u64)
+            .unwrap_or(0)
+            .max(1);
+        self.seq = self.seq.saturating_add(1);
+        self.records.push_back(LockdownEvent {
+            seq: self.seq,
+            ts_ms,
+            epoch,
+            source,
+            reason,
+            phase,
+            outcome,
+            cgroup_id: 0,
+            detail_u64: detail,
+            reserved: [0u8; 24],
+        });
+    }
+
+    /// Drains up to `max` records; `dropped` is the delta since the last drain.
+    fn take(&mut self, max: usize) -> (u64, Vec<LockdownEvent>) {
+        let mut records = Vec::with_capacity(max.min(self.records.len()));
+        while records.len() < max {
+            match self.records.pop_front() {
+                Some(record) => records.push(record),
+                None => break,
+            }
+        }
+        let dropped = self.dropped.saturating_sub(self.reported);
+        self.reported = self.dropped;
+        (dropped, records)
+    }
+}
+
+const LOCKDOWN_EVENT_QUEUE_CAPACITY: usize = 64;
+
+/// State shared between the command surface and the uevent monitor thread.
+pub(crate) struct LockdownShared {
+    pub(crate) word: Arc<dyn lockdown::LockdownWordStore>,
+    events: Mutex<LockdownEventQueue>,
+    policy: Mutex<UeventPolicy>,
+    uevent_events: AtomicU64,
+    usb_blocks: AtomicU64,
+    tb_blocks: AtomicU64,
+}
+
+impl LockdownShared {
+    pub(crate) fn new(word: Arc<dyn lockdown::LockdownWordStore>, policy: UeventPolicy) -> Self {
+        Self {
+            word,
+            events: Mutex::new(LockdownEventQueue::default()),
+            policy: Mutex::new(policy),
+            uevent_events: AtomicU64::new(0),
+            usb_blocks: AtomicU64::new(0),
+            tb_blocks: AtomicU64::new(0),
+        }
+    }
+    pub(crate) fn set_policy(&self, policy: UeventPolicy) {
+        if let Ok(mut guard) = self.policy.lock() {
+            *guard = policy;
+        }
+    }
+    pub(crate) fn policy(&self) -> UeventPolicy {
+        self.policy.lock().map(|guard| *guard).unwrap_or_default()
+    }
+    pub(crate) fn emit(&self, epoch: u32, source: u8, reason: u8, phase: u8, outcome: u8, detail: u64) {
+        if let Ok(mut guard) = self.events.lock() {
+            guard.push(epoch, source, reason, phase, outcome, detail);
+        }
+    }
+    pub(crate) fn take_events(&self, max: usize) -> (u64, Vec<LockdownEvent>) {
+        self.events.lock().map(|mut guard| guard.take(max)).unwrap_or((0, Vec::new()))
+    }
+    pub(crate) fn inc_uevent(&self) {
+        self.uevent_events.fetch_add(1, Ordering::Relaxed);
+    }
+    pub(crate) fn add_usb_blocks(&self, count: u32) {
+        self.usb_blocks.fetch_add(u64::from(count), Ordering::Relaxed);
+    }
+    pub(crate) fn add_tb_blocks(&self, count: u32) {
+        self.tb_blocks.fetch_add(u64::from(count), Ordering::Relaxed);
+    }
+    pub(crate) fn uevent_counters(&self) -> (u64, u64, u64) {
+        (
+            self.uevent_events.load(Ordering::Relaxed),
+            self.usb_blocks.load(Ordering::Relaxed),
+            self.tb_blocks.load(Ordering::Relaxed),
+        )
+    }
+    /// §5 STATUS `flags`: verified kernel state word of `epoch`, 0 if absent.
+    pub(crate) fn word_flags(&self, epoch: u32) -> u8 {
+        self.word
+            .read()
+            .ok()
+            .and_then(decode_lockdown_word)
+            .filter(|word| word.epoch == epoch)
+            .map(|word| word.flags)
+            .unwrap_or(0)
+    }
+    /// Immediate kernel network drop after a blocked hotplug (§2 auto flag).
+    pub(crate) fn auto_network_drop(&self) -> Result<(), &'static str> {
+        let policy = self.policy();
+        if !policy.auto_network_drop {
+            return Ok(());
+        }
+        let flags = LOCKDOWN_FLAG_DROP_ALL
+            | if policy.allow_loopback { LOCKDOWN_FLAG_ALLOW_LOOPBACK } else { 0 };
+        let word = encode_lockdown_word(policy.epoch, LOCKDOWN_MODE_ARMED, flags);
+        self.word.write(word).map_err(|_| "state-map-write-failed")?;
+        match decode_lockdown_word(self.word.read().map_err(|_| "state-map-read-failed")?) {
+            Some(decoded) if decoded.epoch == policy.epoch && decoded.flags == flags => Ok(()),
+            _ => Err("state-map-readback-mismatch"),
+        }
+    }
+}
+
+// --- §5 token tables (closed sets; unknown tokens are always ERR) -----------
+
+const LOCKDOWN_PHASE_TOKENS: &[(u8, &str)] = &[
+    (LOCKDOWN_PHASE_INTENT, "intent"),
+    (LOCKDOWN_PHASE_NET, "net"),
+    (LOCKDOWN_PHASE_USB, "usb"),
+    (LOCKDOWN_PHASE_TB, "tb"),
+    (LOCKDOWN_PHASE_HARDENING, "hardening"),
+    (LOCKDOWN_PHASE_BROKERS, "brokers"),
+    (LOCKDOWN_PHASE_CELLS, "cells"),
+    (LOCKDOWN_PHASE_SESSIONS, "sessions"),
+    (LOCKDOWN_PHASE_DM, "dm"),
+];
+
+const LOCKDOWN_REASON_TOKENS: &[(&str, u8)] = &[
+    ("manual", LOCKDOWN_REASON_MANUAL),
+    ("usb-unknown", LOCKDOWN_REASON_USB_UNKNOWN),
+    ("tb-unknown", LOCKDOWN_REASON_TB_UNKNOWN),
+    ("screen-lock", LOCKDOWN_REASON_SCREEN_LOCK),
+    ("tamper", LOCKDOWN_REASON_TAMPER),
+    ("xdr-critical", LOCKDOWN_REASON_XDR_CRITICAL),
+    ("boot-trust-drift", LOCKDOWN_REASON_BOOT_TRUST_DRIFT),
+    ("policy", LOCKDOWN_REASON_POLICY),
+];
+
+const LOCKDOWN_SOURCE_TOKENS: &[(&str, u8)] = &[
+    ("manual", LOCKDOWN_SOURCE_MANUAL),
+    ("uevent", LOCKDOWN_SOURCE_UEVENT),
+    ("policy", LOCKDOWN_SOURCE_POLICY),
+    ("timer", LOCKDOWN_SOURCE_TIMER),
+];
+
+fn lockdown_phase_token(phase: u8) -> Option<&'static str> {
+    LOCKDOWN_PHASE_TOKENS.iter().find(|(value, _)| *value == phase).map(|(_, token)| *token)
+}
+
+fn parse_lockdown_phase(token: &str) -> Option<u8> {
+    LOCKDOWN_PHASE_TOKENS.iter().find(|(_, name)| *name == token).map(|(value, _)| *value)
+}
+
+fn parse_lockdown_reason(token: &str) -> Result<u8, BoxError> {
+    LOCKDOWN_REASON_TOKENS
+        .iter()
+        .find(|(name, _)| *name == token)
+        .map(|(_, value)| *value)
+        .ok_or_else(|| "unknown lockdown reason token".into())
+}
+
+fn parse_lockdown_source(token: &str) -> Result<u8, BoxError> {
+    LOCKDOWN_SOURCE_TOKENS
+        .iter()
+        .find(|(name, _)| *name == token)
+        .map(|(_, value)| *value)
+        .ok_or_else(|| "unknown lockdown source token".into())
+}
+
+fn parse_lockdown_flags(token: &str) -> Result<u8, BoxError> {
+    let flags = token.parse::<u8>().map_err(|_| "invalid lockdown policy flags")?;
+    if flags & !lockdown::POLICY_FLAGS_KNOWN != 0 {
+        return Err("unknown lockdown policy flag".into());
+    }
+    Ok(flags)
+}
+
+fn parse_lockdown_epoch(token: &str) -> Result<u32, BoxError> {
+    if token.len() != 8 || !token.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err("invalid lockdown epoch".into());
+    }
+    u32::from_str_radix(token, 16).map_err(|_| "invalid lockdown epoch".into())
+}
+
+// --- §5 ABI answers ---------------------------------------------------------
+
+/// §5 `LOCKDOWN_STATUS` exact wire format.
+fn lockdown_status(core: &lockdown::LockdownCore) -> String {
+    format!(
+        "state={};epoch={:08x};mode={};flags={};phases={};unsupported={}",
+        core.state_text(),
+        core.epoch(),
+        core.arm_mode().token(),
+        core.word_flags(),
+        lockdown_applied_csv(core),
+        lockdown_unsupported_csv(core),
+    )
+}
+
+/// Applied phases in contract order, plus the honest `cells=delegated` marker.
+fn lockdown_applied_csv(core: &lockdown::LockdownCore) -> String {
+    let mut entries: Vec<String> = [LOCKDOWN_PHASE_NET, LOCKDOWN_PHASE_USB, LOCKDOWN_PHASE_TB, LOCKDOWN_PHASE_HARDENING, LOCKDOWN_PHASE_BROKERS]
+        .into_iter()
+        .filter(|phase| core.phase_outcome(*phase) == LOCKDOWN_OUTCOME_APPLIED)
+        .filter_map(|phase| lockdown_phase_token(phase).map(str::to_owned))
+        .collect();
+    if core.phase_outcome(LOCKDOWN_PHASE_CELLS) == lockdown::DELEGATED {
+        entries.push("cells=delegated".to_owned());
+    }
+    if entries.is_empty() {
+        "-".to_owned()
+    } else {
+        entries.join(",")
+    }
+}
+
+/// Unsupported phases: the permanent Phase-1 limits plus attempted ones.
+fn lockdown_unsupported_csv(core: &lockdown::LockdownCore) -> String {
+    let mut entries: Vec<String> = [LOCKDOWN_PHASE_SESSIONS, LOCKDOWN_PHASE_DM]
+        .into_iter()
+        .filter_map(|phase| lockdown_phase_token(phase).map(str::to_owned))
+        .collect();
+    for phase in 0..lockdown::PHASE_COUNT as u8 {
+        if core.phase_outcome(phase) == LOCKDOWN_OUTCOME_UNSUPPORTED
+            && phase != LOCKDOWN_PHASE_SESSIONS
+            && phase != LOCKDOWN_PHASE_DM
+        {
+            if let Some(token) = lockdown_phase_token(phase) {
+                entries.push(token.to_owned());
+            }
+        }
+    }
+    entries.join(",")
+}
+
+/// §5 `LOCKDOWN_EVENTS`: ≤16 records as `<dropped>|<seq:ts:source:reason:
+/// phase:outcome>,…`; the batch is either complete or an error (never a
+/// silent truncation), and the queue keeps the remaining records.
+fn lockdown_events(core: &mut lockdown::LockdownCore) -> Result<String, BoxError> {
+    let max = lockdown_uevent::EVENTS_PER_RESPONSE;
+    let (dropped, records) = core.take_events(max);
+    if records.is_empty() {
+        return if dropped == 0 { Ok("empty".to_owned()) } else { Ok(format!("{dropped}|")) };
+    }
+    let mut items = Vec::with_capacity(records.len());
+    for event in &records {
+        items.push(format!(
+            "{}:{}:{}:{}:{}:{}",
+            event.seq, event.ts_ms, event.source, event.reason, event.phase, event.outcome
+        ));
+    }
+    let payload = format!("{dropped}|{}", items.join(","));
+    if payload.len() > MAX_RESPONSE_BYTES {
+        return Err("lockdown event batch exceeds the response budget".into());
+    }
+    Ok(payload)
+}
+
+/// §5 `LOCKDOWN_HEALTH`: 6 decimal per-CPU sums / counters.
+fn lockdown_health(core: &lockdown::LockdownCore) -> Result<String, BoxError> {
+    let (net_drops, witness_passes) =
+        core.net_counters().map_err(|error| -> BoxError { error.into() })?;
+    let (uevent_events, usb_blocks, tb_blocks) = core.uevent_counters();
+    Ok(format!(
+        "{net_drops}:{witness_passes}:{uevent_events}:{usb_blocks}:{tb_blocks}:{}",
+        core.broker_frozen()
+    ))
+}
+
+/// §5 dispatch for every `LOCKDOWN_*` command; unknown names stay ERR.
+const LOCKDOWN_KERNEL_LOCKDOWN_REASON: &str = "boot-parameter-immutable";
+fn lockdown_command(core: &mut lockdown::LockdownCore, parts: &[&str]) -> Result<String, BoxError> {
+    match parts {
+        ["LOCKDOWN_VERSION"] => Ok(core.version().to_owned()),
+        ["LOCKDOWN_EPOCH"] => Ok(format!("{:08x}", core.epoch())),
+        ["LOCKDOWN_STATUS"] => Ok(lockdown_status(core)),
+        ["LOCKDOWN_ARM", mode, reason, flags] => {
+            let mode = ArmMode::from_token(mode).ok_or("unknown lockdown mode token")?;
+            let reason = parse_lockdown_reason(reason)?;
+            let flags = parse_lockdown_flags(flags)?;
+            Ok(match core.arm(mode, reason, flags)? {
+                lockdown::ArmOutcome::Armed(epoch) => format!("armed:{epoch:08x}"),
+                lockdown::ArmOutcome::Unchanged(epoch) => format!("armed-unchanged:{epoch:08x}"),
+            })
+        }
+        ["LOCKDOWN_TRIGGER", source, reason, flags] => {
+            let source = parse_lockdown_source(source)?;
+            let reason = parse_lockdown_reason(reason)?;
+            let flags = parse_lockdown_flags(flags)?;
+            let epoch = core.trigger(source, reason, flags)?;
+            Ok(format!(
+                "triggered:{epoch:08x};phases={};unsupported={}",
+                lockdown_applied_csv(core),
+                lockdown_unsupported_csv(core)
+            ))
+        }
+        ["LOCKDOWN_CLEAR", expected_epoch, reason] => {
+            let expected_epoch = parse_lockdown_epoch(expected_epoch)?;
+            let reason = parse_lockdown_reason(reason)?;
+            Ok(match core.clear(expected_epoch, reason)? {
+                lockdown::ClearOutcome::Cleared => "cleared".to_owned(),
+                lockdown::ClearOutcome::AlreadyOff => "already-off".to_owned(),
+            })
+        }
+        ["LOCKDOWN_SET_MODE", mode] => {
+            core.set_mode(ArmMode::from_token(mode).ok_or("unknown lockdown mode token")?)?;
+            Ok("applied".to_owned())
+        }
+        ["LOCKDOWN_EVENTS"] => lockdown_events(core),
+        ["LOCKDOWN_HEALTH"] => lockdown_health(core),
+        // Kernel-lockdown is an immutable boot parameter (Phase 1 honest limit).
+        ["LOCKDOWN_PHASE", "kernel-lockdown", "on" | "off"] => {
+            Ok(format!("unsupported:kernel-lockdown:{LOCKDOWN_KERNEL_LOCKDOWN_REASON}"))
+        }
+        ["LOCKDOWN_PHASE", phase, state] => {
+            let phase = parse_lockdown_phase(phase).ok_or("unknown lockdown phase token")?;
+            let on = match *state {
+                "on" => true,
+                "off" => false,
+                _ => return Err("unknown lockdown phase state".into()),
+            };
+            let name = lockdown_phase_token(phase).ok_or("unknown lockdown phase token")?;
+            Ok(match core.phase(phase, on)? {
+                lockdown::PhaseOutcome::Applied => format!("applied:{name}"),
+                lockdown::PhaseOutcome::Unsupported(reason) => {
+                    format!("unsupported:{name}:{reason}")
+                }
+                lockdown::PhaseOutcome::Failed(reason) => format!("failed:{name}:{reason}"),
+            })
+        }
+        _ => Err("unknown command".into()),
+    }
+}
+
+// --- §5 state file `epoch|mode|flags|phases|ts` (§5 Core-Zustand) ------------
+
+/// One persisted applied phase (read back by startup re-arm).
+pub(crate) struct LoadedPhase {
+    pub(crate) phase: u8,
+}
+
+pub(crate) enum LockdownStateLoad {
+    Absent,
+    Corrupt,
+    Valid(LockdownPersisted),
+}
+
+pub(crate) struct LockdownPersisted {
+    pub(crate) epoch: u32,
+    pub(crate) mode: ArmMode,
+    pub(crate) flags: u8,
+    pub(crate) phases: Vec<LoadedPhase>,
+}
+
+fn unix_seconds_now() -> u64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).map(|value| value.as_secs()).unwrap_or(0)
+}
+
+fn lockdown_state_content(core: &lockdown::LockdownCore) -> String {
+    let phases: Vec<&str> = core
+        .applied_phases()
+        .iter()
+        .filter_map(|entry| lockdown_phase_token(entry.phase))
+        .collect();
+    format!(
+        "{:08x}|{}|{:02x}|{}|{}",
+        core.epoch(),
+        core.arm_mode().token(),
+        core.policy_flags(),
+        if phases.is_empty() { "-".to_owned() } else { phases.join(",") },
+        unix_seconds_now()
+    )
+}
+
+/// Atomic 0640 write of the §5 state file (same-directory temp + rename).
+fn write_lockdown_state_atomic(path: &Path, content: &str) -> Result<(), String> {
+    let directory = path.parent().ok_or("state file directory missing")?;
+    fs::create_dir_all(directory).map_err(|_| "state directory create failed".to_owned())?;
+    let temporary = directory.join(format!(".LOCKDOWN.state.{}.tmp", std::process::id()));
+    let _ = fs::remove_file(&temporary);
+    let write = || -> Result<(), String> {
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o640)
+            .custom_flags(libc::O_CLOEXEC | libc::O_NOFOLLOW)
+            .open(&temporary)
+            .map_err(|_| "state file create failed".to_owned())?;
+        fs::set_permissions(&temporary, fs::Permissions::from_mode(0o640))
+            .map_err(|_| "state file permissions failed".to_owned())?;
+        file.write_all(content.as_bytes()).map_err(|_| "state file write failed".to_owned())?;
+        file.write_all(b"\n").map_err(|_| "state file write failed".to_owned())?;
+        file.sync_all().map_err(|_| "state file sync failed".to_owned())?;
+        drop(file);
+        fs::rename(&temporary, path).map_err(|_| "state file rename failed".to_owned())?;
+        if let Ok(directory) = File::open(directory) {
+            let _ = directory.sync_all();
+        }
+        Ok(())
+    };
+    let result = write();
+    if result.is_err() {
+        let _ = fs::remove_file(&temporary);
+    }
+    result
+}
+
+pub(crate) fn persist_lockdown_state(core: &lockdown::LockdownCore) -> Result<(), String> {
+    write_lockdown_state_atomic(core.state_file(), &lockdown_state_content(core))
+}
+
+/// Strict state-file parse: any unreadable/foreign content is `Corrupt`
+/// (fail-closed latch), never a silent `off`.
+pub(crate) fn load_lockdown_state(path: &Path) -> LockdownStateLoad {
+    let bytes = match fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return LockdownStateLoad::Absent,
+        Err(_) => return LockdownStateLoad::Corrupt,
+    };
+    if bytes.len() > 256 {
+        return LockdownStateLoad::Corrupt;
+    }
+    let Ok(text) = std::str::from_utf8(&bytes) else { return LockdownStateLoad::Corrupt };
+    let fields: Vec<&str> = text.trim_end().split('|').collect();
+    if fields.len() != 5 {
+        return LockdownStateLoad::Corrupt;
+    }
+    let Ok(epoch) = parse_lockdown_epoch(fields[0]) else { return LockdownStateLoad::Corrupt };
+    let Some(mode) = ArmMode::from_token(fields[1]) else { return LockdownStateLoad::Corrupt };
+    if fields[2].len() != 2 {
+        return LockdownStateLoad::Corrupt;
+    }
+    let Ok(flags) = u8::from_str_radix(fields[2], 16) else { return LockdownStateLoad::Corrupt };
+    if flags & !lockdown::POLICY_FLAGS_KNOWN != 0 || fields[4].parse::<u64>().is_err() {
+        return LockdownStateLoad::Corrupt;
+    }
+    let mut phases = Vec::new();
+    let mut seen = [0u8; lockdown::PHASE_COUNT];
+    if fields[3] != "-" {
+        for token in fields[3].split(',') {
+            let Some(phase) = parse_lockdown_phase(token) else {
+                return LockdownStateLoad::Corrupt;
+            };
+            if seen[phase as usize] != 0 {
+                return LockdownStateLoad::Corrupt;
+            }
+            seen[phase as usize] = 1;
+            phases.push(LoadedPhase { phase });
+        }
+    }
+    LockdownStateLoad::Valid(LockdownPersisted { epoch, mode, flags, phases })
+}
+
+// --- eBPF adapters for the lockdown core ------------------------------------
+
+/// `LOCKDOWN_STATE` array-map handle: interior mutability because the command
+/// surface and the uevent monitor thread both need verified writes.
+struct AyaLockdownWordStore {
+    map: Mutex<AyaArray<MapData, u64>>,
+}
+
+impl lockdown::LockdownWordStore for AyaLockdownWordStore {
+    fn write(&self, word: u64) -> Result<(), String> {
+        let mut map = self.map.lock().map_err(|_| "LOCKDOWN_STATE lock".to_owned())?;
+        map.set(0, word, 0).map_err(|error| error.to_string())
+    }
+    fn read(&self) -> Result<u64, String> {
+        let map = self.map.lock().map_err(|_| "LOCKDOWN_STATE lock".to_owned())?;
+        map.get(&0, 0).map_err(|error| error.to_string())
+    }
+}
+
+/// §5 health: saturating per-CPU sums of the two lockdown counters.
+struct LiveLockdownCounters {
+    drops: PerCpuArray<MapData, u64>,
+    witness_passes: PerCpuArray<MapData, u64>,
+}
+
+impl LiveLockdownCounters {
+    fn sum(counter: &PerCpuArray<MapData, u64>) -> Result<u64, String> {
+        let values = counter.get(&0, 0).map_err(|error| error.to_string())?;
+        Ok(values.iter().copied().fold(0u64, |sum, value| sum.saturating_add(value)))
+    }
+}
+
+impl lockdown::NetCounters for LiveLockdownCounters {
+    fn net_counters(&self) -> Result<(u64, u64), String> {
+        Ok((Self::sum(&self.drops)?, Self::sum(&self.witness_passes)?))
+    }
+}
 
 const HARDENING_SERVER: &str =
     "# Managed atomically by VGT GeDefense. Manual edits are rejected.\n\
@@ -728,6 +1329,378 @@ fn compare_set_sysctl(key: &str, expected: &str, desired: &str) -> Result<String
     Ok(verified)
 }
 
+// Point 1 (§4/§5): one Titan exec-gate state object.
+//
+// The maps are taken even when BPF LSM is inactive so a stale eBPF object fails
+// loudly at startup instead of running blind (§8). `attached` becomes true only
+// after both LSM hooks attached on an active kernel, so no command can claim
+// enforcement the kernel does not deliver; the default mode stays OFF.
+struct TitanExecGate {
+    state: AyaArray<MapData, u64>,
+    offsets: AyaArray<MapData, u32>,
+    modes: AyaHashMap<MapData, u64, u8>,
+    policy: AyaHashMap<MapData, [u8; 16], [u8; 16]>,
+    events: RingBuf<MapData>,
+    emitted: PerCpuArray<MapData, u64>,
+    ring_drops: PerCpuArray<MapData, u64>,
+    read_failures: PerCpuArray<MapData, u64>,
+    denies: PerCpuArray<MapData, u64>,
+    audits: PerCpuArray<MapData, u64>,
+    ctime_rejects: PerCpuArray<MapData, u64>,
+    store: titan_exec::TitanExecPolicy,
+    epoch: u32,
+    epoch_hex: String,
+    mode: u8,
+    flags: u8,
+    lsm_active: bool,
+    offsets_valid: bool,
+    attached: bool,
+    last_ring_drops: u64,
+    rejected_events: u64,
+}
+
+/// §4 `TITAN_EXEC_STATE` word: epoch | mode | flags | abi=1 | magic='T'.
+fn encode_titan_exec_state(epoch: u32, mode: u8, flags: u8) -> u64 {
+    u64::from(epoch)
+        | (u64::from(mode) << 32)
+        | (u64::from(flags) << 40)
+        | (u64::from(TITAN_EXEC_STATE_ABI) << 48)
+        | (u64::from(TITAN_EXEC_STATE_MAGIC) << 56)
+}
+
+/// §4 `TITAN_EXEC_POLICY` key: `dev u32 LE @0 | ino u64 LE @4 | pad`.
+fn encode_titan_exec_policy_key(dev: u32, ino: u64) -> [u8; 16] {
+    let mut key = [0u8; 16];
+    key[0..4].copy_from_slice(&dev.to_le_bytes());
+    key[4..12].copy_from_slice(&ino.to_le_bytes());
+    key
+}
+
+/// §4 `TITAN_EXEC_POLICY` value: `action @0 | flags @1 | reserved @2 | ctime_ns LE @4`.
+fn encode_titan_exec_policy_value(entry: &titan_exec::PolicyEntry) -> [u8; 16] {
+    let mut value = [0u8; 16];
+    value[0] = entry.action;
+    value[1] = entry.flags;
+    value[4..12].copy_from_slice(&entry.ctime_ns.to_le_bytes());
+    value
+}
+
+/// §4 `TITAN_EXEC_MODE` value: `(mode << 2) | (scope flags & 1)`, validated.
+fn encode_titan_exec_scope_value(mode: u8, flags: u8) -> Result<u8, BoxError> {
+    if mode > gedefense_common::TITAN_EXEC_MODE_STRICT {
+        return Err("titan-exec scope mode is not 0..3".into());
+    }
+    if flags & !TITAN_EXEC_SCOPE_FLAG_JIT_ALLOW != 0 {
+        return Err("titan-exec scope flags contain unknown bits".into());
+    }
+    Ok((mode << titan_exec::TITAN_EXEC_SCOPE_MODE_SHIFT) | flags)
+}
+
+/// §4.1 `TITAN_EXEC_OFFSETS` table (48 words, reserved indices stay 0).
+fn encode_titan_exec_offsets_table(
+    offsets: &btf_offsets::TitanExecOffsets,
+) -> [u32; btf_offsets::TITAN_EXEC_OFFSETS_TABLE_LEN] {
+    let mut table = [0u32; btf_offsets::TITAN_EXEC_OFFSETS_TABLE_LEN];
+    table[btf_offsets::OFF_MAGIC] = TITAN_EXEC_OFFSETS_MAGIC;
+    table[btf_offsets::OFF_ABI] = TITAN_EXEC_OFFSETS_ABI;
+    table[btf_offsets::OFF_BPRM_FILE] = offsets.bprm_file_off;
+    table[btf_offsets::OFF_FILE_F_INODE] = offsets.file_f_inode_off;
+    table[btf_offsets::OFF_INODE_I_INO] = offsets.inode_i_ino_off;
+    table[btf_offsets::OFF_INODE_I_SB] = offsets.inode_i_sb_off;
+    table[btf_offsets::OFF_INODE_I_NLINK] = offsets.inode_i_nlink_off;
+    table[btf_offsets::OFF_INODE_I_MODE] = offsets.inode_i_mode_off;
+    table[btf_offsets::OFF_INODE_I_GEN] = offsets.inode_i_generation_off;
+    table[btf_offsets::OFF_SUPER_S_DEV] = offsets.super_s_dev_off;
+    table[btf_offsets::OFF_SUPER_S_MAGIC] = offsets.super_s_magic_off;
+    table[btf_offsets::OFF_INODE_I_CTIME_SEC] = offsets.inode_i_ctime_sec_off;
+    table[btf_offsets::OFF_INODE_I_CTIME_NSEC] = offsets.inode_i_ctime_nsec_off;
+    table[btf_offsets::OFF_INODE_I_CTIME_NSEC_WIDTH] = offsets.inode_i_ctime_nsec_width;
+    table[btf_offsets::OFF_BPRM_NARGS] = offsets.bprm_nargs;
+    table[btf_offsets::OFF_MMAP_NARGS] = offsets.mmap_nargs;
+    table[btf_offsets::OFF_MMAP_FILE_ARG] = offsets.mmap_file_arg_idx;
+    table[btf_offsets::OFF_MMAP_PROT_ARG] = offsets.mmap_prot_arg_idx;
+    table[btf_offsets::OFF_MMAP_FLAGS_ARG] = offsets.mmap_flags_arg_idx;
+    table[btf_offsets::OFF_TMPFS_MAGIC] = btf_offsets::TMPFS_MAGIC;
+    table[btf_offsets::OFF_DEVTMPFS_MAGIC] = btf_offsets::DEVTMPFS_MAGIC;
+    table[btf_offsets::OFF_PROC_MAGIC] = btf_offsets::PROC_SUPER_MAGIC;
+    table[btf_offsets::OFF_SYSFS_MAGIC] = btf_offsets::SYSFS_MAGIC;
+    table[btf_offsets::OFF_OVERLAY_MAGIC] = btf_offsets::OVERLAYFS_SUPER_MAGIC;
+    table[btf_offsets::OFF_BPRM_RETVAL_SLOT] = offsets.bprm_retval_slot;
+    table[btf_offsets::OFF_MMAP_RETVAL_SLOT] = offsets.mmap_retval_slot;
+    table[btf_offsets::OFF_INODE_SIZE] = offsets.inode_size;
+    table[btf_offsets::OFF_FILE_SIZE] = offsets.file_size;
+    table[btf_offsets::OFF_BPRM_SIZE] = offsets.bprm_size;
+    table
+}
+
+/// §4.1: the eBPF programs hard-code `bprm file=0/previous=1` and
+/// `mmap file=0/prot=2/previous=4`; only this hook shape may be attached.
+fn titan_exec_offsets_match_ebpf_slots(offsets: &btf_offsets::TitanExecOffsets) -> bool {
+    offsets.bprm_nargs == 1
+        && offsets.mmap_nargs == 4
+        && offsets.mmap_file_arg_idx == 0
+        && offsets.mmap_prot_arg_idx == 2
+        && offsets.mmap_flags_arg_idx == 3
+        && offsets.bprm_retval_slot == 1
+        && offsets.mmap_retval_slot == 4
+}
+
+/// §4 STATE flag byte bits 40..47: offsets_valid, lsm_active (only when both
+/// hooks are attached) and ctime_check_enabled (SET_GLOBAL REQUIRE_CTIME).
+fn encode_titan_exec_state_flags(offsets_valid: bool, attached: bool, ctime_check: bool) -> u8 {
+    (if offsets_valid { titan_exec::TITAN_EXEC_STATE_FLAG_OFFSETS_VALID } else { 0 })
+        | (if attached { titan_exec::TITAN_EXEC_STATE_FLAG_LSM_ACTIVE } else { 0 })
+        | (if ctime_check { titan_exec::TITAN_EXEC_STATE_FLAG_CTIME_CHECK } else { 0 })
+}
+
+impl TitanExecGate {
+    /// §6: only an active LSM list, validated offsets and both attached hooks
+    /// may ever be reported or acted upon as enforcement.
+    fn enforcement_available(&self) -> bool {
+        self.lsm_active && self.offsets_valid && self.attached
+    }
+
+    fn state_text(&self) -> &'static str {
+        titan_exec::exec_state(
+            self.enforcement_available(),
+            self.lsm_active,
+            self.offsets_valid,
+        )
+        .text()
+    }
+
+    /// Rewrites the §4 STATE word from the current truthful gate state.
+    fn write_state(&mut self) -> Result<(), BoxError> {
+        let ctime_check = self.flags & titan_exec::TITAN_EXEC_GLOBAL_FLAG_REQUIRE_CTIME != 0;
+        let flags = encode_titan_exec_state_flags(self.offsets_valid, self.attached, ctime_check);
+        self.state
+            .set(0, encode_titan_exec_state(self.epoch, self.mode, flags), 0)?;
+        Ok(())
+    }
+
+    fn version(&self) -> Result<String, BoxError> {
+        Ok(titan_exec::TITAN_EXEC_VERSION.to_owned())
+    }
+
+    fn epoch(&self) -> Result<String, BoxError> {
+        Ok(self.epoch_hex.clone())
+    }
+
+    fn status(&self) -> Result<String, BoxError> {
+        Ok(titan_exec::encode_exec_status(&titan_exec::StatusView {
+            state: titan_exec::exec_state(
+                self.enforcement_available(),
+                self.lsm_active,
+                self.offsets_valid,
+            ),
+            mode: self.mode,
+            flags: self.flags,
+            path_bpf_lsm: self.attached,
+            lsm_active: self.lsm_active,
+            offsets_valid: self.offsets_valid,
+            entries: self.store.entry_count(),
+            scopes: self.store.scope_count(),
+            epoch: &self.epoch_hex,
+        }))
+    }
+
+    fn health(&self) -> Result<String, BoxError> {
+        let counters = [
+            KernelCore::per_cpu_counter_sum(&self.emitted)?,
+            KernelCore::per_cpu_counter_sum(&self.ring_drops)?,
+            KernelCore::per_cpu_counter_sum(&self.read_failures)?,
+            KernelCore::per_cpu_counter_sum(&self.denies)?,
+            KernelCore::per_cpu_counter_sum(&self.audits)?,
+            KernelCore::per_cpu_counter_sum(&self.ctime_rejects)?,
+        ];
+        Ok(titan_exec::encode_exec_health(&counters))
+    }
+
+    /// §5 `SET_GLOBAL`: mode>0 only when the gate can really enforce; the
+    /// REQUIRE_CTIME flag is mirrored into STATE bit2 and every policy value.
+    fn set_global(&mut self, mode: &str, flags: &str) -> Result<String, BoxError> {
+        let mode = titan_exec::parse_mode(mode).map_err(|message| -> BoxError { message.into() })?;
+        let flags =
+            titan_exec::parse_global_flags(flags).map_err(|message| -> BoxError { message.into() })?;
+        if mode != TITAN_EXEC_MODE_OFF && !self.enforcement_available() {
+            return Err(titan_exec::ENFORCEMENT_UNAVAILABLE.into());
+        }
+        let require_ctime = flags & titan_exec::TITAN_EXEC_GLOBAL_FLAG_REQUIRE_CTIME != 0;
+        let mut updates = Vec::new();
+        for (dev, ino) in self.store.keys() {
+            let Some(mut entry) = self.store.entry(dev, ino) else {
+                continue;
+            };
+            let wanted = if require_ctime {
+                entry.flags | titan_exec::TITAN_EXEC_POLICY_FLAG_REQUIRE_CTIME
+            } else {
+                entry.flags & !titan_exec::TITAN_EXEC_POLICY_FLAG_REQUIRE_CTIME
+            };
+            if wanted != entry.flags {
+                entry.flags = wanted;
+                updates.push(((dev, ino), entry));
+            }
+        }
+        for ((dev, ino), entry) in &updates {
+            self.policy.insert(
+                encode_titan_exec_policy_key(*dev, *ino),
+                encode_titan_exec_policy_value(entry),
+                0,
+            )?;
+        }
+        for ((dev, ino), entry) in updates {
+            self.store.insert(dev, ino, entry)?;
+        }
+        self.mode = mode;
+        self.flags = flags;
+        self.write_state()?;
+        Ok("applied".to_owned())
+    }
+
+    /// §5 `ALLOW_ADD`/`ALLOW_ADD_BATCH` per-path step: validate fully, then the
+    /// single map write, then the RAM mirror. `Ok(false)` means "already there".
+    fn insert_resolved(&mut self, path: &str) -> Result<(u32, u64, bool), &'static str> {
+        let identity = titan_exec::resolve_exec_path(path).map_err(|reject| reject.token())?;
+        if self.store.entry(identity.dev, identity.ino).is_some() {
+            return Ok((identity.dev, identity.ino, false));
+        }
+        if self.store.entry_count() >= titan_exec::TITAN_EXEC_MAX_POLICY_ENTRIES {
+            return Err("cap-reached");
+        }
+        let entry = titan_exec::PolicyEntry {
+            action: titan_exec::TITAN_EXEC_ALLOW_ACTION,
+            flags: if self.flags & titan_exec::TITAN_EXEC_GLOBAL_FLAG_REQUIRE_CTIME != 0 {
+                titan_exec::TITAN_EXEC_POLICY_FLAG_REQUIRE_CTIME
+            } else {
+                0
+            },
+            ctime_ns: identity.ctime_ns,
+        };
+        self.policy
+            .insert(
+                encode_titan_exec_policy_key(identity.dev, identity.ino),
+                encode_titan_exec_policy_value(&entry),
+                0,
+            )
+            .map_err(|_| "map-write-failed")?;
+        self.store
+            .insert(identity.dev, identity.ino, entry)
+            .map_err(|_| "store-write-failed")?;
+        Ok((identity.dev, identity.ino, true))
+    }
+
+    fn allow_add(&mut self, path: &str) -> Result<String, BoxError> {
+        match self.insert_resolved(path) {
+            Ok((dev, ino, true)) => Ok(format!("added:{dev}:{ino}")),
+            Ok((dev, ino, false)) => Ok(format!("exists:{dev}:{ino}")),
+            Err(token) => Err(format!("titan-exec path rejected: {token}").into()),
+        }
+    }
+
+    fn allow_add_batch(&mut self, token: &str) -> Result<String, BoxError> {
+        let paths = titan_exec::decode_allow_batch(token).map_err(|message| -> BoxError { message.into() })?;
+        let (mut added, mut rejected) = (0usize, 0usize);
+        let mut error = titan_exec::BATCH_ERROR_NONE;
+        for path in paths {
+            match self.insert_resolved(&path) {
+                Ok(_) => added = added.saturating_add(1),
+                Err(reason) => {
+                    rejected = rejected.saturating_add(1);
+                    if error == titan_exec::BATCH_ERROR_NONE {
+                        error = reason;
+                    }
+                }
+            }
+        }
+        Ok(titan_exec::encode_allow_batch_response(added, rejected, error))
+    }
+
+    /// §5 `ALLOW_DEL`: validate, drop from the eBPF map (KeyNotFound is fine),
+    /// then from the mirror; DELETE is idempotent.
+    fn allow_del(&mut self, dev: &str, ino: &str) -> Result<String, BoxError> {
+        let dev = titan_exec::parse_policy_dev(dev).map_err(|message| -> BoxError { message.into() })?;
+        let ino = titan_exec::parse_policy_ino(ino).map_err(|message| -> BoxError { message.into() })?;
+        match self.policy.remove(&encode_titan_exec_policy_key(dev, ino)) {
+            Ok(()) | Err(MapError::KeyNotFound) => {}
+            Err(error) => return Err(error.into()),
+        }
+        self.store.remove(dev, ino);
+        Ok("deleted".to_owned())
+    }
+
+    fn clear(&mut self) -> Result<String, BoxError> {
+        for (dev, ino) in self.store.keys() {
+            match self.policy.remove(&encode_titan_exec_policy_key(dev, ino)) {
+                Ok(()) | Err(MapError::KeyNotFound) => {}
+                Err(error) => return Err(error.into()),
+            }
+        }
+        self.store.clear();
+        Ok("cleared".to_owned())
+    }
+
+    /// §5 `SCOPE_SET`: mode>0 only on the enforcing gate; a failed mirror insert
+    /// rolls the eBPF map write back so store and map never disagree.
+    fn scope_set(&mut self, cgroup: &str, mode: &str, flags: &str) -> Result<String, BoxError> {
+        let cgroup =
+            titan_exec::parse_scope_cgroup(cgroup).map_err(|message| -> BoxError { message.into() })?;
+        let mode = titan_exec::parse_mode(mode).map_err(|message| -> BoxError { message.into() })?;
+        let flags = titan_exec::parse_scope_flags(flags).map_err(|message| -> BoxError { message.into() })?;
+        if mode != TITAN_EXEC_MODE_OFF && !self.enforcement_available() {
+            return Err(titan_exec::ENFORCEMENT_UNAVAILABLE.into());
+        }
+        let value = encode_titan_exec_scope_value(mode, flags)?;
+        self.modes.insert(cgroup, value, 0)?;
+        if let Err(error) = self.store.scope_set(cgroup, value) {
+            let _ = self.modes.remove(&cgroup);
+            return Err(error.into());
+        }
+        Ok("applied".to_owned())
+    }
+
+    fn scope_del(&mut self, cgroup: &str) -> Result<String, BoxError> {
+        let cgroup =
+            titan_exec::parse_scope_cgroup(cgroup).map_err(|message| -> BoxError { message.into() })?;
+        match self.modes.remove(&cgroup) {
+            Ok(()) | Err(MapError::KeyNotFound) => {}
+            Err(error) => return Err(error.into()),
+        }
+        self.store.scope_remove(cgroup);
+        Ok("deleted".to_owned())
+    }
+
+    /// §3.3/§6 event drain: ≤8 records, 88-byte and decoder check, undecodable
+    /// records are skipped and counted (never an abort), `dropped` is the ring
+    /// drop delta since the previous drain.
+    fn take_events(&mut self) -> Result<String, BoxError> {
+        let mut records = Vec::with_capacity(titan_exec::TITAN_EXEC_MAX_EVENTS_PER_RESPONSE);
+        while records.len() < titan_exec::TITAN_EXEC_MAX_EVENTS_PER_RESPONSE {
+            let Some(item) = self.events.next() else {
+                break;
+            };
+            if item.len() != TITAN_EXEC_EVENT_WIRE_BYTES {
+                self.rejected_events = self.rejected_events.saturating_add(1);
+                continue;
+            }
+            let Some(event) = decode_titan_exec_event(&item) else {
+                self.rejected_events = self.rejected_events.saturating_add(1);
+                continue;
+            };
+            records.push(titan_exec::encode_exec_event_text(&event));
+        }
+        if self.rejected_events > 0 && self.rejected_events <= 4 {
+            eprintln!(
+                "Titan exec ring record rejected: {} records so far fit no TitanExecEvent; the drain continues",
+                self.rejected_events
+            );
+        }
+        let ring_drops = KernelCore::per_cpu_counter_sum(&self.ring_drops)?;
+        let dropped = ring_drops.saturating_sub(self.last_ring_drops);
+        self.last_ring_drops = ring_drops;
+        titan_exec::encode_exec_events_batch(&records, dropped).map_err(Into::into)
+    }
+}
+
 struct KernelCore {
     _ebpf: Ebpf,
     exec_events: RingBuf<MapData>,
@@ -751,10 +1724,48 @@ struct KernelCore {
     ingress_mode: &'static str,
     cell_lsm_attached: bool,
     cell_policy_epoch: String,
+    // Point 3 ABI-2 (§4): policy maps, flow ring/counters and the global word.
+    styx_global: AyaArray<MapData, u64>,
+    styx_mode: AyaHashMap<MapData, u64, u8>,
+    styx_cell_allow_v4: LpmTrie<MapData, [u8; 16], u8>,
+    styx_cell_allow_v6: LpmTrie<MapData, [u8; 24], u8>,
+    styx_allow_global_v4: LpmTrie<MapData, [u8; 8], u8>,
+    styx_allow_global_v6: LpmTrie<MapData, [u8; 20], u8>,
+    styx_block_v4: LpmTrie<MapData, [u8; 4], u8>,
+    styx_block_v6: LpmTrie<MapData, [u8; 16], u8>,
+    styx_resolver_v4: LpmTrie<MapData, [u8; 4], u8>,
+    styx_resolver_v6: LpmTrie<MapData, [u8; 16], u8>,
+    styx_flow_events: RingBuf<MapData>,
+    styx_flow_emitted: PerCpuArray<MapData, u64>,
+    styx_ring_drops: PerCpuArray<MapData, u64>,
+    styx_agg_insert_failures: PerCpuArray<MapData, u64>,
+    styx_egress_parse_errors: PerCpuArray<MapData, u64>,
+    styx_egress_drops_total: PerCpuArray<MapData, u64>,
+    styx_egress_policy_drops: PerCpuArray<MapData, u64>,
+    // Opaque handles for maps only the kernel reads/writes. Taking them makes the
+    // startup ABI gate complete: an object missing any §4 map fails loudly here
+    // instead of running with silently absent telemetry/caching.
+    _styx_resolved: Map,
+    _flow_agg_v4: Map,
+    _flow_agg_v6: Map,
+    styx_epoch: u64,
+    styx_epoch_hex: String,
+    styx_last_ring_drops: u64,
+    styx_flow_rejected: u64,
+    // Point 1 (§4/§5): Titan exec-gate maps, RAM policy mirror and honest state.
+    titan_exec: TitanExecGate,
+    // Point 5 (§5/§6): lockdown state machine (word store + net counters are
+    // owned by it; the maps are mandatory above so it can always verify).
+    lockdown: lockdown::LockdownCore,
 }
 
 impl KernelCore {
-    fn load(object: &str, iface: &str, require_cell_lsm: bool) -> Result<Self, BoxError> {
+    fn load(
+        object: &str,
+        iface: &str,
+        require_cell_lsm: bool,
+        lockdown_state_path: &str,
+    ) -> Result<Self, BoxError> {
         let mut ebpf = Ebpf::load_file(object)?;
         let xdp_mode = {
             let program: &mut Xdp = ebpf
@@ -831,16 +1842,52 @@ impl KernelCore {
             CgroupSkbAttachType::Egress,
             CgroupAttachMode::AllowOverride,
         )?;
-        let cell_lsm_attached = match attach_cell_socket_lsm(&mut ebpf) {
-            Ok(()) => true,
-            Err(error) if !require_cell_lsm => {
-                eprintln!(
-                    "BPF LSM unavailable ({error}); Gaia Cell host socket reinforcement disabled"
-                );
+        // §0/§6/P3-Fix: an active BPF LSM is a hard precondition for any attach
+        // claim. On a kernel whose `/sys/kernel/security/lsm` list lacks `bpf`,
+        // `Lsm::attach` succeeds but the stubs are never called - the old code
+        // still reported `bpf-lsm-cell` for that silent no-op.
+        let bpf_lsm_active = match titan_exec::bpf_lsm_active_from_sys_fs() {
+            Ok(active) => active,
+            Err(error) => {
+                eprintln!("BPF LSM activation probe failed ({error}); treating BPF LSM as inactive");
                 false
             }
-            Err(error) => {
-                return Err(format!("required Gaia Cell BPF LSM attach failed: {error}").into())
+        };
+        if !bpf_lsm_active && require_cell_lsm {
+            return Err(
+                "--require-bpf-lsm: /sys/kernel/security/lsm does not list the `bpf` token".into(),
+            );
+        }
+        let lsm_btf = if bpf_lsm_active {
+            match Btf::from_sys_fs() {
+                Ok(btf) => Some(btf),
+                Err(error) if !require_cell_lsm => {
+                    eprintln!("BPF LSM BTF unavailable ({error}); LSM attach disabled");
+                    None
+                }
+                Err(error) => return Err(format!("required BPF LSM BTF unavailable: {error}").into()),
+            }
+        } else {
+            None
+        };
+        let cell_lsm_attached = match &lsm_btf {
+            Some(btf) => match attach_cell_socket_lsm(&mut ebpf, btf) {
+                Ok(()) => true,
+                Err(error) if !require_cell_lsm => {
+                    eprintln!(
+                        "BPF LSM unavailable ({error}); Gaia Cell host socket reinforcement disabled"
+                    );
+                    false
+                }
+                Err(error) => {
+                    return Err(format!("required Gaia Cell BPF LSM attach failed: {error}").into())
+                }
+            },
+            None => {
+                eprintln!(
+                    "BPF LSM is not active (or its BTF is missing); Gaia Cell host socket reinforcement optional-unavailable, bpf-lsm-cell not claimed"
+                );
+                false
             }
         };
         let exec_events =
@@ -889,11 +1936,227 @@ impl KernelCore {
             ebpf.take_map("BLOCKLIST_V6")
                 .ok_or("BLOCKLIST_V6 missing")?,
         )?;
-        let mode = if cell_lsm_attached {
-            format!("{ingress_mode}+bpf-lsm-cell")
-        } else {
-            ingress_mode.to_owned()
+        // Point 3: all §4 maps are taken here so a mismatched eBPF object fails
+        // at startup (no silent "sensor online but blind" state).
+        let mut styx_global = AyaArray::try_from(
+            ebpf.take_map("STYX_GLOBAL").ok_or("STYX_GLOBAL missing")?,
+        )?;
+        let styx_mode = AyaHashMap::try_from(
+            ebpf.take_map("CELL_EGRESS_MODE")
+                .ok_or("CELL_EGRESS_MODE missing")?,
+        )?;
+        let styx_cell_allow_v4 = LpmTrie::try_from(
+            ebpf.take_map("CELL_EGRESS_ALLOW_V4")
+                .ok_or("CELL_EGRESS_ALLOW_V4 missing")?,
+        )?;
+        let styx_cell_allow_v6 = LpmTrie::try_from(
+            ebpf.take_map("CELL_EGRESS_ALLOW_V6")
+                .ok_or("CELL_EGRESS_ALLOW_V6 missing")?,
+        )?;
+        let styx_allow_global_v4 = LpmTrie::try_from(
+            ebpf.take_map("STYX_ALLOW_GLOBAL_V4")
+                .ok_or("STYX_ALLOW_GLOBAL_V4 missing")?,
+        )?;
+        let styx_allow_global_v6 = LpmTrie::try_from(
+            ebpf.take_map("STYX_ALLOW_GLOBAL_V6")
+                .ok_or("STYX_ALLOW_GLOBAL_V6 missing")?,
+        )?;
+        let mut styx_block_v4 = LpmTrie::try_from(
+            ebpf.take_map("STYX_BLOCK_V4")
+                .ok_or("STYX_BLOCK_V4 missing")?,
+        )?;
+        let mut styx_block_v6 = LpmTrie::try_from(
+            ebpf.take_map("STYX_BLOCK_V6")
+                .ok_or("STYX_BLOCK_V6 missing")?,
+        )?;
+        let styx_resolver_v4 = LpmTrie::try_from(
+            ebpf.take_map("STYX_RESOLVER_V4")
+                .ok_or("STYX_RESOLVER_V4 missing")?,
+        )?;
+        let styx_resolver_v6 = LpmTrie::try_from(
+            ebpf.take_map("STYX_RESOLVER_V6")
+                .ok_or("STYX_RESOLVER_V6 missing")?,
+        )?;
+        seed_styx_mandatory_veto(&mut styx_block_v4, &mut styx_block_v6)?;
+        // One random epoch per core process: the Go control plane full-resyncs
+        // its policy whenever this value changes (§5 resync contract). The global
+        // word starts with OFF/0 so an upgraded host behaves like 5.2.0.
+        let (styx_epoch, styx_epoch_hex) = random_styx_epoch()?;
+        styx_global.set(
+            0,
+            styx_flow::encode_styx_global(styx_epoch as u32, STYX_MODE_OFF, 0),
+            0,
+        )?;
+        let styx_flow_events = RingBuf::try_from(
+            ebpf.take_map("FLOW_EVENTS").ok_or("FLOW_EVENTS missing")?,
+        )?;
+        let styx_flow_emitted = PerCpuArray::try_from(
+            ebpf.take_map("FLOW_EVENTS_EMITTED")
+                .ok_or("FLOW_EVENTS_EMITTED missing")?,
+        )?;
+        let styx_ring_drops = PerCpuArray::try_from(
+            ebpf.take_map("FLOW_RING_DROPS")
+                .ok_or("FLOW_RING_DROPS missing")?,
+        )?;
+        let styx_agg_insert_failures = PerCpuArray::try_from(
+            ebpf.take_map("FLOW_AGG_INSERT_FAILURES")
+                .ok_or("FLOW_AGG_INSERT_FAILURES missing")?,
+        )?;
+        let styx_egress_parse_errors = PerCpuArray::try_from(
+            ebpf.take_map("EGRESS_PARSE_ERRORS")
+                .ok_or("EGRESS_PARSE_ERRORS missing")?,
+        )?;
+        let styx_egress_drops_total = PerCpuArray::try_from(
+            ebpf.take_map("EGRESS_DROPS_TOTAL")
+                .ok_or("EGRESS_DROPS_TOTAL missing")?,
+        )?;
+        let styx_egress_policy_drops = PerCpuArray::try_from(
+            ebpf.take_map("EGRESS_POLICY_DROPS")
+                .ok_or("EGRESS_POLICY_DROPS missing")?,
+        )?;
+        let styx_resolved = ebpf.take_map("STYX_RESOLVED").ok_or("STYX_RESOLVED missing")?;
+        let flow_agg_v4 = ebpf.take_map("FLOW_AGG_V4").ok_or("FLOW_AGG_V4 missing")?;
+        let flow_agg_v6 = ebpf.take_map("FLOW_AGG_V6").ok_or("FLOW_AGG_V6 missing")?;
+        // Point 1 (§4): Titan exec-gate maps are always taken, even while BPF
+        // LSM is inactive, so a stale eBPF object fails loudly at startup.
+        let titan_exec_state = AyaArray::try_from(
+            ebpf.take_map("TITAN_EXEC_STATE").ok_or("TITAN_EXEC_STATE missing")?,
+        )?;
+        let titan_exec_offsets = AyaArray::try_from(
+            ebpf.take_map("TITAN_EXEC_OFFSETS").ok_or("TITAN_EXEC_OFFSETS missing")?,
+        )?;
+        let titan_exec_modes = AyaHashMap::try_from(
+            ebpf.take_map("TITAN_EXEC_MODE").ok_or("TITAN_EXEC_MODE missing")?,
+        )?;
+        let titan_exec_policy = AyaHashMap::try_from(
+            ebpf.take_map("TITAN_EXEC_POLICY").ok_or("TITAN_EXEC_POLICY missing")?,
+        )?;
+        let titan_exec_events = RingBuf::try_from(
+            ebpf.take_map("TITAN_EXEC_EVENTS").ok_or("TITAN_EXEC_EVENTS missing")?,
+        )?;
+        let titan_exec_emitted = PerCpuArray::try_from(
+            ebpf.take_map("TITAN_EXEC_EVENTS_EMITTED")
+                .ok_or("TITAN_EXEC_EVENTS_EMITTED missing")?,
+        )?;
+        let titan_exec_ring_drops = PerCpuArray::try_from(
+            ebpf.take_map("TITAN_EXEC_RING_DROPS").ok_or("TITAN_EXEC_RING_DROPS missing")?,
+        )?;
+        let titan_exec_read_failures = PerCpuArray::try_from(
+            ebpf.take_map("TITAN_EXEC_READ_FAILURES").ok_or("TITAN_EXEC_READ_FAILURES missing")?,
+        )?;
+        let titan_exec_denies = PerCpuArray::try_from(
+            ebpf.take_map("TITAN_EXEC_POLICY_DENIES").ok_or("TITAN_EXEC_POLICY_DENIES missing")?,
+        )?;
+        let titan_exec_audits = PerCpuArray::try_from(
+            ebpf.take_map("TITAN_EXEC_POLICY_AUDITS").ok_or("TITAN_EXEC_POLICY_AUDITS missing")?,
+        )?;
+        let titan_exec_ctime_rejects = PerCpuArray::try_from(
+            ebpf.take_map("TITAN_EXEC_CTIME_REJECTS").ok_or("TITAN_EXEC_CTIME_REJECTS missing")?,
+        )?;
+        // Point 5 (§5/§8): the lockdown maps are mandatory like every other §4
+        // map. A stale eBPF object must fail startup instead of running the
+        // command surface without a kernel word to verify against.
+        let lockdown_state = AyaArray::try_from(
+            ebpf.take_map("LOCKDOWN_STATE").ok_or("LOCKDOWN_STATE missing")?,
+        )?;
+        let lockdown_drops = PerCpuArray::try_from(
+            ebpf.take_map("LOCKDOWN_DROPS").ok_or("LOCKDOWN_DROPS missing")?,
+        )?;
+        let lockdown_witness = PerCpuArray::try_from(
+            ebpf.take_map("LOCKDOWN_WITNESS_PASSES").ok_or("LOCKDOWN_WITNESS_PASSES missing")?,
+        )?;
+        let (titan_epoch, titan_epoch_hex) = random_epoch_word()?;
+        let mut titan_exec = TitanExecGate {
+            state: titan_exec_state,
+            offsets: titan_exec_offsets,
+            modes: titan_exec_modes,
+            policy: titan_exec_policy,
+            events: titan_exec_events,
+            emitted: titan_exec_emitted,
+            ring_drops: titan_exec_ring_drops,
+            read_failures: titan_exec_read_failures,
+            denies: titan_exec_denies,
+            audits: titan_exec_audits,
+            ctime_rejects: titan_exec_ctime_rejects,
+            store: titan_exec::TitanExecPolicy::new(),
+            epoch: titan_epoch as u32,
+            epoch_hex: titan_epoch_hex,
+            mode: TITAN_EXEC_MODE_OFF,
+            flags: 0,
+            lsm_active: bpf_lsm_active,
+            offsets_valid: false,
+            attached: false,
+            last_ring_drops: 0,
+            rejected_events: 0,
         };
+        // §6: BTF offsets are validated before any attach; invalid offsets leave
+        // STATE/OFFSETS at their fail-safe zero words and no hook is attached.
+        // Valid offsets are published even when this eBPF build cannot attach
+        // them (hook arity outside the hard-coded slots): the status then names
+        // `offsets=valid` and `unavailable`, never a silent enforcement claim.
+        let mut titan_slots_supported = false;
+        match btf_offsets::resolve_vmlinux_offsets() {
+            Ok(offsets) => {
+                titan_exec.offsets_valid = true;
+                titan_slots_supported = titan_exec_offsets_match_ebpf_slots(&offsets);
+                for (index, value) in encode_titan_exec_offsets_table(&offsets).iter().enumerate() {
+                    titan_exec.offsets.set(index as u32, *value, 0)?;
+                }
+                if !titan_slots_supported {
+                    eprintln!(
+                        "Titan exec gate unavailable: hook arity bprm={} mmap={} is not supported by this eBPF build; attaching nothing",
+                        offsets.bprm_nargs, offsets.mmap_nargs
+                    );
+                }
+            }
+            Err(error) => eprintln!(
+                "Titan exec gate unavailable: BTF offsets are invalid ({error}); attaching nothing"
+            ),
+        }
+        if titan_exec.offsets_valid && titan_slots_supported && bpf_lsm_active {
+            match &lsm_btf {
+                Some(btf) => match attach_titan_exec_lsm(&mut ebpf, btf) {
+                    Ok(()) => titan_exec.attached = true,
+                    Err(error) if !require_cell_lsm => eprintln!(
+                        "Titan exec gate attach failed ({error}); enforcement unavailable"
+                    ),
+                    Err(error) => {
+                        return Err(format!("required Titan exec BPF LSM attach failed: {error}").into())
+                    }
+                },
+                None => eprintln!("Titan exec gate not attached: BPF LSM BTF unavailable"),
+            }
+        } else if !bpf_lsm_active {
+            eprintln!(
+                "Titan exec gate inactive: BPF LSM is not active; no attach and no enforcement claim (activation requires `lsm=...,bpf` + reboot)"
+            );
+        } else if !titan_exec.offsets_valid {
+            eprintln!("Titan exec gate unavailable: runtime offsets are invalid; no attach");
+        }
+        if titan_exec.offsets_valid {
+            titan_exec.write_state()?;
+        } else {
+            eprintln!("Titan exec STATE/OFFSETS left at fail-safe zero words (offsets invalid)");
+        }
+        let mut mode = String::from(ingress_mode);
+        if cell_lsm_attached {
+            mode.push_str("+bpf-lsm-cell");
+        }
+        mode.push_str("+titan-exec:");
+        mode.push_str(titan_exec::ping_titan_exec_token(
+            titan_exec.enforcement_available(),
+            titan_exec.mode,
+        ));
+        let mut lockdown_config = lockdown::LockdownConfig::default();
+        lockdown_config.state_file = Path::new(lockdown_state_path).to_path_buf();
+        let lockdown = lockdown::LockdownCore::new(
+            lockdown_config,
+            Arc::new(AyaLockdownWordStore { map: Mutex::new(lockdown_state) }),
+            Arc::new(LiveLockdownCounters {
+                drops: lockdown_drops,
+                witness_passes: lockdown_witness,
+            }),
+        )?;
         Ok(Self {
             _ebpf: ebpf,
             exec_events,
@@ -913,6 +2176,32 @@ impl KernelCore {
             ingress_mode,
             cell_lsm_attached,
             cell_policy_epoch: random_epoch()?,
+            styx_global,
+            styx_mode,
+            styx_cell_allow_v4,
+            styx_cell_allow_v6,
+            styx_allow_global_v4,
+            styx_allow_global_v6,
+            styx_block_v4,
+            styx_block_v6,
+            styx_resolver_v4,
+            styx_resolver_v6,
+            styx_flow_events,
+            styx_flow_emitted,
+            styx_ring_drops,
+            styx_agg_insert_failures,
+            styx_egress_parse_errors,
+            styx_egress_drops_total,
+            styx_egress_policy_drops,
+            _styx_resolved: styx_resolved,
+            _flow_agg_v4: flow_agg_v4,
+            _flow_agg_v6: flow_agg_v6,
+            styx_epoch,
+            styx_epoch_hex,
+            styx_last_ring_drops: 0,
+            styx_flow_rejected: 0,
+            titan_exec,
+            lockdown,
         })
     }
 
@@ -1008,6 +2297,11 @@ impl KernelCore {
             .iter()
             .copied()
             .fold(0u64, |sum, value| sum.saturating_add(value)))
+    }
+
+    /// §5 PING: the existing mode token plus the additive lockdown state.
+    fn ping_mode(&self) -> String {
+        format!("{}{}", self.mode, self.lockdown.ping_suffix())
     }
 
     fn ingress_health(&self) -> Result<String, BoxError> {
@@ -1200,16 +2494,252 @@ impl KernelCore {
         }
         Ok(())
     }
+
+    // ------------------------------------------------------------------
+    // Point 3 (Phase 1) STYX command surface (§5/§7).
+    //
+    // Every method parses and validates the complete argument list first and
+    // only then performs its single map operation, so a rejected command can
+    // never leave a partial policy change behind. Deletes are idempotent.
+    // ------------------------------------------------------------------
+
+    fn styx_version(&self) -> Result<String, BoxError> {
+        Ok(styx_flow::STYX_WIRE_VERSION.to_owned())
+    }
+
+    fn styx_epoch(&self) -> Result<String, BoxError> {
+        Ok(self.styx_epoch_hex.clone())
+    }
+
+    fn styx_set_global(&mut self, args: &[&str]) -> Result<String, BoxError> {
+        let request = styx_flow::parse_global_request(args)?;
+        // The epoch is fixed for the process lifetime, so a global update only
+        // rewrites mode/flags and keeps the kernel cache epoch valid.
+        let word =
+            styx_flow::encode_styx_global(self.styx_epoch as u32, request.mode, request.flags);
+        self.styx_global.set(0, word, 0)?;
+        Ok("applied".to_owned())
+    }
+
+    fn styx_mode_set(&mut self, args: &[&str]) -> Result<String, BoxError> {
+        let (cgroup_id, mode, flags) = styx_flow::parse_mode_set_request(args)?;
+        self.styx_mode.insert(cgroup_id, mode | flags, 0)?;
+        Ok("applied".to_owned())
+    }
+
+    fn styx_mode_delete(&mut self, args: &[&str]) -> Result<String, BoxError> {
+        let cgroup_id = styx_flow::parse_mode_del_request(args)?;
+        styx_map_result(self.styx_mode.remove(&cgroup_id), false)
+    }
+
+    fn styx_allow(&mut self, args: &[&str], add: bool) -> Result<String, BoxError> {
+        let key = styx_flow::parse_allow_request(args)?.allow_key()?;
+        let result = match key {
+            styx_flow::StyxAllowKey::CellV4(key, prefix) => {
+                if add {
+                    self.styx_cell_allow_v4.insert(&Key::new(prefix, key), 1, 0)
+                } else {
+                    self.styx_cell_allow_v4.remove(&Key::new(prefix, key))
+                }
+            }
+            styx_flow::StyxAllowKey::CellV6(key, prefix) => {
+                if add {
+                    self.styx_cell_allow_v6.insert(&Key::new(prefix, key), 1, 0)
+                } else {
+                    self.styx_cell_allow_v6.remove(&Key::new(prefix, key))
+                }
+            }
+            styx_flow::StyxAllowKey::GlobalV4(key, prefix) => {
+                if add {
+                    self.styx_allow_global_v4.insert(&Key::new(prefix, key), 1, 0)
+                } else {
+                    self.styx_allow_global_v4.remove(&Key::new(prefix, key))
+                }
+            }
+            styx_flow::StyxAllowKey::GlobalV6(key, prefix) => {
+                if add {
+                    self.styx_allow_global_v6.insert(&Key::new(prefix, key), 1, 0)
+                } else {
+                    self.styx_allow_global_v6.remove(&Key::new(prefix, key))
+                }
+            }
+        };
+        styx_map_result(result, add)
+    }
+
+    fn styx_block(&mut self, args: &[&str], add: bool) -> Result<String, BoxError> {
+        self.styx_prefix_change(args, add, false)
+    }
+
+    fn styx_resolver(&mut self, args: &[&str], add: bool) -> Result<String, BoxError> {
+        self.styx_prefix_change(args, add, true)
+    }
+
+    fn styx_prefix_change(
+        &mut self,
+        args: &[&str],
+        add: bool,
+        resolver: bool,
+    ) -> Result<String, BoxError> {
+        let key = styx_flow::parse_prefix_request(args)?.prefix_key()?;
+        let result = match (resolver, key) {
+            (false, styx_flow::StyxPrefixKey::V4(key, prefix)) => {
+                if add {
+                    self.styx_block_v4.insert(&Key::new(prefix, key), 1, 0)
+                } else {
+                    self.styx_block_v4.remove(&Key::new(prefix, key))
+                }
+            }
+            (false, styx_flow::StyxPrefixKey::V6(key, prefix)) => {
+                if add {
+                    self.styx_block_v6.insert(&Key::new(prefix, key), 1, 0)
+                } else {
+                    self.styx_block_v6.remove(&Key::new(prefix, key))
+                }
+            }
+            (true, styx_flow::StyxPrefixKey::V4(key, prefix)) => {
+                if add {
+                    self.styx_resolver_v4.insert(&Key::new(prefix, key), 1, 0)
+                } else {
+                    self.styx_resolver_v4.remove(&Key::new(prefix, key))
+                }
+            }
+            (true, styx_flow::StyxPrefixKey::V6(key, prefix)) => {
+                if add {
+                    self.styx_resolver_v6.insert(&Key::new(prefix, key), 1, 0)
+                } else {
+                    self.styx_resolver_v6.remove(&Key::new(prefix, key))
+                }
+            }
+        };
+        styx_map_result(result, add)
+    }
+
+    fn styx_take_flow_events(&mut self) -> Result<String, BoxError> {
+        let mut records = Vec::with_capacity(styx_flow::MAX_STYX_FLOW_EVENTS_PER_RESPONSE);
+        while records.len() < styx_flow::MAX_STYX_FLOW_EVENTS_PER_RESPONSE {
+            let Some(item) = self.styx_flow_events.next() else {
+                break;
+            };
+            if item.len() != STYX_FLOW_EVENT_WIRE_BYTES {
+                self.styx_flow_rejected = self.styx_flow_rejected.saturating_add(1);
+                continue;
+            }
+            // A record this core cannot decode is skipped and counted, never a
+            // reason to abort the drain (§3.2: no degradation on first miss).
+            let Some(event) = decode_styx_flow_event(&item) else {
+                self.styx_flow_rejected = self.styx_flow_rejected.saturating_add(1);
+                continue;
+            };
+            let Some(encoded) = styx_flow::encode_styx_flow_event_text(&event) else {
+                self.styx_flow_rejected = self.styx_flow_rejected.saturating_add(1);
+                continue;
+            };
+            records.push(encoded);
+        }
+        let ring_drops = Self::per_cpu_counter_sum(&self.styx_ring_drops)?;
+        let dropped = ring_drops.saturating_sub(self.styx_last_ring_drops);
+        self.styx_last_ring_drops = ring_drops;
+        let response = styx_flow_batch_response(&records, dropped);
+        if response.len() > styx_flow::MAX_STYX_FLOW_PAYLOAD_BYTES {
+            return Err("styx flow batch exceeds the response payload budget".into());
+        }
+        Ok(response)
+    }
+
+    fn styx_flow_health(&self) -> Result<String, BoxError> {
+        let counters = [
+            Self::per_cpu_counter_sum(&self.styx_flow_emitted)?,
+            Self::per_cpu_counter_sum(&self.styx_ring_drops)?,
+            Self::per_cpu_counter_sum(&self.styx_agg_insert_failures)?,
+            Self::per_cpu_counter_sum(&self.styx_egress_parse_errors)?,
+            Self::per_cpu_counter_sum(&self.styx_egress_drops_total)?,
+            Self::per_cpu_counter_sum(&self.styx_egress_policy_drops)?,
+        ];
+        Ok(styx_flow::encode_styx_flow_health(&counters))
+    }
 }
 
-fn attach_cell_socket_lsm(ebpf: &mut Ebpf) -> Result<(), BoxError> {
-    let btf = Btf::from_sys_fs()?;
+/// Maps one STYX map write to the §5 `added`/`deleted` payload. A missing key on
+/// DELETE is a success: the delete commands are idempotent by contract.
+fn styx_map_result(result: Result<(), MapError>, add: bool) -> Result<String, BoxError> {
+    match result {
+        Ok(()) => Ok(if add { "added" } else { "deleted" }.to_owned()),
+        Err(MapError::KeyNotFound) if !add => Ok("deleted".to_owned()),
+        Err(error) => Err(error.into()),
+    }
+}
+
+/// §3.3 response shape: `empty` only for a truly idle poll. A drop-only poll
+/// still reports the FLOW_RING_DROPS delta (`<dropped>|`) so the control plane
+/// can see the visibility loss instead of a silent "no events".
+fn styx_flow_batch_response(records: &[String], dropped: u64) -> String {
+    if records.is_empty() {
+        if dropped == 0 {
+            "empty".to_owned()
+        } else {
+            format!("{dropped}|")
+        }
+    } else {
+        format!("{dropped}|{}", records.join(","))
+    }
+}
+
+/// Seeds the §4 mandatory veto. Failure is fatal at startup: the core must not
+/// claim enforcement without the metadata/link-local/multicast guard.
+fn seed_styx_mandatory_veto(
+    block_v4: &mut LpmTrie<MapData, [u8; 4], u8>,
+    block_v6: &mut LpmTrie<MapData, [u8; 16], u8>,
+) -> Result<(), BoxError> {
+    for (prefix, address) in STYX_MANDATORY_VETO_V4 {
+        block_v4.insert(&Key::new(*prefix, *address), 1, 0)?;
+    }
+    for (prefix, address) in STYX_MANDATORY_VETO_V6 {
+        block_v6.insert(&Key::new(*prefix, *address), 1, 0)?;
+    }
+    Ok(())
+}
+
+/// Random per-start epoch word plus its 16 lowercase hex characters; the low
+/// 32 bits are what `STYX_GLOBAL`/`TITAN_EXEC_STATE` can carry.
+fn random_epoch_word() -> Result<(u64, String), BoxError> {
+    let mut bytes = [0u8; 8];
+    File::open("/dev/urandom")?.read_exact(&mut bytes)?;
+    let epoch = u64::from_ne_bytes(bytes);
+    Ok((epoch, format!("{epoch:016x}")))
+}
+
+/// §5 `STYX_EPOCH`: random per core start.
+fn random_styx_epoch() -> Result<(u64, String), BoxError> {
+    random_epoch_word()
+}
+
+/// §0/§6: the Cell socket LSM program is only loaded with an active LSM list
+/// (the caller checked `/sys/kernel/security/lsm`); BTF is parsed once per start.
+fn attach_cell_socket_lsm(ebpf: &mut Ebpf, btf: &Btf) -> Result<(), BoxError> {
     let program: &mut Lsm = ebpf
         .program_mut("gedefense_cell_socket_create")
         .ok_or("Gaia Cell socket LSM program missing")?
         .try_into()?;
-    program.load("socket_create", &btf)?;
+    program.load("socket_create", btf)?;
     program.attach()?;
+    Ok(())
+}
+
+/// §6: load and attach both Titan exec-gate hooks; only called when BPF LSM is
+/// active and the BTF offsets were validated. Both attaches share one BTF.
+fn attach_titan_exec_lsm(ebpf: &mut Ebpf, btf: &Btf) -> Result<(), BoxError> {
+    for (symbol, hook) in [
+        ("gedefense_titan_exec_bprm", "bprm_check_security"),
+        ("gedefense_titan_exec_mmap", "mmap_file"),
+    ] {
+        let program: &mut Lsm = ebpf
+            .program_mut(symbol)
+            .ok_or_else(|| format!("Titan exec LSM program {symbol} missing"))?
+            .try_into()?;
+        program.load(hook, btf)?;
+        program.attach()?;
+    }
     Ok(())
 }
 
@@ -1617,7 +3147,7 @@ fn process_command(
     parts: &[&str],
 ) -> Result<String, BoxError> {
     match parts {
-        ["PING"] => Ok(core.mode.to_string()),
+        ["PING"] => Ok(core.ping_mode()),
         ["CELL_POLICY_EPOCH"] => core.cell_policy_epoch(),
         ["CELL_POLICY_SET", cgroup_id, flags] => core.set_cell_policy(cgroup_id, flags),
         ["CELL_POLICY_DEL", cgroup_id] => core.delete_cell_policy(cgroup_id),
@@ -1626,6 +3156,36 @@ fn process_command(
         ["EGRESS_EVENTS"] => core.take_egress_events(),
         ["INGRESS_EVENTS"] => core.take_ingress_events(),
         ["INGRESS_HEALTH"] => core.ingress_health(),
+        ["STYX_VERSION"] => core.styx_version(),
+        ["STYX_EPOCH"] => core.styx_epoch(),
+        ["STYX_GLOBAL", args @ ..] => core.styx_set_global(args),
+        ["STYX_MODE_SET", args @ ..] => core.styx_mode_set(args),
+        ["STYX_MODE_DEL", args @ ..] => core.styx_mode_delete(args),
+        ["STYX_ALLOW_ADD", args @ ..] => core.styx_allow(args, true),
+        ["STYX_ALLOW_DEL", args @ ..] => core.styx_allow(args, false),
+        ["STYX_BLOCK_ADD", args @ ..] => core.styx_block(args, true),
+        ["STYX_BLOCK_DEL", args @ ..] => core.styx_block(args, false),
+        ["STYX_RESOLVER_ADD", args @ ..] => core.styx_resolver(args, true),
+        ["STYX_RESOLVER_DEL", args @ ..] => core.styx_resolver(args, false),
+        ["STYX_FLOW_EVENTS"] => core.styx_take_flow_events(),
+        ["STYX_FLOW_HEALTH"] => core.styx_flow_health(),
+        // Point 1 (§5): Titan exec-gate command surface. Every argument is
+        // validated before the first map write; enforcement cannot be claimed
+        // while LSM/offsets/attach are not all green.
+        ["TITAN_EXEC_VERSION"] => core.titan_exec.version(),
+        ["TITAN_EXEC_EPOCH"] => core.titan_exec.epoch(),
+        ["TITAN_EXEC_STATUS"] => core.titan_exec.status(),
+        ["TITAN_EXEC_SET_GLOBAL", mode, flags] => core.titan_exec.set_global(mode, flags),
+        ["TITAN_EXEC_ALLOW_ADD", path] => core.titan_exec.allow_add(path),
+        ["TITAN_EXEC_ALLOW_ADD_BATCH", token] => core.titan_exec.allow_add_batch(token),
+        ["TITAN_EXEC_ALLOW_DEL", dev, ino] => core.titan_exec.allow_del(dev, ino),
+        ["TITAN_EXEC_CLEAR"] => core.titan_exec.clear(),
+        ["TITAN_EXEC_SCOPE_SET", cgroup, mode, flags] => {
+            core.titan_exec.scope_set(cgroup, mode, flags)
+        }
+        ["TITAN_EXEC_SCOPE_DEL", cgroup] => core.titan_exec.scope_del(cgroup),
+        ["TITAN_EXEC_EVENTS"] => core.titan_exec.take_events(),
+        ["TITAN_EXEC_HEALTH"] => core.titan_exec.health(),
         ["MALWARE_EVENTS"] => scanner.take_events(),
         ["CLEAR_BLOCKLIST"] => core.clear_blocklist().map(|_| "cleared".into()),
         ["VERIFY_EMPTY"] if core.blocked.is_empty() => Ok("empty".into()),
@@ -1672,6 +3232,11 @@ fn process_command(
         ["CANARY_REMOVE", path] => canary.remove_token(path),
         ["CANARY_EVENTS"] => canary.take_events(),
         ["CANARY_STATUS"] => Ok(canary.status()),
+        // Point 5 (§5): the lock-down command surface is dispatched by the
+        // crate-root ABI layer; unknown LOCKDOWN_* names stay ERR.
+        [command, ..] if command.starts_with("LOCKDOWN_") => {
+            lockdown_command(&mut core.lockdown, parts)
+        }
         _ => Err("unknown command".into()),
     }
 }
@@ -1887,6 +3452,7 @@ fn main() -> Result<(), BoxError> {
     );
     let control_user = arg("control-user", "gedefense");
     let malware_hashes = arg("malware-hashes", "/etc/vgt/gedefense/malware-hashes.sha256");
+    let lockdown_state_path = arg("lockdown-state", lockdown::DEFAULT_STATE_FILE);
     eprintln!("GeDefense core startup phase=control-identity");
     let (control_uid, control_gid) = lookup_identity(&control_user)
         .map_err(|error| std::io::Error::other(format!("control identity: {error}")))?;
@@ -1977,14 +3543,24 @@ fn main() -> Result<(), BoxError> {
     let listener = bind_secure_runtime_socket(Path::new(&socket), control_gid, 0o660)
         .map_err(|error| std::io::Error::other(format!("IPC socket hardening: {error}")))?;
     eprintln!("GeDefense core startup phase=xdp-load interface={iface}");
-    let mut core = KernelCore::load(&object, &iface, require_cell_lsm).map_err(|error| {
-        std::io::Error::other(format!("kernel data-plane load/attach: {error}"))
-    })?;
+    let mut core = KernelCore::load(&object, &iface, require_cell_lsm, &lockdown_state_path)
+        .map_err(|error| {
+            std::io::Error::other(format!("kernel data-plane load/attach: {error}"))
+        })?;
+    // Point 5 (§5): re-arm the persisted lockdown (drop/USB/TB/hardening and
+    // the uevent monitor) before the IPC accept loop serves the first request.
+    match core.lockdown.startup_rearm() {
+        Ok(state) => eprintln!("GeDefense core startup phase=lockdown-rearm state={state}"),
+        Err(error) => eprintln!("GeDefense core lockdown re-arm: {error}"),
+    }
     let mut replay = ReplayGuard::new();
     eprintln!(
-        "GeDefense Rust core online: interface={iface} ingress={} cgroup_egress=attached cell_lsm={} on_access=fanotify-exec user_scan=peercred-jail canary=fanotify-jail authenticated_ipc=VGT3 socket={socket}",
+        "GeDefense Rust core online: interface={iface} ingress={} cgroup_egress=attached cell_lsm={} titan_exec={} titan_exec_attached={} on_access=fanotify-exec user_scan=peercred-jail canary=fanotify-jail authenticated_ipc=VGT3 socket={socket} lockdown={}",
         core.mode,
-        if core.cell_lsm_attached { "attached" } else { "optional-unavailable" }
+        if core.cell_lsm_attached { "attached" } else { "optional-unavailable" },
+        core.titan_exec.state_text(),
+        core.titan_exec.attached,
+        core.lockdown.state_text()
     );
     for incoming in listener.incoming() {
         match incoming {
@@ -2550,5 +4126,1820 @@ mod tests {
         assert!(secure_runtime_socket(&link, gid, 0o660).is_err());
         drop(target_listener);
         fs::remove_dir_all(&directory).ok();
+    }
+
+    // ------------------------------------------------------------------
+    // P3-T4: pure STYX contracts (§3.3/§4/§5) that need no live kernel map.
+    // ------------------------------------------------------------------
+
+    fn styx_cidr(family: u8, text: &str) -> styx_flow::StyxCidr {
+        styx_flow::parse_cidr(family, text).expect("valid fixture cidr")
+    }
+
+    fn styx_allow(args: &[&str]) -> styx_flow::StyxAllowRequest {
+        styx_flow::parse_allow_request(args).expect("valid fixture allow request")
+    }
+
+    #[test]
+    fn styx_cidr_parsing_accepts_canonical_forms_only() {
+        assert_eq!(
+            styx_cidr(4, "203.0.113.0/24").address,
+            IpAddr::V4(Ipv4Addr::new(203, 0, 113, 0))
+        );
+        assert_eq!(styx_cidr(4, "203.0.113.7").prefix, 32);
+        assert_eq!(styx_cidr(4, "0.0.0.0/0").prefix, 0);
+        assert_eq!(styx_cidr(6, "2001:db8::/32").prefix, 32);
+        assert_eq!(styx_cidr(6, "::1/128").address, IpAddr::V6(Ipv6Addr::LOCALHOST));
+        for (family, token) in [
+            (4u8, "203.0.113.9/24"), // host bits set
+            (4, "1.2.3.4/0"),
+            (4, "0.0.0.0/33"),
+            (4, "2001:db8::/32"),
+            (6, "203.0.113.0/24"),
+            (6, "2001:db8::1/129"),
+            (6, "::ffff:1.2.3.4/128"),
+            (4, " 10.0.0.0/8"),
+            (4, "10.0.0.0/8\n"),
+            (4, "10.0.0.0/8\0"),
+            (4, ""),
+            (4, "10.0.0.0/"),
+            (4, "10.0.0.0/8/8"),
+            (5, "10.0.0.0/8"),
+        ] {
+            assert!(
+                styx_flow::parse_cidr(family, token).is_err(),
+                "{family} {token:?} was accepted"
+            );
+        }
+        let oversized = format!("10.0.0.0/8{}", "0".repeat(140));
+        assert!(styx_flow::parse_cidr(4, &oversized).is_err());
+    }
+
+    #[test]
+    fn styx_veto_cidr_enforces_the_seed_prefix_ranges() {
+        for token in [
+            "0.0.0.0/8",
+            "169.254.0.0/16",
+            "100.100.100.200/32",
+            "224.0.0.0/4",
+        ] {
+            assert!(styx_flow::parse_prefix_cidr(4, token).is_ok(), "{token}");
+        }
+        for token in ["0.0.0.0/0", "10.0.0.0/1", "10.0.0.0/3"] {
+            assert!(styx_flow::parse_prefix_cidr(4, token).is_err(), "{token}");
+        }
+        for token in ["fd00:ec2::254/128", "fe80::/10", "ff00::/8"] {
+            assert!(styx_flow::parse_prefix_cidr(6, token).is_ok(), "{token}");
+        }
+        for token in ["::/0", "2001:db8::/7"] {
+            assert!(styx_flow::parse_prefix_cidr(6, token).is_err(), "{token}");
+        }
+    }
+
+    #[test]
+    fn styx_numeric_and_flag_arguments_are_strict() {
+        assert_eq!(styx_flow::parse_u16("443").unwrap(), 443);
+        assert_eq!(styx_flow::parse_cgroup_id("42").unwrap(), 42);
+        for token in ["", " 1", "1 ", "+1", "-1", "0x10", "1_0", "\u{661}"] {
+            assert!(styx_flow::parse_u16(token).is_err(), "{token:?}");
+        }
+        for token in ["0", "1", "2"] {
+            assert_eq!(
+                styx_flow::parse_mode(token).unwrap(),
+                token.parse::<u8>().unwrap()
+            );
+        }
+        for token in ["3", "7", "255", "-1"] {
+            assert!(styx_flow::parse_mode(token).is_err(), "{token}");
+        }
+        assert_eq!(styx_flow::parse_mode_flags("120").unwrap(), 120);
+        for token in ["7", "128", "255"] {
+            assert!(styx_flow::parse_mode_flags(token).is_err(), "{token}");
+        }
+        assert_eq!(styx_flow::parse_global_flags("0").unwrap(), 0);
+        assert_eq!(
+            styx_flow::parse_global_flags("1").unwrap(),
+            gedefense_common::STYX_FLAG_LOG_FLOWS
+        );
+        for token in ["2", "64", "255"] {
+            assert!(styx_flow::parse_global_flags(token).is_err(), "{token}");
+        }
+        assert_eq!(styx_flow::parse_port_range("0", "65535").unwrap(), (0, 65535));
+        assert_eq!(styx_flow::parse_port_range("443", "443").unwrap(), (443, 443));
+        assert!(styx_flow::parse_port_range("443", "80").is_err());
+        for token in ["0", "1", "2", "3"] {
+            assert_eq!(
+                styx_flow::parse_proto_mask(token).unwrap(),
+                token.parse::<u8>().unwrap()
+            );
+        }
+        assert!(styx_flow::parse_proto_mask("4").is_err());
+    }
+
+    #[test]
+    fn styx_allow_request_validates_scope_family_and_shape() {
+        let request = styx_allow(&["4", "cell", "42", "203.0.113.0/24", "0", "65535", "3"]);
+        assert_eq!(request.cgroup_id, 42);
+        assert_eq!(request.scope, styx_flow::StyxScope::Cell);
+        let request = styx_allow(&["6", "global", "0", "2001:db8::/32", "53", "53", "1"]);
+        assert_eq!(request.scope, styx_flow::StyxScope::Global);
+        assert_eq!(request.cidr.family, 6);
+        for args in [
+            &["4", "cell", "0", "203.0.113.0/24", "0", "65535", "3"][..],
+            &["4", "global", "42", "203.0.113.0/24", "0", "65535", "3"],
+            &["5", "cell", "42", "203.0.113.0/24", "0", "65535", "3"],
+            &["4", "zone", "42", "203.0.113.0/24", "0", "65535", "3"],
+            &["4", "cell", "42", "203.0.113.0/24", "65535", "0", "3"],
+            &["4", "cell", "42", "203.0.113.0/24", "0", "65535", "4"],
+            &["4", "cell", "42", "203.0.113.9/24", "0", "65535", "3"],
+            &["4", "cell", "42"],
+        ] {
+            assert!(
+                styx_flow::parse_allow_request(args).is_err(),
+                "{args:?} was accepted"
+            );
+        }
+        assert_eq!(
+            styx_flow::parse_allow_request(&["4", "cell"]).unwrap_err(),
+            styx_flow::UNKNOWN_COMMAND
+        );
+    }
+
+    #[test]
+    fn styx_command_shapes_reject_unknown_arity_and_bad_values() {
+        use styx_flow::UNKNOWN_COMMAND;
+        assert_eq!(styx_flow::parse_global_request(&[]).unwrap_err(), UNKNOWN_COMMAND);
+        assert_eq!(
+            styx_flow::parse_global_request(&["1"]).unwrap_err(),
+            UNKNOWN_COMMAND
+        );
+        assert_eq!(
+            styx_flow::parse_global_request(&["1", "0", "0"]).unwrap_err(),
+            UNKNOWN_COMMAND
+        );
+        assert_eq!(styx_flow::parse_global_request(&["1", "0"]).unwrap().mode, 1);
+        assert!(styx_flow::parse_global_request(&["3", "0"]).is_err());
+        assert_eq!(
+            styx_flow::parse_mode_set_request(&["9", "2", "64"]).unwrap(),
+            (9, 2, 64)
+        );
+        assert_eq!(
+            styx_flow::parse_mode_set_request(&["0", "2", "0"]).unwrap_err(),
+            "styx cgroup id must be non-zero"
+        );
+        assert_eq!(styx_flow::parse_mode_del_request(&["9"]).unwrap(), 9);
+        assert_eq!(
+            styx_flow::parse_mode_del_request(&["9", "9"]).unwrap_err(),
+            UNKNOWN_COMMAND
+        );
+        assert_eq!(
+            styx_flow::parse_prefix_request(&["4", "169.254.0.0/16"])
+                .unwrap()
+                .prefix,
+            16
+        );
+        assert_eq!(
+            styx_flow::parse_prefix_request(&["4"]).unwrap_err(),
+            UNKNOWN_COMMAND
+        );
+    }
+
+    #[test]
+    fn styx_cell_v4_allow_keys_follow_section_four() {
+        use styx_flow::StyxAllowKey;
+        let cgroup = 0x0102_0304_0506_0708u64;
+        match styx_allow(&["4", "cell", "72623859790382856", "0.0.0.0/0", "0", "65535", "3"])
+            .allow_key()
+            .unwrap()
+        {
+            StyxAllowKey::CellV4(key, prefix) => {
+                assert_eq!(prefix, 64);
+                assert_eq!(&key[..8], &cgroup.to_le_bytes());
+                assert_eq!(&key[8..], &[0u8; 8]);
+            }
+            other => panic!("{other:?}"),
+        }
+        match styx_allow(&["4", "cell", "7", "10.0.0.0/8", "0", "65535", "3"])
+            .allow_key()
+            .unwrap()
+        {
+            StyxAllowKey::CellV4(key, prefix) => {
+                assert_eq!(prefix, 72);
+                assert_eq!(&key[8..12], &[10, 0, 0, 0]);
+            }
+            other => panic!("{other:?}"),
+        }
+        match styx_allow(&["4", "cell", "7", "203.0.113.9/32", "443", "443", "3"])
+            .allow_key()
+            .unwrap()
+        {
+            StyxAllowKey::CellV4(key, prefix) => {
+                assert_eq!(prefix, 112);
+                assert_eq!(&key[12..14], &443u16.to_be_bytes());
+                assert_eq!(key[14], 0);
+            }
+            other => panic!("{other:?}"),
+        }
+        match styx_allow(&["4", "cell", "7", "203.0.113.9/32", "443", "443", "1"])
+            .allow_key()
+            .unwrap()
+        {
+            StyxAllowKey::CellV4(key, prefix) => {
+                assert_eq!(prefix, 120);
+                assert_eq!(key[14], gedefense_common::STYX_PROTO_TCP);
+            }
+            other => panic!("{other:?}"),
+        }
+        assert!(styx_allow(&["4", "cell", "7", "10.0.0.0/8", "443", "443", "3"])
+            .allow_key()
+            .is_err());
+        assert!(styx_allow(&["4", "cell", "7", "203.0.113.9/32", "0", "65535", "1"])
+            .allow_key()
+            .is_err());
+        assert!(styx_allow(&["4", "cell", "7", "203.0.113.9/32", "1", "2", "3"])
+            .allow_key()
+            .is_err());
+    }
+
+    #[test]
+    fn styx_cell_v6_and_global_keys_follow_section_four() {
+        use styx_flow::StyxAllowKey;
+        match styx_allow(&["6", "cell", "7", "2001:db8::/64", "53", "53", "1"])
+            .allow_key()
+            .unwrap()
+        {
+            StyxAllowKey::CellV6(key, prefix) => {
+                assert_eq!(prefix, 128);
+                assert_eq!(&key[..8], &7u64.to_le_bytes());
+                assert_eq!(&key[8..12], &[0x20, 0x01, 0x0d, 0xb8]);
+            }
+            other => panic!("{other:?}"),
+        }
+        match styx_allow(&["4", "global", "0", "203.0.113.0/24", "0", "65535", "3"])
+            .allow_key()
+            .unwrap()
+        {
+            StyxAllowKey::GlobalV4(key, prefix) => {
+                assert_eq!(prefix, 24);
+                assert_eq!(&key[..4], &[203, 0, 113, 0]);
+            }
+            other => panic!("{other:?}"),
+        }
+        match styx_allow(&["4", "global", "0", "203.0.113.9/32", "53", "53", "2"])
+            .allow_key()
+            .unwrap()
+        {
+            StyxAllowKey::GlobalV4(key, prefix) => {
+                assert_eq!(prefix, 56);
+                assert_eq!(&key[4..6], &53u16.to_be_bytes());
+                assert_eq!(key[6], gedefense_common::STYX_PROTO_UDP);
+            }
+            other => panic!("{other:?}"),
+        }
+        // §4 prefixes 48 (global-v4 +port) and 144/152 (global-v6) as well as
+        // the full 192-bit cell-v6 lookup key must be exactly reproducible.
+        match styx_allow(&["4", "global", "0", "203.0.113.9/32", "53", "53", "3"])
+            .allow_key()
+            .unwrap()
+        {
+            StyxAllowKey::GlobalV4(_, prefix) => assert_eq!(prefix, 48),
+            other => panic!("{other:?}"),
+        }
+        match styx_allow(&["6", "cell", "7", "2001:db8::1/128", "0", "65535", "3"])
+            .allow_key()
+            .unwrap()
+        {
+            StyxAllowKey::CellV6(_, prefix) => assert_eq!(prefix, 192),
+            other => panic!("{other:?}"),
+        }
+        match styx_allow(&["6", "global", "0", "2001:db8::1/128", "853", "853", "3"])
+            .allow_key()
+            .unwrap()
+        {
+            StyxAllowKey::GlobalV6(_, prefix) => assert_eq!(prefix, 144),
+            other => panic!("{other:?}"),
+        }
+        match styx_allow(&["6", "global", "0", "2001:db8::/128", "853", "853", "1"])
+            .allow_key()
+            .unwrap()
+        {
+            StyxAllowKey::GlobalV6(key, prefix) => {
+                assert_eq!(prefix, 152);
+                assert_eq!(&key[16..18], &853u16.to_be_bytes());
+                assert_eq!(key[18], gedefense_common::STYX_PROTO_TCP);
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn styx_policy_prefix_keys_are_bare_networks() {
+        use styx_flow::StyxPrefixKey;
+        assert_eq!(
+            styx_flow::parse_prefix_cidr(4, "169.254.0.0/16")
+                .unwrap()
+                .prefix_key()
+                .unwrap(),
+            StyxPrefixKey::V4([169, 254, 0, 0], 16)
+        );
+        match styx_flow::parse_prefix_cidr(6, "fe80::/10")
+            .unwrap()
+            .prefix_key()
+            .unwrap()
+        {
+            StyxPrefixKey::V6(key, prefix) => {
+                assert_eq!(prefix, 10);
+                assert_eq!(&key[..2], &[0xfe, 0x80]);
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn styx_global_word_packs_epoch_flags_and_mode() {
+        let word =
+            styx_flow::encode_styx_global(0xdead_beef, 2, gedefense_common::STYX_FLAG_LOG_FLOWS);
+        assert_eq!(word & 0xffff_ffff, 0xdead_beef);
+        assert_eq!(
+            (word >> 32) as u8,
+            gedefense_common::STYX_FLAG_LOG_FLOWS
+        );
+        assert_eq!((word >> 40) as u8, 2);
+        assert_eq!(styx_flow::encode_styx_global(1, 0, 0), 1);
+    }
+
+    fn styx_fixture_event() -> gedefense_common::FlowEvent {
+        gedefense_common::FlowEvent {
+            cgroup_id: 0x0102_0304_0506_0708,
+            ts_ns: 9,
+            tx_bytes: 10,
+            rx_bytes: 0,
+            pid: 42,
+            uid: 1000,
+            dst: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 203, 0, 113, 9],
+            src: [0u8; 16],
+            dst_port: 443,
+            src_port: 51_234,
+            packets: 3,
+            proto: gedefense_common::STYX_PROTO_TCP,
+            family: NETWORK_FAMILY_V4,
+            direction: gedefense_common::STYX_DIR_EGRESS,
+            tcp_flags: 0x18,
+            verdict: gedefense_common::STYX_VERDICT_ALLOW,
+            reserved: [0; 3],
+            comm: *b"curl\0\0\0\0\0\0\0\0\0\0\0\0",
+        }
+    }
+
+    #[test]
+    fn styx_flow_text_wire_matches_the_contract() {
+        let text =
+            styx_flow::encode_styx_flow_event_text(&styx_fixture_event()).expect("encodable event");
+        assert_eq!(
+            text,
+            "0102030405060708:9:10:0:42:1000:cb007109:443:51234:3:4:6:1:24:0:6375726c"
+        );
+        assert_eq!(text.split(':').count(), 16);
+        // A comm with bytes the Go decoder refuses degrades to an empty field ...
+        let mut event = styx_fixture_event();
+        event.comm = *b"Web Content\0\0\0\0\0";
+        let text = styx_flow::encode_styx_flow_event_text(&event).expect("encodable event");
+        assert!(text.ends_with(':'), "comm field not degraded: {text}");
+        // ... while non-representable records are skipped instead of poisoning
+        // an entire batch.
+        let mut event = styx_fixture_event();
+        event.pid = i32::MAX as u32 + 1;
+        assert!(styx_flow::encode_styx_flow_event_text(&event).is_none());
+        let mut event = styx_fixture_event();
+        event.family = NETWORK_FAMILY_V6;
+        event.dst = [0u8; 16];
+        assert!(styx_flow::encode_styx_flow_event_text(&event).is_none());
+        let mut event = styx_fixture_event();
+        event.comm = [b'x'; 16];
+        assert!(styx_flow::encode_styx_flow_event_text(&event).is_none());
+    }
+
+    #[test]
+    fn styx_flow_batch_is_bounded_and_reports_drops() {
+        assert_eq!(styx_flow_batch_response(&[], 0), "empty");
+        assert_eq!(styx_flow_batch_response(&[], 7), "7|");
+        assert_eq!(
+            styx_flow_batch_response(&["a".to_owned(), "b".to_owned()], 3),
+            "3|a,b"
+        );
+        let mut event = styx_fixture_event();
+        event.cgroup_id = u64::MAX;
+        event.ts_ns = u64::MAX;
+        event.tx_bytes = u64::MAX;
+        event.rx_bytes = u64::MAX;
+        event.pid = i32::MAX as u32;
+        event.uid = u32::MAX;
+        event.packets = u32::MAX;
+        event.family = NETWORK_FAMILY_V6;
+        event.dst = [0xff; 16];
+        event.proto = 0;
+        event.tcp_flags = 0;
+        event.dst_port = 0;
+        event.src_port = 0;
+        event.comm = *b"fifteen-char-na\0";
+        let record = styx_flow::encode_styx_flow_event_text(&event).expect("maximal record");
+        let records = vec![record; styx_flow::MAX_STYX_FLOW_EVENTS_PER_RESPONSE];
+        let batch = styx_flow_batch_response(&records, u64::MAX);
+        assert_eq!(
+            batch.split(',').count(),
+            styx_flow::MAX_STYX_FLOW_EVENTS_PER_RESPONSE
+        );
+        assert!(
+            batch.len() <= styx_flow::MAX_STYX_FLOW_PAYLOAD_BYTES,
+            "batch of {batch:?} bytes"
+        );
+    }
+
+    #[test]
+    fn styx_flow_health_has_six_decimal_fields() {
+        assert_eq!(
+            styx_flow::encode_styx_flow_health(&[1, 2, 3, 4, 5, 6]),
+            "1:2:3:4:5:6"
+        );
+        let maximal = styx_flow::encode_styx_flow_health(&[u64::MAX; 6]);
+        assert_eq!(maximal.split(':').count(), 6);
+        assert!(maximal.len() <= 160);
+    }
+
+    #[test]
+    fn styx_epoch_is_sixteen_lowercase_hex_characters() {
+        let (value, hex_epoch) = random_styx_epoch().expect("random epoch");
+        assert_eq!(hex_epoch.len(), 16);
+        assert!(hex_epoch
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase()));
+        assert_eq!(hex_epoch, format!("{value:016x}"));
+    }
+
+    #[test]
+    fn styx_map_results_are_explicit_and_deletes_idempotent() {
+        assert_eq!(styx_map_result(Ok(()), true).unwrap(), "added");
+        assert_eq!(styx_map_result(Ok(()), false).unwrap(), "deleted");
+        assert_eq!(
+            styx_map_result(Err(MapError::KeyNotFound), false).unwrap(),
+            "deleted"
+        );
+        assert!(styx_map_result(Err(MapError::KeyNotFound), true).is_err());
+        assert!(styx_map_result(Err(MapError::InvalidMapType { map_type: 0 }), false).is_err());
+    }
+
+    // ---- Point 1: synthetic BTF fixtures for the mini parser (§4.1/§6). ----
+    //
+    // The parser module is capped at 500 lines, so its fixtures live here. The
+    // `6.18`/`7.0` layouts below use the §4.1 golden values (BTF-verified on
+    // those kernels); broken variants must be `Err`, never a heuristic.
+
+    struct BtfFixture {
+        strings: Vec<u8>,
+        types: Vec<Vec<u8>>,
+    }
+
+    impl BtfFixture {
+        fn new() -> Self {
+            Self {
+                strings: vec![0],
+                types: Vec::new(),
+            }
+        }
+
+        fn name(&mut self, name: &str) -> u32 {
+            let offset = self.strings.len() as u32;
+            self.strings.extend_from_slice(name.as_bytes());
+            self.strings.push(0);
+            offset
+        }
+
+        fn push(
+            &mut self,
+            name_off: u32,
+            kind: u8,
+            vlen: u16,
+            flag: bool,
+            value: u32,
+            extra: &[u8],
+        ) -> u32 {
+            let mut info = (u32::from(kind) << 24) | u32::from(vlen);
+            if flag {
+                info |= 1 << 31;
+            }
+            let mut encoded = Vec::with_capacity(12 + extra.len());
+            encoded.extend_from_slice(&name_off.to_le_bytes());
+            encoded.extend_from_slice(&info.to_le_bytes());
+            encoded.extend_from_slice(&value.to_le_bytes());
+            encoded.extend_from_slice(extra);
+            self.types.push(encoded);
+            self.types.len() as u32
+        }
+
+        fn int(&mut self, name: &str, size: u32) -> u32 {
+            let name_off = self.name(name);
+            self.push(name_off, 1, 0, false, size, &size.to_le_bytes())
+        }
+
+        fn pointer(&mut self, pointee: u32) -> u32 {
+            self.push(0, 2, 0, false, pointee, &[])
+        }
+
+        fn record(
+            &mut self,
+            name: &str,
+            union: bool,
+            flag: bool,
+            size: u32,
+            members: &[(u32, u32, u32)],
+        ) -> u32 {
+            let name_off = self.name(name);
+            let mut extra = Vec::new();
+            for (member_name, type_id, offset_bits) in members {
+                extra.extend_from_slice(&member_name.to_le_bytes());
+                extra.extend_from_slice(&type_id.to_le_bytes());
+                extra.extend_from_slice(&offset_bits.to_le_bytes());
+            }
+            self.push(
+                name_off,
+                if union { 5 } else { 4 },
+                members.len() as u16,
+                flag,
+                size,
+                &extra,
+            )
+        }
+
+        fn func_proto(&mut self, params: u16, param_type: u32) -> u32 {
+            let mut extra = Vec::new();
+            for _ in 0..params {
+                extra.extend_from_slice(&0u32.to_le_bytes());
+                extra.extend_from_slice(&param_type.to_le_bytes());
+            }
+            self.push(0, 13, params, false, 0, &extra)
+        }
+
+        fn func(&mut self, name: &str, proto: u32) -> u32 {
+            let name_off = self.name(name);
+            self.push(name_off, 12, 0, false, proto, &[])
+        }
+
+        fn finish(self) -> Vec<u8> {
+            let type_len: u32 = self.types.iter().map(|encoded| encoded.len() as u32).sum();
+            let mut data = Vec::new();
+            data.extend_from_slice(&btf_offsets::BTF_MAGIC.to_le_bytes());
+            data.push(btf_offsets::BTF_VERSION);
+            data.push(0);
+            data.extend_from_slice(&(btf_offsets::BTF_HEADER_BYTES as u32).to_le_bytes());
+            data.extend_from_slice(&0u32.to_le_bytes());
+            data.extend_from_slice(&type_len.to_le_bytes());
+            data.extend_from_slice(&type_len.to_le_bytes());
+            data.extend_from_slice(&(self.strings.len() as u32).to_le_bytes());
+            for encoded in &self.types {
+                data.extend_from_slice(encoded);
+            }
+            data.extend_from_slice(&self.strings);
+            data
+        }
+    }
+
+    #[derive(Clone, Copy, Debug)]
+    struct TitanBtfSpec {
+        inode_size: u32,
+        file_size: u32,
+        bprm_size: u32,
+        super_size: u32,
+        bprm_nargs: u16,
+        mmap_nargs: u16,
+        i_ino_off: u32,
+        drop_ino: bool,
+        drop_super: bool,
+        duplicate_inode: bool,
+        // §4.1 ctime-Layout-Vertrag: `false` = legacy timespec64, `true` =
+        // modern split `i_ctime_sec`/`i_ctime_nsec`; width 2 is the invalid probe.
+        ctime_split: bool,
+        split_nsec_width: u32,
+        drop_ctime: bool,
+    }
+
+    impl Default for TitanBtfSpec {
+        fn default() -> Self {
+            Self {
+                inode_size: 600,
+                file_size: 256,
+                bprm_size: 128,
+                super_size: 256,
+                bprm_nargs: 1,
+                mmap_nargs: 4,
+                i_ino_off: 64,
+                drop_ino: false,
+                drop_super: false,
+                duplicate_inode: false,
+                ctime_split: false,
+                split_nsec_width: 4,
+                drop_ctime: false,
+            }
+        }
+    }
+
+    /// Synthetic vmlinux-BTF with the §4.1 layout: anonymous union (`i_nlink`),
+    /// `kind_flag` bitfield (`i_opflags`), both ctime layouts and both LSM hooks.
+    fn titan_btf_fixture(spec: &TitanBtfSpec) -> Vec<u8> {
+        let mut fixture = BtfFixture::new();
+        let u16t = fixture.int("u16", 2);
+        let u32t = fixture.int("u32", 4);
+        let u64t = fixture.int("u64", 8);
+        let i64t = fixture.int("i64", 8);
+        let ulong = fixture.int("unsigned long", 8);
+        let pointer = fixture.pointer(u32t);
+        let tv_sec = fixture.name("tv_sec");
+        let tv_nsec = fixture.name("tv_nsec");
+        let timespec = fixture.record(
+            "timespec64",
+            false,
+            false,
+            16,
+            &[(tv_sec, i64t, 0), (tv_nsec, i64t, 64)],
+        );
+        let i_nlink = fixture.name("i_nlink");
+        let alternate = fixture.name("__i_nlink");
+        let anonymous_union = fixture.record("", true, false, 4, &[(i_nlink, u32t, 0), (alternate, u32t, 0)]);
+        let i_mode = fixture.name("i_mode");
+        let i_opflags = fixture.name("i_opflags");
+        let i_ino = fixture.name("i_ino");
+        let i_sb = fixture.name("i_sb");
+        let i_generation = fixture.name("i_generation");
+        let i_ctime = fixture.name("i_ctime");
+        let i_ctime_sec = fixture.name("i_ctime_sec");
+        let i_ctime_nsec = fixture.name("i_ctime_nsec");
+        let split_nsec = match spec.split_nsec_width {
+            8 => u64t,
+            4 => u32t,
+            _ => u16t,
+        };
+        let mut inode_members = vec![
+            (i_mode, u16t, 0),
+            (i_opflags, u16t, 16 | (4 << 24)),
+            (i_sb, pointer, 40 * 8),
+            (0, anonymous_union, 72 * 8),
+            (i_generation, u32t, 124 * 8),
+        ];
+        if spec.ctime_split {
+            inode_members.push((i_ctime_sec, u64t, 104 * 8));
+            inode_members.push((i_ctime_nsec, split_nsec, 120 * 8));
+        } else if !spec.drop_ctime {
+            inode_members.push((i_ctime, timespec, 128 * 8));
+        }
+        if !spec.drop_ino {
+            inode_members.push((i_ino, u64t, spec.i_ino_off * 8));
+        }
+        fixture.record("inode", false, true, spec.inode_size, &inode_members);
+        if spec.duplicate_inode {
+            fixture.record("inode", false, false, spec.inode_size, &[(i_mode, u16t, 0)]);
+        }
+        let f_inode = fixture.name("f_inode");
+        fixture.record("file", false, false, spec.file_size, &[(f_inode, pointer, 32 * 8)]);
+        let bprm_file = fixture.name("file");
+        fixture.record(
+            "linux_binprm",
+            false,
+            false,
+            spec.bprm_size,
+            &[(bprm_file, pointer, 64 * 8)],
+        );
+        if !spec.drop_super {
+            let s_dev = fixture.name("s_dev");
+            let s_magic = fixture.name("s_magic");
+            fixture.record(
+                "super_block",
+                false,
+                false,
+                spec.super_size,
+                &[(s_dev, u32t, 16 * 8), (s_magic, ulong, 96 * 8)],
+            );
+        }
+        let bprm_proto = fixture.func_proto(spec.bprm_nargs, pointer);
+        fixture.func("bpf_lsm_bprm_check_security", bprm_proto);
+        let mmap_proto = fixture.func_proto(spec.mmap_nargs, pointer);
+        fixture.func("bpf_lsm_mmap_file", mmap_proto);
+        fixture.finish()
+    }
+
+    /// Parses a synthetic BTF image and resolves the validated §4.1 offsets.
+    fn resolve_titan_btf(data: Vec<u8>) -> Result<btf_offsets::TitanExecOffsets, String> {
+        btf_offsets::VmlinuxBtf::parse(data)?.resolve_titan_exec()
+    }
+
+    fn test_titan_directory(label: &str) -> std::path::PathBuf {
+        let mut path = std::env::temp_dir();
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_nanos())
+            .unwrap_or(0);
+        path.push(format!("vgt-titan-{label}-{}-{nanos}", std::process::id()));
+        fs::create_dir_all(&path).expect("create titan fixture directory");
+        path
+    }
+
+    #[test]
+    fn titan_btf_golden_offsets_resolve_for_6_18_and_7_0() {
+        // Golden values from §4.1 (x86_64, BTF-verified on 6.18/7.0); the 7.0
+        // fixture only grows the inode struct, so the field offsets must stay.
+        for (label, inode_size) in [("6.18", 600u32), ("7.0", 640)] {
+            let spec = TitanBtfSpec {
+                inode_size,
+                ..Default::default()
+            };
+            let offsets =
+                resolve_titan_btf(titan_btf_fixture(&spec)).expect(label);
+            let resolved = [
+                (offsets.bprm_file_off, 64),
+                (offsets.file_f_inode_off, 32),
+                (offsets.inode_i_ino_off, 64),
+                (offsets.inode_i_sb_off, 40),
+                (offsets.inode_i_nlink_off, 72),
+                (offsets.inode_i_mode_off, 0),
+                (offsets.inode_i_generation_off, 124),
+                (offsets.super_s_dev_off, 16),
+                (offsets.super_s_magic_off, 96),
+                (offsets.inode_i_ctime_sec_off, 128),
+                (offsets.inode_i_ctime_nsec_off, 136),
+                (offsets.inode_i_ctime_nsec_width, 8),
+                (offsets.bprm_nargs, 1),
+                (offsets.mmap_nargs, 4),
+                (offsets.mmap_file_arg_idx, 0),
+                (offsets.mmap_prot_arg_idx, 2),
+                (offsets.mmap_flags_arg_idx, 3),
+                (offsets.bprm_retval_slot, 1),
+                (offsets.mmap_retval_slot, 4),
+                (offsets.inode_size, inode_size),
+                (offsets.file_size, 256),
+                (offsets.bprm_size, 128),
+            ];
+            for (actual, expected) in resolved {
+                assert_eq!(actual, expected, "{label}");
+            }
+            assert!(titan_exec_offsets_match_ebpf_slots(&offsets), "{label}");
+            let table = encode_titan_exec_offsets_table(&offsets);
+            assert_eq!(table.len(), btf_offsets::TITAN_EXEC_OFFSETS_TABLE_LEN);
+            assert_eq!(table[btf_offsets::OFF_MAGIC], gedefense_common::TITAN_EXEC_OFFSETS_MAGIC);
+            assert_eq!(table[btf_offsets::OFF_ABI], gedefense_common::TITAN_EXEC_OFFSETS_ABI);
+            assert_eq!(table[btf_offsets::OFF_BPRM_FILE], 64);
+            assert_eq!(table[btf_offsets::OFF_FILE_F_INODE], 32);
+            assert_eq!(table[btf_offsets::OFF_TMPFS_MAGIC], btf_offsets::TMPFS_MAGIC);
+            assert_eq!(table[btf_offsets::OFF_DEVTMPFS_MAGIC], btf_offsets::DEVTMPFS_MAGIC);
+            assert_eq!(table[btf_offsets::OFF_PROC_MAGIC], btf_offsets::PROC_SUPER_MAGIC);
+            assert_eq!(table[btf_offsets::OFF_SYSFS_MAGIC], btf_offsets::SYSFS_MAGIC);
+            assert_eq!(table[btf_offsets::OFF_OVERLAY_MAGIC], btf_offsets::OVERLAYFS_SUPER_MAGIC);
+            assert_eq!(table[btf_offsets::OFF_BPRM_NARGS], 1);
+            assert_eq!(table[btf_offsets::OFF_MMAP_NARGS], 4);
+            assert_eq!(table[btf_offsets::OFF_MMAP_PROT_ARG], 2);
+            assert_eq!(table[btf_offsets::OFF_INODE_I_CTIME_SEC], 128);
+            assert_eq!(table[btf_offsets::OFF_INODE_I_CTIME_NSEC], 136);
+            assert_eq!(table[btf_offsets::OFF_INODE_I_CTIME_NSEC_WIDTH], 8);
+            assert!(table[29..].iter().all(|value| *value == 0), "{label}");
+        }
+    }
+
+    #[test]
+    fn titan_btf_split_ctime_layout_publishes_the_nsec_width() {
+        // §4.1 ctime-Layout-Vertrag: modern kernels have i_ctime_sec (8 B) +
+        // i_ctime_nsec (4 B) instead of a timespec64; both must resolve and the
+        // width index 28 must follow the real field width.
+        let legacy = resolve_titan_btf(titan_btf_fixture(&TitanBtfSpec::default()))
+            .expect("legacy timespec64 layout");
+        assert_eq!(
+            (
+                legacy.inode_i_ctime_sec_off,
+                legacy.inode_i_ctime_nsec_off,
+                legacy.inode_i_ctime_nsec_width
+            ),
+            (128, 136, 8)
+        );
+        let split = resolve_titan_btf(titan_btf_fixture(&TitanBtfSpec {
+            ctime_split: true,
+            ..Default::default()
+        }))
+        .expect("split modern layout");
+        assert_eq!(
+            (
+                split.inode_i_ctime_sec_off,
+                split.inode_i_ctime_nsec_off,
+                split.inode_i_ctime_nsec_width
+            ),
+            (104, 120, 4)
+        );
+        assert!(titan_exec_offsets_match_ebpf_slots(&split));
+        let table = encode_titan_exec_offsets_table(&split);
+        assert_eq!(table[btf_offsets::OFF_INODE_I_CTIME_NSEC_WIDTH], 4);
+        // A split layout whose nsec field is 8 B is declared/reported as width 8
+        // (eBPF reads u64 for 8, u32 for 4).
+        let wide = resolve_titan_btf(titan_btf_fixture(&TitanBtfSpec {
+            ctime_split: true,
+            split_nsec_width: 8,
+            ..Default::default()
+        }))
+        .expect("wide split layout");
+        assert_eq!(wide.inode_i_ctime_nsec_width, 8);
+        // Implausible width and a fully missing ctime pair are Err (fail-safe).
+        for spec in [
+            TitanBtfSpec {
+                ctime_split: true,
+                split_nsec_width: 2,
+                ..Default::default()
+            },
+            TitanBtfSpec {
+                drop_ctime: true,
+                ..Default::default()
+            },
+        ] {
+            assert!(resolve_titan_btf(titan_btf_fixture(&spec)).is_err(), "{spec:?}");
+        }
+    }
+
+    #[test]
+    fn titan_btf_live_vmlinux_resolves_all_offsets() {
+        // §4.1 Real-BTF-Gate: with a live /sys/kernel/btf/vmlinux every offset
+        // (including the ctime variant) must resolve and validate. Without the
+        // file this is a documented SKIP, never a silent pass.
+        if !Path::new(btf_offsets::VMLINUX_BTF_PATH).is_file() {
+            eprintln!(
+                "SKIP titan_btf_live_vmlinux_resolves_all_offsets: {} is absent on this host",
+                btf_offsets::VMLINUX_BTF_PATH
+            );
+            return;
+        }
+        let offsets = btf_offsets::resolve_vmlinux_offsets()
+            .expect("live vmlinux BTF must resolve the §4.1 offsets");
+        eprintln!("live BTF §4.1 offsets: {offsets:?}");
+        assert!(titan_exec_offsets_match_ebpf_slots(&offsets));
+        assert!(matches!(offsets.inode_i_ctime_nsec_width, 4 | 8));
+        assert!(offsets.inode_i_ctime_nsec_off > offsets.inode_i_ctime_sec_off);
+        assert!(offsets.inode_i_ctime_sec_off + 8 <= offsets.inode_size);
+        assert!(
+            offsets.inode_i_ctime_nsec_off + offsets.inode_i_ctime_nsec_width
+                <= offsets.inode_size
+        );
+        let table = encode_titan_exec_offsets_table(&offsets);
+        assert_eq!(
+            table[btf_offsets::OFF_INODE_I_CTIME_NSEC_WIDTH],
+            offsets.inode_i_ctime_nsec_width
+        );
+        assert_eq!(
+            table[btf_offsets::OFF_MAGIC],
+            gedefense_common::TITAN_EXEC_OFFSETS_MAGIC
+        );
+    }
+
+    #[test]
+    fn titan_btf_rejects_broken_headers_truncation_and_implausible_layouts() {
+        let good = titan_btf_fixture(&TitanBtfSpec::default());
+        let mut wrong_magic = good.clone();
+        wrong_magic[0] ^= 0xff;
+        let mut wrong_version = good.clone();
+        wrong_version[2] = 2;
+        let mut wrong_hdr_len = good.clone();
+        wrong_hdr_len[4] = 23;
+        let broken_bodies: Vec<(&str, Vec<u8>)> = vec![
+            ("empty", Vec::new()),
+            ("short header", good[..12].to_vec()),
+            ("wrong magic", wrong_magic),
+            ("wrong version", wrong_version),
+            ("wrong hdr_len", wrong_hdr_len),
+            ("truncated string table", good[..good.len() - 4].to_vec()),
+        ];
+        for (label, data) in broken_bodies {
+            assert!(resolve_titan_btf(data).is_err(), "{label}");
+        }
+        let broken_layouts = [
+            ("offset beyond inode", TitanBtfSpec { inode_size: 100, ..Default::default() }),
+            ("missing i_ino", TitanBtfSpec { drop_ino: true, ..Default::default() }),
+            ("missing super_block", TitanBtfSpec { drop_super: true, ..Default::default() }),
+            ("ambiguous inode", TitanBtfSpec { duplicate_inode: true, ..Default::default() }),
+            ("bprm arity 2", TitanBtfSpec { bprm_nargs: 2, ..Default::default() }),
+            ("mmap arity 2", TitanBtfSpec { mmap_nargs: 2, ..Default::default() }),
+            ("mmap arity 6", TitanBtfSpec { mmap_nargs: 6, ..Default::default() }),
+        ];
+        for (label, spec) in broken_layouts {
+            assert!(
+                resolve_titan_btf(titan_btf_fixture(&spec)).is_err(),
+                "{label}"
+            );
+        }
+        // §4.1 accepts mmap arities 3..=5 for index computation, but the eBPF
+        // slots are fixed: only arity 4 may ever be attached.
+        for arity in [3u16, 5] {
+            let spec = TitanBtfSpec {
+                mmap_nargs: arity,
+                ..Default::default()
+            };
+            let offsets = resolve_titan_btf(titan_btf_fixture(&spec))
+                .expect("arity is plausible");
+            assert!(!titan_exec_offsets_match_ebpf_slots(&offsets), "arity {arity}");
+        }
+    }
+
+    #[test]
+    fn titan_btf_from_path_is_bounded_and_strict() {
+        let directory = test_titan_directory("btf");
+        let path = directory.join("vmlinux.btf");
+        fs::write(&path, titan_btf_fixture(&TitanBtfSpec::default())).expect("write fixture");
+        let text = path.to_string_lossy().into_owned();
+        let offsets = btf_offsets::VmlinuxBtf::from_path(&text)
+            .expect("parse fixture file")
+            .resolve_titan_exec()
+            .expect("resolve fixture file");
+        assert_eq!(offsets.inode_i_nlink_off, 72);
+        assert!(btf_offsets::VmlinuxBtf::from_path(&directory.join("absent").to_string_lossy())
+            .is_err());
+        let oversized = directory.join("oversized.btf");
+        fs::write(&oversized, vec![0u8; btf_offsets::MAX_VMLINUX_BTF_BYTES + 1])
+            .expect("write oversized fixture");
+        assert!(btf_offsets::VmlinuxBtf::from_path(&oversized.to_string_lossy()).is_err());
+        fs::remove_dir_all(directory).expect("cleanup");
+    }
+
+    // ---- Point 1: pure Titan exec-gate helpers (§5/§6). ----
+
+    #[test]
+    fn titan_exec_lsm_activation_probe_is_strict() {
+        assert!(!titan_exec::bpf_lsm_active_from_list(""));
+        assert!(!titan_exec::bpf_lsm_active_from_list(
+            "lockdown,capability,landlock,yama,apparmor,ima,evm"
+        ));
+        assert!(titan_exec::bpf_lsm_active_from_list("lockdown,bpf,capability,landlock"));
+        assert!(titan_exec::bpf_lsm_active_from_list("bpf"));
+        assert!(titan_exec::bpf_lsm_active_from_list(" bpf "));
+        assert!(titan_exec::bpf_lsm_active_from_list("lockdown,bpf\n"));
+        assert!(titan_exec::bpf_lsm_active_from_list("bpf,bpf,capability"));
+        assert!(!titan_exec::bpf_lsm_active_from_list("bpflsm,bpf_lsm,BPF"));
+        assert!(!titan_exec::bpf_lsm_active_from_list("lockdown,capability,"));
+    }
+
+    #[test]
+    fn titan_exec_arguments_are_strict() {
+        assert_eq!(titan_exec::parse_mode("0").unwrap(), 0);
+        assert_eq!(titan_exec::parse_mode("3").unwrap(), 3);
+        for token in ["4", "-1", "+1", " 1", "1 ", "", "0x1", "1.0"] {
+            assert!(titan_exec::parse_mode(token).is_err(), "{token:?}");
+        }
+        assert_eq!(titan_exec::parse_global_flags("0").unwrap(), 0);
+        assert_eq!(titan_exec::parse_global_flags("1").unwrap(), 1);
+        for token in ["2", "255"] {
+            assert!(titan_exec::parse_global_flags(token).is_err(), "{token:?}");
+        }
+        assert_eq!(titan_exec::parse_scope_flags("1").unwrap(), 1);
+        assert!(titan_exec::parse_scope_flags("2").is_err());
+        assert_eq!(titan_exec::parse_scope_cgroup("42").unwrap(), 42);
+        assert!(titan_exec::parse_scope_cgroup("0").is_err());
+        assert_eq!(titan_exec::parse_policy_dev("2049").unwrap(), 2049);
+        assert!(titan_exec::parse_policy_dev("0").is_err());
+        assert!(titan_exec::parse_policy_dev("4294967296").is_err());
+        assert_eq!(titan_exec::parse_policy_ino("12345").unwrap(), 12_345);
+        assert!(titan_exec::parse_policy_ino("0").is_err());
+        assert_eq!(titan_exec::parse_u8("255").unwrap(), 255);
+        assert!(titan_exec::parse_u8("256").is_err());
+    }
+
+    #[test]
+    fn titan_exec_policy_store_is_bounded_and_idempotent() {
+        let mut store = titan_exec::TitanExecPolicy::new();
+        let entry = titan_exec::PolicyEntry {
+            action: titan_exec::TITAN_EXEC_ALLOW_ACTION,
+            flags: 1,
+            ctime_ns: 7,
+        };
+        assert!(store.insert(1, 2, entry).unwrap());
+        assert!(!store.insert(1, 2, entry).unwrap());
+        assert_eq!(store.entry(1, 2), Some(entry));
+        assert_eq!(store.entry_count(), 1);
+        assert_eq!(store.keys(), vec![(1, 2)]);
+        assert!(store.insert(0, 2, entry).is_err());
+        assert!(store.insert(1, 0, entry).is_err());
+        assert!(store.insert(2, 3, titan_exec::PolicyEntry { action: 2, ..entry }).is_err());
+        assert!(store.remove(1, 2));
+        assert!(!store.remove(1, 2));
+        assert_eq!(store.entry_count(), 0);
+        for index in 0..titan_exec::TITAN_EXEC_MAX_POLICY_ENTRIES {
+            store.insert(index as u32 + 1, 1, entry).unwrap();
+        }
+        assert!(store.insert(u32::MAX, u64::MAX, entry).is_err());
+        store.clear();
+        assert_eq!(store.entry_count(), 0);
+        let scope_value = encode_titan_exec_scope_value(2, 1).unwrap();
+        assert!(store.scope_set(7, scope_value).is_ok());
+        assert_eq!(store.scope_remove(7), true);
+        assert_eq!(store.scope_remove(7), false);
+        assert!(store.scope_set(0, 0).is_err());
+        for cgroup in 1..=titan_exec::TITAN_EXEC_MAX_SCOPES as u64 {
+            store.scope_set(cgroup, 0).unwrap();
+        }
+        assert!(store.scope_set(u64::MAX, 0).is_err());
+        assert!(store.scope_set(1, 3).is_ok());
+        assert_eq!(store.scope_count(), titan_exec::TITAN_EXEC_MAX_SCOPES);
+    }
+
+    #[test]
+    fn titan_exec_path_validation_rejects_non_canonical_paths() {
+        assert!(titan_exec::validate_exec_path("/usr/bin/true").is_ok());
+        for path in [
+            "", "relative/path", "/usr/../bin/true", "/usr/./bin/true", "/usr//bin/true",
+            "/usr/bin/true/", "/", ".", "//etc/passwd", "/usr/\0x", "/usr/bin/tr\nue",
+            "/usr/bin/tr\tue",
+        ] {
+            assert!(titan_exec::validate_exec_path(path).is_err(), "{path:?}");
+        }
+        let too_long = format!("/{}", "a".repeat(titan_exec::TITAN_EXEC_MAX_PATH_BYTES));
+        assert!(titan_exec::validate_exec_path(&too_long).is_err());
+    }
+
+    #[test]
+    fn titan_exec_path_resolver_is_fd_safe() {
+        let directory = test_titan_directory("paths");
+        let executable = directory.join("tool");
+        fs::write(&executable, b"#!/bin/sh\n").expect("write executable");
+        fs::set_permissions(&executable, fs::Permissions::from_mode(0o755)).expect("mode");
+        let path = executable.to_string_lossy().into_owned();
+        let identity = titan_exec::resolve_exec_path(&path).expect("resolve executable");
+        let metadata = fs::metadata(&executable).expect("stat executable");
+        assert_eq!(u64::from(identity.dev), metadata.dev() & u64::from(u32::MAX));
+        assert_eq!(identity.ino, metadata.ino());
+        assert_ne!(identity.mode & 0o111, 0);
+        let expected_ctime = u64::try_from(metadata.ctime()).expect("ctime")
+            * 1_000_000_000
+            + u64::try_from(metadata.ctime_nsec()).expect("ctime_nsec");
+        assert_eq!(identity.ctime_ns, expected_ctime);
+
+        // A hard link is the same inode identity; a symlink is refused without
+        // being followed (O_PATH|O_NOFOLLOW + fstat on the fd).
+        let hardlink = directory.join("hardlink");
+        fs::hard_link(&executable, &hardlink).expect("hard link");
+        let linked = titan_exec::resolve_exec_path(&hardlink.to_string_lossy()).expect("hardlink");
+        assert_eq!((linked.dev, linked.ino), (identity.dev, identity.ino));
+        let symlink = directory.join("symlink");
+        std::os::unix::fs::symlink(&executable, &symlink).expect("symlink");
+        assert_eq!(
+            titan_exec::resolve_exec_path(&symlink.to_string_lossy()).unwrap_err(),
+            titan_exec::PathReject::Symlink
+        );
+
+        let plain = directory.join("plain");
+        fs::write(&plain, b"data").expect("write plain");
+        assert_eq!(
+            titan_exec::resolve_exec_path(&plain.to_string_lossy()).unwrap_err(),
+            titan_exec::PathReject::NotExecutable
+        );
+        assert_eq!(
+            titan_exec::resolve_exec_path(&directory.to_string_lossy()).unwrap_err(),
+            titan_exec::PathReject::NotRegular
+        );
+        assert_eq!(
+            titan_exec::resolve_exec_path(&directory.join("absent").to_string_lossy()).unwrap_err(),
+            titan_exec::PathReject::Open
+        );
+
+        // The policy fingerprint is the fstat ctime: a rewrite changes it, which
+        // is what REQUIRE_CTIME detects in the kernel (TOCTOU mitigation).
+        std::thread::sleep(Duration::from_millis(20));
+        fs::write(&executable, b"#!/bin/sh\necho\n").expect("rewrite executable");
+        let rewritten = titan_exec::resolve_exec_path(&path).expect("resolve rewritten");
+        assert_ne!(rewritten.ctime_ns, identity.ctime_ns);
+        fs::remove_dir_all(directory).expect("cleanup");
+    }
+
+    #[test]
+    fn titan_exec_batch_decode_is_bounded_and_accepts_both_alphabets() {
+        use base64::engine::general_purpose::STANDARD;
+        use base64::Engine as _;
+        let text = "/usr/bin/true\n/usr/bin/false\n";
+        assert_eq!(titan_exec::decode_allow_batch(&URL_SAFE_NO_PAD.encode(text)).unwrap().len(), 2);
+        assert_eq!(titan_exec::decode_allow_batch(&STANDARD.encode(text)).unwrap().len(), 2);
+        assert!(titan_exec::decode_allow_batch(&URL_SAFE_NO_PAD.encode("/usr/bin/true")).is_ok());
+        assert!(titan_exec::decode_allow_batch(&URL_SAFE_NO_PAD.encode("/usr/bin/true\n\n")).is_err());
+        assert!(titan_exec::decode_allow_batch("not base64 !!!").is_err());
+        assert!(titan_exec::decode_allow_batch("").is_err());
+        assert!(titan_exec::decode_allow_batch(&URL_SAFE_NO_PAD.encode("relative")).is_err());
+        assert!(titan_exec::decode_allow_batch(
+            &URL_SAFE_NO_PAD.encode("/usr/bin/true\n\n/usr/bin/false")
+        )
+        .is_err());
+        let too_large = (0..60)
+            .map(|index| format!("/usr/bin/tool-with-a-long-name-{index:03}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(titan_exec::decode_allow_batch(&URL_SAFE_NO_PAD.encode(&too_large)).is_err());
+        let too_many = vec!["/a"; titan_exec::TITAN_EXEC_MAX_BATCH_PATHS + 1].join("\n");
+        assert!(titan_exec::decode_allow_batch(&URL_SAFE_NO_PAD.encode(&too_many)).is_err());
+        assert_eq!(
+            titan_exec::encode_allow_batch_response(3, 0, titan_exec::BATCH_ERROR_NONE),
+            "added:3;rejected:0;error=none"
+        );
+        assert_eq!(
+            titan_exec::encode_allow_batch_response(1, 2, "symlink"),
+            "added:1;rejected:2;error=symlink"
+        );
+        assert_eq!(titan_exec::PathReject::Symlink.token(), "symlink");
+        assert_eq!(titan_exec::PathReject::NotExecutable.token(), "not-executable");
+    }
+
+    fn titan_fixture_event() -> gedefense_common::TitanExecEvent {
+        gedefense_common::TitanExecEvent {
+            cgroup_id: 0x0102_0304_0506_0708,
+            ts_ns: 9,
+            dev: 0x0801,
+            inode_mode: 0o100_755,
+            ino: 0x1122_3344_5566_7788,
+            generation: 7,
+            pid: 42,
+            tgid: 41,
+            uid: 1000,
+            gid: 1001,
+            prot: 4,
+            f_flags: 0x8000,
+            hook: gedefense_common::TITAN_EXEC_HOOK_BPRM,
+            action: gedefense_common::TITAN_EXEC_ACTION_AUDIT,
+            reason: gedefense_common::TITAN_EXEC_REASON_NOT_ALLOWLISTED,
+            flags: 3,
+            comm: *b"untrusted-bin\0\0\0",
+            reserved: [0; 8],
+        }
+    }
+
+    #[test]
+    fn titan_exec_event_text_wire_matches_section_three_three() {
+        let text = titan_exec::encode_exec_event_text(&titan_fixture_event());
+        assert_eq!(
+            text,
+            "72623859790382856:9:2049:33261:1234605616436508552:7:42:41:1000:1001:4:32768:1:1:4:756e747275737465642d62696e"
+        );
+        assert_eq!(text.split(':').count(), 16);
+        assert_eq!(titan_exec::encode_exec_events_batch(&[], 0).unwrap(), "empty");
+        assert_eq!(titan_exec::encode_exec_events_batch(&[], 7).unwrap(), "7|");
+        assert_eq!(
+            titan_exec::encode_exec_events_batch(&["a".to_owned(), "b".to_owned()], 3).unwrap(),
+            "3|a,b"
+        );
+        let records = vec![text; titan_exec::TITAN_EXEC_MAX_EVENTS_PER_RESPONSE];
+        let batch = titan_exec::encode_exec_events_batch(&records, u64::MAX).unwrap();
+        assert_eq!(
+            batch.split(',').count(),
+            titan_exec::TITAN_EXEC_MAX_EVENTS_PER_RESPONSE
+        );
+        assert!(batch.len() <= titan_exec::TITAN_EXEC_MAX_PAYLOAD_BYTES);
+        let too_many = vec!["a".to_owned(); titan_exec::TITAN_EXEC_MAX_EVENTS_PER_RESPONSE + 1];
+        assert!(titan_exec::encode_exec_events_batch(&too_many, 0).is_err());
+    }
+
+    #[test]
+    fn titan_exec_health_and_status_follow_the_contract() {
+        assert_eq!(
+            titan_exec::encode_exec_health(&[1, 2, 3, 4, 5, 6]),
+            "1:2:3:4:5:6"
+        );
+        let maximal = titan_exec::encode_exec_health(&[u64::MAX; 6]);
+        assert_eq!(maximal.split(':').count(), 6);
+        let status = titan_exec::encode_exec_status(&titan_exec::StatusView {
+            state: titan_exec::ExecState::Inactive,
+            mode: 0,
+            flags: 0,
+            path_bpf_lsm: false,
+            lsm_active: false,
+            offsets_valid: false,
+            entries: 0,
+            scopes: 0,
+            epoch: "0011223344556677",
+        });
+        assert_eq!(
+            status,
+            "status=inactive;mode=0;flags=0;path=none;lsm=inactive;offsets=invalid;entries=0;scopes=0;epoch=0011223344556677"
+        );
+        assert_eq!(
+            titan_exec::exec_state(true, true, true).text(),
+            "applied"
+        );
+        assert_eq!(
+            titan_exec::exec_state(false, true, true).text(),
+            "unavailable"
+        );
+        assert_eq!(
+            titan_exec::exec_state(false, true, false).text(),
+            "unavailable"
+        );
+        assert_eq!(titan_exec::exec_state(false, false, true).text(), "inactive");
+        assert_eq!(titan_exec::exec_state(false, false, false).text(), "inactive");
+        for (mode, name) in [(0u8, "off"), (1, "observe"), (2, "contain"), (3, "strict")] {
+            assert_eq!(titan_exec::ping_titan_exec_token(false, mode), "inactive");
+            assert_eq!(titan_exec::ping_titan_exec_token(true, mode), name);
+        }
+    }
+
+    #[test]
+    fn titan_exec_map_encoders_match_abi_one() {
+        let key = encode_titan_exec_policy_key(0x0801_0002, 0x1122_3344_5566_7788);
+        assert_eq!(&key[0..4], &0x0801_0002u32.to_le_bytes());
+        assert_eq!(&key[4..12], &0x1122_3344_5566_7788u64.to_le_bytes());
+        assert_eq!(&key[12..16], &[0u8; 4]);
+        let entry = titan_exec::PolicyEntry {
+            action: titan_exec::TITAN_EXEC_ALLOW_ACTION,
+            flags: titan_exec::TITAN_EXEC_POLICY_FLAG_REQUIRE_CTIME,
+            ctime_ns: 0x0102_0304_0506_0708,
+        };
+        let value = encode_titan_exec_policy_value(&entry);
+        assert_eq!(value[0], 1);
+        assert_eq!(value[1], 1);
+        assert_eq!(&value[2..4], &[0u8; 2]);
+        assert_eq!(&value[4..12], &0x0102_0304_0506_0708u64.to_le_bytes());
+        assert_eq!(&value[12..16], &[0u8; 4]);
+        assert_eq!(encode_titan_exec_scope_value(2, 1).unwrap(), 0b1001);
+        assert_eq!(encode_titan_exec_scope_value(0, 0).unwrap(), 0);
+        assert!(encode_titan_exec_scope_value(4, 0).is_err());
+        assert!(encode_titan_exec_scope_value(0, 2).is_err());
+        let word = encode_titan_exec_state(0xdead_beef, 2, 0b101);
+        assert_eq!(word & 0xffff_ffff, 0xdead_beef);
+        assert_eq!(((word >> 32) & 0xff) as u8, 2);
+        assert_eq!(((word >> 40) & 0xff) as u8, 0b101);
+        assert_eq!(
+            ((word >> 48) & 0xff) as u8,
+            gedefense_common::TITAN_EXEC_STATE_ABI
+        );
+        assert_eq!(
+            ((word >> 56) & 0xff) as u8,
+            gedefense_common::TITAN_EXEC_STATE_MAGIC
+        );
+        assert_eq!(encode_titan_exec_state_flags(false, false, false), 0);
+        assert_eq!(
+            encode_titan_exec_state_flags(true, true, true),
+            titan_exec::TITAN_EXEC_STATE_FLAG_OFFSETS_VALID
+                | titan_exec::TITAN_EXEC_STATE_FLAG_LSM_ACTIVE
+                | titan_exec::TITAN_EXEC_STATE_FLAG_CTIME_CHECK
+        );
+        assert_eq!(
+            encode_titan_exec_state_flags(true, false, false),
+            titan_exec::TITAN_EXEC_STATE_FLAG_OFFSETS_VALID
+        );
+    }
+
+    // ---------------------------------------------------------------------
+    // Point 5 (§5/§6/§10): lockdown ABI, state machine and monitor tests.
+    // All of these run without root: the eBPF word is an in-memory fake and
+    // sysfs/proc/sysctl trees are temp-dir fakes.
+    // ---------------------------------------------------------------------
+
+    /// Fake `LOCKDOWN_STATE` array map; `ignore_writes` simulates a write that
+    /// the kernel does not persist, so a read-back mismatch must be visible.
+    pub(crate) struct MemoryWordStore {
+        word: std::sync::Mutex<u64>,
+        ignore_write: std::sync::atomic::AtomicBool,
+        writes: std::sync::atomic::AtomicU64,
+    }
+
+    impl MemoryWordStore {
+        pub(crate) fn new() -> Self {
+            Self {
+                word: std::sync::Mutex::new(0),
+                ignore_write: std::sync::atomic::AtomicBool::new(false),
+                writes: std::sync::atomic::AtomicU64::new(0),
+            }
+        }
+        pub(crate) fn word(&self) -> u64 {
+            *self.word.lock().expect("fake word")
+        }
+        pub(crate) fn ignore_writes(&self) {
+            self.ignore_write.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
+        pub(crate) fn writes(&self) -> u64 {
+            self.writes.load(std::sync::atomic::Ordering::Relaxed)
+        }
+    }
+
+    impl lockdown::LockdownWordStore for MemoryWordStore {
+        fn write(&self, word: u64) -> Result<(), String> {
+            self.writes.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            if self.ignore_write.load(std::sync::atomic::Ordering::Relaxed) {
+                return Ok(());
+            }
+            *self.word.lock().map_err(|_| "fake word".to_owned())? = word;
+            Ok(())
+        }
+        fn read(&self) -> Result<u64, String> {
+            Ok(*self.word.lock().map_err(|_| "fake word".to_owned())?)
+        }
+    }
+
+    struct FakeNetCounters {
+        drops: u64,
+        witness: u64,
+    }
+
+    impl lockdown::NetCounters for FakeNetCounters {
+        fn net_counters(&self) -> Result<(u64, u64), String> {
+            Ok((self.drops, self.witness))
+        }
+    }
+
+    fn lockdown_fixture(label: &str) -> std::path::PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|value| value.as_nanos())
+            .unwrap_or(0);
+        let root = std::env::temp_dir().join(format!(
+            "vgt-lockdown-{label}-{}-{nanos}",
+            std::process::id()
+        ));
+        for directory in [
+            "sys/bus/usb/devices",
+            "sys/bus/thunderbolt/devices",
+            "sys/kernel/security",
+            "proc/sys/kernel",
+            "state",
+        ] {
+            fs::create_dir_all(root.join(directory)).expect("lockdown fixture dir");
+        }
+        fs::write(root.join("sys/bus/usb/drivers_autoprobe"), "1\n").expect("autoprobe");
+        for (name, value) in [
+            ("kexec_load_disabled", "0"),
+            ("sysrq", "1"),
+            ("modules_disabled", "0"),
+            ("unprivileged_bpf_disabled", "2"),
+        ] {
+            fs::write(root.join("proc/sys/kernel").join(name), format!("{value}\n"))
+                .expect("sysctl fixture");
+        }
+        fs::write(root.join("sys/kernel/security/lockdown"), "none [integrity] confidentiality\n")
+            .expect("kernel lockdown fixture");
+        root
+    }
+
+    fn lockdown_state_path(root: &Path) -> std::path::PathBuf {
+        root.join("state/LOCKDOWN.state")
+    }
+
+    fn lockdown_core_with(
+        root: &Path,
+        word: std::sync::Arc<MemoryWordStore>,
+        nets: (u64, u64),
+    ) -> lockdown::LockdownCore {
+        let config = lockdown::LockdownConfig {
+            state_file: lockdown_state_path(root),
+            usb: crate::lockdown_usb::UsbPaths::new(root.join("sys")),
+            hardening: crate::lockdown_hardening::HardeningPaths::for_root(root),
+            proc_root: root.join("proc"),
+            monitors: false,
+        };
+        lockdown::LockdownCore::new(
+            config,
+            word,
+            std::sync::Arc::new(FakeNetCounters { drops: nets.0, witness: nets.1 }),
+        )
+        .expect("lockdown core")
+    }
+
+    fn lockdown_core(root: &Path, word: std::sync::Arc<MemoryWordStore>) -> lockdown::LockdownCore {
+        lockdown_core_with(root, word, (0, 0))
+    }
+
+    fn lockdown_word(store: &MemoryWordStore) -> gedefense_common::LockdownWord {
+        gedefense_common::decode_lockdown_word(store.word()).expect("decoded lockdown word")
+    }
+
+    fn lockdown_command_raw(core: &mut lockdown::LockdownCore, parts: &[&str]) -> Result<String, BoxError> {
+        lockdown_command(core, parts)
+    }
+
+    #[test]
+    fn lockdown_dispatch_arm_trigger_clear_matches_the_section_five_abi() {
+        let root = lockdown_fixture("dispatch");
+        let store = std::sync::Arc::new(MemoryWordStore::new());
+        let mut core = lockdown_core(&root, std::sync::Arc::clone(&store));
+        let epoch = format!("{:08x}", core.epoch());
+        assert_eq!(lockdown_command_raw(&mut core, &["LOCKDOWN_VERSION"]).unwrap(), "lockdown-v1");
+        assert_eq!(lockdown_command_raw(&mut core, &["LOCKDOWN_EPOCH"]).unwrap(), epoch);
+        let status = lockdown_command_raw(&mut core, &["LOCKDOWN_STATUS"]).unwrap();
+        assert!(
+            status.starts_with("state=off;epoch=") && status.ends_with(";mode=unlocked;flags=0;phases=-;unsupported=sessions,dm"),
+            "{status}"
+        );
+        assert_eq!(core.ping_suffix(), "+lockdown:off");
+
+        assert_eq!(
+            lockdown_command_raw(&mut core, &["LOCKDOWN_ARM", "locked", "manual", "3"]).unwrap(),
+            format!("armed:{epoch}")
+        );
+        assert_eq!(core.ping_suffix(), "+lockdown:armed");
+        assert_eq!(lockdown_word(&store).mode, gedefense_common::LOCKDOWN_MODE_ARMED);
+        assert_eq!(lockdown_word(&store).flags, 0, "arm alone must not drop");
+        assert_eq!(
+            lockdown_command_raw(&mut core, &["LOCKDOWN_ARM", "locked", "manual", "3"]).unwrap(),
+            format!("armed-unchanged:{epoch}")
+        );
+        assert_eq!(
+            lockdown_command_raw(&mut core, &["LOCKDOWN_SET_MODE", "unlocked"]).unwrap(),
+            "applied"
+        );
+
+        // TRIGGER creates a new epoch and reports applied/unsupported phases;
+        // flags=5 = auto_network_drop + freeze_brokers (loopback NOT kept).
+        let triggered = lockdown_command_raw(&mut core, &["LOCKDOWN_TRIGGER", "uevent", "usb-unknown", "5"]).unwrap();
+        let armed_epoch = format!("{:08x}", core.epoch());
+        assert_ne!(armed_epoch, epoch, "every trigger gets a new epoch");
+        assert_eq!(
+            triggered,
+            format!("triggered:{armed_epoch};phases=net,usb,tb,brokers,cells=delegated;unsupported=sessions,dm")
+        );
+        assert_eq!(core.ping_suffix(), "+lockdown:active");
+        let word = lockdown_word(&store);
+        assert_eq!(word.epoch, core.epoch());
+        assert_ne!(word.flags & gedefense_common::LOCKDOWN_FLAG_DROP_ALL, 0);
+        assert_eq!(word.flags & gedefense_common::LOCKDOWN_FLAG_ALLOW_LOOPBACK, 0);
+        let status = lockdown_command_raw(&mut core, &["LOCKDOWN_STATUS"]).unwrap();
+        assert!(status.starts_with("state=active;"), "{status}");
+        assert!(status.contains(";mode=unlocked;flags=49;"), "{status}");
+        assert!(status.contains(";phases=net,usb,tb,brokers,cells=delegated;"), "{status}");
+
+        // ARM during an active latch never lowers it.
+        assert_eq!(
+            lockdown_command_raw(&mut core, &["LOCKDOWN_ARM", "locked", "manual", "3"]).unwrap(),
+            format!("armed-unchanged:{armed_epoch}")
+        );
+        assert_eq!(core.state_text(), "active");
+
+        // Wrong expected epoch is a compare-set rejection, not a partial clear.
+        assert!(lockdown_command_raw(&mut core, &["LOCKDOWN_CLEAR", "deadbeef", "manual"]).is_err());
+        assert_eq!(core.state_text(), "active");
+        assert_eq!(
+            lockdown_command_raw(&mut core, &["LOCKDOWN_CLEAR", &armed_epoch, "manual"]).unwrap(),
+            "cleared"
+        );
+        assert_eq!(core.ping_suffix(), "+lockdown:off");
+        assert_eq!(lockdown_word(&store).mode, gedefense_common::LOCKDOWN_MODE_OFF);
+        assert!(!lockdown_state_path(&root).exists(), "clear removes the latch file");
+        assert_eq!(
+            lockdown_command_raw(&mut core, &["LOCKDOWN_CLEAR", &armed_epoch, "manual"]).unwrap(),
+            "already-off"
+        );
+    }
+
+    #[test]
+    fn lockdown_token_and_size_boundaries_are_rejected() {
+        let root = lockdown_fixture("tokens");
+        let store = std::sync::Arc::new(MemoryWordStore::new());
+        let mut core = lockdown_core(&root, std::sync::Arc::clone(&store));
+        assert!(lockdown_command_raw(&mut core, &["LOCKDOWN_ARM", "bogus", "manual", "1"]).is_err());
+        assert!(lockdown_command_raw(&mut core, &["LOCKDOWN_ARM", "locked", "bogus", "1"]).is_err());
+        assert!(lockdown_command_raw(&mut core, &["LOCKDOWN_ARM", "locked", "manual", "16"]).is_err());
+        assert!(lockdown_command_raw(&mut core, &["LOCKDOWN_ARM", "locked", "manual", "x"]).is_err());
+        assert!(lockdown_command_raw(&mut core, &["LOCKDOWN_TRIGGER", "nope", "manual", "1"]).is_err());
+        assert!(lockdown_command_raw(&mut core, &["LOCKDOWN_CLEAR", "123", "manual"]).is_err());
+        assert!(lockdown_command_raw(&mut core, &["LOCKDOWN_CLEAR", "zzzzzzzz", "manual"]).is_err());
+        assert!(lockdown_command_raw(&mut core, &["LOCKDOWN_PHASE", "bogus", "on"]).is_err());
+        assert!(lockdown_command_raw(&mut core, &["LOCKDOWN_PHASE", "net", "toggle"]).is_err());
+        assert!(lockdown_command_raw(&mut core, &["LOCKDOWN_BOGUS"]).is_err());
+        assert!(lockdown_command_raw(&mut core, &["LOCKDOWN_ARM"]).is_err());
+        // Every §5 answer stays well below the 2048-byte IPC response budget.
+        lockdown_command_raw(&mut core, &["LOCKDOWN_ARM", "locked", "tamper", "15"]).unwrap();
+        lockdown_command_raw(&mut core, &["LOCKDOWN_TRIGGER", "manual", "tamper", "15"]).unwrap();
+        for parts in [
+            vec!["LOCKDOWN_STATUS"],
+            vec!["LOCKDOWN_EVENTS"],
+            vec!["LOCKDOWN_HEALTH"],
+            vec!["LOCKDOWN_EPOCH"],
+        ] {
+            let answer = lockdown_command_raw(&mut core, &parts).unwrap();
+            assert!(answer.len() <= MAX_RESPONSE_BYTES, "{parts:?} answer too long");
+        }
+    }
+
+    #[test]
+    fn lockdown_word_read_back_failures_are_never_claimed() {
+        let root = lockdown_fixture("readback");
+        let store = std::sync::Arc::new(MemoryWordStore::new());
+        store.ignore_writes();
+        let mut core = lockdown_core(&root, std::sync::Arc::clone(&store));
+        // ARM cannot claim armed without a successful verified write.
+        assert!(lockdown_command_raw(&mut core, &["LOCKDOWN_ARM", "locked", "manual", "1"]).is_err());
+        assert_eq!(core.state_text(), "off");
+        // A trigger still runs the other phases, but NET is not in the applied
+        // CSV and the state is degraded: no "network down" claim without read-back.
+        let triggered = lockdown_command_raw(&mut core, &["LOCKDOWN_TRIGGER", "manual", "tamper", "1"]).unwrap();
+        assert!(!triggered.contains("phases=net"), "{triggered}");
+        assert_eq!(core.state_text(), "degraded");
+        let status = lockdown_command_raw(&mut core, &["LOCKDOWN_STATUS"]).unwrap();
+        assert!(status.contains(";phases=usb,tb,cells=delegated;"), "{status}");
+        assert_eq!(store.word(), 0, "no write was persisted");
+    }
+
+    #[test]
+    fn lockdown_state_file_is_atomic_0640_and_rearms_verified() {
+        let root = lockdown_fixture("rearm");
+        let store = std::sync::Arc::new(MemoryWordStore::new());
+        let mut core = lockdown_core(&root, std::sync::Arc::clone(&store));
+        lockdown_command_raw(&mut core, &["LOCKDOWN_ARM", "locked", "manual", "9"]).unwrap();
+        lockdown_command_raw(&mut core, &["LOCKDOWN_TRIGGER", "policy", "boot-trust-drift", "9"]).unwrap();
+        let epoch = format!("{:08x}", core.epoch());
+        let path = lockdown_state_path(&root);
+        let metadata = fs::metadata(&path).expect("state file");
+        assert_eq!(metadata.permissions().mode() & 0o777, 0o640);
+        let content = fs::read_to_string(&path).expect("state file content");
+        let fields: Vec<&str> = content.trim_end().split('|').collect();
+        assert_eq!(fields.len(), 5, "{content}");
+        assert_eq!(fields[0], epoch);
+        assert_eq!(fields[1], "locked");
+        assert_eq!(fields[2], "09");
+        assert_eq!(fields[3], "net,usb,tb,hardening", "flags=9 selects hardening");
+        // Phase 1 hardening applied for real in the fake sysctl tree.
+        assert_eq!(fs::read_to_string(root.join("proc/sys/kernel/kexec_load_disabled")).unwrap().trim(), "1");
+        assert_eq!(fs::read_to_string(root.join("proc/sys/kernel/sysrq")).unwrap().trim(), "0");
+
+        // Re-arm from the file applies drop/USB/TB/hardening again and verifies.
+        let rearm_store = std::sync::Arc::new(MemoryWordStore::new());
+        let mut rearmed = lockdown_core(&root, std::sync::Arc::clone(&rearm_store));
+        assert_eq!(rearmed.startup_rearm().unwrap(), "active");
+        let word = lockdown_word(&rearm_store);
+        assert_eq!(word.epoch, core.epoch());
+        assert_ne!(word.flags & gedefense_common::LOCKDOWN_FLAG_DROP_ALL, 0);
+        assert_ne!(word.flags & gedefense_common::LOCKDOWN_FLAG_USB_LOCKED, 0);
+        assert_ne!(word.flags & gedefense_common::LOCKDOWN_FLAG_HARDENING_APPLIED, 0);
+
+        // Corrupt file: degraded + latched, but no unverified enforcement action.
+        fs::write(&path, "garbage|not-a-state\n").expect("corrupt state");
+        let corrupt_store = std::sync::Arc::new(MemoryWordStore::new());
+        let mut corrupt = lockdown_core(&root, std::sync::Arc::clone(&corrupt_store));
+        assert_eq!(corrupt.startup_rearm().unwrap(), "degraded");
+        assert_eq!(corrupt.state_text(), "degraded");
+        assert_eq!(corrupt_store.word(), 0, "corrupt state must not fake enforcement");
+        assert_eq!(corrupt_store.writes(), 0);
+        let epoch = format!("{:08x}", corrupt.epoch());
+        assert_eq!(
+            lockdown_command_raw(&mut corrupt, &["LOCKDOWN_CLEAR", &epoch, "manual"]).unwrap(),
+            "cleared"
+        );
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn lockdown_phase_command_matrix_is_honest() {
+        let root = lockdown_fixture("phases");
+        let store = std::sync::Arc::new(MemoryWordStore::new());
+        let mut core = lockdown_core(&root, std::sync::Arc::clone(&store));
+        assert_eq!(
+            lockdown_command_raw(&mut core, &["LOCKDOWN_PHASE", "net", "on"]).unwrap(),
+            "failed:net:not-armed"
+        );
+        lockdown_command_raw(&mut core, &["LOCKDOWN_ARM", "locked", "manual", "8"]).unwrap();
+        assert_eq!(
+            lockdown_command_raw(&mut core, &["LOCKDOWN_PHASE", "cells", "on"]).unwrap(),
+            "unsupported:cells:delegated-to-control"
+        );
+        assert_eq!(
+            lockdown_command_raw(&mut core, &["LOCKDOWN_PHASE", "sessions", "on"]).unwrap(),
+            "unsupported:sessions:no-dbus-session-lock"
+        );
+        assert_eq!(
+            lockdown_command_raw(&mut core, &["LOCKDOWN_PHASE", "dm", "on"]).unwrap(),
+            "unsupported:dm:no-device-mapper"
+        );
+        assert_eq!(
+            lockdown_command_raw(&mut core, &["LOCKDOWN_PHASE", "kernel-lockdown", "on"]).unwrap(),
+            "unsupported:kernel-lockdown:boot-parameter-immutable"
+        );
+        // Explicit single-phase command may set modules_disabled (auto never).
+        assert_eq!(
+            lockdown_command_raw(&mut core, &["LOCKDOWN_PHASE", "hardening", "on"]).unwrap(),
+            "applied:hardening"
+        );
+        assert_eq!(fs::read_to_string(root.join("proc/sys/kernel/modules_disabled")).unwrap().trim(), "1");
+        assert_eq!(
+            lockdown_command_raw(&mut core, &["LOCKDOWN_PHASE", "hardening", "off"]).unwrap(),
+            "unsupported:hardening:irreversible-until-reboot"
+        );
+        for phase in ["net", "usb", "tb", "brokers"] {
+            assert_eq!(
+                lockdown_command_raw(&mut core, &["LOCKDOWN_PHASE", phase, "on"]).unwrap(),
+                format!("applied:{phase}")
+            );
+            assert_eq!(
+                lockdown_command_raw(&mut core, &["LOCKDOWN_PHASE", phase, "off"]).unwrap(),
+                format!("applied:{phase}")
+            );
+        }
+        assert_eq!(core.ping_suffix(), "+lockdown:active");
+    }
+
+    #[test]
+    fn lockdown_explicit_hardening_phase_covers_modules_disabled_only_on_request() {
+        let root = lockdown_fixture("explicit-modules");
+        let store = std::sync::Arc::new(MemoryWordStore::new());
+        let mut core = lockdown_core(&root, std::sync::Arc::clone(&store));
+        lockdown_command_raw(&mut core, &["LOCKDOWN_ARM", "locked", "manual", "8"]).unwrap();
+        // Automatic trigger (hardening_apply flag) never writes modules_disabled.
+        lockdown_command_raw(&mut core, &["LOCKDOWN_TRIGGER", "manual", "tamper", "8"]).unwrap();
+        let modules = root.join("proc/sys/kernel/modules_disabled");
+        assert_eq!(fs::read_to_string(&modules).unwrap().trim(), "0");
+        assert_eq!(fs::read_to_string(root.join("proc/sys/kernel/kexec_load_disabled")).unwrap().trim(), "1");
+        // A failing modules_disabled write makes the explicit phase fail visibly.
+        fs::write(&modules, "7\n").unwrap();
+        let response = lockdown_command_raw(&mut core, &["LOCKDOWN_PHASE", "hardening", "on"]).unwrap();
+        assert!(response.starts_with("failed:hardening:"), "{response}");
+        assert_eq!(core.state_text(), "degraded");
+        // A writable knob is applied and verified by the explicit command.
+        fs::write(&modules, "0\n").unwrap();
+        assert_eq!(
+            lockdown_command_raw(&mut core, &["LOCKDOWN_PHASE", "hardening", "on"]).unwrap(),
+            "applied:hardening"
+        );
+        assert_eq!(fs::read_to_string(&modules).unwrap().trim(), "1");
+    }
+
+    #[test]
+    fn lockdown_events_and_health_wire_formats_are_bounded() {
+        let root = lockdown_fixture("events");
+        let store = std::sync::Arc::new(MemoryWordStore::new());
+        let mut core = lockdown_core_with(&root, std::sync::Arc::clone(&store), (7, 3));
+        assert_eq!(lockdown_command_raw(&mut core, &["LOCKDOWN_HEALTH"]).unwrap(), "7:3:0:0:0:0");
+        lockdown_command_raw(&mut core, &["LOCKDOWN_ARM", "locked", "manual", "1"]).unwrap();
+        lockdown_command_raw(&mut core, &["LOCKDOWN_TRIGGER", "manual", "tamper", "1"]).unwrap();
+        let events = lockdown_command_raw(&mut core, &["LOCKDOWN_EVENTS"]).unwrap();
+        let (dropped, records) = events.split_once('|').expect("dropped|records");
+        assert!(dropped.parse::<u64>().is_ok());
+        let records: Vec<&str> = records.split(',').collect();
+        assert!(!records.is_empty() && records.len() <= lockdown_uevent::EVENTS_PER_RESPONSE);
+        let mut last_seq = 0u64;
+        for record in records {
+            let fields: Vec<&str> = record.split(':').collect();
+            assert_eq!(fields.len(), 6, "{record}");
+            for field in &fields {
+                assert!(field.parse::<u64>().is_ok(), "{record}");
+            }
+            let seq = fields[0].parse::<u64>().unwrap();
+            assert!(seq > last_seq, "sequences must increase");
+            assert!(matches!(fields[5].parse::<u8>().unwrap(), 1..=5), "{record}");
+            last_seq = seq;
+        }
+        // The queue drains: a second read is empty (no duplication/loss).
+        assert_eq!(lockdown_command_raw(&mut core, &["LOCKDOWN_EVENTS"]).unwrap(), "empty");
+        let health = lockdown_command_raw(&mut core, &["LOCKDOWN_HEALTH"]).unwrap();
+        let values: Vec<&str> = health.split(':').collect();
+        assert_eq!(values.len(), 6, "{health}");
+        assert!(values.iter().all(|value| value.parse::<u64>().is_ok()));
+        assert_eq!(lockdown_command_raw(&mut core, &["LOCKDOWN_HEALTH"]).unwrap().split(':').next(), Some("7"));
+    }
+
+    struct FakeUeventSource {
+        queue: VecDeque<lockdown_uevent::Poll>,
+    }
+
+    impl lockdown_uevent::UeventSource for FakeUeventSource {
+        fn next(&mut self) -> lockdown_uevent::Poll {
+            self.queue.pop_front().unwrap_or(lockdown_uevent::Poll::Timeout)
+        }
+    }
+
+    fn uevent_payload(devpath: &str, subsystem: &str) -> Vec<u8> {
+        format!("add@{devpath}\0ACTION=add\0SUBSYSTEM={subsystem}\0DEVPATH={devpath}\0").into_bytes()
+    }
+
+    fn wait_for_word(store: &MemoryWordStore) -> u64 {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        while store.word() == 0 && std::time::Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        store.word()
+    }
+
+    #[test]
+    fn lockdown_uevent_loop_blocks_data_devices_and_drops_network() {
+        let root = crate::lockdown_usb::tests::fixture("uevent-loop");
+        let devpath = "/devices/pci0000:00/usb1/1-3";
+        let dir = root.join("sys").join(devpath.trim_start_matches('/'));
+        fs::create_dir_all(&dir).expect("uevent device");
+        fs::write(dir.join("bDeviceClass"), "08\n").expect("class");
+        fs::write(dir.join("bNumInterfaces"), "01\n").expect("interfaces");
+        fs::write(dir.join("bNumConfigurations"), "01\n").expect("config");
+        fs::write(dir.join("authorized"), "1\n").expect("authorized");
+        let word = std::sync::Arc::new(MemoryWordStore::new());
+        let shared_word: std::sync::Arc<dyn lockdown::LockdownWordStore> = word.clone();
+        let shared = std::sync::Arc::new(LockdownShared::new(
+            shared_word,
+            UeventPolicy { arm: ArmMode::Locked, auto_network_drop: true, allow_loopback: true, epoch: 0x1234_5678 },
+        ));
+        let source = FakeUeventSource { queue: VecDeque::from([lockdown_uevent::Poll::Message(uevent_payload(devpath, "usb"))]) };
+        let mut monitor = lockdown_uevent::start_with_source(
+            Box::new(source),
+            std::sync::Arc::clone(&shared),
+            crate::lockdown_usb::UsbPaths::new(root.join("sys")),
+        )
+        .expect("uevent monitor thread");
+        let persisted = wait_for_word(&word);
+        monitor.stop();
+        assert_ne!(persisted, 0, "auto_network_drop must write the kernel word");
+        let decoded = gedefense_common::decode_lockdown_word(persisted).expect("drop word");
+        assert_eq!(decoded.epoch, 0x1234_5678);
+        assert_ne!(decoded.flags & gedefense_common::LOCKDOWN_FLAG_DROP_ALL, 0);
+        assert_eq!(fs::read_to_string(dir.join("authorized")).unwrap().trim(), "0");
+        let (uevents, usb_blocks, tb_blocks) = shared.uevent_counters();
+        assert_eq!((uevents, usb_blocks, tb_blocks), (1, 1, 0));
+        let (_dropped, records) = shared.take_events(lockdown_uevent::EVENTS_PER_RESPONSE);
+        assert!(records.iter().any(|event| {
+            event.phase == gedefense_common::LOCKDOWN_PHASE_USB
+                && event.outcome == gedefense_common::LOCKDOWN_OUTCOME_APPLIED
+                && event.source == gedefense_common::LOCKDOWN_SOURCE_UEVENT
+        }));
+    }
+
+    #[test]
+    fn lockdown_uevent_loop_never_blocks_power_only_or_audits_while_unlocked() {
+        let root = crate::lockdown_usb::tests::fixture("uevent-audit");
+        let devpath = "/devices/pci0000:00/usb1/1-4";
+        let dir = root.join("sys").join(devpath.trim_start_matches('/'));
+        fs::create_dir_all(&dir).expect("uevent device");
+        fs::write(dir.join("bDeviceClass"), "00\n").expect("class");
+        fs::write(dir.join("bNumInterfaces"), "00\n").expect("interfaces");
+        fs::write(dir.join("bNumConfigurations"), "01\n").expect("config");
+        // Power-only charger: no block, no word write (Lade-Kabel-DoS-Schutz).
+        let word = std::sync::Arc::new(MemoryWordStore::new());
+        let shared_word: std::sync::Arc<dyn lockdown::LockdownWordStore> = word.clone();
+        let shared = std::sync::Arc::new(LockdownShared::new(
+            shared_word,
+            UeventPolicy { arm: ArmMode::Locked, auto_network_drop: true, allow_loopback: true, epoch: 9 },
+        ));
+        let source = FakeUeventSource { queue: VecDeque::from([lockdown_uevent::Poll::Message(uevent_payload(devpath, "usb"))]) };
+        let mut monitor = lockdown_uevent::start_with_source(
+            Box::new(source),
+            std::sync::Arc::clone(&shared),
+            crate::lockdown_usb::UsbPaths::new(root.join("sys")),
+        )
+        .expect("uevent monitor thread");
+        std::thread::sleep(std::time::Duration::from_millis(60));
+        monitor.stop();
+        assert_eq!(word.word(), 0, "power-only device never triggers a drop");
+        assert_eq!(shared.uevent_counters().1, 0);
+
+        // Unlocked arm mode: audit only, nothing is written or blocked.
+        let unlocked = std::sync::Arc::new(LockdownShared::new(
+            std::sync::Arc::new(MemoryWordStore::new()),
+            UeventPolicy { arm: ArmMode::Unlocked, auto_network_drop: true, allow_loopback: true, epoch: 9 },
+        ));
+        let source = FakeUeventSource { queue: VecDeque::from([lockdown_uevent::Poll::Message(uevent_payload(devpath, "usb"))]) };
+        let mut monitor = lockdown_uevent::start_with_source(
+            Box::new(source),
+            std::sync::Arc::clone(&unlocked),
+            crate::lockdown_usb::UsbPaths::new(root.join("sys")),
+        )
+        .expect("uevent monitor thread");
+        std::thread::sleep(std::time::Duration::from_millis(60));
+        monitor.stop();
+        let (_dropped, records) = unlocked.take_events(lockdown_uevent::EVENTS_PER_RESPONSE);
+        assert!(records.iter().any(|event| event.outcome == gedefense_common::LOCKDOWN_OUTCOME_SKIPPED));
+    }
+
+    #[test]
+    fn lockdown_usb_uevent_device_paths_are_bounded_and_traversal_free() {
+        let root = crate::lockdown_usb::tests::fixture("main-devpath");
+        let paths = crate::lockdown_usb::UsbPaths::new(root.join("sys"));
+        let dir = root.join("sys/devices/pci0000:00/usb1/1-1");
+        fs::create_dir_all(&dir).expect("devpath fixture");
+        fs::write(dir.join("bDeviceClass"), "08\n").expect("class");
+        fs::write(dir.join("authorized"), "1\n").expect("authorized");
+        assert_eq!(
+            crate::lockdown_usb::apply_device(&paths, "/devices/pci0000:00/usb1/1-1"),
+            Ok(crate::lockdown_usb::DevicePolicy::Block)
+        );
+        assert_eq!(fs::read_to_string(dir.join("authorized")).unwrap().trim(), "0");
+        assert_eq!(crate::lockdown_usb::apply_device(&paths, "/devices/../etc/passwd"), Err("invalid-devpath"));
+        assert_eq!(crate::lockdown_usb::apply_device(&paths, "/devices/absent"), Err("not-present"));
+        assert_eq!(crate::lockdown_usb::apply_device(&paths, "relative/path"), Err("invalid-devpath"));
+    }
+
+    #[test]
+    fn lockdown_usb_release_reauthorizes_and_missing_tree_is_unsupported() {
+        let root = crate::lockdown_usb::tests::fixture("main-release");
+        let paths = crate::lockdown_usb::UsbPaths::new(root.join("sys"));
+        let storage = crate::lockdown_usb::tests::usb_device(&root, "1-3", "08", "01", "01", Some("0"));
+        assert_eq!(crate::lockdown_usb::apply_usb(&paths).outcome, gedefense_common::LOCKDOWN_OUTCOME_APPLIED);
+        assert_eq!(crate::lockdown_usb::release_usb(&paths).outcome, gedefense_common::LOCKDOWN_OUTCOME_APPLIED);
+        assert_eq!(fs::read_to_string(storage.join("authorized")).unwrap().trim(), "1");
+        let missing = crate::lockdown_usb::UsbPaths::new(root.join("absent"));
+        let report = crate::lockdown_usb::apply_usb(&missing);
+        assert_eq!(report.outcome, gedefense_common::LOCKDOWN_OUTCOME_UNSUPPORTED);
+        assert_eq!(report.reason, "not-present");
+        assert_eq!(crate::lockdown_usb::apply_tb(&missing).outcome, gedefense_common::LOCKDOWN_OUTCOME_UNSUPPORTED);
+    }
+
+    #[test]
+    fn lockdown_modules_never_use_shell_or_kill_primitives() {
+        // Adversarial guard for the "no shell, no kill" contract (§§1.1/6.4).
+        for (name, source) in [
+            ("lockdown.rs", include_str!("lockdown.rs")),
+            ("lockdown_usb.rs", include_str!("lockdown_usb.rs")),
+            ("lockdown_uevent.rs", include_str!("lockdown_uevent.rs")),
+            ("lockdown_hardening.rs", include_str!("lockdown_hardening.rs")),
+            ("lockdown_brokers.rs", include_str!("lockdown_brokers.rs")),
+        ] {
+            for forbidden in ["Command::new", "process::Command", "SIGKILL", "/bin/sh", "sh -c"] {
+                assert!(!source.contains(forbidden), "{name} must not contain {forbidden}");
+            }
+        }
+        let brokers = include_str!("lockdown_brokers.rs");
+        assert!(brokers.contains("libc::SIGSTOP") && brokers.contains("libc::SIGCONT"));
     }
 }

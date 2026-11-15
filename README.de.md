@@ -7,8 +7,8 @@
 ### Linux Security Fabric - Your Entenprise System
 
 [![License](https://img.shields.io/badge/License-AGPL--3.0--only-blue?style=for-the-badge)](https://www.gnu.org/licenses/agpl-3.0)
-[![Version](https://img.shields.io/badge/Version-5.2.0-orange?style=for-the-badge)](#)
-[![Status](https://img.shields.io/badge/Status-Release_v5.2.0-yellow?style=for-the-badge)](#)
+[![Version](https://img.shields.io/badge/Version-6.0.0-orange?style=for-the-badge)](#)
+[![Status](https://img.shields.io/badge/Status-Release_V6_(6.0.0)-brightgreen?style=for-the-badge)](#)
 [![Installer](https://img.shields.io/badge/Installer-Universal_Linux-green?style=for-the-badge)](#-schnellstart)
 [![Platform](https://img.shields.io/badge/Platform-Linux_x86__64-lightgrey?style=for-the-badge&logo=linux)](#)
 [![Data Plane](https://img.shields.io/badge/Data_Plane-Rust_eBPF%2FXDP-red?style=for-the-badge&logo=rust)](#-architektur)
@@ -18,7 +18,7 @@
 [![Linux](https://img.shields.io/badge/Linux-APT%20%7C%20DNF%20%7C%20pacman%20%7C%20Zypper-cyan?style=for-the-badge&logo=linux)](#-universelle-linux-integration)
 [![AstraeaOS](https://img.shields.io/badge/AstraeaOS-Native_Ready-7de3ff?style=for-the-badge)](#-astraeaos-integration)
 [![Architecture](https://img.shields.io/badge/Architecture-Specification-9cf?style=for-the-badge&logo=blueprint)](ARCHITECTURE.md)
-[![Security Audit](https://img.shields.io/badge/Security-Audit_Beta_5-success?style=for-the-badge&logo=shield)](SECURITY.md)
+[![Security Audit](https://img.shields.io/badge/Security-Audit_V6-success?style=for-the-badge&logo=shield)](SECURITY.md)
 [![VGT](https://img.shields.io/badge/VGT-VisionGaiaTechnology-cyan?style=for-the-badge)](https://visiongaiatechnology.de)
 
 **KERNELNAHE NETZWERKVERTEIDIGUNG · HOST-XDR · VERSCHLÜSSELTE EVIDENZ · REVERSIBLE HÄRTUNG · KEINE CLOUD-CONTROL-PLANE**
@@ -30,19 +30,16 @@
 
 <br />
 
-⬇️ **Direkt-Installer (v5.2.0):**  
-[**OneClick-Installer (`.run`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v5.2.0/VGT_GeDefense_Beta_v5_5.2.0_OneClick.run) · [`.sha256`](https://github.com/visiongaiatechnology/gedefense/releases/download/v5.2.0/VGT_GeDefense_Beta_v5_5.2.0_OneClick.run.sha256) · [**Desktop-Tray (`.run`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v5.2.0/GeDefense-5.2.0-Desktop-OneClick.run) · [`.sha256`](https://github.com/visiongaiatechnology/gedefense/releases/download/v5.2.0/GeDefense-5.2.0-Desktop-OneClick.run.sha256) · [**Quellarchiv (`.zip`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v5.2.0/VGT_GeDefense_Beta_v5_5.2.0_Source.zip) · [**Release v5.2.0**](https://github.com/visiongaiatechnology/gedefense/releases/tag/v5.2.0) · [Schnellstart](#-schnellstart)
+⬇️ **Direkt-Installer (v6.0.0 / V6):**  
+[**OneClick-Installer (`.run`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.0.0/VGT_GeDefense_V6_6.0.0_OneClick.run) · [`.sha256`](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.0.0/VGT_GeDefense_V6_6.0.0_OneClick.run.sha256) · [**Desktop-Tray (`.run`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.0.0/GeDefense-6.0.0-Desktop-OneClick.run) · [`.sha256`](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.0.0/GeDefense-6.0.0-Desktop-OneClick.run.sha256) · [**Quellarchiv (`.zip`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.0.0/VGT_GeDefense_V6_6.0.0_Source.zip) · [**Release v6.0.0**](https://github.com/visiongaiatechnology/gedefense/releases/tag/v6.0.0) · [Schnellstart](#-schnellstart)
 
 </div>
 
-> **Update 5.2.0 (14.11.2026) — Security Release**
+> **GeDefense V6 (`6.0.0`, 15.11.2026) — Anti-Spyware- & Souveränitäts-Architektur**
 >
-> - **Sicherheits-Release:** Das unabhängige Tiefenaudit VGT-AUDIT-20261114-GD51 meldete 36 Findings in sechs Angriffsketten und blockierte das Release-Gate von 5.1.0-beta.3; 5.2.0 behebt alle 36 Findings in Installer/Supply-Chain, Boot-Attestierung, Gateway/Auth, Policy/Forensik/Storage, API/L7, Feeds/Airlock, Selbstschutz, Desktop-Tray, Rust-Core und eBPF. Details in `CHANGELOG.md` und `RELEASE-NOTES.md`.
->
-> - **Selbstheilender Threat-Intelligence-Feed:** Ein fehlender Feed-Signatur-Trust-Anchor wird aus dem opt-in lokalen Operator-Key über einen rotationssicheren Marker gebootstrappt; abgelaufene Manifeste werden neu signiert. Ein rotierter Key mit altem Marker bleibt fail-closed.
-> - **CVE-2026-98432 / CVE-2026-99999:** verwaltete User-Namespace- und MPTCP-Gegenmaßnahmen sind aktiv gehalten; die Kernel-Exposition bleibt sichtbar, bis der Ubuntu-Kernel-Fix installiert ist.
-> - **Mitigation-Guard:** berechtigungslimitierte Probes werden jetzt als UNOBSERVED ausgewiesen statt still übersprungen und lösen keinen falschen Auto-Revert mehr aus.
-> - **Signierter Release:** 5.2.0 erscheint als signierter OneClick-Installer und reproduzierbares Quellarchiv.
+> - **5-Punkte-Anti-Spyware-Blueprint:** Integriert **StyX Egress + C2/Beacon-Erkennung**, **Titan + eBPF-LSM Exec-/Library-Gate**, **ephemere Parser-Zellen** (`gedefense-cell-helper.service`), **Out-of-Band Witness Client** und **Emergency Lockdown** direkt auf Basis des gehärteten 5.2.0-Fundaments (Settings **v17**).
+> - **Sichere Auto-Aktivierung beim Scharfschalten (`enforce`, noch ohne eigene V6-UI):** In `observe` / `canary` bleiben alle V6-Module aus. Sobald GeDefense scharf geschaltet wird (**`enforce`**), aktiviert Go-Control automatisch die sichere V6-Basis (**StyX=`monitor`**, **Titan Exec=`contain`**, **Parser Cells=`enabled`**, **Lockdown=`enabled` + `auto_arm`**), während **Witness** Opt-in bleibt und explizite API-Overrides dauerhaft Vorrang behalten.
+> - **Ehrliche Telemetrie & Kernel-7.0-Kompatibilität:** Meldet `inactive`, solange `bpf` in `/sys/kernel/security/lsm` fehlt; unterstützt Split-`ctime`-BTF unter Kernel 7.0.x, strikte Composite-BadUSB-Ablehnung, 15-Zeichen-`comm`-Broker-Freezes, SSRF-blockendes Witness-Dialing und Loader-Env-Filterung im `gedefense-cell-helper`.
 
 
 <img width="1536" height="1024" alt="GeDefense_ Real Security, Many Feathers" src="https://github.com/user-attachments/assets/dc56735e-b2b2-45c9-a363-97554a92ae0a" />
@@ -62,25 +59,46 @@ GeDefense ist eine lokal-first Security-Fabric – für Linux, Windows, Android 
 | [![Android](https://img.shields.io/badge/Android-22D3EE?style=flat-square&logo=android&logoColor=0B1220)](https://github.com/visiongaiatechnology/gedefenseandroid) **GeDefense Android** | Native Android-Sicherheitsplattform: lokale VPN-Durchsetzung, Endpoint-Telemetrie, XDR/EDR-Korrelation, Threat Intelligence, App-Risikoanalyse und verschlüsselte Evidenz. |
 | [![WordPress](https://img.shields.io/badge/WordPress-1F8FFF?style=flat-square&logo=wordpress&logoColor=ffffff)](https://github.com/visiongaiatechnology/gedefensewp) **GeDefense WordPress** | AGPL-3.0-Open-Core-Suite für WordPress: ZEUS-WAF, AEGIS-Deep-Packet-Inspection, TRINITY-XDR, ThroneGuard-Lockdown und HADES-Admin-Cloaking. |
 
-## 🆕 Release 5.1.0-beta.3 — Feed-Self-Healing, CVE-Abwehr & signierter Release (29.10.2026)
+## 🚀 GeDefense V6 (`6.0.0`) — Neuerungen, PC vs. Server & Zusammenspiel der Module
 
-Der signierte Threat-Intelligence-Feed heilt seinen fehlenden Trust-Anchor/Manifest-Bootstrap jetzt selbst, die verwalteten User-Namespace- und MPTCP-Kontrollen werden gemeinsam gehalten, und die Release-Artefakte sind mit einem neuen Offline-Key signiert. Details in `CHANGELOG.md`, `RELEASE-NOTES.md` und den neuesten Release-Assets.
+> [!NOTE]
+> **Noch keine eigene V6-Weboberfläche — Automatische Aktivierung beim Scharfschalten (`enforce`):**  
+> Alle fünf V6-Subsysteme werden über Runtime Settings **v17** und die REST-APIs (`/api/v1/styx/...`, `/api/v1/titan/exec/...`, `/api/v1/parser-cells/...`, `/api/v1/lockdown/...`, `/api/v1/witness/...`) gesteuert; dedizierte V6-UI-Panels folgen in einer späteren Version. In `observe` und `canary` bleiben V6-Funktionen für die Basisqualifizierung deaktiviert. **Sobald GeDefense auf `enforce` geschaltet wird (oder mit `enforce` startet), aktiviert Go-Control automatisch das sichere Standardprofil:** `styx=monitor` (inkl. Flow-Telemetrie), `titan_exec=contain`, `parser_cells=enabled` und `lockdown=enabled` (`auto_arm=true`, unter Beibehaltung von Loopback- und UID-0-Recovery-Schutz). **Witness** bleibt bewusst Opt-in (benötigt externen Peer & SPKI-/Key-Pinning). Manuelle API-Umstellungen bleiben nach Neustarts erhalten.
 
-## 🆕 Release 5.1.0-beta.2 — Sicherheits-Hardening (27.10.2026)
+### 🆕 Was in GeDefense V6 (`6.0.0`) neu ist
 
-Sicherheits-Hotfix für 5.1.0-beta.1. **Vor dem Exponieren der Bridge ist das Update empfohlen.**
+1. **Punkt 1 — Titan + eBPF-LSM Exec-/Library-Gate (`docs/POINT1-TITAN-EXEC-GATE.md`):**
+   Kernel-eBPF-LSM-Durchsetzung auf `bprm_check_security` und `mmap_file` (`PROT_EXEC`) über dynamische vmlinux-BTF-Offsets (inkl. Kernel-7.0-Split-`ctime`-Layouts) mit unprivilegierter Go-Policy-Synchronisation über VGT3. Erkennt und blockiert in `contain`/`strict` u. a. `memfd_create`, unlinked Binaries, `tmpfs`-Ausführung und `W^X`-Übergänge. Meldet ohne aktives `bpf`-LSM ehrlich `inactive` statt falscher Schutzversprechen.
+2. **Punkt 2 — Ephemere Parser-Zellen (`docs/POINT2-PARSER-CELLS.md`):**
+   Qubes-light-Wegwerf-Sandboxen über den eigenständigen Root-Helper `gedefense-cell-helper.service` und einen HMAC-geschützten `VGTGC2`-Unix-Socket: isolierte user/mount/pid/net/ipc/uts-Namespaces, privates `tmpfs` + `pivot_root`, Seccomp (`AF_UNIX`-only, kein `ptrace`/`bpf`/`io_uring`), X11-Blockade, Filterung von `LD_*`-Variablen, `cgroup v2`-Limits, Sealed-`memfd`-Export und Burn-Ledger.
+3. **Punkt 3 — StyX Egress-Enforcement & C2-/Beacon-Erkennung (`docs/POINT3-EGRESS-BEACON.md`):**
+   Per-Cgroup-Engine in `cgroup_skb/egress` mit LPM-Allow/Block-Listen, IPv4-mapped-IPv6-Bypass-Schutz, DNS-Pinning, `styx_flow`-RingBuffer, Welford-Periodizitäts-/CV-Beacon-Analyse und Exfiltrations-Tracking – im Default `mode=off` ohne Performance-Overhead.
+4. **Punkt 4 — Out-of-Band Witness Client (`docs/POINT4-WITNESS.md`):**
+   Überträgt datensparsame, Ed25519-signierte Ledger-Checkpoints (`ledger_epoch`-Monotonieschutz gegen Rotations-Fehlalarme) über einen SSRF-/DNS-Rebinding-gehärteten Port-443-HTTPS-Client (SPKI- & Receipt-Pinning, optional mTLS, verschlüsselte Outbox) oder als Offline-Bundle (`vgtw1`).
+5. **Punkt 5 — Emergency Lockdown (`docs/POINT5-LOCKDOWN.md`):**
+   Sofortiger XDP/TC-Egress- und Ingress-Drop-Latch (`LOCKDOWN_STATE`-Fastpath unter Erhalt der Loopback-/Root-Wiederherstellbarkeit), striktes Composite-USB-/Thunderbolt-BadUSB-Gating (lehnt gemischte `HID+Storage`/`HID+CDC`-Geräte ab), Broker-Freeze (`SIGSTOP`, inkl. 15-Zeichen-`/proc/*/comm`-Kürzung wie `astraea-key-bro`) sowie Operator-gelatchtes Entriegeln.
+6. **Gehärtete 5.2.0-Sicherheitsbasis integriert:**
+   Umfasst alle 36 behobenen Befunde aus **VGT-AUDIT-20261114-GD51** (OneClick-Ed25519-Vorabprüfung, Argon2id-Admission-Gate & Passwortmigration, striktes Storage-AEAD/HistoryMAC, Qt-Tray-Plaintext-Schutz, atomarer Rust-Quarantäne-Commit, exaktes eBPF-Batch-Accounting).
 
-- **Trusted-Editor-Umfang verengt:** Nur exakte VGT-Preview-/Save-Aktionen und Post-Save-Routen dürfen die XSS-False-Positive-Familie unterdrücken. SQLi, LFI, PHP-Tag und alle anderen Pattern-Familien, Protokoll-, Encoding-, Upload- und Response-Prüfungen bleiben aktiv.
-- **Sensible L7-Limits bleiben für Master-Leases aktiv:** Login/XML-RPC und andere sensible Routen werden nicht mehr umgangen. Das konfigurierte gelockerte CMS-Client-Budget wird tatsächlich angewandt statt eines pauschalen Client-Bypasses.
-- **Revocation-/Replay-Härtung:** Widerruf überlebt Control-Neustarts; Ereignisse vor dem Revoke-Watermark werden ignoriert; Loopback-Master-Leases werden abgelehnt; Lease-/Profil-/Ereignisgrenzen und Fail-Closed-Verhalten wurden verschärft.
-- **WordPress-Bridge-Härtung:** benötigt eine entsperrte ThroneGuard-Master-Session, lehnt schwache/default/doppelte Salts ab, sendet Logout-Revocation und lehnt Loopback-Master-Events ab; normale Administratoren können keinen Master mehr beanspruchen, wenn bereits einer existiert.
-- **Installer-Härtung:** Gateway-Zugriffsverzeichnisse werden vor Secrets/TLS angelegt, python3 vor der Trust-Prüfung installiert, nur `prebuilt`/`source-signed` akzeptiert und Rollback-Ownership korrigiert.
-- **ALPHA:** Die GeDefense-WP-↔-Linux-Bridge bleibt ein Alpha-Testfeature, nicht produktionsreif. Siehe `SECURITY.md` und `CHANGELOG.md`.
+### 💻 Desktop-PC / Workstation vs. 🖥️ Linux-Server — Was V6 konkret bewirkt
+
+| Einsatzumgebung | Primäre Bedrohungen gegen V6 wirkt | Aktive V6-Schutzebenen ab `enforce` |
+| --- | --- | --- |
+| **Linux-PC / Workstation** | Zero-Click-Parser-Exploits in Dokumenten/Medien, manipulierte USB-/Thunderbolt-Hardware (BadUSB), Auslesen von Secret-Brokern, dateilose Speicher-Implants (`memfd`/`PROT_EXEC`), verdeckte C2-Beacons | **Parser Cells** isolieren riskante Parser; **Lockdown** blockiert gemischte Composite-USB-Hotplugs & friert Key-Broker ein; **StyX (`monitor`)** schlägt bei periodischen Desktop-Beacons an; **Titan Exec (`contain`)** auditiert/blockiert unlinked/`memfd`-Code (bei aktivem `bpf`-LSM) |
+| **Linux-Server (Web / API / Compute)** | Post-RCE-Webshell-/Memory-Staging, ausgehender C2-/Datenabfluss aus kompromittierten App-Cgroups, unautorisierte Ausführung außerhalb von Paketpfaden, Log-/Evidenz-Manipulation | **Titan Exec (`contain`/`strict` via `StrictCgroups`)** schottet Workload-Cgroups ab; **StyX** überwacht Egress-Flows & C2-Beacons je Cgroup ohne L7-Ingress zu bremsen; **Lockdown** kappt bei Morpheus-/Canary-/Witness-Alarmen per XDP/TC den Egress unter Erhalt der Loopback-/Wartungsfähigkeit; **Witness** ankert Checkpoints extern |
+
+### 🔗 Zusammenspiel mit den bestehenden GeDefense-Modulen
+
+- **XDP / TC Data-Plane (`gedefense-ebpf` & `gedefense-core`):** Teilt denselben Wire-Vertrag und eBPF-Maps mit **StyX** (`cgroup_skb/egress`) und **Lockdown** (`LOCKDOWN_STATE`-Fastpath-Drop-Flags in XDP/TC).
+- **Host-XDR & Titan FIM:** `TitanExecEvent`, `styx_flow`-Beacon-Korrelationen, Parser-Cell-Burn-Events und Witness-Equivocation-Alarme laufen direkt in die zentrale XDR-Verifikation und Incident-Bewertung.
+- **Kinetic / TransactionEngine / CellGuard:** Containment- und Cgroup-Freeze-Reaktionen bleiben evidenzbasiert, policy-geprüft und reversibel – inklusive aller Schutzinvarianten des `ReleaseController`.
+- **EvidenceLedger:** Alle V6-Ereignisse werden in die AES-256-GCM-/Ed25519-Evidenzkette geschrieben und über `ledger_epoch` sauber durch Archiv-Rotationen geführt.
+- **L7 WAF / Threat Intel / Hardening Guard:** Schützen weiterhin HTTP-/CMS-Dienste im Ingress und System-Sysctls, während V6 Ausführungsgrenzen, Parser-Isolation, Egress-Beacons und Emergency Lockdown darunter absichert.
 
 ---
 
 > [!WARNING]
-> **ÖFFENTLICHE BETA — KEIN PRODUKTIONSRELEASE (Version 5.2.0).**  
+> **ÖFFENTLICHE BETA — KEIN PRODUKTIONSRELEASE (Version 6.0.0 / V6).**  
 > GeDefense Titan und das Linux-Security-Fabric befinden sich in aktiver
 > Entwicklung. Diese Beta ist ausschließlich für Test- und Qualifizierungshosts
 > bestimmt. Die Kernarchitektur wird durch automatisierte Release-Gates geprüft,
@@ -556,17 +574,17 @@ Ist die Gaia Cells-Laufzeit **nicht vorhanden**, meldet der Adapter `runtime_not
 
 ```bash
 # Installer herunterladen
-wget https://github.com/visiongaiatechnology/gedefense/releases/download/v5.2.0/VGT_GeDefense_Beta_v5_5.2.0_OneClick.run
+wget https://github.com/visiongaiatechnology/gedefense/releases/download/v6.0.0/VGT_GeDefense_V6_6.0.0_OneClick.run
 
 # SHA-256 verifizieren
-sha256sum --check VGT_GeDefense_Beta_v5_5.2.0_OneClick.run.sha256
+sha256sum --check VGT_GeDefense_V6_6.0.0_OneClick.run.sha256
 
 # Installieren (Root erforderlich)
-chmod 700 VGT_GeDefense_Beta_v5_5.2.0_OneClick.run
-sudo ./VGT_GeDefense_Beta_v5_5.2.0_OneClick.run
+chmod 700 VGT_GeDefense_V6_6.0.0_OneClick.run
+sudo ./VGT_GeDefense_V6_6.0.0_OneClick.run
 ```
 
-> **Installer-Verfügbarkeit:** Die offiziellen v5.2.0 Self-Contained-Installer-Assets (`VGT_GeDefense_Beta_v5_5.2.0_OneClick.run`) werden mit dem signierten GitHub Release bereitgestellt.
+> **Installer-Verfügbarkeit:** Die offiziellen v6.0.0 Self-Contained-Installer-Assets (`VGT_GeDefense_V6_6.0.0_OneClick.run`) werden mit dem signierten GitHub Release bereitgestellt.
 
 > Der Installer und die Prüfsumme werden erst veröffentlicht, nachdem alle GitHub-CI- und konkreten Linux-Host-Qualifikations-Gates bestanden wurden. Führe niemals eine nicht verifizierte RUN-Datei aus.
 
@@ -600,7 +618,7 @@ Die Firewall-Regel für den HTTPS-Gateway-Port (TCP 9843) kann während der Inst
 
 ---
 
-## 🚧 Bekannte Einschränkungen (5.2.0)
+## 🚧 Bekannte Einschränkungen (6.0.0 / V6)
 
 - Keine Swarm- / Mesh-Unterstützung
 - Kein QUIC-Offloading
@@ -613,10 +631,21 @@ Die Firewall-Regel für den HTTPS-Gateway-Port (TCP 9843) kann während der Inst
 - Isolierter Deception Service zurückgestellt
 - Wird eine geschützte Release-Komponente ersetzt, wird das mit hoher Schwere gemeldet und entwaffnet die Plattform nicht; die Ledger-Rotation setzt voraus, dass ihr Archivverzeichnis dem Dienst gehört und `0700` trägt, und verweigert den Lauf, statt in ein gemeinsames Verzeichnis zu schreiben
 - Der Rust-Kern zählt und protokolliert übersprungene Ingress-Datensätze, meldet die Zahl aber noch nicht in seiner Health-Antwort; die Zahl steht daher im Dienstprotokoll und nicht im Panel
+- **Noch keine eigene V6-Web-UI:** StyX, Titan Exec Gate, Parser-Zellen, Emergency Lockdown und Witness laufen über Settings v17 und REST-APIs; beim Scharfschalten (`enforce`) greift automatisch die sichere Basis-Aktivierung (Witness bleibt Opt-in).
+- **Voraussetzung `bpf`-LSM (Punkt 1 & Cell-Socket-LSM):** Echte Kernel-Blockaden (`bprm_check_security` / `mmap_file`) erfordern `bpf` in `/sys/kernel/security/lsm` (`lsm=...,bpf` + Reboot); ohne `bpf`-LSM meldet GeDefense ehrlich `inactive`.
+- **Parser-Zellen (Punkt 2):** Werden standardmäßig mit leerer Profil-Allowlist ausgeliefert (Operator legt Parser-Profile fest); Wayland-/PipeWire-Broker-Passthrough folgt in Phase 2.
+- **Witness & Hardware-Attestierung (Punkt 4):** Enthält den gehärteten Mode-A-Client und Offline-Bundles (`vgtw1`), aber keinen externen Witness-Server/Quorum im Repo; ohne TPM2/UEFI wird ehrlich `quote_kind="none"` und `key_binding="software"` gemeldet.
+- **Emergency Lockdown Phase-2-Grenzen (Punkt 5):** LUKS-Suspend, grafischer Session-Lock und RAM-Zeroization folgen in Phase 2 (`unsupported` bei fehlender Plattform-Integration); USB-/TB-Sysfs-Schreibzugriffe erfordern die entsprechenden Rechte auf `gedefense-core.service`.
 
 ---
 
 ## 📋 Changelog
+
+### v6.0.0 — GeDefense V6 Anti-Spyware- & Souveränitäts-Architektur *(Aktueller Release — 15.11.2026)*
+
+- **5-Punkte-Anti-Spyware-Blueprint:** Integration von StyX Egress + C2/Beacon-Erkennung (Punkt 3), Titan + eBPF-LSM Exec-/Library-Gate inkl. dynamischer BTF-Offsets & Kernel-7.0-Split-`ctime` (Punkt 1), ephemeren Parser-Zellen über `gedefense-cell-helper.service` (Punkt 2), Out-of-Band Witness Client mit monotoner `ledger_epoch` & SSRF-Schutz (Punkt 4) sowie Emergency Lockdown mit XDP/TC-Drop-Latch, Composite-BadUSB-Gate und 15-Zeichen-`comm`-Broker-Freeze (Punkt 5).
+- **Sichere Auto-Aktivierung bei `enforce`:** Da noch keine dedizierten V6-UI-Panels enthalten sind, aktiviert das Scharfschalten (`enforce`) automatisch die sichere V6-Basis (`styx=monitor`, `titan_exec=contain`, `parser_cells=enabled`, `lockdown=enabled+auto_arm`); `witness` bleibt Opt-in und manuelle API-Overrides bleiben persistent.
+- **Gehärtetes 5.2.0-Fundament integriert:** Beinhaltet alle 36 behobenen Findings aus `VGT-AUDIT-20261114-GD51`, Ed25519-OneClick-Signaturprüfung, Argon2id-Admission-Gate/-Migration, striktes Storage-AEAD sowie signierte Release-Artefakte.
 
 ### v5.0.0-beta.1 — Automatische Gaia-Cell-Isolation, bewachte Kernel-Mitigation & operatives PHP/L7-Hardening *(Vorherige Version)*
 
@@ -834,7 +863,7 @@ Eine Fehlerbehebungsversion. Sie bringt kein neues Teilsystem; sie bringt die vo
 
 **Unverändertes Sicherheitsfundament**
 
-- Getrennte Go Control Plane, Rust Response Core und Rust eBPF/XDP Data Plane bleiben das Beta 5 Sicherheitsfundament.
+- Getrennte Go Control Plane, Rust Response Core und Rust eBPF/XDP Data Plane bleiben das V6-Sicherheitsfundament.
 - Observe → Canary → Enforce, Evidenz-Ledger, verschlüsselter Response Vault und reversible Härtung bleiben unverändert.
 
 ### v1.0.0-beta.5 — Vollständige Beta
@@ -907,6 +936,6 @@ Die Karte verwendet **jsVectorMap 1.7.0** (MIT, Copyright © 2020 Mustafa Omar; 
 
 [![VGT](https://img.shields.io/badge/VisionGaia-Technology-cyan?style=for-the-badge)](https://visiongaiatechnology.de)
 
-*VGT GeDefense 5.2.0 — Universelles Linux Sicherheitsgewebe // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidenz-Ledger // AES-256-GCM verschlüsselter Vault // Reversible Härtung // AstraeaOS-nativer Adapter // Getrennte Vertrauensdomänen // Keine Cloud-Control-Plane // AGPL-3.0-only // Linux x86_64*
+*VGT GeDefense 6.0.0 (V6) — Universelles Linux Sicherheitsgewebe // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidenz-Ledger // AES-256-GCM verschlüsselter Vault // Reversible Härtung // AstraeaOS-nativer Adapter // Getrennte Vertrauensdomänen // Keine Cloud-Control-Plane // AGPL-3.0-only // Linux x86_64*
 
 </div>

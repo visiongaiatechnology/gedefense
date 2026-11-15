@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -29,22 +30,23 @@ const (
 )
 
 type Config struct {
-	Node       NodeConfig
-	Dashboard  DashboardConfig
-	Core       CoreConfig
-	Defense    DefenseConfig
-	Policy     PolicyConfig
-	Feeds      FeedConfig
-	XDR        XDRConfig
-	L7         L7Config
-	Release    ReleaseConfig
-	Runtime    RuntimeConfig
-	Cells      CellsConfig
-	Kinetic    KineticConfig
-	Desktop    DesktopConfig
-	Startup    StartupSupervisorConfig
-	Advisories AdvisoryConfig
-	Titan      TitanConfig
+	Node        NodeConfig
+	Dashboard   DashboardConfig
+	Core        CoreConfig
+	Defense     DefenseConfig
+	Policy      PolicyConfig
+	Feeds       FeedConfig
+	XDR         XDRConfig
+	L7          L7Config
+	Release     ReleaseConfig
+	Runtime     RuntimeConfig
+	Cells       CellsConfig
+	Kinetic     KineticConfig
+	Desktop     DesktopConfig
+	Startup     StartupSupervisorConfig
+	Advisories  AdvisoryConfig
+	Titan       TitanConfig
+	ParserCells ParserCellsConfig
 }
 
 type NodeConfig struct {
@@ -217,6 +219,32 @@ type CellsConfig struct {
 	AutoConfineScore           int
 	AutoConfineIntervalSeconds int
 	AutoConfineCooldownSeconds int
+}
+
+// ParserCellsConfig is the immutable bootstrap section of the ephemeral parser
+// cells: socket, VGTGC2 key, the control-owned staging/import roots and the
+// request deadline. It carries no policy - the administrable namespace
+// (parser_cells) owns policy.
+type ParserCellsConfig struct {
+	Socket      string
+	AuthKeyFile string
+	InputDir    string
+	// ImportsDir is the control-owned directory the untrusted burned-cell export is
+	// imported into (0750 gedefense:gedefense, provisioned by packaging). The helper
+	// staging directory parser-exports is root:gedefense and is NOT writable by the
+	// unprivileged control plane: the export reaches control exclusively through the
+	// sealed memfd descriptor of CELL_EXPORT_READ.
+	ImportsDir           string
+	RequestTimeoutMillis int
+	// PeerUID is the SO_PEERCRED uid the helper listener must have. The helper is
+	// a root unit, so the shipped value is 0; -1 disables the check (not supported
+	// for production, documented for local test rigs only).
+	PeerUID int
+	// WaylandProfiles names the package-managed profiles that require a Wayland
+	// session socket. Phase 1 cells run as the unprivileged parser uid (65534) and
+	// cannot own a session socket, so a profile declared here is refused fail-closed
+	// as capability-missing instead of failing deep inside the helper.
+	WaylandProfiles []string
 }
 
 type KineticConfig struct {
@@ -505,6 +533,15 @@ func defaultConfig() Config {
 			AuthKeyFile:          "/etc/vgt/gedefense/secrets/gaia-cells.key",
 			RequestTimeoutMillis: 1500,
 		},
+		ParserCells: ParserCellsConfig{
+			Socket:               "/run/vgt-gedefense/cell-helper.sock",
+			AuthKeyFile:          "/etc/vgt/gedefense/secrets/cell-helper.key",
+			InputDir:             "/var/lib/vgt/gedefense/parser-inputs",
+			ImportsDir:           "/var/lib/vgt/gedefense/parser-imports",
+			RequestTimeoutMillis: 2500,
+			PeerUID:              0,
+			WaylandProfiles:      []string{},
+		},
 		Release: ReleaseConfig{
 			Channel: "beta", MinimumObserveSeconds: 300, MinimumCanarySeconds: 900,
 			CoreFailureThreshold: 3, MaxEvaluationDropPermille: 5,
@@ -577,7 +614,7 @@ func loadConfig(path string) (Config, error) {
 		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
 			section = strings.TrimSpace(line[1 : len(line)-1])
 			switch section {
-			case "node", "dashboard", "core", "defense", "policy", "feeds", "xdr", "l7", "release", "runtime", "cells", "kinetic", "advisories", "titan":
+			case "node", "dashboard", "core", "defense", "policy", "feeds", "xdr", "l7", "release", "runtime", "cells", "kinetic", "advisories", "titan", "parser_cells":
 			default:
 				return cfg, fmt.Errorf("line %d: unknown section %q", lineNo, section)
 			}
@@ -1262,6 +1299,36 @@ func assignConfig(cfg *Config, section, key, raw string) error {
 		v, e := parseInt(raw, 100, 10000)
 		cfg.Cells.RequestTimeoutMillis = v
 		return e
+	case "parser_cells.socket":
+		v, e := str()
+		cfg.ParserCells.Socket = v
+		return e
+	case "parser_cells.auth_key_file":
+		v, e := str()
+		cfg.ParserCells.AuthKeyFile = v
+		return e
+	case "parser_cells.input_dir":
+		v, e := str()
+		cfg.ParserCells.InputDir = v
+		return e
+	case "parser_cells.imports_dir":
+		v, e := str()
+		cfg.ParserCells.ImportsDir = v
+		return e
+	case "parser_cells.wayland_profiles":
+		v, e := str()
+		if e == nil {
+			cfg.ParserCells.WaylandProfiles = splitCSV(v)
+		}
+		return e
+	case "parser_cells.request_timeout_millis":
+		v, e := parseInt(raw, 100, 10000)
+		cfg.ParserCells.RequestTimeoutMillis = v
+		return e
+	case "parser_cells.peer_uid":
+		v, e := parseInt(raw, -1, 65535)
+		cfg.ParserCells.PeerUID = v
+		return e
 	case "feeds.enabled":
 		v, e := parseBool(raw)
 		cfg.Feeds.Enabled = v
@@ -1824,6 +1891,10 @@ func validateConfig(cfg *Config) error {
 		"runtime.storage_key_file":    cfg.Runtime.StorageKeyFile,
 		"cells.socket":                cfg.Cells.Socket,
 		"cells.auth_key_file":         cfg.Cells.AuthKeyFile,
+		"parser_cells.socket":         cfg.ParserCells.Socket,
+		"parser_cells.auth_key_file":  cfg.ParserCells.AuthKeyFile,
+		"parser_cells.input_dir":      cfg.ParserCells.InputDir,
+		"parser_cells.imports_dir":    cfg.ParserCells.ImportsDir,
 	} {
 		if err := validateAbsolutePath(label, path, false); err != nil {
 			return err
@@ -1900,5 +1971,36 @@ func validateConfig(cfg *Config) error {
 	if err := validateTitanConfig(&cfg.Titan); err != nil {
 		return err
 	}
+	if err := validateParserCellsConfig(&cfg.ParserCells); err != nil {
+		return err
+	}
+	return nil
+}
+
+// validateParserCellsConfig validates the bootstrap lists that are not covered by
+// the path checks: a Wayland-profile declaration must be bounded and use the same
+// protocol-safe profile ids as the helper, so the fail-closed create gate can only
+// ever see unambiguous names.
+func validateParserCellsConfig(cfg *ParserCellsConfig) error {
+	if cfg.PeerUID < -1 || cfg.PeerUID > 65535 {
+		return errors.New("parser_cells.peer_uid must be -1 (test rigs only) or a valid uid")
+	}
+	if len(cfg.WaylandProfiles) > parserCellsMaxProfiles {
+		return fmt.Errorf("parser_cells.wayland_profiles exceeds %d entries", parserCellsMaxProfiles)
+	}
+	seen := make(map[string]struct{}, len(cfg.WaylandProfiles))
+	profiles := make([]string, 0, len(cfg.WaylandProfiles))
+	for _, profile := range cfg.WaylandProfiles {
+		if !parserCellProfileValid(profile) {
+			return fmt.Errorf("parser_cells.wayland_profiles entry %q is not a protocol-safe profile id", profile)
+		}
+		if _, duplicate := seen[profile]; duplicate {
+			return fmt.Errorf("parser_cells.wayland_profiles entry %q is duplicated", profile)
+		}
+		seen[profile] = struct{}{}
+		profiles = append(profiles, profile)
+	}
+	sort.Strings(profiles)
+	cfg.WaylandProfiles = profiles
 	return nil
 }

@@ -562,6 +562,171 @@ var fabricSettingDefinitions = []fabricSettingDefinition{
 		desc: "Ceiling applied to every mutating request body before any handler sees it. It caps a handler's own limit rather than replacing it, so it can only tighten."},
 	{module: "system", group: "Core IPC", key: "core.request_timeout_millis", label: "Core Command Deadline", kind: FabricTypeInteger, unit: "ms", def: 2000, min: intPtr(100), max: intPtr(60000), class: FabricApplyHot, risk: FabricRiskHigh,
 		desc: "Deadline for one command to the kernel core. Read on every call, so a revision takes effect on the next command without a restart."},
+
+	// ------------------------------------------------------------------ styx
+	// Kernel-level per-cgroup egress enforcement and the aggregate flow telemetry
+	// the beacon detector consumes (docs/POINT3-EGRESS-BEACON.md §8.3). The shipped
+	// default is disabled/off so an upgrade keeps the exact kernel behaviour of
+	// 5.2.0; every value below is projected by the StyX policy syncer and reported
+	// as applied/pending/failed/capability-missing, never assumed.
+	{module: "styx", group: "Kernel Egress Enforcement", key: "enabled", label: "Styx Kernel Enforcement", kind: FabricTypeBoolean, def: false, class: FabricApplyHot, risk: FabricRiskHigh,
+		desc: "Enable the kernel-side per-cgroup egress policy. Disabled (the upgrade default) means no enforcement and no flow logging; the syncer then keeps the global mode at off."},
+	{module: "styx", group: "Kernel Egress Enforcement", key: "mode", label: "Default Egress Mode", kind: FabricTypeEnum, def: "off", class: FabricApplyHot, risk: FabricRiskCritical,
+		enum: []string{"off", "monitor", "enforce"}, desc: "Host-wide default for cgroups without their own entry. off records nothing and blocks nothing, monitor records flow telemetry without blocking, enforce is a default-deny that needs a complete allowlist (§12)."},
+	{module: "styx", group: "Kernel Egress Enforcement", key: "log_flows", label: "Flow Telemetry", kind: FabricTypeBoolean, def: true, class: FabricApplyHot, risk: FabricRiskMedium,
+		desc: "Emit the kernel's aggregated flow events that feed the beacon/exfiltration detector. Telemetry is also produced automatically in monitor/enforce mode; this flag additionally enables it for per-cell entries whose mode is off."},
+	{module: "styx", group: "Per-Cell Policy", key: "per_cell", label: "Per-Cell Modes", kind: FabricTypeJSON, class: FabricApplyHot, risk: FabricRiskCritical,
+		desc: "Array of {cgroup_id, mode, dns_resolver, allow_host_allowlist}, at most 256 entries. One mode per workload cgroup; duplicates for the same cgroup are refused rather than resolved silently."},
+	{module: "styx", group: "Per-Cell Policy", key: "allowlist", label: "Per-Cell Allowlist", kind: FabricTypeJSON, class: FabricApplyHot, risk: FabricRiskHigh,
+		desc: "Array of {cgroup_id, cidr, port_lo, port_hi, proto}, at most 1024 entries. CIDRs must be canonical, cgroup ids non-zero; a port or protocol restriction requires a host CIDR (/32 or /128) and only a single port or the 0-65535 wildcard is accepted. IPv6 cell rules cannot carry port/protocol restrictions in phase 1 and are refused instead of silently widened."},
+	{module: "styx", group: "DNS Pinning", key: "dns_resolvers", label: "DNS/DoT Resolvers", kind: FabricTypeList, class: FabricApplyHot, risk: FabricRiskHigh,
+		desc: "Canonical IP prefixes the kernel may reach on ports 53/853 without a DNS-pinning violation, at most 256. The mandatory metadata/link-local veto seed stays owned by the core and is not administrable here."},
+
+	// --------------------------------------------------------------- titan_exec
+	// Kernel-side exec/library gate (docs/POINT1-TITAN-EXEC-GATE.md §7.1, §7.2). The
+	// shipped default is disabled/off with empty lists, so an upgrade keeps the exact
+	// kernel behaviour of 5.2.0. The compiled plan is projected by the Titan exec-gate
+	// syncer and reported as applied/pending/failed/inactive/capability-missing, never
+	// assumed; enforcement additionally requires an active BPF-LSM hook.
+	{module: "titan_exec", group: "Kernel Exec Gate", key: "enabled", label: "Titan Exec Gate", kind: FabricTypeBoolean, def: false, class: FabricApplyHot, risk: FabricRiskCritical,
+		desc: "Enable the kernel-side exec/library gate. Disabled (the upgrade default) means no exec policy is installed and the syncer keeps the global mode at off."},
+	{module: "titan_exec", group: "Kernel Exec Gate", key: "mode", label: "Exec Gate Mode", kind: FabricTypeEnum, def: "off", class: FabricApplyHot, risk: FabricRiskCritical,
+		enum: []string{"off", "observe", "contain", "strict"}, desc: "off records and blocks nothing; observe audits exec/mmap decisions without blocking; contain denies unlinked, tmpfs/devtmpfs/proc/sysfs and write+exec mappings (plus anonymous exec outside the JIT scopes); strict additionally denies every exec that is not in the compiled allowlist and therefore needs a complete plan. Applying enforce modes without an active BPF-LSM hook is reported as inactive, never as enforced."},
+	{module: "titan_exec", group: "Kernel Exec Gate", key: "require_ctime", label: "Inode ctime Re-check", kind: FabricTypeBoolean, def: false, class: FabricApplyHot, risk: FabricRiskHigh,
+		desc: "Additionally verify i_ctime on every policy hit, mitigating inode recycling and in-place modification. A stale policy entry then fails closed (deny) instead of allowing a recycled inode."},
+	{module: "titan_exec", group: "Allowlist Sources", key: "exec_roots", label: "Exec Roots", kind: FabricTypeList, class: FabricApplyHot, risk: FabricRiskCritical,
+		desc: "Host directories whose regular, executable, non-symlink files are candidates for the kernel allowlist. Phase 1 admits a candidate only with package ownership or a verified FIM baseline digest; symlinks are skipped and counted. Absolute canonical paths only."},
+	{module: "titan_exec", group: "Allowlist Sources", key: "allow_paths", label: "Explicit Allow Paths", kind: FabricTypeList, class: FabricApplyHot, risk: FabricRiskCritical,
+		desc: "Files or directories that are trusted explicitly. A directory is walked with the same bounded rules as an exec root. Symlinks, non-regular and non-executable paths are refused instead of resolved."},
+	{module: "titan_exec", group: "Allowlist Sources", key: "dev_roots", label: "Development Roots", kind: FabricTypeList, class: FabricApplyHot, risk: FabricRiskMedium,
+		desc: "Documented development roots. Phase 1 never turns them into a kernel allowance: they are recorded for the operator view and do not widen the exec gate."},
+	{module: "titan_exec", group: "Per-Cgroup Scopes", key: "jit_cgroups", label: "JIT Cgroups", kind: FabricTypeJSON, class: FabricApplyHot, risk: FabricRiskHigh,
+		desc: "Array of non-zero cgroup ids that may execute anonymous JIT memory (TITAN_EXEC_SCOPE_FLAG_JIT_ALLOW). The scope keeps the global mode; at most max_scopes distinct cgroups."},
+	{module: "titan_exec", group: "Per-Cgroup Scopes", key: "strict_cgroups", label: "Strict Cgroups", kind: FabricTypeJSON, class: FabricApplyHot, risk: FabricRiskCritical,
+		desc: "Array of non-zero cgroup ids pinned to strict mode, so a global observe/contain gate can be tightened cell-by-cell only after the allowlist is complete. At most max_scopes distinct cgroups; a cgroup in both lists keeps the JIT allowance but is pinned to strict."},
+	{module: "titan_exec", group: "Resource Bounds", key: "max_entries", label: "Allowlist Entry Bound", kind: FabricTypeInteger, unit: "entries", def: 8192, min: intPtr(1), max: intPtr(65536), class: FabricApplyHot, risk: FabricRiskHigh,
+		desc: "Upper bound of the compiled allowlist (kernel policy map is sized 65536). A plan that resolves more entries is refused instead of being truncated, because a partial strict allowlist would deny valid execs."},
+	{module: "titan_exec", group: "Resource Bounds", key: "max_scopes", label: "Scope Bound", kind: FabricTypeInteger, unit: "cgroups", def: 256, min: intPtr(1), max: intPtr(4096), class: FabricApplyHot, risk: FabricRiskHigh,
+		desc: "Upper bound of per-cgroup scopes (kernel mode map is sized 4096). The JIT and strict lists together may not exceed it."},
+
+	// --------------------------------------------------------------- parser_cells
+	// Ephemeral parser cells (docs/POINT2-PARSER-CELLS.md §5, §6, §8). The shipped
+	// default is disabled: no privileged helper is contacted, no cell is created and
+	// an upgrade changes no host behaviour. The namespace only carries policy and
+	// bounds - binary, argv and environment come from the helper's root-owned profile
+	// table and are never administrable from the control plane.
+	{module: "parser_cells", group: "Parser Cells", key: "enabled", label: "Ephemeral Parser Cells", kind: FabricTypeBoolean, def: false, class: FabricApplyHot, risk: FabricRiskCritical,
+		desc: "Enable ephemeral parser cells through the privileged cell helper. Disabled (the upgrade default) means no helper request, no cell and no event at all; enabling also requires the helper unit and its capability negotiation to be present."},
+	{module: "parser_cells", group: "Parser Cells", key: "profiles", label: "Allowed Parser Profiles", kind: FabricTypeList, class: FabricApplyHot, risk: FabricRiskHigh,
+		desc: "Allowlist of helper profile ids a cell may be opened with, at most 16 (protocol-safe ids only). An empty list keeps the documented default: every profile the helper advertises is allowed. The binary, argv and environment of a profile remain exclusively package-managed."},
+	{module: "parser_cells", group: "Parser Cells", key: "require_host_layers", label: "Require Host Isolation Layers", kind: FabricTypeBoolean, def: false, class: FabricApplyHot, risk: FabricRiskCritical,
+		desc: "When set, a cell is only reported as isolated if the Cell-LSM, StyX-egress and Titan-exec strict layers were all acknowledged by the privileged core. Missing layers then refuse the cell instead of degrading silently; the default relies on the helper's own L1 sandbox (netns/tmpfs/seccomp) alone."},
+	{module: "parser_cells", group: "Resource Limits", key: "ttl_seconds", label: "Default Cell TTL", kind: FabricTypeInteger, unit: "s", def: 120, min: intPtr(5), max: intPtr(3600), class: FabricApplyHot, risk: FabricRiskHigh,
+		desc: "Default until auto-burn, bounded by the helper profile ttl_max and the hard 5..3600 s window. The helper TTL timer stays authoritative and burns the cell even when the control plane is unavailable."},
+	{module: "parser_cells", group: "Resource Limits", key: "max_concurrent", label: "Max Concurrent Cells", kind: FabricTypeInteger, unit: "cells", def: 4, min: intPtr(1), max: intPtr(16), class: FabricApplyHot, risk: FabricRiskHigh,
+		desc: "Admission bound for simultaneously open parser cells; the helper's own capability and hard cap additionally apply."},
+	{module: "parser_cells", group: "Resource Limits", key: "max_input_bytes", label: "Max Input Document", kind: FabricTypeInteger, unit: "bytes", def: 8388608, min: intPtr(1024), max: intPtr(8388608), class: FabricApplyHot, risk: FabricRiskHigh,
+		desc: "Bound for one staged parser input (the API accepts the document as bounded base64). The helper verifies token, size and SHA-256 before binding it read-only."},
+	{module: "parser_cells", group: "Resource Limits", key: "max_export_bytes", label: "Max Export Size", kind: FabricTypeInteger, unit: "bytes", def: 2097152, min: intPtr(1024), max: intPtr(2097152), class: FabricApplyHot, risk: FabricRiskHigh,
+		desc: "Bound for the helper export descriptor. The control plane reads at most this many bytes, verifies the digest and imports the export as untrusted evidence; it is never rendered or executed."},
+	{module: "parser_cells", group: "Incident Response", key: "burn_on_incident", label: "Burn Parser Cells on Incident", kind: FabricTypeBoolean, def: true, class: FabricApplyHot, risk: FabricRiskHigh,
+		desc: "When an incident on a managed parser-ephemeral cell reaches incident_score, the automatic CellGuard burns the cell instead of freezing it. A parser cell is destroyed, never paused; evidence intent is committed first."},
+	{module: "parser_cells", group: "Incident Response", key: "incident_score", label: "Burn Threshold", kind: FabricTypeInteger, def: 80, min: intPtr(1), max: intPtr(250), class: FabricApplyHot, risk: FabricRiskHigh,
+		desc: "Incident score at which an automatic parser-cell burn is dispatched."},
+	{module: "parser_cells", group: "Incident Response", key: "cooldown_seconds", label: "Burn Cooldown", kind: FabricTypeInteger, unit: "s", def: 300, min: intPtr(0), max: intPtr(86400), class: FabricApplyHot, risk: FabricRiskMedium,
+		desc: "Minimum interval between automatic burns for the same cgroup, so one recurring incident cannot turn into a burn storm."},
+
+	// --------------------------------------------------------------- lockdown
+	// Emergency Lockdown / anti-physical-extraction (docs/POINT5-LOCKDOWN.md §7).
+	// The shipped default is disabled: no LOCKDOWN_* command is issued, no trigger
+	// ticker sends traffic and no phase runs. Enabling the namespace requires at
+	// least one phase; every phase status is reported as applied/partial/
+	// unavailable/unsupported/failed from what the kernel and the dedicated
+	// subsystems actually acknowledged, never assumed (§9).
+	{module: "lockdown", group: "Emergency Lockdown", key: "enabled", label: "Emergency Lockdown", kind: FabricTypeBoolean, def: false, class: FabricApplyHot, risk: FabricRiskCritical,
+		desc: "Enable the emergency-lockdown engine. Disabled (the upgrade default) means no core LOCKDOWN_* command, no trigger evaluation and no event; host behaviour is unchanged until an operator enables it."},
+	{module: "lockdown", group: "Emergency Lockdown", key: "auto_arm", label: "Auto-Arm on Start", kind: FabricTypeBoolean, def: false, class: FabricApplyHot, risk: FabricRiskCritical,
+		desc: "Re-arm the kernel arm mode on start without an operator click. Off by default: a restart must not arm a kernel policy that a previous operator decision had left disarmed."},
+	{module: "lockdown", group: "Trigger Sources", key: "trigger_morpheus_critical", label: "Trigger on Morpheus CRITICAL", kind: FabricTypeBoolean, def: true, class: FabricApplyHot, risk: FabricRiskCritical,
+		desc: "Latch when a MORPHEUS.RASP.* incident with severity CRITICAL is recorded. Any other severity or rule family never triggers."},
+	{module: "lockdown", group: "Trigger Sources", key: "trigger_canary_unauthorized", label: "Trigger on Canary Unauthorized Probe", kind: FabricTypeBoolean, def: true, class: FabricApplyHot, risk: FabricRiskCritical,
+		desc: "Latch on KD.LINUX.CANARY_ACCESS with the CANARY_UNAUTHORIZED_PROBE reason and CRITICAL severity. System and scanner accesses carry a different reason and severity and never trigger."},
+	{module: "lockdown", group: "Trigger Sources", key: "trigger_boot_trust_drift", label: "Trigger on Boot-Trust Drift", kind: FabricTypeBoolean, def: true, class: FabricApplyHot, risk: FabricRiskCritical,
+		desc: "Latch when the 60 s boot-trust reconciliation observes a degradation from VERIFIED to OBSERVE. NOT_SUPPORTED and UNKNOWN are platform facts, not drift, and never trigger."},
+	{module: "lockdown", group: "Trigger Sources", key: "trigger_witness_equivocation", label: "Trigger on Witness Equivocation", kind: FabricTypeBoolean, def: false, class: FabricApplyHot, risk: FabricRiskCritical,
+		desc: "Accept the Out-of-Band Witness equivocation/rollback alarm as a lockdown source. Off by default: it requires an explicit enable here and in witness.trigger_lockdown_on_equivocation, and the P5 dedupe, cooldown and RequireSources guards still apply."},
+	{module: "lockdown", group: "Trigger Sources", key: "require_sources", label: "Required Trigger Sources", kind: FabricTypeInteger, unit: "sources", def: 1, min: intPtr(1), max: intPtr(4), class: FabricApplyHot, risk: FabricRiskCritical,
+		desc: "Distinct trigger sources that must agree within the correlation window before an automatic lockdown fires. 1 fires on the first qualifying source; the operator API always bypasses this requirement because it is explicit intent."},
+	{module: "lockdown", group: "Trigger Sources", key: "duress_token_path", label: "Duress Token File", kind: FabricTypePath, def: "", class: FabricApplyHot, risk: FabricRiskCritical,
+		desc: "Optional absolute path of a bounded duress token file polled every second. Empty disables the poll entirely. A non-empty token triggers a MANUAL lockdown; the path is never disclosed by the status API."},
+
+	// Isolation phases
+	{module: "lockdown", group: "Isolation Phases", key: "network_lockdown", label: "Network Drop", kind: FabricTypeBoolean, def: true, class: FabricApplyHot, risk: FabricRiskCritical,
+		desc: "Ask the core to drop external traffic through the LOCKDOWN_STATE eBPF fast path (XDP/TC-ingress/cgroup egress). The phase is reported applied only after the core's read-back."},
+	{module: "lockdown", group: "Isolation Phases", key: "allow_loopback", label: "Keep Loopback Reachable", kind: FabricTypeBoolean, def: true, class: FabricApplyHot, risk: FabricRiskCritical,
+		desc: "Pass 127.0.0.0/8 and ::1 through the lockdown drop so the authenticated clear path stays reachable. Disabling the clear path without a local fallback is an operator decision, not a default."},
+	{module: "lockdown", group: "Isolation Phases", key: "drop_loopback", label: "Panic Mode: Drop Loopback", kind: FabricTypeBoolean, def: false, class: FabricApplyHot, risk: FabricRiskCritical,
+		desc: "Opt-in panic mode that also kills loopback. Clearing then only works from the local console, a duress file or a restart; the status API reports the isolation honestly."},
+	{module: "lockdown", group: "Isolation Phases", key: "freeze_processes", label: "Freeze Incident Process", kind: FabricTypeBoolean, def: true, class: FabricApplyHot, risk: FabricRiskHigh,
+		desc: "Freeze the incident-bound process through the existing core response channel. UID 0 is excluded by default; without an incident-bound target the phase is reported unavailable instead of claiming a freeze."},
+	{module: "lockdown", group: "Isolation Phases", key: "freeze_brokers", label: "Freeze Key Brokers", kind: FabricTypeBoolean, def: true, class: FabricApplyHot, risk: FabricRiskCritical,
+		desc: "Ask the core to SIGSTOP the fixed broker name list (ssh-agent, gpg-agent, gnome-keyring-d, keepassxc, vault, astraea-key-broker). The claim is frozen-not-locked: no RAM zeroization is performed."},
+	{module: "lockdown", group: "Isolation Phases", key: "freeze_cells", label: "Freeze Gaia Cells", kind: FabricTypeBoolean, def: true, class: FabricApplyHot, risk: FabricRiskCritical,
+		desc: "Freeze live Gaia Cells through the existing CellGuard/TransactionEngine path. Cells already frozen count as applied; a missing runtime is reported unavailable, never as isolated."},
+	{module: "lockdown", group: "Isolation Phases", key: "freeze_parser_cells", label: "Burn Parser Cells", kind: FabricTypeBoolean, def: true, class: FabricApplyHot, risk: FabricRiskHigh,
+		desc: "Burn managed parser-ephemeral cells through ParserCellManager.BurnForIncident. A parser cell is destroyed, never paused; without an active manager the phase is reported unavailable."},
+	{module: "lockdown", group: "Isolation Phases", key: "cell_scope", label: "Cell Freeze Scope", kind: FabricTypeEnum, def: "all", class: FabricApplyHot, risk: FabricRiskCritical,
+		enum: []string{"all", "high-risk"}, desc: "all freezes every live cell; high-risk freezes only the untrusted execution substrates (application/microvm) and keeps vault/workspace cells usable for the recovery console."},
+	{module: "lockdown", group: "Isolation Phases", key: "hardening_apply", label: "Apply Reversible Hardening", kind: FabricTypeBoolean, def: false, class: FabricApplyHot, risk: FabricRiskCritical,
+		desc: "Forward LOCKDOWN_TRIGGER flag bit3 so the core writes its allowlisted reversible sysctls. modules_disabled is never applied automatically; an explicit LOCKDOWN_PHASE command is required for it."},
+
+	// Resource bounds
+	{module: "lockdown", group: "Resource Bounds", key: "cooldown_seconds", label: "Automatic Trigger Cooldown", kind: FabricTypeInteger, unit: "s", def: 300, min: intPtr(0), max: intPtr(86400), class: FabricApplyHot, risk: FabricRiskMedium,
+		desc: "Minimum interval between two automatic triggers. A suppressed candidate is counted once in the false-positive guard, not spammed into the event stream."},
+	{module: "lockdown", group: "Resource Bounds", key: "max_targets", label: "Max Phase Targets", kind: FabricTypeInteger, unit: "targets", def: 256, min: intPtr(1), max: intPtr(1024), class: FabricApplyHot, risk: FabricRiskHigh,
+		desc: "Bounds every per-phase target list (cells, parser cells, processes) so one trigger cannot walk an unbounded inventory. A truncated list is reported as bounded, not as fully covered."},
+	{module: "lockdown", group: "Resource Bounds", key: "exclude_uid0", label: "Exclude UID 0", kind: FabricTypeBoolean, def: true, class: FabricApplyHot, risk: FabricRiskCritical,
+		desc: "Refuse to freeze a UID 0 process from the automatic path. Freezing root-owned infrastructure during an incident is how a recovery console is lost; the phase says so instead of doing it."},
+
+	// ---------------------------------------------------------------- witness
+	{module: "witness", group: "Transport", key: "enabled", label: "Out-of-Band Witness", kind: FabricTypeBoolean, def: false, class: FabricApplyHot, risk: FabricRiskHigh,
+		desc: "Enable out-of-band checkpoints. Disabled is the shipped default: no checkpoint is created, no request is sent and no export is produced."},
+	{module: "witness", group: "Transport", key: "mode", label: "Witness Mode", kind: FabricTypeEnum, def: "off", class: FabricApplyHot, risk: FabricRiskHigh,
+		enum: []string{"off", "http", "export"}, desc: "off disables the namespace, http uses the hardened pinned HTTPS client (Mode A), export is the air-gapped vgtw1 form (Mode B)."},
+	{module: "witness", group: "Transport", key: "endpoint", label: "Witness Endpoint", kind: FabricTypeText, def: "", class: FabricApplyHot, risk: FabricRiskHigh,
+		desc: "Absolute https base URL on port 443. The client appends /v1/challenge and /v1/checkpoint; redirects, proxies and any other port are refused."},
+	{module: "witness", group: "Transport", key: "pinned_server_spki", label: "Pinned Server SPKI", kind: FabricTypeText, def: "", class: FabricApplyHot, risk: FabricRiskCritical,
+		desc: "SHA-256 over the server certificate's RawSubjectPublicKeyInfo as 64 lowercase hex characters. Compared in constant time before any checkpoint body is sent."},
+	{module: "witness", group: "Transport", key: "pinned_server_key_file", label: "Pinned Receipt Key File", kind: FabricTypePath, def: "", class: FabricApplyHot, risk: FabricRiskCritical,
+		desc: "Absolute path to the pinned Ed25519 receipt-verification public key (0600 file). Receipt signatures over VGT-GEDEFENSE-WITNESS-RECEIPT-V1 are verified against it."},
+	{module: "witness", group: "Transport", key: "client_cert_file", label: "mTLS Client Certificate", kind: FabricTypePath, def: "", class: FabricApplyHot, risk: FabricRiskHigh,
+		desc: "Optional client certificate for mutual TLS. It must be configured together with the client key file."},
+	{module: "witness", group: "Transport", key: "client_key_file", label: "mTLS Client Key", kind: FabricTypePath, def: "", class: FabricApplyHot, risk: FabricRiskCritical,
+		desc: "Optional client private key for mutual TLS (0600 file). It must be configured together with the client certificate file."},
+	{module: "witness", group: "Transport", key: "auth_token_file", label: "Bearer Token File", kind: FabricTypePath, def: "", class: FabricApplyHot, risk: FabricRiskCritical,
+		desc: "Optional absolute path to a 0600 bearer token file. The token itself never appears in the settings document or a log line."},
+	{module: "witness", group: "Checkpoint Policy", key: "checkpoint_interval_seconds", label: "Checkpoint Interval", kind: FabricTypeInteger, unit: "s", def: 300, min: intPtr(30), max: intPtr(86400), class: FabricApplyHot, risk: FabricRiskMedium,
+		desc: "Ticker cadence at which a signed checkpoint is produced and, in http mode, pushed to the witness."},
+	{module: "witness", group: "Checkpoint Policy", key: "nonce_ttl_seconds", label: "Challenge TTL", kind: FabricTypeInteger, unit: "s", def: 120, min: intPtr(10), max: intPtr(900), class: FabricApplyHot, risk: FabricRiskMedium,
+		desc: "Client-side lifetime of an accepted witness challenge. A nonce is used once and never replayed."},
+	{module: "witness", group: "Checkpoint Policy", key: "request_timeout_seconds", label: "Request Timeout", kind: FabricTypeInteger, unit: "s", def: 10, min: intPtr(1), max: intPtr(60), class: FabricApplyHot, risk: FabricRiskLow,
+		desc: "Timeout of one witness HTTP round trip. The response body is additionally capped at 64 KiB."},
+	{module: "witness", group: "Checkpoint Policy", key: "require_ack", label: "Require Receipt", kind: FabricTypeBoolean, def: true, class: FabricApplyHot, risk: FabricRiskMedium,
+		desc: "A push without a verified signed receipt is a degraded delivery, not a success. Phase 1 always requires the receipt."},
+	{module: "witness", group: "Outbox & Retry", key: "outbox_max_bytes", label: "Outbox Maximum Bytes", kind: FabricTypeInteger, unit: "bytes", def: 4 << 20, min: intPtr(64 << 10), max: intPtr(64 << 20), class: FabricApplyHot, risk: FabricRiskMedium,
+		desc: "Encrypted outbox size bound. A full outbox fails closed: no new checkpoint is created and witness.outbox_full is recorded."},
+	{module: "witness", group: "Outbox & Retry", key: "outbox_max_entries", label: "Outbox Maximum Entries", kind: FabricTypeInteger, def: 1024, min: intPtr(16), max: intPtr(65536), class: FabricApplyHot, risk: FabricRiskMedium,
+		desc: "Encrypted outbox entry bound. Acknowledged entries are pruned; a full outbox refuses new checkpoints instead of dropping evidence."},
+	{module: "witness", group: "Outbox & Retry", key: "retry_attempts", label: "Retry Attempts", kind: FabricTypeInteger, def: 3, min: intPtr(0), max: intPtr(10), class: FabricApplyHot, risk: FabricRiskLow,
+		desc: "Bounded retries for 5xx and network errors. A 4xx answer is never retried."},
+	{module: "witness", group: "Outbox & Retry", key: "retry_backoff_seconds", label: "Retry Backoff", kind: FabricTypeInteger, unit: "s", def: 30, min: intPtr(1), max: intPtr(3600), class: FabricApplyHot, risk: FabricRiskLow,
+		desc: "Base of the bounded exponential backoff between push attempts."},
+	{module: "witness", group: "Outbox & Retry", key: "degrade_after_failures", label: "Degrade After Failures", kind: FabricTypeInteger, def: 3, min: intPtr(1), max: intPtr(100), class: FabricApplyHot, risk: FabricRiskMedium,
+		desc: "Consecutive push failures after which the witness status reports degraded. Unreachability never triggers a lockdown."},
+	{module: "witness", group: "Escalation", key: "equivocation_alarm", label: "Equivocation Alarm", kind: FabricTypeBoolean, def: true, class: FabricApplyHot, risk: FabricRiskHigh,
+		desc: "Record critical evidence and an incident when the ledger epoch/sequence/head disagrees with the last acknowledged or observed checkpoint."},
+	{module: "witness", group: "Escalation", key: "trigger_lockdown_on_equivocation", label: "Lockdown on Equivocation", kind: FabricTypeBoolean, def: false, class: FabricApplyHot, risk: FabricRiskCritical,
+		desc: "Optionally latch the P5 Emergency Lockdown when equivocation or rollback is proven. Off by default; the lockdown namespace must be enabled too."},
 }
 
 var (
@@ -633,6 +798,11 @@ var fabricModuleGroups = map[string][]string{
 	"policy_trust": {"Signature Enforcement", "Verification", "Resource Bounds"},
 	"forensics":    {"Cases", "Export", "Quarantine"},
 	"system":       {"Dashboard", "Resource Bounds", "Core IPC"},
+	"styx":         {"Kernel Egress Enforcement", "Per-Cell Policy", "DNS Pinning"},
+	"titan_exec":   {"Kernel Exec Gate", "Allowlist Sources", "Per-Cgroup Scopes", "Resource Bounds"},
+	"parser_cells": {"Parser Cells", "Resource Limits", "Incident Response"},
+	"lockdown":     {"Emergency Lockdown", "Trigger Sources", "Isolation Phases", "Resource Bounds"},
+	"witness":      {"Transport", "Checkpoint Policy", "Outbox & Retry", "Escalation"},
 }
 
 // fabricSettingsSchema is the global settings schema endpoint. It exposes the
