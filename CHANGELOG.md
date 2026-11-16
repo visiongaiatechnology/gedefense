@@ -1,5 +1,12 @@
 # Changelog
 
+## 6.0.1 — 2026-11-16 — GeDefense V6 Server-Safe Auto-Arm & Scanner Calibration Hotfix
+
+- **Emergency Lockdown stays opt-in (`control/runtime_settings.go`):** Removed automatic activation of **Emergency Lockdown** (`lockdown.enabled` + `lockdown.auto_arm` with `network_lockdown=true` and `require_sources=1`) from `ApplySafeV6DefaultsOnEnforce()`. On `enforce`, GeDefense V6 continues to auto-enable **StyX** (`monitor`), **Titan Exec Gate** (`contain`), and **Ephemeral Parser Cells** (`enabled`), while both **Emergency Lockdown** and **Witness** stay explicit operator opt-in so a single host scanner/maintenance event cannot unexpectedly cut off remote SSH/HTTPS connectivity via `XDP_DROP`.
+- **AIDE & Linux integrity/AV scanner canary calibration (`control/deception.go`):** Added `aide`, `aide.wrapper`, `updatedb.*`, `tripwire`, `samhain`, `rkhunter`, `chkrootkit`, `clamscan`, `clamd`, `freshclam`, and `osqueryd` to `isSystemOrScannerAccessor` so scheduled integrity checks running under dedicated unprivileged service accounts (such as Ubuntu/Debian `_aide`) are classified as `CANARY_SUSPICIOUS_SYSTEM_ACCESS` (`HIGH`) instead of `CRITICAL` / `CANARY_UNAUTHORIZED_PROBE`.
+- **Root-mode OneClick Rust test fixes (`rust/gedefense-core/src/lockdown_hardening.rs`, `rust/gedefense-core/src/quarantine.rs`):** Fixed `untyped_values_are_never_claimed` and `copy_quarantine_aborts_when_the_source_cannot_be_removed` so `cargo test` inside `0700` `root`-owned OneClick installation workspaces succeeds reliably.
+- **Relative `.sha256` sidecars (`scripts/package-artifacts.sh`):** Generated `VGT_GeDefense_V6_${VERSION}_OneClick.run.sha256` with a basename path instead of an absolute build host path.
+
 ## 6.0.0 — 2026-11-15 — GeDefense V6 Anti-Spyware & Sovereignty Architecture
 
 GeDefense **V6 (6.0.0)** introduces the 5-point anti-spyware defense-in-depth architecture on top of the hardened V5/5.2.0 foundation (Runtime Settings **v17**). During `observe` and `canary` phases all five subsystems stay **off / fail-closed**; once GeDefense is armed (**`enforce`**), because no dedicated V6 Web UI panel ships yet, `gedefense-control` automatically activates the safe V6 baseline (**StyX** `monitor`, **Titan Exec Gate** `contain`, **Ephemeral Parser Cells** `enabled`, **Emergency Lockdown** `enabled` + `auto_arm`), while **Witness** stays **opt-in** (requires external peer endpoint/pinning) and explicit operator API overrides remain sticky:

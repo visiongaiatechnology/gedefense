@@ -1299,8 +1299,9 @@ func (s *SettingsStore) RemoveAllowlist(target string) (RuntimeSettings, string,
 // ApplySafeV6DefaultsOnEnforce enables the non-breaking V6 defense subsystems
 // when GeDefense arms into enforce (unless previously applied or already configured):
 // StyX moves to monitor (with flow telemetry for C2/beacon detection), Titan Exec
-// moves to contain, Parser Cells enables fail-closed admission, and Lockdown arms
-// host/hotplug watches; Witness remains opt-in since it needs an external endpoint.
+// moves to contain, and Parser Cells enables fail-closed admission. Both Emergency
+// Lockdown (which can sever remote SSH/HTTP via XDP_DROP on a single trigger)
+// and Witness remain explicit opt-in until configured by the operator.
 func (s *SettingsStore) ApplySafeV6DefaultsOnEnforce() (RuntimeSettings, bool, error) {
 	if s == nil {
 		return RuntimeSettings{}, false, nil
@@ -1334,14 +1335,6 @@ func (s *SettingsStore) ApplySafeV6DefaultsOnEnforce() (RuntimeSettings, bool, e
 	if !parserCells.Enabled {
 		parserCells.Enabled = true
 		next.ParserCells = &parserCells
-		activated = true
-	}
-
-	lockdown := effectiveLockdownSettings(next)
-	if !lockdown.Enabled {
-		lockdown.Enabled = true
-		lockdown.AutoArm = true
-		next.Lockdown = &lockdown
 		activated = true
 	}
 

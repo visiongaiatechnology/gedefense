@@ -16,6 +16,7 @@ func v6AutoArmFixture(t *testing.T) (Config, *State, *SettingsStore, *ReleaseCon
 	dir := t.TempDir()
 	cfg := defaultConfig()
 	cfg.Node.Name = "v6-auto-arm-test"
+	cfg.Defense.Allowlist = []string{"192.0.2.10/32"}
 	cfg.Runtime.SettingsFile = filepath.Join(dir, "settings.json")
 	cfg.Runtime.KeyFile = filepath.Join(dir, "settings.key")
 	cfg.Runtime.StorageKeyFile = ""
@@ -41,8 +42,6 @@ func v6AutoArmFixture(t *testing.T) (Config, *State, *SettingsStore, *ReleaseCon
 		t.Fatalf("settings store: %v", err)
 	}
 	state := NewState("test", cfg)
-	state.SetCore(true, "native")
-	state.SetAllowlistReady(true)
 	verifiedAt := time.Now().UTC()
 	state.SetSensorCoverage(SensorCoverage{
 		Name: "xdp_ingress", Layer: LayerIngressNetwork, Status: CoverageOnline, Required: true,
@@ -53,8 +52,15 @@ func v6AutoArmFixture(t *testing.T) (Config, *State, *SettingsStore, *ReleaseCon
 	if err != nil {
 		t.Fatalf("policy store: %v", err)
 	}
+	state.SetPolicyStatus(policy.Status())
+	state.SetCore(true, "native")
+	state.SetAllowlistReady(true)
+	state.UpdateXDRScan(1, 0, state.started, false, "", 1)
 	core := &releaseCoreStub{}
 	release := NewReleaseController(cfg, state, core, policy, settings)
+	if err := release.InitializeStartup("observe", true); err != nil {
+		t.Fatalf("initialize startup: %v", err)
+	}
 	return cfg, state, settings, release
 }
 
@@ -73,6 +79,12 @@ func TestV6SafeAutoArmOnEnforceAndRespectOverride(t *testing.T) {
 		hookSettings = updated
 	})
 
+	if _, err := release.Transition(ReleasePhaseCanary, "PROMOTE:CANARY", "promote through canary before enforce"); err != nil {
+		t.Fatalf("promote canary: %v", err)
+	}
+	if settings.Get().V6AutoArmedApplied {
+		t.Fatalf("did not expect V6 auto-arm during canary phase")
+	}
 	if _, err := release.Transition(ReleasePhaseEnforce, "PROMOTE:ENFORCE", "activate V6 safe defaults on arming"); err != nil {
 		t.Fatalf("promote enforce: %v", err)
 	}
@@ -93,8 +105,8 @@ func TestV6SafeAutoArmOnEnforceAndRespectOverride(t *testing.T) {
 	if !got.ParserCells.Enabled {
 		t.Fatalf("expected ParserCells enabled on enforce")
 	}
-	if !got.Lockdown.Enabled || !got.Lockdown.AutoArm {
-		t.Fatalf("expected Lockdown enabled+auto_arm on enforce: %+v", got.Lockdown)
+	if got.Lockdown.Enabled || got.Lockdown.AutoArm {
+		t.Fatalf("expected Emergency Lockdown to stay opt-in (avoid automatic remote XDP_DROP lockout): %+v", got.Lockdown)
 	}
 	if got.Witness.Enabled || got.Witness.Mode != witnessModeOff {
 		t.Fatalf("expected Witness to stay opt-in: %+v", got.Witness)

@@ -348,8 +348,10 @@ mod tests {
         let report = apply(&paths, false);
         if unsafe { libc::geteuid() } != 0 {
             assert_eq!(report.kexec_load_disabled, Write::Failed);
+            assert!(matches!(report.outcome, FAILED | PARTIAL), "{report:?}");
+        } else {
+            assert_eq!(report.outcome, APPLIED, "{report:?}");
         }
-        assert!(matches!(report.outcome, FAILED | PARTIAL), "{report:?}");
     }
 
     #[test]

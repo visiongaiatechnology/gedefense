@@ -173,6 +173,25 @@ func TestDeceptionEngine_SystemScannerCalibration(t *testing.T) {
 		t.Fatalf("expected HIGH / 85%% for updatedb, got %s / %d", incScan.Severity, incScan.AttackStory[0].Confidence)
 	}
 
+	// Test 2b: Integrity scanner (e.g. Debian/Ubuntu AIDE running as non-root service account _aide)
+	aideEvt := DeceptionAccessEvent{
+		CanaryPath:   canaryPath,
+		AccessorPID:  2041,
+		AccessorUID:  988,
+		AccessorComm: "aide",
+		Timestamp:    now,
+	}
+
+	incAide, _, err := engine.HandleCanaryAccess(ctx, aideEvt)
+	if err != nil {
+		t.Fatalf("failed to handle aide access: %v", err)
+	}
+	if incAide.Severity != "HIGH" || incAide.AttackStory[0].Confidence != 85 ||
+		incAide.AttackStory[0].Metadata["trigger_reason"] != "CANARY_SUSPICIOUS_SYSTEM_ACCESS" {
+		t.Fatalf("expected HIGH / 85%% / CANARY_SUSPICIOUS_SYSTEM_ACCESS for aide, got %s / %d / %s",
+			incAide.Severity, incAide.AttackStory[0].Confidence, incAide.AttackStory[0].Metadata["trigger_reason"])
+	}
+
 	// Test 3: Backup daemon (e.g. backup-runner)
 	backupEvt := DeceptionAccessEvent{
 		CanaryPath:   canaryPath,

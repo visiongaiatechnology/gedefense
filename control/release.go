@@ -482,7 +482,7 @@ func (r *ReleaseController) Transition(target, confirmation, reason string) (Rel
 			r.state.SetSettings(updatedSettings)
 			r.state.AddEvent(Event{
 				Severity: "info", Kind: "v6.auto_armed", Source: "release-gate",
-				Message: "GeDefense V6 safe defaults activated on enforce (styx=monitor, titan_exec=contain, parser_cells=enabled, lockdown=auto_arm; witness remains opt-in)",
+				Message: "GeDefense V6 safe defaults activated on enforce (styx=monitor, titan_exec=contain, parser_cells=enabled; lockdown and witness remain opt-in)",
 			})
 		}
 	}

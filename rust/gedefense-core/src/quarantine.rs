@@ -1299,24 +1299,73 @@ mod tests {
             return;
         }
         if unsafe { libc::geteuid() } == 0 {
+            use std::ffi::CString;
             use std::os::unix::process::CommandExt;
-            let exe = std::env::current_exe().expect("test binary");
-            let mut command = std::process::Command::new(exe);
-            command.args([
-                "--exact",
-                "copy_quarantine_aborts_when_the_source_cannot_be_removed",
-                "--nocapture",
-            ]);
-            command.env("GEDEFENSE_QUARANTINE_READONLY_CHILD", "1");
-            unsafe {
-                command.pre_exec(|| {
-                    if libc::setgid(65534) != 0 || libc::setuid(65534) != 0 {
-                        return Err(std::io::Error::last_os_error());
-                    }
-                    Ok(())
-                });
+            let child_tmp = PathBuf::from(format!("/tmp/gedefense-qchild-{}", std::process::id()));
+            let _ = fs::remove_dir_all(&child_tmp);
+            fs::create_dir_all(&child_tmp).expect("child tmp dir");
+            fs::set_permissions(&child_tmp, fs::Permissions::from_mode(0o700))
+                .expect("child tmp permissions");
+            let c_tmp = CString::new(child_tmp.as_os_str().as_bytes()).expect("cstr child_tmp");
+            if unsafe { libc::chown(c_tmp.as_ptr(), 65534, 65534) } != 0 {
+                let _ = fs::remove_dir_all(&child_tmp);
+                panic!("chown child_tmp failed: {}", std::io::Error::last_os_error());
             }
-            let status = command.status().expect("unprivileged child test process");
+            let run_as_nobody = |bin: &Path| -> std::io::Result<std::process::ExitStatus> {
+                let mut command = std::process::Command::new(bin);
+                command.args([
+                    "--exact",
+                    "quarantine::tests::copy_quarantine_aborts_when_the_source_cannot_be_removed",
+                    "--nocapture",
+                ]);
+                command.env("GEDEFENSE_QUARANTINE_READONLY_CHILD", "1");
+                // Override root's inherited TMPDIR (e.g. pam_tmpdir /tmp/user/0 mode 0700)
+                // because std::env::temp_dir() does not fall back when TMPDIR is unwritable.
+                command.env("TMPDIR", &child_tmp);
+                unsafe {
+                    command.pre_exec(|| {
+                        if libc::setgid(65534) != 0 || libc::setuid(65534) != 0 {
+                            return Err(std::io::Error::last_os_error());
+                        }
+                        Ok(())
+                    });
+                }
+                command.status()
+            };
+            let exe = std::env::current_exe().expect("test binary");
+            let status_res = match run_as_nobody(&exe) {
+                Ok(status) => Ok(status),
+                Err(err) if err.kind() == std::io::ErrorKind::PermissionDenied => {
+                    // When invoked inside an installer's 0700 WORK directory, uid 65534
+                    // cannot traverse parent directories to exec `exe`; stage a transient
+                    // 0755 copy inside a 0711 directory under /tmp or /var/tmp.
+                    let mut result = Err(err);
+                    for base in [PathBuf::from("/tmp"), PathBuf::from("/var/tmp")] {
+                        let stage_dir = base.join(format!("gedefense-qtest-{}", std::process::id()));
+                        let _ = fs::remove_dir_all(&stage_dir);
+                        if fs::create_dir_all(&stage_dir).is_ok()
+                            && fs::set_permissions(&stage_dir, fs::Permissions::from_mode(0o711)).is_ok()
+                        {
+                            let staged_bin = stage_dir.join("test-runner");
+                            if fs::copy(&exe, &staged_bin).is_ok()
+                                && fs::set_permissions(&staged_bin, fs::Permissions::from_mode(0o755)).is_ok()
+                            {
+                                result = run_as_nobody(&staged_bin);
+                            }
+                            let _ = fs::remove_dir_all(&stage_dir);
+                            if let Ok(ref st) = result {
+                                if st.success() {
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    result
+                }
+                Err(err) => Err(err),
+            };
+            let _ = fs::remove_dir_all(&child_tmp);
+            let status = status_res.expect("unprivileged staged child test process");
             assert!(status.success(), "unprivileged child test failed: {status}");
             return;
         }

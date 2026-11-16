@@ -581,9 +581,14 @@ func isSystemOrScannerAccessor(uid uint32, comm string) bool {
 	}
 	base := strings.ToLower(filepath.Base(trimmed))
 	base = strings.TrimSuffix(base, ".exe")
-	if base == "updatedb" || base == "find" || strings.Contains(base, "backup") ||
+	if base == "updatedb" || strings.HasPrefix(base, "updatedb.") ||
+		base == "find" || strings.Contains(base, "backup") ||
 		base == "locate" || base == "plocate" || base == "mlocate" ||
-		base == "rsync" || base == "tar" || base == "borg" || base == "restic" {
+		base == "rsync" || base == "tar" || base == "borg" || base == "restic" ||
+		base == "aide" || base == "aide.wrapper" || base == "tripwire" ||
+		base == "samhain" || base == "rkhunter" || base == "chkrootkit" ||
+		base == "clamscan" || base == "clamd" || base == "freshclam" ||
+		base == "osqueryd" {
 		return true
 	}
 	return false

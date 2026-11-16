@@ -1,5 +1,12 @@
 # Release Notes
 
+## 6.0.1 — 2026-11-16 — GeDefense V6 Hotfix (Server-Safe Auto-Arm & AIDE Calibration)
+
+- **Emergency Lockdown remains opt-in:** `ApplySafeV6DefaultsOnEnforce()` no longer auto-arms Emergency Lockdown (`network_lockdown=true`, `require_sources=1`) when transitioning to `enforce`. **StyX** (`monitor`), **Titan Exec Gate** (`contain`), and **Parser Cells** (`enabled`) remain active automatically on `enforce`, while both **Emergency Lockdown** and **Witness** require explicit operator activation.
+- **Canary scanner calibration:** Scheduled integrity/AV scanners running under dedicated service accounts (including Debian/Ubuntu `aide` / `_aide`, `updatedb.*`, `tripwire`, `samhain`, `rkhunter`, `chkrootkit`, `clamscan`, `clamd`, `freshclam`, `osqueryd`) are classified as `CANARY_SUSPICIOUS_SYSTEM_ACCESS` (`HIGH`) rather than `CRITICAL` unauthorized probes.
+- **Root-mode OneClick installer reliability:** Fixed two `gedefense-core` unit tests (`lockdown_hardening::tests::untyped_values_are_never_claimed`, `quarantine::tests::copy_quarantine_aborts_when_the_source_cannot_be_removed`) that previously failed when `cargo test` executed as `root` inside `0700` installer workspaces.
+- **Release packaging hygiene:** `VGT_GeDefense_V6_6.0.1_OneClick.run.sha256` records only the relative archive basename.
+
 ## 6.0.0 — 2026-11-15 — GeDefense V6 (5-Point Anti-Spyware Architecture)
 
 **GeDefense V6 (`6.0.0`)** promotes the 5-point anti-spyware blueprint into the V6 release line (Settings v17). In `observe` and `canary` phases all five planes remain **off** so baseline qualification preserves 5.2.0 behavior; once GeDefense is armed (**`enforce`**), `gedefense-control` automatically activates the safe V6 baseline (**StyX** `monitor`, **Titan Exec Gate** `contain`, **Parser Cells** `enabled`, **Emergency Lockdown** `enabled` + `auto_arm`) since no dedicated V6 UI panels are shipped yet, while **Witness** remains opt-in and operator API overrides stay sticky across restarts:

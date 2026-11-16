@@ -211,7 +211,7 @@ for asset in gedefense-control gedefense-access gedefense-core gedefense-cell-he
              payload.tar.gz release-index.signed.json; do
   cp "$ASSETS/$asset" "$OUT/$asset"
 done
-sha256sum "$OUT/$RUN_NAME" > "$OUT/$RUN_NAME.sha256"
+( cd "$OUT" && sha256sum "$RUN_NAME" > "$RUN_NAME.sha256" )
 ( cd "$OUT" && find . -maxdepth 1 -type f ! -name 'SHA256SUMS' -printf '%f\n' | LC_ALL=C sort | xargs sha256sum > SHA256SUMS )
 
 echo "== final offline verification (fail closed) =="

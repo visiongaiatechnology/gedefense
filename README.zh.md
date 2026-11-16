@@ -7,8 +7,8 @@
 ### Linux Security Fabric - Your Entenprise System
 
 [![License](https://img.shields.io/badge/License-AGPL--3.0--only-blue?style=for-the-badge)](https://www.gnu.org/licenses/agpl-3.0)
-[![Version](https://img.shields.io/badge/Version-6.0.0-orange?style=for-the-badge)](#)
-[![Status](https://img.shields.io/badge/Status-Release_V6_(6.0.0)-brightgreen?style=for-the-badge)](#)
+[![Version](https://img.shields.io/badge/Version-6.0.1-orange?style=for-the-badge)](#)
+[![Status](https://img.shields.io/badge/Status-Release_V6_(6.0.1)-brightgreen?style=for-the-badge)](#)
 [![Installer](https://img.shields.io/badge/Installer-Universal_Linux-green?style=for-the-badge)](#-快速上手)
 [![Platform](https://img.shields.io/badge/Platform-Linux_x86__64-lightgrey?style=for-the-badge&logo=linux)](#)
 [![Data Plane](https://img.shields.io/badge/Data_Plane-Rust_eBPF%2FXDP-red?style=for-the-badge&logo=rust)](#-系统架构)
@@ -30,15 +30,15 @@
 
 <br />
 
-⬇️ **安装程序直链下载 (v6.0.0 / V6):**  
-[**OneClick 安装程序 (`.run`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.0.0/VGT_GeDefense_V6_6.0.0_OneClick.run) · [`.sha256`](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.0.0/VGT_GeDefense_V6_6.0.0_OneClick.run.sha256) · [**Desktop Tray (`.run`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.0.0/GeDefense-6.0.0-Desktop-OneClick.run) · [`.sha256`](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.0.0/GeDefense-6.0.0-Desktop-OneClick.run.sha256) · [**源码归档 (`.zip`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.0.0/VGT_GeDefense_V6_6.0.0_Source.zip) · [**v6.0.0 发布页**](https://github.com/visiongaiatechnology/gedefense/releases/tag/v6.0.0) · [快速上手](#-快速上手)
+⬇️ **安装程序直链下载 (v6.0.1 / V6):**  
+[**OneClick 安装程序 (`.run`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.0.1/VGT_GeDefense_V6_6.0.1_OneClick.run) · [`.sha256`](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.0.1/VGT_GeDefense_V6_6.0.1_OneClick.run.sha256) · [**Desktop Tray (`.run`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.0.1/GeDefense-6.0.1-Desktop-OneClick.run) · [`.sha256`](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.0.1/GeDefense-6.0.1-Desktop-OneClick.run.sha256) · [**源码归档 (`.zip`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.0.1/VGT_GeDefense_V6_6.0.1_Source.zip) · [**v6.0.0 发布页**](https://github.com/visiongaiatechnology/gedefense/releases/tag/v6.0.1) · [快速上手](#-快速上手)
 
 </div>
 
-> **GeDefense V6（`6.0.0`，2026-11-15）— 反间谍软件与主机主权架构**
+> **GeDefense V6（`6.0.1`，2026-11-16）— 反间谍软件与主机主权架构**
 >
 > - **五点反间谍软件蓝图：** 在加固后的 5.2.0 安全基线之上集成 **StyX Egress + C2/Beacon 检测**、**Titan + eBPF-LSM 执行/动态库门禁**、**临时解析隔离单元**（`gedefense-cell-helper.service`）、**带外 Witness 客户端** 与 **紧急锁定（Emergency Lockdown）**（Settings **v17**）。
-> - **开启布防（`enforce`）时安全自动启用（暂无独立 V6 Web UI）：** 在 `observe` / `canary` 阶段，V6 模块保持关闭；一旦 GeDefense 切换至 **`enforce`**（武装布防），Go 控制平面会自动启用安全基线（**StyX=`monitor`**、**Titan Exec=`contain`**、**Parser Cells=`enabled`**、**Lockdown=`enabled` + `auto_arm`**），而 **Witness** 保持手动 Opt-in，且管理员通过 API 所做的显式覆写会在重启后保持有效。
+> - **开启布防（`enforce`）时安全自动启用（暂无独立 V6 Web UI）：** 在 `observe` / `canary` 阶段，V6 模块保持关闭；一旦 GeDefense 切换至 **`enforce`**（武装布防），Go 控制平面会自动启用安全基线（**StyX=`monitor`**、**Titan Exec=`contain`**、**Parser Cells=`enabled`**），而 **Emergency Lockdown** 与 **Witness** 保持手动 Opt-in（避免无人值守服务器因 `XDP_DROP` 断网），且管理员通过 API 所做的显式覆写会在重启后保持有效。
 > - **诚实遥测与 Kernel 7.0 兼容：** 若 `/sys/kernel/security/lsm` 未启用 `bpf` 则如实上报 `inactive`；支持 Linux 7.0.x 的 split-`ctime` BTF 布局、复合 BadUSB 拦截、15 字节 `/proc/*/comm` Broker 冻结、SSRF 阻断的 Witness 拨号以及 `gedefense-cell-helper` 动态加载器环境变量过滤。
 
 
@@ -59,13 +59,13 @@ GeDefense 是一套本地优先的安全架构，覆盖 Linux、Windows、Androi
 | [![Android](https://img.shields.io/badge/Android-22D3EE?style=flat-square&logo=android&logoColor=0B1220)](https://github.com/visiongaiatechnology/gedefenseandroid) **GeDefense Android** | 原生 Android 安全平台：本地 VPN 执行、端点遥测、XDR/EDR 关联、威胁情报、应用风险分析与加密证据。 |
 | [![WordPress](https://img.shields.io/badge/WordPress-1F8FFF?style=flat-square&logo=wordpress&logoColor=ffffff)](https://github.com/visiongaiatechnology/gedefensewp) **GeDefense WordPress** | AGPL-3.0 开源核心 WordPress 套件：ZEUS WAF、AEGIS 深度包检测、TRINITY XDR、ThroneGuard 锁定与 HADES 后台隐藏。 |
 
-## 🚀 GeDefense V6（`6.0.0`）— 新增特性、PC 与服务器防护对比及模块协同
+## 🚀 GeDefense V6（`6.0.1`）— 新增特性、PC 与服务器防护对比及模块协同
 
 > [!NOTE]
 > **暂未内置独立 V6 Web UI 面板 — 布防时自动启用安全基线：**  
-> V6 的五大子系统目前通过 Runtime Settings **v17** 与 REST API（`/api/v1/styx/...`、`/api/v1/titan/exec/...`、`/api/v1/parser-cells/...`、`/api/v1/lockdown/...`、`/api/v1/witness/...`）控制，专用 UI 面板将在后续版本推出。在 `observe` 与 `canary` 阶段 V6 模块默认保持关闭，以确保基线评估不受影响；**一旦 GeDefense 切入 `enforce`（或在 `enforce` 状态下启动），Go 控制平面将自动启用安全默认配置**：`styx=monitor`（含流遥测）、`titan_exec=contain`、`parser_cells=enabled`、`lockdown=enabled`（`auto_arm=true`，保留环回与 root 恢复通道）。**Witness** 仍保持手动 Opt-in（需外部端址与密钥/SPKI 钉扎）。通过 API 修改的设置将在重启后持久保留。
+> V6 的五大子系统目前通过 Runtime Settings **v17** 与 REST API（`/api/v1/styx/...`、`/api/v1/titan/exec/...`、`/api/v1/parser-cells/...`、`/api/v1/lockdown/...`、`/api/v1/witness/...`）控制，专用 UI 面板将在后续版本推出。在 `observe` 与 `canary` 阶段 V6 模块默认保持关闭，以确保基线评估不受影响；**一旦 GeDefense 切入 `enforce`（或在 `enforce` 状态下启动），Go 控制平面将自动启用安全默认配置**：`styx=monitor`（含流遥测）、`titan_exec=contain` 与 `parser_cells=enabled`，而 **Emergency Lockdown** 与 **Witness** 保持手动 Opt-in（防止无控制台服务器意外锁死网络；Witness 需外部端址与密钥/SPKI 钉扎）。通过 API 修改的设置将在重启后持久保留。
 
-### 🆕 V6（`6.0.0`）核心更新
+### 🆕 V6（`6.0.1`）核心更新
 
 1. **点 1 — Titan + eBPF-LSM 执行/动态库门禁（`docs/POINT1-TITAN-EXEC-GATE.md`）：**
    基于实时 vmlinux BTF 偏移（含 Kernel 7.0 split-`ctime` 结构）的 `bprm_check_security` 与 `mmap_file`（`PROT_EXEC`）内核门禁。在 `contain`/`strict` 下拦截或审计 `memfd_create`、已删除二进制执行、`tmpfs` 执行与 `W^X` 违规。若内核未开启 `bpf` LSM 则如实报告 `inactive`。
@@ -98,7 +98,7 @@ GeDefense 是一套本地优先的安全架构，覆盖 Linux、Windows、Androi
 ---
 
 > [!WARNING]
-> **公开测试版 — 不可用于生产环境（版本 6.0.0 / V6）。**  
+> **公开测试版 — 不可用于生产环境（版本 6.0.1 / V6）。**  
 > GeDefense Titan 与 Linux Security Fabric 仍在积极开发中。此测试版仅适用于
 > 测试和资格验证主机。核心架构已由自动发布门禁验证，但公开 CA 发布真实性、
 > RFC3161 时间戳、吊销、外部锚定防回滚和 feed 签名密钥仍然缺失。请勿将此
@@ -508,17 +508,17 @@ Rust Core **未提供任何通用的系统 Shell、文件系统或 Sysctl 执行
 
 ```bash
 # 下载安装程序
-wget https://github.com/visiongaiatechnology/gedefense/releases/download/v6.0.0/VGT_GeDefense_V6_6.0.0_OneClick.run
+wget https://github.com/visiongaiatechnology/gedefense/releases/download/v6.0.1/VGT_GeDefense_V6_6.0.1_OneClick.run
 
 # 校验 SHA-256 完整性指纹
-sha256sum --check VGT_GeDefense_V6_6.0.0_OneClick.run.sha256
+sha256sum --check VGT_GeDefense_V6_6.0.1_OneClick.run.sha256
 
 # 执行安装（需要 root 权限）
-chmod 700 VGT_GeDefense_V6_6.0.0_OneClick.run
-sudo ./VGT_GeDefense_V6_6.0.0_OneClick.run
+chmod 700 VGT_GeDefense_V6_6.0.1_OneClick.run
+sudo ./VGT_GeDefense_V6_6.0.1_OneClick.run
 ```
 
-> **安装程序可用性：** 官方 v6.0.0 自包含安装程序（`VGT_GeDefense_V6_6.0.0_OneClick.run`）将随签名的 GitHub Release 一同发布。
+> **安装程序可用性：** 官方 v6.0.1 自包含安装程序（`VGT_GeDefense_V6_6.0.1_OneClick.run`）将随签名的 GitHub Release 一同发布。
 
 > 安装包与校验和文件仅在通过全部 GitHub CI 测试及实体 Linux 节点验证后发布。切勿运行未经验签的 RUN 可执行文件。
 
@@ -552,7 +552,7 @@ sudo ./VGT_GeDefense_V6_6.0.0_OneClick.run
 
 ---
 
-## 🚧 当前已知局限（6.0.0 / V6）
+## 🚧 当前已知局限（6.0.1 / V6）
 
 - 暂未集成 Swarm / 集群网格（Mesh）支持
 - 暂不支持 QUIC 协议网络卸载
@@ -565,7 +565,7 @@ sudo ./VGT_GeDefense_V6_6.0.0_OneClick.run
 - 隔离诱捕服务（Deception Service）顺延规划
 - 替换受保护的发布组件会以高严重级别被报告，并且不会解除平台的防护；账本轮转要求其归档目录归属于该服务且权限为 `0700`，否则将拒绝运行，而不是写入一个共享目录
 - Rust 核心进程会统计并记录被跳过的入口数据记录，但尚未在其健康应答中报告该数量，因此该数值显示在服务日志中，而不是面板中
-- **暂无专用 V6 Web UI 面板：** StyX、Titan Exec Gate、Parser Cells、Emergency Lockdown 与 Witness 当前通过 Settings v17 与 REST API 配置；切入 `enforce` 时会自动启用安全默认值（Witness 保持 Opt-in）。
+- **暂无专用 V6 Web UI 面板：** StyX、Titan Exec Gate、Parser Cells、Emergency Lockdown 与 Witness 当前通过 Settings v17 与 REST API 配置；切入 `enforce` 时会自动启用安全默认值（`styx`、`titan_exec`、`parser_cells`），而 Emergency Lockdown 与 Witness 保持 Opt-in。
 - **内核 `bpf` LSM 前置要求（点 1 与 Cell Socket LSM）：** 强制内核拦截（`bprm_check_security` / `mmap_file`）需要 `/sys/kernel/security/lsm` 包含 `bpf`（通过 `lsm=...,bpf` 启动参数并重启）；未启用时系统如实上报 `inactive`。
 - **Parser Cells（点 2）：** 默认自带空的解析器配置白名单（需由管理员定义具体解析程序/策略）；Wayland/PipeWire 经纪人透传属于 Phase 2。
 - **Witness 与硬件证明边界（点 4）：** 仅提供 Mode A 客户端与 `vgtw1` 离线包（仓库内不含外部 Witness 服务端或法定人数仲裁）；无 TPM2/UEFI 的主机如实上报 `quote_kind="none"` 与 `key_binding="software"`。
@@ -575,10 +575,16 @@ sudo ./VGT_GeDefense_V6_6.0.0_OneClick.run
 
 ## 📋 版本更新日志 (Changelog)
 
-### v6.0.0 — GeDefense V6 反间谍软件与主机主权架构 *(当前版本 — 2026-11-15)*
+### v6.0.1 — 服务器安全自启与 AIDE 扫描器校准热修复 *(当前版本 — 2026-11-16)*
+
+- **Emergency Lockdown 保持 Opt-in：** `ApplySafeV6DefaultsOnEnforce()` 在切换至 `enforce` 时不再自动武装 Emergency Lockdown；**StyX**（`monitor`）、**Titan Exec Gate**（`contain`）与 **Parser Cells**（`enabled`）保持自动激活，**Emergency Lockdown** 与 **Witness** 需管理员显式启用。
+- **AIDE 与完整性扫描器校准：** 将 `aide`、`aide.wrapper`、`updatedb.*`、`tripwire`、`samhain`、`rkhunter`、`chkrootkit`、`clamscan`、`clamd`、`freshclam`、`osqueryd` 加入 `isSystemOrScannerAccessor`（记录为 `CANARY_SUSPICIOUS_SYSTEM_ACCESS` / `HIGH` 而非误触发锁定）。
+- **相对路径 `.sha256` 校验文件：** `VGT_GeDefense_V6_6.0.1_OneClick.run.sha256` 仅保留相对文件名。
+
+### v6.0.0 — GeDefense V6 反间谍软件与主机主权架构 *(2026-11-15)*
 
 - **五点反间谍软件蓝图：** 集成 StyX 出站与 C2/Beacon 检测（点 3）、支持运行时 BTF 偏移与 Kernel 7.0 split-`ctime` 的 Titan + eBPF-LSM 执行/动态库门禁（点 1）、基于 `gedefense-cell-helper.service` 的临时解析隔离单元（点 2）、带单调 `ledger_epoch` 与 SSRF 钉扎的带外 Witness 客户端（点 4）以及支持 XDP/TC 丢弃锁存、复合 BadUSB 拦截与 15 字节 `comm` 冻结的紧急锁定（点 5）。
-- **布防（`enforce`）安全自动启用：** 鉴于暂未随附独立 V6 UI 面板，在 GeDefense 切换至 `enforce` 时会自动启用安全默认配置（`styx=monitor`、`titan_exec=contain`、`parser_cells=enabled`、`lockdown=enabled+auto_arm`），`witness` 保持 Opt-in，且管理员通过 API 所做的更改可持久保留。
+- **布防（`enforce`）安全自动启用：** 鉴于暂未随附独立 V6 UI 面板，在 GeDefense 切换至 `enforce` 时会自动启用安全默认配置（`styx=monitor`、`titan_exec=contain`、`parser_cells=enabled`），`lockdown` 与 `witness` 保持 Opt-in，且管理员通过 API 所做的更改可持久保留。
 - **集成 5.2.0 安全基线：** 包含 `VGT-AUDIT-20261114-GD51` 审计全部 36 项修复、OneClick Ed25519 预校验、Argon2id 准入与迁移以及签名发布包。
 
 ### v5.0.0-beta.1 — 自动 Gaia Cell 隔离、受控内核缓解与 PHP/L7 操作加固 *(上一版本)*
@@ -871,6 +877,6 @@ sudo python3 scripts/update-geoip-db.py /var/lib/vgt/gedefense/geoip.csv
 
 [![VGT](https://img.shields.io/badge/VisionGaia-Technology-cyan?style=for-the-badge)](https://visiongaiatechnology.de)
 
-*VGT GeDefense 6.0.0 (V6) — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
+*VGT GeDefense 6.0.1 (V6) — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
 
 </div>

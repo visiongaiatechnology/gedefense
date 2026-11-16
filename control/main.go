@@ -17,7 +17,7 @@ import (
 	"time"
 )
 
-const version = "6.0.0"
+const version = "6.0.1"
 
 func detectInterface(requested string) (string, error) {
 	if requested != "" && requested != "auto" {
@@ -579,7 +579,7 @@ func main() {
 				state.SetSettings(updatedSettings)
 				state.AddEvent(Event{
 					Severity: "info", Kind: "v6.auto_armed", Source: "release-gate",
-					Message: "GeDefense V6 safe defaults activated on startup enforce (styx=monitor, titan_exec=contain, parser_cells=enabled, lockdown=auto_arm; witness remains opt-in)",
+					Message: "GeDefense V6 safe defaults activated on startup enforce (styx=monitor, titan_exec=contain, parser_cells=enabled; lockdown and witness remain opt-in)",
 				})
 			}
 		}
