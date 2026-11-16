@@ -1127,7 +1127,7 @@ activate_release(){
   local token status
   token=$(tr -d '\r\n' < "$TOKEN_FILE")
   status=$(curl -fsS -H "Authorization: Bearer $token" http://127.0.0.1:${BACKEND_PORT}/api/v1/status)
-  printf '%s\n' "$status" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["core_connected"] is True, d; assert d["core_mode"] in ("native","generic","native+bpf-lsm-cell","generic+bpf-lsm-cell"), d; print("authenticated core/xdp status:",d["core_mode"])' | tee -a "$LOG_FILE"
+  printf '%s\n' "$status" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["core_connected"] is True, d; parts=str(d.get("core_mode") or "").split("+"); assert parts[0] in ("native","generic") and all(p=="bpf-lsm-cell" or p.startswith(("titan-exec:","lockdown:")) for p in parts[1:]), d; print("authenticated core/xdp status:",d["core_mode"])' | tee -a "$LOG_FILE"
   "$CURRENT/bin/gedefense-access" --listen="127.0.0.1:0" --backend="http://127.0.0.1:${BACKEND_PORT}" --public-host="${PUBLIC_HOST}:${PUBLIC_PORT}" --password-file="$PASSWORD_FILE" --session-key-file="$SESSION_KEY_FILE" --backend-token-file="$TOKEN_FILE" --tls-cert="$CERT_FILE" --tls-key="$TLS_KEY_FILE" --self-test-backend | tee -a "$LOG_FILE"
   systemctl start gedefense-access.service
   for _ in $(seq 1 40); do curl -kfsS --resolve "${PUBLIC_HOST}:${PUBLIC_PORT}:127.0.0.1" "https://${PUBLIC_HOST}:${PUBLIC_PORT}/gateway/livez" >/dev/null 2>&1 && break; sleep .5; done

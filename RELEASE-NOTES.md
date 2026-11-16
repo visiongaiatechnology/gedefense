@@ -4,7 +4,7 @@
 
 - **Emergency Lockdown remains opt-in:** `ApplySafeV6DefaultsOnEnforce()` no longer auto-arms Emergency Lockdown (`network_lockdown=true`, `require_sources=1`) when transitioning to `enforce`. **StyX** (`monitor`), **Titan Exec Gate** (`contain`), and **Parser Cells** (`enabled`) remain active automatically on `enforce`, while both **Emergency Lockdown** and **Witness** require explicit operator activation.
 - **Canary scanner calibration:** Scheduled integrity/AV scanners running under dedicated service accounts (including Debian/Ubuntu `aide` / `_aide`, `updatedb.*`, `tripwire`, `samhain`, `rkhunter`, `chkrootkit`, `clamscan`, `clamd`, `freshclam`, `osqueryd`) are classified as `CANARY_SUSPICIOUS_SYSTEM_ACCESS` (`HIGH`) rather than `CRITICAL` unauthorized probes.
-- **Root-mode OneClick installer reliability:** Fixed two `gedefense-core` unit tests (`lockdown_hardening::tests::untyped_values_are_never_claimed`, `quarantine::tests::copy_quarantine_aborts_when_the_source_cannot_be_removed`) that previously failed when `cargo test` executed as `root` inside `0700` installer workspaces.
+- **V6 OneClick installer & host verification:** Accepted V6 `core_mode` tokens (`+titan-exec:*`, `+lockdown:*`) during live activation checks, and fixed two `gedefense-core` unit tests (`lockdown_hardening::tests::untyped_values_are_never_claimed`, `quarantine::tests::copy_quarantine_aborts_when_the_source_cannot_be_removed`) for `root` / `pam_tmpdir` installer environments.
 - **Release packaging hygiene:** `VGT_GeDefense_V6_6.0.1_OneClick.run.sha256` records only the relative archive basename.
 
 ## 6.0.0 — 2026-11-15 — GeDefense V6 (5-Point Anti-Spyware Architecture)

@@ -93,7 +93,8 @@ interface, status_path, lsm_list = sys.argv[1], sys.argv[2], sys.argv[3]
 with open(status_path, 'r', encoding='utf-8') as handle:
     doc = json.load(handle)
 assert doc.get('core_connected') is True, doc
-assert doc.get('core_mode') in {'native', 'generic', 'native+bpf-lsm-cell', 'generic+bpf-lsm-cell'}, doc
+core_parts = str(doc.get('core_mode') or '').split('+')
+assert core_parts[0] in {'native', 'generic'} and all(p == 'bpf-lsm-cell' or p.startswith(('titan-exec:', 'lockdown:')) for p in core_parts[1:]), doc
 policy = doc.get('policy') or {}
 assert policy.get('verified') is True, policy
 coverage = doc.get('coverage') or {}
