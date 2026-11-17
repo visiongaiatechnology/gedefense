@@ -532,7 +532,7 @@ function renderCases(payload) {
   const rows = records.map(record => {
     const row = document.createElement('tr');
     for (const [value, className] of [
-      [record.id, 'mono'], [record.title, ''], [record.severity, `severity-${record.severity}`],
+      [record.id, 'mono'], [record.title, ''], [record.severity, `severity-${String(record.severity || 'info').toLowerCase()}`],
       [record.occurrence_count, 'mono'], [record.status, record.status === 'resolved' ? 'state-good' : 'state-warn'],
       [formatTime(record.updated_at), '']
     ]) {

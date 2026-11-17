@@ -37,8 +37,8 @@ func TestMorpheusRASP_MemoryScrapingDefense(t *testing.T) {
 	if capturedIncident == nil {
 		t.Fatal("expected XDR incident from RASP violation")
 	}
-	if capturedIncident.Severity != "CRITICAL" {
-		t.Fatalf("expected CRITICAL, got %s", capturedIncident.Severity)
+	if capturedIncident.Severity != "critical" {
+		t.Fatalf("expected critical, got %s", capturedIncident.Severity)
 	}
 	if len(capturedIncident.AttackStory) == 0 {
 		t.Fatal("expected attack story nodes attached")

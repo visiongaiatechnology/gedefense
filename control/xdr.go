@@ -1450,6 +1450,10 @@ func (e *XDREngine) restoreIncidentHistory() error {
 }
 
 func (e *XDREngine) appendIncident(incident XDRIncident) {
+	// The incident log is the forensic record of what the sensors emitted. It must carry
+	// the same normalised severity as the state and the case store, otherwise the same
+	// incident reads differently in the log, in the dashboard and in the case list.
+	incident.Severity = strings.ToLower(strings.TrimSpace(incident.Severity))
 	if e.logger != nil {
 		if hash, err := e.logger.Append(incident); err == nil {
 			incident.RecordHash = hash

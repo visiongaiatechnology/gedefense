@@ -343,9 +343,9 @@ func (b *StyxBeaconEngine) buildIncidentLocked(aggregate *beaconAggregate, now t
 		process = "unknown"
 	}
 	actor := fmt.Sprintf("PID:%d|%s", key.pid, process)
-	severity := "HIGH"
+	severity := "high"
 	if aggregate.lastScore >= 250 {
-		severity = "CRITICAL"
+		severity = "critical"
 	}
 	incidentID := fmt.Sprintf("INC-STYX-BEACON-%d-%d", now.UnixNano(), aggregate.lastScore)
 	node := AttackStoryNode{

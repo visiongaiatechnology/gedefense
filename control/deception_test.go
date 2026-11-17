@@ -60,8 +60,8 @@ func TestDeceptionEngine_RegisterAndAccess(t *testing.T) {
 	}
 
 	// Verify Incident properties (Calibrated High Assurance for untrusted actor)
-	if inc.Severity != "CRITICAL" {
-		t.Fatalf("expected CRITICAL severity, got %s", inc.Severity)
+	if inc.Severity != "critical" {
+		t.Fatalf("expected critical severity, got %s", inc.Severity)
 	}
 	if inc.Score != 200 {
 		t.Fatalf("expected score 200, got %d", inc.Score)
@@ -140,8 +140,8 @@ func TestDeceptionEngine_SystemScannerCalibration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to handle root access: %v", err)
 	}
-	if incRoot.Severity != "HIGH" {
-		t.Fatalf("expected HIGH severity for root access, got %s", incRoot.Severity)
+	if incRoot.Severity != "high" {
+		t.Fatalf("expected high severity for root access, got %s", incRoot.Severity)
 	}
 	if incRoot.Score != 160 {
 		t.Fatalf("expected score 160 for HIGH severity, got %d", incRoot.Score)
@@ -169,8 +169,8 @@ func TestDeceptionEngine_SystemScannerCalibration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to handle scanner access: %v", err)
 	}
-	if incScan.Severity != "HIGH" || incScan.AttackStory[0].Confidence != 85 {
-		t.Fatalf("expected HIGH / 85%% for updatedb, got %s / %d", incScan.Severity, incScan.AttackStory[0].Confidence)
+	if incScan.Severity != "high" || incScan.AttackStory[0].Confidence != 85 {
+		t.Fatalf("expected high / 85%% for updatedb, got %s / %d", incScan.Severity, incScan.AttackStory[0].Confidence)
 	}
 
 	// Test 2b: Integrity scanner (e.g. Debian/Ubuntu AIDE running as non-root service account _aide)
@@ -186,9 +186,9 @@ func TestDeceptionEngine_SystemScannerCalibration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to handle aide access: %v", err)
 	}
-	if incAide.Severity != "HIGH" || incAide.AttackStory[0].Confidence != 85 ||
+	if incAide.Severity != "high" || incAide.AttackStory[0].Confidence != 85 ||
 		incAide.AttackStory[0].Metadata["trigger_reason"] != "CANARY_SUSPICIOUS_SYSTEM_ACCESS" {
-		t.Fatalf("expected HIGH / 85%% / CANARY_SUSPICIOUS_SYSTEM_ACCESS for aide, got %s / %d / %s",
+		t.Fatalf("expected high / 85%% / CANARY_SUSPICIOUS_SYSTEM_ACCESS for aide, got %s / %d / %s",
 			incAide.Severity, incAide.AttackStory[0].Confidence, incAide.AttackStory[0].Metadata["trigger_reason"])
 	}
 
@@ -205,8 +205,8 @@ func TestDeceptionEngine_SystemScannerCalibration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to handle backup access: %v", err)
 	}
-	if incBackup.Severity != "HIGH" || incBackup.AttackStory[0].Confidence != 85 {
-		t.Fatalf("expected HIGH / 85%% for backup-runner, got %s / %d", incBackup.Severity, incBackup.AttackStory[0].Confidence)
+	if incBackup.Severity != "high" || incBackup.AttackStory[0].Confidence != 85 {
+		t.Fatalf("expected high / 85%% for backup-runner, got %s / %d", incBackup.Severity, incBackup.AttackStory[0].Confidence)
 	}
 }
 

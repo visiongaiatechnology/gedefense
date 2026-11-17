@@ -109,4 +109,7 @@ func TestReleaseManifestChannelMatchesVersionSemantics(t *testing.T) {
 	if got := releaseManifestChannelForVersion("6.0.1"); got != "stable" {
 		t.Fatalf("channel(6.0.1) = %q, want stable", got)
 	}
+	if got := releaseManifestChannelForVersion("6.0.3"); got != "stable" {
+		t.Fatalf("channel(6.0.3) = %q, want stable", got)
+	}
 }

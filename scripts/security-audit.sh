@@ -2023,8 +2023,9 @@ for anchor in (
 ):
     need('docs-p4', p4doc, anchor)
 need('docs-architecture', read('ARCHITECTURE.md'), '### 3.38 Point 4')
-if (root / 'Next.md').is_file():
-    need('next-md', read('Next.md'), 'Checkpoint 007')
+# Point-4 implementation anchor must live in versioned documentation rather
+# than gitignored Next.md so fresh checkouts enforce the exact same gate.
+need('docs-report', report, 'Phase-1-Implementierungs- und Verifikationsbericht')
 control_unit = read('packaging/systemd/gedefense-control.service')
 for directive in (
     'User=gedefense',

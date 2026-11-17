@@ -390,9 +390,20 @@ func (e *CaseEngine) persistLocked() error {
 }
 
 func (e *CaseEngine) IngestIncident(incident XDRIncident) error {
-	if incident.Severity != "warning" && incident.Severity != "high" &&
-		incident.Severity != "critical" {
+	// Severity is a closed lower-case vocabulary, but the producers of this codebase do
+	// not all honour it: Morpheus RASP, the StyX egress/beacon engines and the deception
+	// engine emit the display form "CRITICAL"/"HIGH". The gate used to drop those
+	// incidents silently while State.AddIncident recorded a successful ingest, so the
+	// most severe detections never became cases. Normalise at the boundary instead:
+	// "info"/"low" stay legitimate observation-only levels (no case, not an error), and
+	// only a value outside the vocabulary is a producer bug worth reporting.
+	incident.Severity = strings.ToLower(strings.TrimSpace(incident.Severity))
+	switch incident.Severity {
+	case "info", "low":
 		return nil
+	case "warning", "high", "critical":
+	default:
+		return fmt.Errorf("case ingest: unknown incident severity %q", incident.Severity)
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()

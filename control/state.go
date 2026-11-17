@@ -744,6 +744,10 @@ func incidentFingerprint(i XDRIncident) string {
 }
 
 func (s *State) AddIncident(i XDRIncident) {
+	// The incident list, the status API, the dashboard badge and the case engine consume
+	// one vocabulary. Normalising here keeps a producer that emits the display form
+	// ("CRITICAL") from leaking into the store, the dedupe fingerprint or the case gate.
+	i.Severity = strings.ToLower(strings.TrimSpace(i.Severity))
 	if i.ID == "" {
 		i.ID = randomID()
 	}

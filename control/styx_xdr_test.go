@@ -91,7 +91,11 @@ func TestStyxXDRIntegrationCombinedSignalsProduceOneContainIncident(t *testing.T
 	if len(incidents) != 1 {
 		t.Fatalf("expected exactly one containment incident, got %d: %+v", len(incidents), incidents)
 	}
-	if incidents[0].Decision != "contain" || incidents[0].Score != 250 || incidents[0].Severity != "CRITICAL" {
+	// The state stores the canonical lower-case severity: State.AddIncident normalises
+	// the display form the beacon engine emits ("CRITICAL"), so the store, the case
+	// engine and the dashboard badge share one vocabulary. The AttackStory node keeps
+	// the emitted form because its digest binds that value.
+	if incidents[0].Decision != "contain" || incidents[0].Score != 250 || incidents[0].Severity != "critical" {
 		t.Fatalf("combined signals did not reach the containment-grade decision: %+v", incidents[0])
 	}
 	// There is no bypassing response route: without the reversible response engine

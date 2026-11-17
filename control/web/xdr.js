@@ -201,7 +201,7 @@ export function renderModernIncidents(incidents = []) {
 
     const tdScore = el('td');
     const scoreVal = el('b', 'score-cell', String(inc.score || 0));
-    const sevPill = el('span', `severity-badge ${inc.severity || 'info'}`, (inc.severity || 'info').toUpperCase());
+    const sevPill = el('span', `severity-badge ${String(inc.severity || 'info').toLowerCase()}`, (inc.severity || 'info').toUpperCase());
     tdScore.append(scoreVal, el('br'), sevPill);
 
     const tdProc = el('td', 'mono');

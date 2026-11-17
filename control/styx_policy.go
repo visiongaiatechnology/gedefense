@@ -8,6 +8,7 @@ package main
 import (
 	"fmt"
 	"net/netip"
+	"strings"
 	"time"
 )
 
@@ -109,6 +110,10 @@ func (e *XDREngine) emitStyxBeaconIncident(incident XDRIncident) error {
 	if e == nil || e.state == nil {
 		return nil
 	}
+	// The mandatory evidence record is written before the incident and must carry the
+	// same vocabulary as the log, the state and the case store; the beacon engine emits
+	// the display form ("CRITICAL"/"HIGH").
+	incident.Severity = strings.ToLower(strings.TrimSpace(incident.Severity))
 	evidenceErr := e.state.RecordEvidence(EvidenceRecord{
 		Severity: incident.Severity, Kind: "xdr.styx_beacon", Source: "styx-beacon",
 		Message: "Styx beacon/exfiltration detection evidence recorded before any active response: " + incident.Summary,

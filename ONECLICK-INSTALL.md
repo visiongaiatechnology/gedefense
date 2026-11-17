@@ -1,10 +1,10 @@
-# GeDefense 6.0.1 (V6) One-Click Installer
+# GeDefense 6.0.3 (V6) One-Click Installer
 
 ## Install / Upgrade
 
 ```bash
-chmod +x VGT_GeDefense_V6_6.0.1_OneClick.run
-sudo ./VGT_GeDefense_V6_6.0.1_OneClick.run
+chmod +x VGT_GeDefense_V6_6.0.3_OneClick.run
+sudo ./VGT_GeDefense_V6_6.0.3_OneClick.run
 ```
 
 The signed installer verifies its embedded Ed25519-signed release index,
@@ -13,7 +13,7 @@ then hands off to the transactional GeDefense full-stack installer, which stages
 a versioned release, validates systemd and authenticated health paths, and rolls
 back the previous installation if activation fails.
 
-The published 6.0.1 installer is a prebuilt, signed release: the control,
+The published 6.0.3 installer is a prebuilt, signed release: the control,
 gateway, Rust core, parser-cell helper and eBPF artifacts are the exact binaries covered by the
 signed release manifest and SBOM.
 
@@ -24,8 +24,8 @@ preserved transactionally.
 ## Non-destructive verification
 
 ```bash
-sha256sum --check VGT_GeDefense_V6_6.0.1_OneClick.run.sha256
-./VGT_GeDefense_V6_6.0.1_OneClick.run --help
+sha256sum --check VGT_GeDefense_V6_6.0.3_OneClick.run.sha256
+./VGT_GeDefense_V6_6.0.3_OneClick.run --help
 ```
 
 The installer verifies its signed release index and manifest internally before

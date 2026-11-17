@@ -5853,8 +5853,15 @@ export const catalogs = Object.freeze({
 
 let activeLanguage = 'de';
 try {
-  const saved = localStorage.getItem('gedefense.language');
+  const saved = typeof localStorage !== 'undefined' ? localStorage.getItem('gedefense.language') : null;
   if (saved && SUPPORTED.has(saved)) activeLanguage = saved;
+  if (typeof window !== 'undefined' && window.location && typeof window.location.search === 'string') {
+    const queryLang = new URLSearchParams(window.location.search).get('lang');
+    if (queryLang && SUPPORTED.has(queryLang)) {
+      activeLanguage = queryLang;
+      if (typeof localStorage !== 'undefined') localStorage.setItem('gedefense.language', queryLang);
+    }
+  }
 } catch (_) {}
 
 export function locale() {
@@ -5869,10 +5876,12 @@ export function setLanguage(lang) {
   if (!SUPPORTED.has(lang) || lang === activeLanguage) return;
   activeLanguage = lang;
   try {
-    localStorage.setItem('gedefense.language', lang);
+    if (typeof localStorage !== 'undefined') localStorage.setItem('gedefense.language', lang);
   } catch (_) {}
   applyTranslations();
-  document.dispatchEvent(new CustomEvent('gedefense:language', { detail: lang }));
+  if (typeof document !== 'undefined') {
+    document.dispatchEvent(new CustomEvent('gedefense:language', { detail: lang }));
+  }
 }
 
 export function t(key, vars = {}) {
@@ -5885,6 +5894,9 @@ export function t(key, vars = {}) {
 }
 
 export function applyTranslations(root = document) {
+  if (typeof document !== 'undefined' && document.documentElement) {
+    document.documentElement.lang = activeLanguage;
+  }
   root.querySelectorAll('[data-i18n]').forEach(el => {
     const key = el.getAttribute('data-i18n');
     if (key) el.textContent = t(key);

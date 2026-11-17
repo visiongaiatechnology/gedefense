@@ -293,13 +293,16 @@ async function renderProtectionStepper(snapshot) {
   if (!stepperContainer) return;
 
   const derived = snapshot.protection || null;
-  let statusBanner = stepperContainer.querySelector('#protectionStatusBanner');
+  let statusBanner = byID('protectionStatusBanner');
   if (!statusBanner) {
     statusBanner = document.createElement('div');
     statusBanner.id = 'protectionStatusBanner';
     statusBanner.className = 'protection-status-banner';
     statusBanner.setAttribute('role', 'status');
-    stepperContainer.prepend(statusBanner);
+    statusBanner.setAttribute('aria-live', 'polite');
+  }
+  if (statusBanner.parentElement !== stepperContainer.parentElement && stepperContainer.parentElement) {
+    stepperContainer.parentElement.insertBefore(statusBanner, stepperContainer);
   }
   if (derived && !derived.effective) {
     statusBanner.hidden = false;

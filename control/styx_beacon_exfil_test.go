@@ -94,7 +94,7 @@ func TestStyxBeaconPhase1CanaryVolumeScore(t *testing.T) {
 		t.Fatalf("expected one volume+canary incident, got %d", len(incidents))
 	}
 	incident := incidents[0]
-	if incident.Score != 200 || incident.Severity != "HIGH" || incident.Decision != "alert" {
+	if incident.Score != 200 || incident.Severity != "high" || incident.Decision != "alert" {
 		t.Fatalf("unexpected volume+canary incident: %#v", incident)
 	}
 	if !beaconRuleIDsContain(incident, StyxBeaconRuleAsymmetry) {
@@ -121,7 +121,7 @@ func TestStyxBeaconCanaryCorrelationRaisesAsymmetryScore(t *testing.T) {
 	engine := newBeaconTestEngine(t, config, nil, nil)
 	event := beaconEvent(5, 55, 1_000_000_000, 1<<20, 65536, 64, "198.51.100.40", 443, 4, 6)
 	incidents := engine.RecordFlows([]CoreStyxFlowEvent{event})
-	if len(incidents) != 1 || incidents[0].Score != 250 || incidents[0].Severity != "CRITICAL" {
+	if len(incidents) != 1 || incidents[0].Score != 250 || incidents[0].Severity != "critical" {
 		t.Fatalf("canary correlation did not raise the score: %#v", incidents)
 	}
 	engine = newBeaconTestEngine(t, activeBeaconConfig(), nil, nil)
@@ -148,7 +148,7 @@ func TestStyxBeaconPhase1CanaryVolumeCombinationContain(t *testing.T) {
 		t.Fatalf("expected one combined containment incident, got %d", len(incidents))
 	}
 	incident := incidents[0]
-	if incident.Score != 250 || incident.Decision != "contain" || incident.Severity != "CRITICAL" {
+	if incident.Score != 250 || incident.Decision != "contain" || incident.Severity != "critical" {
 		t.Fatalf("combination did not reach containment grade: %#v", incident)
 	}
 	if !beaconRuleIDsContain(incident, StyxBeaconRulePeriodicity) || !beaconRuleIDsContain(incident, StyxBeaconRuleAsymmetry) {

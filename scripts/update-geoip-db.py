@@ -254,7 +254,7 @@ def download_cached(url: str, cache_dir: Path, description: str, force: bool = F
         raise RuntimeError(f"refusing non-HTTPS download: {url}")
     req = urllib.request.Request(
         url,
-        headers={"User-Agent": "GeDefense-GeoIP-Builder/6.0.1"}
+        headers={"User-Agent": "GeDefense-GeoIP-Builder/6.0.3"}
     )
     # mkstemp creates an unpredictable 0600 file inside the private cache dir; a
     # predictable .tmp.<pid> name in a shared directory was attacker-writable.
@@ -814,7 +814,7 @@ def main() -> int:
         )
 
     print("============================================================")
-    print("VGT GeDefense 6.0.1 — GeoIP & ASN Database Pipeline")
+    print("VGT GeDefense 6.0.3 — GeoIP & ASN Database Pipeline")
     print("============================================================")
     print(f"Target destination: {dest}")
     print(f"Private cache dir:  {cache_dir}")

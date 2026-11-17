@@ -1,5 +1,12 @@
 # Changelog
 
+## 6.0.3 — 2026-11-17 — Case-Pipeline Fail-Visible Normalization & Audit Gate Hardening
+
+- **End-to-end lowercase incident severity normalization (GD-SEV-001):** Fixed silent high/critical case suppression where `morpheus_rasp`, `styx_egress`, `styx_beacon`, and `deception` emitted uppercase `"CRITICAL"`/`"HIGH"` severities that `CaseEngine.IngestIncident` skipped with `return nil` while `State.AddIncident` reported case history healthy (`noteCaseHistorySuccess()`). Normalized severities across all producers, `emitStyxBeaconIncident`, `State.AddIncident`, `appendIncident`, and made `CaseEngine.IngestIncident` fail-visible on unknown severities (`info`/`low` stay silent no-op without error; `warning`/`high`/`critical` always ingest).
+- **Dashboard severity class normalization (`control/web/xdr.js`, `l7.js`, `render.js`, `app.js`):** Normalized CSS severity class names via `.toLowerCase()` across modern XDR, L7 findings/drawers/attack-story nodes, events/incidents tables, and case rows so `.severity-badge.critical`/`.high` styling renders consistently.
+- **Deterministic audit gate on clean checkouts (`scripts/security-audit.sh`):** Removed the conditional `if (root / 'Next.md').is_file()` gate dependency on gitignored `Next.md` and bound the Point-4 verification anchor directly to tracked `docs/POINT4-PHASE1-REPORT.md`.
+- **UI & installer refinements:** Protection overview styling/i18n updates (`control/web/app.css`, `i18n.js`, `index.html`, `protection.js`, `v4.css`) and OneClick installer header improvements (`scripts/oneclick-installer-header.sh`).
+
 ## 6.0.1 — 2026-11-16 — GeDefense V6 Server-Safe Auto-Arm & Scanner Calibration Hotfix
 
 - **Emergency Lockdown stays opt-in (`control/runtime_settings.go`):** Removed automatic activation of **Emergency Lockdown** (`lockdown.enabled` + `lockdown.auto_arm` with `network_lockdown=true` and `require_sources=1`) from `ApplySafeV6DefaultsOnEnforce()`. On `enforce`, GeDefense V6 continues to auto-enable **StyX** (`monitor`), **Titan Exec Gate** (`contain`), and **Ephemeral Parser Cells** (`enabled`), while both **Emergency Lockdown** and **Witness** stay explicit operator opt-in so a single host scanner/maintenance event cannot unexpectedly cut off remote SSH/HTTPS connectivity via `XDP_DROP`.

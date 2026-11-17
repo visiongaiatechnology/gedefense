@@ -621,13 +621,13 @@ func (d *DeceptionEngine) HandleCanaryAccess(
 		return nil, nil, NewDeceptionValidationException("deception grid is disabled by policy", nil)
 	}
 
-	severity := "CRITICAL"
+	severity := "critical"
 	confidence := 98
 	reason := "CANARY_UNAUTHORIZED_PROBE"
 	score := policy.unauthorizedScore
 
 	if isSystemOrScannerAccessor(event.AccessorUID, event.AccessorComm) {
-		severity = "HIGH"
+		severity = "high"
 		confidence = 85
 		reason = "CANARY_SUSPICIOUS_SYSTEM_ACCESS"
 		score = policy.systemAccessorScore

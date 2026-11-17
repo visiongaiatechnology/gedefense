@@ -1270,6 +1270,23 @@ dialog form { padding: 28px; }
 }
 
 /* STEPPER CARDS FOR PROTECTION CENTER */
+.protection-status-banner {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  margin: 14px 0 4px;
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(244, 199, 106, 0.36);
+  background: rgba(244, 199, 106, 0.08);
+  color: var(--text);
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+.protection-status-banner[hidden] {
+  display: none;
+}
 .stepper-grid {
   display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin: 18px 0;
 }

@@ -507,6 +507,31 @@ tbody tr:hover { background: rgba(69, 176, 220, .055); }
 .posture-domain { background: rgba(3, 12, 23, .46); border-color: rgba(78, 183, 225, .12); }
 
 /* Stepper and security gates */
+.protection-status-banner {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 16px;
+  margin: 14px 0 4px;
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(244, 199, 106, .34);
+  background: linear-gradient(135deg, rgba(244, 199, 106, .11), rgba(7, 20, 37, .78));
+  color: var(--text);
+  font-size: .78rem;
+  line-height: 1.5;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .04);
+}
+.protection-status-banner::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  flex: 0 0 8px;
+  border-radius: 50%;
+  background: var(--amber);
+  box-shadow: 0 0 10px rgba(244, 199, 106, .45);
+}
+.protection-status-banner[hidden] { display: none; }
 .stepper-grid, .stepper-layout { gap: 12px; }
 .step-card {
   min-height: 218px;

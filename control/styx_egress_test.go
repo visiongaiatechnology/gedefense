@@ -36,8 +36,8 @@ func TestStyxEgress_CloudMetadataSSRFBlock(t *testing.T) {
 	if capturedIncident == nil {
 		t.Fatal("expected SSRF incident to be captured")
 	}
-	if capturedIncident.Severity != "CRITICAL" {
-		t.Fatalf("expected CRITICAL severity, got %s", capturedIncident.Severity)
+	if capturedIncident.Severity != "critical" {
+		t.Fatalf("expected critical severity, got %s", capturedIncident.Severity)
 	}
 	if len(capturedIncident.AttackStory) == 0 {
 		t.Fatal("expected attack story attached")
@@ -131,8 +131,8 @@ func TestStyxEgress_ThreatIntelBlock(t *testing.T) {
 	if capturedIncident == nil {
 		t.Fatal("expected threat intelligence incident to be captured")
 	}
-	if capturedIncident.Severity != "CRITICAL" {
-		t.Fatalf("expected CRITICAL severity, got %s", capturedIncident.Severity)
+	if capturedIncident.Severity != "critical" {
+		t.Fatalf("expected critical severity, got %s", capturedIncident.Severity)
 	}
 	if capturedIncident.RuleIDs[0] != "STYX.EGRESS.THREAT_INTEL" {
 		t.Fatalf("expected STYX.EGRESS.THREAT_INTEL rule, got %s", capturedIncident.RuleIDs[0])

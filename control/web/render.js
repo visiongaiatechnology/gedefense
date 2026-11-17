@@ -73,7 +73,7 @@ export function renderEvents(events = []) {
   }
   const nodes = events.slice(0, 30).map(event => {
     const item = document.createElement('li');
-    item.className = `severity-${event.severity || 'info'}`;
+    item.className = `severity-${String(event.severity || 'info').toLowerCase()}`;
     const dot = document.createElement('span');
     dot.className = 'event-dot';
     const body = document.createElement('div');
@@ -134,7 +134,7 @@ export function renderIncidents(items = [], onAck, confineAction, options = {}) 
     else {
       const rows = items.slice(0, 80).map(incident => {
         const row = document.createElement('tr');
-        row.className = `severity-${incident.severity || 'info'}`;
+        row.className = `severity-${String(incident.severity || 'info').toLowerCase()}`;
         row.append(
           cell(formatTime(incident.time)),
           cell(incident.score || 0, 'score-cell'),

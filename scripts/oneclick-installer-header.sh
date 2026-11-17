@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# VGT GeDefense 6.0.1 Universal Linux One-Click Installer
+# VGT GeDefense 6.0.3 Universal Linux One-Click Installer
 set -Eeuo pipefail
 umask 0077
 
-readonly SETUP_VERSION="6.0.1"
-readonly PRODUCT_VERSION="6.0.1"
+readonly SETUP_VERSION="6.0.3"
+readonly PRODUCT_VERSION="6.0.3"
 readonly PAYLOAD_SHA256="__PAYLOAD_SHA256__"
 readonly CONTROL_SHA256="__CONTROL_SHA256__"
 readonly ACCESS_SHA256="__ACCESS_SHA256__"
@@ -55,6 +55,9 @@ readonly PARSER_PROFILE_TEMPLATE="/usr/share/gedefense/parser-profiles.conf"
 readonly CELL_HELPER_SOCKET="/run/vgt-gedefense/cell-helper.sock"
 readonly CELL_HELPER_UNIT="gedefense-cell-helper.service"
 readonly POLICY_STATE_FILE="${STATE}/policy.json"
+readonly POLICY_FLOOR_FILE="${STATE}/policy.json.floor"
+readonly POLICY_LASTGOOD_FILE="${STATE}/policy.json.lastgood"
+readonly RELEASE_QUALIFICATION_FILE="${STATE}/release-qualification.json"
 readonly POLICY_PRIVATE_KEY_FILE="${STATE}/policy.ed25519"
 readonly POLICY_PUBLIC_KEY_FILE="${STATE}/policy.ed25519.pub"
 readonly INCIDENT_LOG_FILE="${STATE}/incidents.jsonl"
@@ -100,6 +103,12 @@ ALLOW_DOWNGRADE=0
 INSTALLED_VERSION=""
 NEXT_FLOOR=""
 EFFECTIVE_TRUST_MODE=""
+PRE_UPGRADE_PHASE=""
+PRE_UPGRADE_KERNEL_POLICY_STATE=""
+PRE_UPGRADE_POLICY_QUARANTINED=0
+PRE_UPGRADE_POLICY_ERROR=""
+FINAL_RELEASE_PHASE="observe"
+FINAL_PROTECTION_SUMMARY=""
 
 log(){ printf '[%s] %s\n' "$(date -Is 2>/dev/null || date)" "$*" | tee -a "$LOG_FILE"; }
 have(){ command -v "$1" >/dev/null 2>&1; }
@@ -172,6 +181,9 @@ rollback(){
     restore_backup_path "$RUNTIME_KEY_FILE" runtime-settings.key
     restore_backup_path "$SESSION_KEY_FILE" access-session.key
     restore_backup_path "$POLICY_STATE_FILE" policy.json
+    restore_backup_path "$POLICY_FLOOR_FILE" policy.json.floor
+    restore_backup_path "$POLICY_LASTGOOD_FILE" policy.json.lastgood
+    restore_backup_path "$RELEASE_QUALIFICATION_FILE" release-qualification.json
     restore_backup_path "$POLICY_PRIVATE_KEY_FILE" policy.ed25519
     restore_backup_path "$POLICY_PUBLIC_KEY_FILE" policy.ed25519.pub
     restore_backup_path "$INCIDENT_LOG_FILE" incidents.jsonl
@@ -979,6 +991,35 @@ generate_tls(){
   [[ $(stat -c '%U:%G:%a' "$CERT_FILE") == 'root:gedefense:644' ]] \
     || fail "TLS-Zertifikatsrechte konnten nicht auf root:gedefense:644 gesetzt werden."
 }
+capture_pre_upgrade_status(){
+  [[ -f $TOKEN_FILE && ! -L $TOKEN_FILE && -r $TOKEN_FILE ]] || return 0
+  local tok raw
+  tok=$(tr -d '\r\n' < "$TOKEN_FILE" 2>/dev/null || true)
+  [[ -n $tok ]] || return 0
+  raw=$(curl -fsS --max-time 3 -H "Authorization: Bearer $tok" "http://127.0.0.1:${BACKEND_PORT}/api/v1/status" 2>/dev/null || true)
+  [[ -n $raw ]] || return 0
+  local parsed
+  parsed=$(printf '%s' "$raw" | python3 - <<'PY'
+import json, sys
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+rel = d.get("release") or {}
+pol = d.get("policy") or {}
+phase = str(rel.get("phase") or "").strip().lower()
+kstate = str(rel.get("kernel_policy_state") or "").strip().lower()
+pq = "1" if rel.get("policy_quarantined") else "0"
+perr = str(pol.get("error") or "").replace("\t", " ").replace("\n", " ").strip()
+print(f"{phase}\t{kstate}\t{pq}\t{perr}")
+PY
+  ) || true
+  if [[ -n $parsed ]]; then
+    IFS=$'\t' read -r PRE_UPGRADE_PHASE PRE_UPGRADE_KERNEL_POLICY_STATE PRE_UPGRADE_POLICY_QUARANTINED PRE_UPGRADE_POLICY_ERROR <<< "$parsed"
+    log "Vor-Upgrade-Status: phase=${PRE_UPGRADE_PHASE:-unbekannt} kernel=${PRE_UPGRADE_KERNEL_POLICY_STATE:-unbekannt} policy_quarantined=${PRE_UPGRADE_POLICY_QUARANTINED}"
+  fi
+}
+
 backup_activation_state(){
   BACKUP_DIR="$WORK/activation-backup"
   mkdir -p "$BACKUP_DIR"
@@ -993,6 +1034,11 @@ backup_activation_state(){
   systemctl is-active --quiet gedefense-core.service && OLD_CORE_ACTIVE=1 || true
   systemctl is-active --quiet gedefense-control.service && OLD_CONTROL_ACTIVE=1 || true
   systemctl is-active --quiet gedefense-bpffs.service && OLD_BPFFS_ACTIVE=1 || true
+  capture_pre_upgrade_status
+  # Quiesce running services before snapshotting state or overwriting config/baseline
+  # so policy.json, policy.json.floor and policy.json.lastgood share one consistent generation
+  # and the previous daemon never fires spurious xdr degraded events on gedefense.toml writes.
+  systemctl stop gedefense-access.service gedefense-observe.service gedefense-control.service gedefense-core.service "${CELL_HELPER_UNIT}" 2>/dev/null || true
   backup_path "$CONFIG_FILE" config.toml
   backup_path "$BASELINE_FILE" xdr-baseline.json
   backup_path "$MALWARE_HASH_FILE" malware-hashes.sha256
@@ -1010,6 +1056,9 @@ backup_activation_state(){
   backup_path "$CELL_HELPER_KEY" cell-helper.key
   backup_path "$PARSER_PROFILE_FILE" parser-profiles.conf
   backup_path "$POLICY_STATE_FILE" policy.json
+  backup_path "$POLICY_FLOOR_FILE" policy.json.floor
+  backup_path "$POLICY_LASTGOOD_FILE" policy.json.lastgood
+  backup_path "$RELEASE_QUALIFICATION_FILE" release-qualification.json
   backup_path "$POLICY_PRIVATE_KEY_FILE" policy.ed25519
   backup_path "$POLICY_PUBLIC_KEY_FILE" policy.ed25519.pub
   backup_path "$INCIDENT_LOG_FILE" incidents.jsonl
@@ -1082,6 +1131,117 @@ verify_units(){
     "/etc/systemd/system/${CELL_HELPER_UNIT}" >>"$LOG_FILE" 2>&1
 }
 
+reconcile_post_upgrade_posture(){
+  local token=$1
+  local raw info phase kstate pq perr core_ok em_stop fim_health req_id recovery_http
+  local recovered_quarantine=0
+
+  raw=$(curl -fsS --max-time 5 -H "Authorization: Bearer $token" "http://127.0.0.1:${BACKEND_PORT}/api/v1/status" 2>/dev/null || true)
+  [[ -n $raw ]] || return 0
+
+  info=$(printf '%s' "$raw" | python3 - <<'PY'
+import json, sys
+d = json.load(sys.stdin)
+rel = d.get("release") or {}
+pol = d.get("policy") or {}
+fim = d.get("fim") or {}
+print("\t".join([
+    str(rel.get("phase") or "").strip().lower(),
+    str(rel.get("kernel_policy_state") or "").strip().lower(),
+    "1" if rel.get("policy_quarantined") else "0",
+    str(pol.get("error") or "").replace("\t", " ").replace("\n", " ").strip(),
+    "1" if d.get("core_connected") else "0",
+    "1" if rel.get("emergency_stop") else "0",
+    str(fim.get("health") or "").strip().upper(),
+]))
+PY
+  ) || return 0
+  IFS=$'\t' read -r phase kstate pq perr core_ok em_stop fim_health <<< "$info"
+
+  # 1. Recover strictly upgrade-induced policy rollback quarantine (e.g., prior installer
+  # rollback that left policy.json below policy.json.floor), never genuine tampering.
+  if [[ $pq == 1 && $core_ok == 1 && $em_stop == 0 && $fim_health != "TAMPERED" ]] && \
+     [[ "$perr" == *"policy rollback detected"* || ( $PRE_UPGRADE_POLICY_QUARANTINED == 1 && "$PRE_UPGRADE_POLICY_ERROR" == *"policy rollback detected"* ) ]]; then
+    log "Upgrade-bedingte Policy-Rollback-Quarantäne erkannt (${perr:-floor mismatch}); bereinige Quarantäne über RETURN:OBSERVE."
+    req_id=$(python3 -c 'import uuid; print(uuid.uuid4())')
+    recovery_http=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' \
+      -X POST "http://127.0.0.1:${BACKEND_PORT}/api/v1/release/transition" \
+      -H "Authorization: Bearer $token" \
+      -H "X-VGT-Request-ID: $req_id" \
+      -H 'Content-Type: application/json' \
+      --data-binary '{"target":"observe","confirmation":"RETURN:OBSERVE","reason":"OneClick upgrade automatic recovery of upgrade-induced policy rollback quarantine"}' 2>/dev/null || echo 000)
+    if [[ $recovery_http == 200 ]]; then
+      recovered_quarantine=1
+      log "Upgrade-Policy-Quarantäne erfolgreich aufgehoben und Policy neu signiert."
+    else
+      log "WARNUNG: Automatische Bereinigung der Policy-Quarantäne lieferte HTTP ${recovery_http}."
+    fi
+  fi
+
+  # 2. Wait briefly for StartupSupervisor self-check to auto-rearm an already-qualified
+  # enforce host out of initial degraded startup retention (up to ~36s).
+  for _ in $(seq 1 18); do
+    raw=$(curl -fsS --max-time 5 -H "Authorization: Bearer $token" "http://127.0.0.1:${BACKEND_PORT}/api/v1/status" 2>/dev/null || true)
+    [[ -n $raw ]] || break
+    info=$(printf '%s' "$raw" | python3 - <<'PY'
+import json, sys
+d = json.load(sys.stdin)
+rel = d.get("release") or {}
+pol = d.get("policy") or {}
+fim = d.get("fim") or {}
+prot = d.get("protection") or {}
+print("\t".join([
+    str(rel.get("phase") or "").strip().lower(),
+    str(rel.get("kernel_policy_state") or "").strip().lower(),
+    "1" if rel.get("policy_quarantined") else "0",
+    "1" if pol.get("verified") else "0",
+    "1" if rel.get("fail_safe_verified") else "0",
+    str(fim.get("health") or "").strip().upper(),
+    str(prot.get("summary") or "").replace("\t", " ").replace("\n", " ").strip(),
+]))
+PY
+    ) || break
+    IFS=$'\t' read -r phase kstate pq pol_verified fs_verified fim_health prot_summary <<< "$info"
+    if [[ $phase != "degraded" || $pq == 1 || $kstate != "verified-enforce" ]]; then
+      break
+    fi
+    sleep 2
+  done
+
+  # 3. Clean stale upgrade-rollback forensic copies only once signed policy is verified again.
+  if (( recovered_quarantine == 1 )) && [[ ${pq:-1} == 0 && ${pol_verified:-0} == 1 ]]; then
+    local cleaned=0 f
+    for f in "${STATE}"/policy.json.tampered.*; do
+      [[ -e $f ]] || continue
+      rm -f -- "$f"
+      log "Bereinigtes Upgrade-Rollback-Quarantäne-Artefakt entfernt: $f"
+      cleaned=$((cleaned + 1))
+    done
+    (( cleaned > 0 )) && log "Bereinigung abgeschlossen: ${cleaned} upgrade-bedingte policy.json.tampered.* Datei(en) entfernt." || true
+  fi
+
+  # 4. Keep FIM/Titan baseline aligned with the newly upgraded release binaries/config when enforcing.
+  if [[ ${phase:-} == "enforce" && ${fs_verified:-0} == 1 && ${kstate:-} == "verified-enforce" && ${fim_health:-} != "VERIFIED" ]]; then
+    req_id=$(python3 -c 'import uuid; print(uuid.uuid4())')
+    local rebaseline_http
+    rebaseline_http=$(curl -sS --max-time 15 -o /dev/null -w '%{http_code}' \
+      -X POST "http://127.0.0.1:${BACKEND_PORT}/api/v1/fim/baseline" \
+      -H "Authorization: Bearer $token" \
+      -H "X-VGT-Request-ID: $req_id" \
+      -H 'Content-Type: application/json' \
+      --data-binary '{"scope":"release","reason":"OneClick upgrade automatic release baseline synchronization","confirm":"REBASELINE RELEASE"}' 2>/dev/null || echo 000)
+    if [[ $rebaseline_http == 200 ]]; then
+      log "Autorisiertes Release-FIM-Rebaseline nach Upgrade erfolgreich durchgeführt."
+    else
+      log "Hinweis: Release-FIM-Rebaseline nach Upgrade lieferte HTTP ${rebaseline_http}."
+    fi
+  fi
+
+  FINAL_RELEASE_PHASE="${phase:-observe}"
+  FINAL_PROTECTION_SUMMARY="${prot_summary:-}"
+  log "Post-Upgrade-Schutzstatus: phase=${FINAL_RELEASE_PHASE} kernel=${kstate:-unbekannt} summary=${FINAL_PROTECTION_SUMMARY}"
+}
+
 activate_release(){
   archive_old_latch
   systemctl stop gedefense-access.service gedefense-observe.service gedefense-control.service gedefense-core.service "${CELL_HELPER_UNIT}" 2>/dev/null || true
@@ -1137,6 +1297,7 @@ activate_release(){
   systemctl is-active --quiet gedefense-access.service
   systemctl disable gedefense-observe.service >/dev/null 2>&1 || true
   ACTIVATING=0
+  reconcile_post_upgrade_posture "$token" || true
 }
 
 open_firewall(){
@@ -1242,8 +1403,8 @@ main(){
   printf 'VGT GeDefense %s läuft vollständig.\n' "$PRODUCT_VERSION"
   printf 'Rust Core / XDP: ONLINE auf %s\n' "$INTERFACE"
   printf 'Dashboard wurde auf dem konfigurierten HTTPS-Port %s bereitgestellt.\n' "$PUBLIC_PORT"
-  printf 'Startmodus: OBSERVE (sichere Beta-Freigabe)\n'
-  if [[ -z $MANAGEMENT_ALLOWLIST ]]; then
+  printf 'Startmodus: %s%s\n' "${FINAL_RELEASE_PHASE^^}" "${FINAL_PROTECTION_SUMMARY:+ (${FINAL_PROTECTION_SUMMARY})}"
+  if [[ -z $MANAGEMENT_ALLOWLIST && ${FINAL_RELEASE_PHASE:-observe} != "enforce" ]]; then
     printf 'Hinweis: Management-Allowlist im Dashboard setzen, bevor Enforce freigegeben wird.\n'
   fi
   printf 'Status: vgt-gedefense status\n'

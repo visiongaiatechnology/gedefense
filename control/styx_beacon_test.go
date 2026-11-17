@@ -113,7 +113,7 @@ func TestStyxBeaconPeriodicityCVBoundaries(t *testing.T) {
 				t.Fatalf("expected exactly one deduped periodicity incident, got %d", len(incidents))
 			}
 			incident := incidents[0]
-			if incident.Score != 120 || incident.Decision != "alert" || incident.Severity != "HIGH" {
+			if incident.Score != 120 || incident.Decision != "alert" || incident.Severity != "high" {
 				t.Fatalf("unexpected periodicity incident: score=%d decision=%s severity=%s", incident.Score, incident.Decision, incident.Severity)
 			}
 			if !beaconRuleIDsContain(incident, StyxBeaconRulePeriodicity) {
@@ -238,7 +238,7 @@ func TestStyxBeaconCombinationEmitsContainIncident(t *testing.T) {
 	}
 	_ = clock
 	incident := incidents[0]
-	if incident.Score != 250 || incident.ResponseScore != 250 || incident.Decision != "contain" || incident.Severity != "CRITICAL" {
+	if incident.Score != 250 || incident.ResponseScore != 250 || incident.Decision != "contain" || incident.Severity != "critical" {
 		t.Fatalf("unexpected combined incident: score=%d response=%d decision=%s severity=%s",
 			incident.Score, incident.ResponseScore, incident.Decision, incident.Severity)
 	}

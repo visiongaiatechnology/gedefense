@@ -298,7 +298,7 @@ function renderL7FindingsTable(findings = []) {
 
     const tdTime = el('td', 'mono', formatTime(f.time));
     const tdSev = el('td');
-    const sevPill = el('span', `severity-badge ${f.severity || 'info'}`, (f.severity || 'info').toUpperCase());
+    const sevPill = el('span', `severity-badge ${String(f.severity || 'info').toLowerCase()}`, (f.severity || 'info').toUpperCase());
     tdSev.append(sevPill);
 
     const tdScore = el('td', 'mono score-cell', `${f.score || 0} (${f.confidence || 0}%)`);
@@ -352,7 +352,7 @@ export function openFindingDrawer(finding) {
   const sevEl = byID('drawerFindingSeverity');
   if (sevEl) {
     sevEl.textContent = (finding.severity || 'info').toUpperCase();
-    sevEl.className = `severity-badge ${finding.severity || 'info'}`;
+    sevEl.className = `severity-badge ${String(finding.severity || 'info').toLowerCase()}`;
   }
 
   text('drawerFindingScore', String(finding.score || 0));
@@ -396,7 +396,7 @@ function renderDrawerAttackStory(nodes = []) {
     const container = el('div', 'correlation-node');
     const header = el('div', 'node-header');
     const type = el('b', 'node-type', node.event_type || 'EVENT');
-    const sev = el('span', `severity-badge ${node.severity || 'info'}`, node.severity || 'info');
+    const sev = el('span', `severity-badge ${String(node.severity || 'info').toLowerCase()}`, String(node.severity || 'info').toLowerCase());
     header.append(type, sev);
 
     const actor = el('div', 'node-actor mono', node.actor || '');
