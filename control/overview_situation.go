@@ -65,26 +65,38 @@ type OverviewSituationResponse struct {
 	Layers      []OverviewSituationLayer  `json:"layers"`
 }
 
+const (
+	// situationActiveWindow is the acute escalation window during which an active
+	// worker crash storm or unacknowledged critical alert keeps the posture on RED
+	// (or an active burst of blocked events keeps the posture on YELLOW).
+	situationActiveWindow = 15 * time.Minute
+	// situationCooldownWindow is the post-incident observation window during which
+	// a recently subsided storm or critical/high alert steps down from RED to YELLOW
+	// before returning automatically to GREEN.
+	situationCooldownWindow = 60 * time.Minute
+)
+
 type situationInput struct {
-	Now             time.Time
-	Snap            Snapshot
-	WorkerEvents    uint64
-	WorkerStorms    uint64
-	WorkerSource    string
-	TLSHandshakes   uint64
-	TLSCapture      string
-	TLSStormActive  bool
-	LPEStrict       bool
-	EdgeRunning     bool
-	EdgeBlocked     uint64
-	StyxFlows       int
-	StyxFlagged     int
-	StyxState       string
-	TitanDenies     uint64
-	TitanState      string
-	ExposureServers int
-	ExposureCVEs    int
-	ExposureGrade   string
+	Now                 time.Time
+	Snap                Snapshot
+	WorkerEvents        uint64
+	WorkerStorms        uint64
+	WorkerStormsCooling uint64
+	WorkerSource        string
+	TLSHandshakes       uint64
+	TLSCapture          string
+	TLSStormActive      bool
+	LPEStrict           bool
+	EdgeRunning         bool
+	EdgeBlocked         uint64
+	StyxFlows           int
+	StyxFlagged         int
+	StyxState           string
+	TitanDenies         uint64
+	TitanState          string
+	ExposureServers     int
+	ExposureCVEs        int
+	ExposureGrade       string
 }
 
 func (s *APIServer) overviewSituation(w http.ResponseWriter, _ *http.Request) {
@@ -102,7 +114,19 @@ func (s *APIServer) overviewSituation(w http.ResponseWriter, _ *http.Request) {
 			if correlator != nil {
 				c := correlator.CounterSnapshot()
 				in.WorkerEvents = c.Events
-				in.WorkerStorms = c.Storms
+				activeCutoff := in.Now.Add(-situationActiveWindow)
+				cooldownCutoff := in.Now.Add(-situationCooldownWindow)
+				for _, storm := range correlator.RecentStorms(0) {
+					lastAt := storm.LastAt
+					if lastAt.IsZero() {
+						lastAt = storm.FirstAt
+					}
+					if !lastAt.Before(activeCutoff) {
+						in.WorkerStorms++
+					} else if !lastAt.Before(cooldownCutoff) {
+						in.WorkerStormsCooling++
+					}
+				}
 			}
 		}
 		if ts := s.v61.tlsSensor; ts != nil {
@@ -171,7 +195,13 @@ func buildOverviewSituation(in situationInput) OverviewSituationResponse {
 		m.TLSStorms = 1
 	}
 
+	activeCutoff := now.Add(-situationActiveWindow)
+	cooldownCutoff := now.Add(-situationCooldownWindow)
 	var unmitigatedCrit int
+	var coolingAlert60m int
+	var recentIncidents15m int
+	var recentBlocked15m int
+	var recentHigh15m int
 	for _, inc := range snap.Incidents {
 		if inc.Time.Before(cutoff) {
 			continue
@@ -179,17 +209,36 @@ func buildOverviewSituation(in situationInput) OverviewSituationResponse {
 		m.Incidents24h++
 		sev := strings.ToLower(strings.TrimSpace(inc.Severity))
 		blocked := incidentBlocked(inc.Decision, inc.Action)
+		inActive := !inc.Time.Before(activeCutoff)
+		inCooldown := !inActive && !inc.Time.Before(cooldownCutoff)
+		if inActive {
+			recentIncidents15m++
+		}
 		if blocked {
 			m.Blocked24h++
+			if inActive {
+				recentBlocked15m++
+			}
 		}
 		switch sev {
 		case "critical":
 			m.Critical24h++
 			if !blocked && !inc.Acknowledged {
-				unmitigatedCrit++
+				if inActive {
+					unmitigatedCrit++
+				} else if inCooldown {
+					coolingAlert60m++
+				}
 			}
 		case "high":
 			m.High24h++
+			if !blocked && !inc.Acknowledged {
+				if inActive {
+					recentHigh15m++
+				} else if inCooldown {
+					coolingAlert60m++
+				}
+			}
 		}
 	}
 
@@ -362,7 +411,7 @@ func buildOverviewSituation(in situationInput) OverviewSituationResponse {
 			level = "yellow"
 			addReason("warn", "xdr_degraded", "XDR sensor reported degraded telemetry pipeline.")
 		}
-		if m.Incidents24h >= 5 || m.High24h > 0 || m.Blocked24h >= 3 {
+		if in.WorkerStormsCooling > 0 || coolingAlert60m > 0 || recentHigh15m > 0 || recentIncidents15m >= 25 || recentBlocked15m >= 25 {
 			level = "yellow"
 			if statusCode == "calm_protected" {
 				statusCode = "elevated_activity"

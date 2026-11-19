@@ -68,4 +68,38 @@ func TestBuildOverviewSituationTrafficLights(t *testing.T) {
 	if fimRed.Level != "red" || fimRed.StatusCode != "fim_tamper" {
 		t.Fatalf("expected red fim_tamper when file actually tampered, got %s (%s)", fimRed.Level, fimRed.StatusCode)
 	}
+
+	// Auto-cooldown: active critical alert / storm (0-15m) -> RED, cooling (15-60m) -> YELLOW, subsided (>60m) with older blocked incidents -> GREEN (calm_mitigated)
+	coolingSnap := baseSnap
+	coolingSnap.Incidents = []XDRIncident{
+		{ID: "storm-1", Time: now.Add(-30 * time.Minute), Severity: "critical", Decision: "alert", Action: "none"},
+		{ID: "ban-1", Time: now.Add(-2 * time.Hour), Severity: "high", Decision: "block", Action: "drop"},
+		{ID: "ban-2", Time: now.Add(-3 * time.Hour), Severity: "medium", Decision: "block", Action: "drop"},
+		{ID: "ban-3", Time: now.Add(-4 * time.Hour), Severity: "medium", Decision: "block", Action: "drop"},
+	}
+	cooling := buildOverviewSituation(situationInput{
+		Now: now, Snap: coolingSnap, WorkerStormsCooling: 1,
+		TLSCapture: "active", ExposureServers: 2, StyxState: "active", StyxFlows: 5,
+	})
+	if cooling.Level != "yellow" || cooling.StatusCode != "elevated_activity" {
+		t.Fatalf("expected yellow elevated_activity during 15-60m cooldown, got %s (%s)", cooling.Level, cooling.StatusCode)
+	}
+
+	subsidedSnap := baseSnap
+	subsidedSnap.Incidents = []XDRIncident{
+		{ID: "storm-1", Time: now.Add(-2 * time.Hour), Severity: "critical", Decision: "alert", Action: "none"},
+		{ID: "ban-1", Time: now.Add(-2 * time.Hour), Severity: "high", Decision: "block", Action: "drop"},
+		{ID: "ban-2", Time: now.Add(-3 * time.Hour), Severity: "medium", Decision: "block", Action: "drop"},
+		{ID: "ban-3", Time: now.Add(-4 * time.Hour), Severity: "medium", Decision: "block", Action: "drop"},
+		{ID: "ban-4", Time: now.Add(-5 * time.Hour), Severity: "medium", Decision: "block", Action: "drop"},
+		{ID: "ban-5", Time: now.Add(-6 * time.Hour), Severity: "medium", Decision: "block", Action: "drop"},
+	}
+	subsided := buildOverviewSituation(situationInput{
+		Now: now, Snap: subsidedSnap,
+		TLSCapture: "active", ExposureServers: 2, StyxState: "active", StyxFlows: 5,
+	})
+	if subsided.Level != "green" || subsided.StatusCode != "calm_mitigated" || subsided.Metrics.CoveragePercent != 100 {
+		t.Fatalf("expected green calm_mitigated (100%% coverage) after >60m cooldown, got %s (%s, coverage=%d%%)",
+			subsided.Level, subsided.StatusCode, subsided.Metrics.CoveragePercent)
+	}
 }
