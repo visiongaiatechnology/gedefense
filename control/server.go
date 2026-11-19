@@ -52,7 +52,7 @@ const (
 	gatewaySessionDomain  = "VGT-GEDEFENSE-GATEWAY-SESSION\x00"
 )
 
-//go:embed web/*
+//go:embed web
 var webAssets embed.FS
 
 // undoEntry is the short-lived, server-side reversal record for a protection-removing
@@ -146,6 +146,10 @@ type APIServer struct {
 	// a loop of them is not. Confirmation phrases prove intent, the budget proves restraint.
 	mitigationLimiter *RateLimiter
 	confineLimiter    *RateLimiter
+	// v61 bundles the GeDefense 6.1.0 module engines (web posture, worker guard,
+	// TLS sensor, LPE guard). Optional: a server built without it reports an honest
+	// unavailable runtime for every 6.1.0 module instead of a fake idle one.
+	v61 *V61Engines
 
 	packageMu     sync.Mutex
 	packageCancel context.CancelFunc
@@ -254,6 +258,24 @@ func NewAPIServer(cfg Config, state *State, core *CoreClient, feeds *FeedManager
 	mux.HandleFunc("POST /api/v1/witness/push", s.auth(s.witnessPush))
 	mux.HandleFunc("POST /api/v1/witness/challenge", s.auth(s.witnessChallenge))
 	mux.HandleFunc("POST /api/v1/witness/import", s.auth(s.witnessImport))
+	// GeDefense 6.1.0 module A-D surfaces (docs/V6.1.0-BLUEPRINT.md §3.1). GET is
+	// read-only and bounded; POST goes through the same authentication, replay and
+	// evidence gate as every other operator mutation.
+	mux.HandleFunc("GET /api/v1/web-exposure/status", s.auth(s.webExposureStatus))
+	mux.HandleFunc("POST /api/v1/web-exposure/scan", s.auth(s.webExposureScan))
+	mux.HandleFunc("GET /api/v1/web-exposure/advisories", s.auth(s.webExposureAdvisories))
+	mux.HandleFunc("GET /api/v1/worker-guard/status", s.auth(s.workerGuardStatus))
+	mux.HandleFunc("GET /api/v1/worker-guard/events", s.auth(s.workerGuardEvents))
+	mux.HandleFunc("GET /api/v1/tls-sensor/status", s.auth(s.tlsSensorStatus))
+	mux.HandleFunc("GET /api/v1/tls-sensor/handshakes", s.auth(s.tlsSensorHandshakes))
+	mux.HandleFunc("GET /api/v1/tls-sensor/flows", s.auth(s.tlsSensorFlows))
+	mux.HandleFunc("GET /api/v1/lpe-guard/status", s.auth(s.lpeGuardStatus))
+	mux.HandleFunc("POST /api/v1/lpe-guard/apply", s.auth(s.lpeGuardApply))
+	// Module E (memory-safe edge terminator) routes are served by the engine in
+	// control/edge_proxy.go; the settings namespace is registered here like the
+	// other 6.1.0 modules.
+	mux.HandleFunc("GET /api/v1/edge-proxy/status", s.auth(s.edgeProxyStatus))
+	mux.HandleFunc("POST /api/v1/edge-proxy/restart", s.auth(s.edgeProxyRestart))
 	mux.HandleFunc("GET /api/v1/startup", s.auth(s.startupStatus))
 	mux.HandleFunc("GET /api/v1/boot-trust", s.auth(s.bootTrustStatus))
 	mux.HandleFunc("GET /api/v1/hardening/posture", s.auth(s.hardeningPosture))
@@ -358,6 +380,8 @@ func NewAPIServer(cfg Config, state *State, core *CoreClient, feeds *FeedManager
 	mux.HandleFunc("GET /api/v1/kinetic/map", s.auth(s.getKineticMap))
 	// The overview map reads every detection path at once, not just the packet path: see overview_map.go.
 	mux.HandleFunc("GET /api/v1/overview/threat-map", s.auth(s.overviewThreatMap))
+	mux.HandleFunc("GET /api/v1/overview/situation", s.auth(s.overviewSituation))
+	mux.HandleFunc("GET /api/v1/overview/connections", s.auth(s.overviewConnections))
 	mux.HandleFunc("POST /api/v1/kinetic/reconcile", s.auth(s.reconcileKinetic))
 	mux.HandleFunc("POST /api/v1/xdr/incidents/{id}/ack", s.auth(s.ackIncident))
 	mux.HandleFunc("GET /api/v1/xdr/attack-stories", s.auth(s.attackStories))
@@ -1295,6 +1319,31 @@ var webAssetAllowlist = map[string]bool{
 	"vendor/jsvectormap/jsvectormap.css":                        true,
 	"vendor/jsvectormap/maps/world-merc.js":                     true,
 	"xdr.js":                                                    true,
+	// GeDefense 6.1.0 dashboard (docs/V6.1.0-BLUEPRINT.md §5). The exact list the
+	// UI agent delivers; the exhaustive contract test keeps this map and the
+	// embedded tree in agreement in both directions.
+	"v61/base.css":       true,
+	"v61/exposure.js":    true,
+	"v61/exposure.css":   true,
+	"v61/workers.js":     true,
+	"v61/workers.css":    true,
+	"v61/tls.js":         true,
+	"v61/tls.css":        true,
+	"v61/lpe.js":         true,
+	"v61/lpe.css":        true,
+	"v61/edge.js":        true,
+	"v61/edge.css":       true,
+	"v61/v6.js":          true,
+	"v61/v6.css":         true,
+	"v61/v6-styx.js":     true,
+	"v61/v6-titan.js":    true,
+	"v61/v6-cells.js":       true,
+	"v61/v6-lockdown.js":    true,
+	"v61/v6-witness.js":     true,
+	"overview-connections.js":  true,
+	"overview-connections.css": true,
+	"setup-wizard.js":          true,
+	"setup-wizard.css":         true,
 }
 
 // webAssetNameAllowed validates a request path before any resolution happens. It

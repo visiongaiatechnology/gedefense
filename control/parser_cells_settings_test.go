@@ -86,12 +86,13 @@ func TestParserCellsSettingsUpgradeV14ToV15(t *testing.T) {
 	if upgraded := upgradeRuntimeSettings(&document, bootstrap); !upgraded {
 		t.Fatal("a v14 document must be upgraded")
 	}
-	if document.FabricVersion != fabricSettingsVersion || fabricSettingsVersion != 17 {
-		// POINT 5 / P5-T3 bumped the Fabric schema to v16 (lockdown namespace) and
-		// POINT 4 / P4-T2 bumps it to v17 (witness namespace); this test guards the
-		// v14->v15 parser-cell seeding, which the v17 document still performs and
-		// names exactly as before.
-		t.Fatalf("schema version is %d, want 17", document.FabricVersion)
+	if document.FabricVersion != fabricSettingsVersion || fabricSettingsVersion != 18 {
+		// POINT 5 / P5-T3 bumped the Fabric schema to v16 (lockdown namespace),
+		// POINT 4 / P4-T2 to v17 (witness namespace) and GeDefense 6.1.0 to v18
+		// (the five A-E namespaces); this test guards the v14->v15 parser-cell
+		// seeding, which the v18 document still performs and names exactly as
+		// before.
+		t.Fatalf("schema version is %d, want 18", document.FabricVersion)
 	}
 	if document.ParserCells == nil || document.ParserCells.Enabled {
 		t.Fatalf("v15 must seed parser cells disabled: %+v", document.ParserCells)

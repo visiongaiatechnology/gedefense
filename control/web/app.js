@@ -3,6 +3,8 @@
 
 // The overview threat map owns its own refresh cycle and only runs while the overview is visible.
 import { startOverviewThreatMap } from './overview-map.js';
+import { initOverviewConnections } from './overview-connections.js';
+import { initSetupWizard, loadSetupWizard } from './setup-wizard.js';
 import { initCMSModule, loadCMSView } from './cms.js';
 
 import {
@@ -72,6 +74,19 @@ import { initXDRModule, loadXDRView } from './xdr.js';
 import { initOperationFeedback } from './operations.js';
 import { initFabricSettingsTabs } from './fabric-settings.js';
 import { initFabricSurface } from './fabric-surface.js';
+// GeDefense 6.1.0 — web posture (Modules A–E) and the V6 fabric panels. Each
+// module owns its view renderer; the settings tabs are mounted by the generic
+// Fabric editor from the server schema, so no settings form lives in these files.
+import { initExposureModule, loadExposureView } from './v61/exposure.js';
+import { initWorkersModule, loadWorkersView } from './v61/workers.js';
+import { initTLSModule, loadTLSView } from './v61/tls.js';
+import { initLPEModule, loadLPEView } from './v61/lpe.js';
+import { initEdgeModule, loadEdgeView } from './v61/edge.js';
+import { initStyxModule, loadStyxView } from './v61/v6-styx.js';
+import { initTitanExecModule, loadTitanExecView } from './v61/v6-titan.js';
+import { initCellsModule, loadCellsView } from './v61/v6-cells.js';
+import { initLockdownModule, loadLockdownView } from './v61/v6-lockdown.js';
+import { initWitnessModule, loadWitnessView } from './v61/v6-witness.js';
 import {
   badge,
   byID,
@@ -154,7 +169,18 @@ const viewMeta = {
   release: ['view.release.eyebrow', 'view.release.title'],
   settings: ['view.settings.eyebrow', 'view.settings.title'],
   system: ['view.system.eyebrow', 'view.system.title'],
-  titan: ['view.titan.eyebrow', 'view.titan.title']
+  titan: ['view.titan.eyebrow', 'view.titan.title'],
+  'web-exposure': ['v61.exposure.eyebrow', 'v61.exposure.title'],
+  'worker-guard': ['v61.workers.eyebrow', 'v61.workers.title'],
+  'tls-sensor': ['v61.tls.eyebrow', 'v61.tls.title'],
+  'lpe-guard': ['v61.lpe.eyebrow', 'v61.lpe.title'],
+  'edge-proxy': ['v61.edge.eyebrow', 'v61.edge.title'],
+  styx: ['v61.v6.styx.eyebrow', 'v61.v6.styx.title'],
+  'titan-exec': ['v61.v6.titan.eyebrow', 'v61.v6.titan.title'],
+  'parser-cells': ['v61.v6.cells.eyebrow', 'v61.v6.cells.title'],
+  lockdown: ['v61.v6.lockdown.eyebrow', 'v61.v6.lockdown.title'],
+  witness: ['v61.v6.witness.eyebrow', 'v61.v6.witness.title'],
+  'setup-wizard': ['wizard.eyebrow', 'wizard.title']
 };
 
 function number(value) {
@@ -197,6 +223,17 @@ function activateView(name) {
   if (selected === 'forensics') Promise.all([loadQuarantine(), loadCases()]).catch(handleActionError);
   if (selected === 'system') loadCells().catch(handleActionError);
   if (selected === 'titan') loadTitanView().catch(handleActionError);
+  if (selected === 'web-exposure') loadExposureView().catch(handleActionError);
+  if (selected === 'worker-guard') loadWorkersView().catch(handleActionError);
+  if (selected === 'tls-sensor') loadTLSView().catch(handleActionError);
+  if (selected === 'lpe-guard') loadLPEView().catch(handleActionError);
+  if (selected === 'edge-proxy') loadEdgeView().catch(handleActionError);
+  if (selected === 'styx') loadStyxView().catch(handleActionError);
+  if (selected === 'titan-exec') loadTitanExecView().catch(handleActionError);
+  if (selected === 'parser-cells') loadCellsView().catch(handleActionError);
+  if (selected === 'lockdown') loadLockdownView().catch(handleActionError);
+  if (selected === 'witness') loadWitnessView().catch(handleActionError);
+  if (selected === 'setup-wizard') loadSetupWizard().catch(handleActionError);
 }
 
 function setChecked(id, value) {
@@ -3092,6 +3129,21 @@ function initialize() {
   try { initThreatIntelModule(); } catch (_) {}
   try { initXDRModule(); } catch (_) {}
   try { initTitanModule(); } catch (_) {}
+  // The V6.1 modules bind their refresh/action controls before the settings
+  // workbench mounts, so the shared confirmation dialog exists before the first
+  // destructive action is reachable.
+  try { initExposureModule(); } catch (_) {}
+  try { initWorkersModule(); } catch (_) {}
+  try { initTLSModule(); } catch (_) {}
+  try { initLPEModule(); } catch (_) {}
+  try { initEdgeModule(); } catch (_) {}
+  try { initStyxModule(); } catch (_) {}
+  try { initTitanExecModule(); } catch (_) {}
+  try { initCellsModule(); } catch (_) {}
+  try { initLockdownModule(); } catch (_) {}
+  try { initWitnessModule(); } catch (_) {}
+  try { initOverviewConnections(); } catch (_) {}
+  try { initSetupWizard(); } catch (_) {}
   try { initOperationFeedback(); } catch (_) {}
   Promise.resolve()
     .then(() => initFabricSettingsTabs())

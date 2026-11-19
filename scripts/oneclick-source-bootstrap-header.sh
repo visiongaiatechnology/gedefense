@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# VGT GeDefense 6.0.3 source-self-contained one-click bootstrap installer
+# VGT GeDefense 6.1.0 source-self-contained one-click bootstrap installer
 set -Eeuo pipefail
 umask 0077
 
-readonly PRODUCT_VERSION="6.0.3"
+readonly PRODUCT_VERSION="6.1.0"
 readonly PAYLOAD_SHA256="__SOURCE_PAYLOAD_SHA256__"
 readonly GO_VERSION="1.27.4"
 readonly GO_LINUX_AMD64_SHA256="7226736c2339719cda28fbf3a54d71aa63bcefe376e98cef00034268dab24840"
@@ -36,14 +36,14 @@ trap cleanup EXIT
 
 usage(){
   cat <<'USAGE'
-VGT GeDefense 6.0.3 One-Click Installer
+VGT GeDefense 6.1.0 One-Click Installer
 
 Usage:
-  ./GeDefense-6.0.3-OneClick.run              Install or upgrade GeDefense
-  ./GeDefense-6.0.3-OneClick.run --self-test  Verify this installer and inspect host readiness without modifying the host
-  ./GeDefense-6.0.3-OneClick.run --verify     Alias for --self-test
-  ./GeDefense-6.0.3-OneClick.run --allow-downgrade  Explicit recovery downgrade (still blocked below the release floor)
-  ./GeDefense-6.0.3-OneClick.run --help       Show this help
+  ./GeDefense-6.1.0-OneClick.run              Install or upgrade GeDefense
+  ./GeDefense-6.1.0-OneClick.run --self-test  Verify this installer and inspect host readiness without modifying the host
+  ./GeDefense-6.1.0-OneClick.run --verify     Alias for --self-test
+  ./GeDefense-6.1.0-OneClick.run --allow-downgrade  Explicit recovery downgrade (still blocked below the release floor)
+  ./GeDefense-6.1.0-OneClick.run --help       Show this help
 
 The installer verifies the embedded signed release index with the pinned
 Ed25519 release public key and enforces semantic version monotonicity before any
@@ -235,6 +235,7 @@ extract_and_verify_payload(){
     rust/gedefense-cell-helper/Cargo.toml \
     scripts/oneclick-installer-header.sh \
     packaging/systemd/gedefense-core.service \
+    packaging/systemd/gedefense-capture-helper.service \
     packaging/systemd/gedefense-cell-helper.service \
     packaging/templates/parser-profiles.conf \
     packaging/tmpfiles/vgt-gedefense.conf \

@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# VGT GeDefense 6.0.3 Universal Linux One-Click Installer
+# VGT GeDefense 6.1.0 Universal Linux One-Click Installer
 set -Eeuo pipefail
 umask 0077
 
-readonly SETUP_VERSION="6.0.3"
-readonly PRODUCT_VERSION="6.0.3"
+readonly SETUP_VERSION="6.1.0"
+readonly PRODUCT_VERSION="6.1.0"
 readonly PAYLOAD_SHA256="__PAYLOAD_SHA256__"
 readonly CONTROL_SHA256="__CONTROL_SHA256__"
 readonly ACCESS_SHA256="__ACCESS_SHA256__"
@@ -54,6 +54,8 @@ readonly PARSER_PROFILE_FILE="${CONFIG_DIR}/parser-profiles.conf"
 readonly PARSER_PROFILE_TEMPLATE="/usr/share/gedefense/parser-profiles.conf"
 readonly CELL_HELPER_SOCKET="/run/vgt-gedefense/cell-helper.sock"
 readonly CELL_HELPER_UNIT="gedefense-cell-helper.service"
+readonly CAPTURE_HELPER_SOCKET="/run/vgt-gedefense-capture/capture.sock"
+readonly CAPTURE_HELPER_UNIT="gedefense-capture-helper.service"
 readonly POLICY_STATE_FILE="${STATE}/policy.json"
 readonly POLICY_FLOOR_FILE="${STATE}/policy.json.floor"
 readonly POLICY_LASTGOOD_FILE="${STATE}/policy.json.lastgood"
@@ -89,6 +91,7 @@ OLD_OBSERVE_ACTIVE=0
 OLD_ACCESS_ACTIVE=0
 OLD_CORE_ACTIVE=0
 OLD_CONTROL_ACTIVE=0
+OLD_CAPTURE_HELPER_ACTIVE=0
 OLD_BPFFS_ACTIVE=0
 OLD_PREVIOUS=""
 ARCHIVED_RELEASE=""
@@ -147,9 +150,9 @@ rollback(){
   if (( ACTIVATING == 1 )); then
     set +e
     log "Aktivierung fehlgeschlagen. Automatischer Rollback beginnt."
-    systemctl stop gedefense-access.service gedefense-control.service gedefense-core.service "${CELL_HELPER_UNIT}" 2>/dev/null || true
+    systemctl stop gedefense-access.service gedefense-control.service "${CAPTURE_HELPER_UNIT}" gedefense-core.service "${CELL_HELPER_UNIT}" 2>/dev/null || true
 
-    for unit in gedefense-bpffs.service gedefense-core.service gedefense-control.service gedefense-access.service gedefense-cell-helper.service; do
+    for unit in gedefense-bpffs.service gedefense-core.service gedefense-capture-helper.service gedefense-control.service gedefense-access.service gedefense-cell-helper.service; do
       rm -rf -- "/etc/systemd/system/${unit}.d"
       if [[ -f "$BACKUP_DIR/$unit" ]]; then
         cp -f -- "$BACKUP_DIR/$unit" "/etc/systemd/system/$unit"
@@ -205,6 +208,7 @@ rollback(){
     systemctl daemon-reload || true
     (( OLD_BPFFS_ACTIVE == 1 )) && systemctl start gedefense-bpffs.service 2>/dev/null || true
     (( OLD_CORE_ACTIVE == 1 )) && systemctl start gedefense-core.service 2>/dev/null || true
+    (( OLD_CAPTURE_HELPER_ACTIVE == 1 )) && systemctl start "${CAPTURE_HELPER_UNIT}" 2>/dev/null || true
     (( OLD_CONTROL_ACTIVE == 1 )) && systemctl start gedefense-control.service 2>/dev/null || true
     (( OLD_OBSERVE_ACTIVE == 1 )) && systemctl start gedefense-observe.service 2>/dev/null || true
     (( OLD_ACCESS_ACTIVE == 1 )) && systemctl start gedefense-access.service 2>/dev/null || true
@@ -1023,7 +1027,7 @@ PY
 backup_activation_state(){
   BACKUP_DIR="$WORK/activation-backup"
   mkdir -p "$BACKUP_DIR"
-  for unit in gedefense-bpffs.service gedefense-core.service gedefense-control.service gedefense-access.service gedefense-cell-helper.service; do
+  for unit in gedefense-bpffs.service gedefense-core.service gedefense-capture-helper.service gedefense-control.service gedefense-access.service gedefense-cell-helper.service; do
     [[ -f /etc/systemd/system/$unit ]] && cp -a -- "/etc/systemd/system/$unit" "$BACKUP_DIR/$unit" || true
     [[ -d /etc/systemd/system/${unit}.d ]] && cp -a -- "/etc/systemd/system/${unit}.d" "$BACKUP_DIR/${unit}.d" || true
   done
@@ -1032,13 +1036,14 @@ backup_activation_state(){
   systemctl is-active --quiet gedefense-observe.service && OLD_OBSERVE_ACTIVE=1 || true
   systemctl is-active --quiet gedefense-access.service && OLD_ACCESS_ACTIVE=1 || true
   systemctl is-active --quiet gedefense-core.service && OLD_CORE_ACTIVE=1 || true
+  systemctl is-active --quiet "${CAPTURE_HELPER_UNIT}" && OLD_CAPTURE_HELPER_ACTIVE=1 || true
   systemctl is-active --quiet gedefense-control.service && OLD_CONTROL_ACTIVE=1 || true
   systemctl is-active --quiet gedefense-bpffs.service && OLD_BPFFS_ACTIVE=1 || true
   capture_pre_upgrade_status
   # Quiesce running services before snapshotting state or overwriting config/baseline
   # so policy.json, policy.json.floor and policy.json.lastgood share one consistent generation
   # and the previous daemon never fires spurious xdr degraded events on gedefense.toml writes.
-  systemctl stop gedefense-access.service gedefense-observe.service gedefense-control.service gedefense-core.service "${CELL_HELPER_UNIT}" 2>/dev/null || true
+  systemctl stop gedefense-access.service gedefense-observe.service gedefense-control.service "${CAPTURE_HELPER_UNIT}" gedefense-core.service "${CELL_HELPER_UNIT}" 2>/dev/null || true
   backup_path "$CONFIG_FILE" config.toml
   backup_path "$BASELINE_FILE" xdr-baseline.json
   backup_path "$MALWARE_HASH_FILE" malware-hashes.sha256
@@ -1070,9 +1075,10 @@ backup_activation_state(){
 
 install_units(){
   # Remove stale RC/hotfix drop-ins that could override the full-stack binaries.
-  rm -rf -- /etc/systemd/system/gedefense-bpffs.service.d /etc/systemd/system/gedefense-core.service.d /etc/systemd/system/gedefense-control.service.d /etc/systemd/system/gedefense-access.service.d /etc/systemd/system/gedefense-cell-helper.service.d
+  rm -rf -- /etc/systemd/system/gedefense-bpffs.service.d /etc/systemd/system/gedefense-core.service.d /etc/systemd/system/gedefense-capture-helper.service.d /etc/systemd/system/gedefense-control.service.d /etc/systemd/system/gedefense-access.service.d /etc/systemd/system/gedefense-cell-helper.service.d
   install -o root -g root -m 0644 "$PAYLOAD/systemd/gedefense-bpffs.service" /etc/systemd/system/gedefense-bpffs.service
   sed "s#--interface=auto#--interface=${INTERFACE}#" "$PAYLOAD/systemd/gedefense-core.service" > /etc/systemd/system/gedefense-core.service
+  install -o root -g root -m 0644 "$PAYLOAD/systemd/gedefense-capture-helper.service" "/etc/systemd/system/${CAPTURE_HELPER_UNIT}"
   install -o root -g root -m 0644 "$PAYLOAD/systemd/gedefense-control.service" /etc/systemd/system/gedefense-control.service
   # POINT 2: root helper unit; @RELEASE@ is rendered to the release symlink like
   # gedefense-access.service in this installer.
@@ -1126,6 +1132,7 @@ verify_units(){
   systemd-analyze verify \
     /etc/systemd/system/gedefense-bpffs.service \
     /etc/systemd/system/gedefense-core.service \
+    "/etc/systemd/system/${CAPTURE_HELPER_UNIT}" \
     /etc/systemd/system/gedefense-control.service \
     /etc/systemd/system/gedefense-access.service \
     "/etc/systemd/system/${CELL_HELPER_UNIT}" >>"$LOG_FILE" 2>&1
@@ -1244,15 +1251,15 @@ PY
 
 activate_release(){
   archive_old_latch
-  systemctl stop gedefense-access.service gedefense-observe.service gedefense-control.service gedefense-core.service "${CELL_HELPER_UNIT}" 2>/dev/null || true
+  systemctl stop gedefense-access.service gedefense-observe.service gedefense-control.service "${CAPTURE_HELPER_UNIT}" gedefense-core.service "${CELL_HELPER_UNIT}" 2>/dev/null || true
   rm -f -- "$PREVIOUS"
   if [[ -n $OLD_CURRENT ]]; then ln -s -- "$OLD_CURRENT" "$PREVIOUS"; fi
   rm -f -- "$CURRENT"; ln -s -- "$RELEASE" "$CURRENT"
   install_units
   systemctl daemon-reload
   verify_units
-  systemctl reset-failed gedefense-bpffs.service gedefense-core.service gedefense-control.service gedefense-access.service "${CELL_HELPER_UNIT}" || true
-  systemctl enable gedefense-bpffs.service gedefense-core.service gedefense-control.service gedefense-access.service "${CELL_HELPER_UNIT}" >/dev/null
+  systemctl reset-failed gedefense-bpffs.service gedefense-core.service "${CAPTURE_HELPER_UNIT}" gedefense-control.service gedefense-access.service "${CELL_HELPER_UNIT}" || true
+  systemctl enable gedefense-bpffs.service gedefense-core.service "${CAPTURE_HELPER_UNIT}" gedefense-control.service gedefense-access.service "${CELL_HELPER_UNIT}" >/dev/null
   systemctl start gedefense-bpffs.service
   systemctl start gedefense-core.service
   for _ in $(seq 1 40); do [[ -S /run/vgt-gedefense/core.sock ]] && break; sleep .5; done
@@ -1272,6 +1279,20 @@ activate_release(){
     chown root:gedefense "$CELL_HELPER_SOCKET" 2>/dev/null || true
   else
     log "WARNUNG: Parser-Cell-Helper konnte nicht starten; Parser-Zellen bleiben runtime-unavailable (Details: journalctl -u ${CELL_HELPER_UNIT})."
+  fi
+  # FIND-008: start the isolated capture helper before gedefense-control so passive
+  # AF_PACKET (Module C) and CN_PROC fallback (Module B) work while the control
+  # plane keeps zero Linux capabilities. Failure is non-fatal for the core stack
+  # (sensors degrade honestly to unavailable if the helper cannot start).
+  if systemctl start "${CAPTURE_HELPER_UNIT}"; then
+    for _ in $(seq 1 20); do [[ -S $CAPTURE_HELPER_SOCKET ]] && break; sleep .5; done
+    if [[ -S $CAPTURE_HELPER_SOCKET ]]; then
+      log "Isolierter Capture-Helper aktiv (${CAPTURE_HELPER_SOCKET}); Control Plane bleibt capability-frei."
+    else
+      log "WARNUNG: Capture-Helper gestartet, aber Socket ${CAPTURE_HELPER_SOCKET} fehlt; TLS-Sensor/CN_PROC-Fallback bleiben inaktiv."
+    fi
+  else
+    log "WARNUNG: Capture-Helper konnte nicht starten; Control Plane bleibt capability-frei, TLS-Sensor/CN_PROC-Fallback bleiben inaktiv (Details: journalctl -u ${CAPTURE_HELPER_UNIT})."
   fi
   if ! systemctl start gedefense-control.service; then
     systemctl --no-pager --full status gedefense-control.service 2>&1 | tee -a "$LOG_FILE" || true
@@ -1316,11 +1337,11 @@ install_manager(){
 #!/usr/bin/env bash
 set -Eeuo pipefail
 case ${1:-status} in
-  status) systemctl --no-pager --full status gedefense-core.service gedefense-control.service gedefense-access.service gedefense-cell-helper.service ;;
-  restart) systemctl restart gedefense-core.service gedefense-control.service gedefense-access.service gedefense-cell-helper.service ;;
-  logs) journalctl -u gedefense-core.service -u gedefense-control.service -u gedefense-access.service -u gedefense-cell-helper.service -n "${2:-200}" --no-pager ;;
-  stop) systemctl stop gedefense-access.service gedefense-control.service gedefense-core.service gedefense-cell-helper.service ;;
-  start) systemctl start gedefense-core.service gedefense-control.service gedefense-access.service gedefense-cell-helper.service ;;
+  status) systemctl --no-pager --full status gedefense-core.service gedefense-capture-helper.service gedefense-control.service gedefense-access.service gedefense-cell-helper.service ;;
+  restart) systemctl restart gedefense-core.service gedefense-capture-helper.service gedefense-control.service gedefense-access.service gedefense-cell-helper.service ;;
+  logs) journalctl -u gedefense-core.service -u gedefense-capture-helper.service -u gedefense-control.service -u gedefense-access.service -u gedefense-cell-helper.service -n "${2:-200}" --no-pager ;;
+  stop) systemctl stop gedefense-access.service gedefense-control.service gedefense-capture-helper.service gedefense-core.service gedefense-cell-helper.service ;;
+  start) systemctl start gedefense-core.service gedefense-capture-helper.service gedefense-control.service gedefense-access.service gedefense-cell-helper.service ;;
   *) echo "Usage: vgt-gedefense {status|restart|logs [N]|start|stop}" >&2; exit 2 ;;
 esac
 MANAGER

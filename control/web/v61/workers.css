@@ -1,0 +1,33 @@
+/* STATUS: DIAMANT VGT SUPREME */
+/* Module B — worker integrity watch. Shared surface: v61/base.css. */
+
+.v61-workers-registry {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.v61-workers-registry .badge {
+  max-width: 26ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Crash events are the narrowest table in the view; the signal and source
+   columns must not wrap or the timestamps start drifting between rows. */
+.v61-workers-events { min-width: 720px; }
+.v61-workers-events th,
+.v61-workers-events td { white-space: nowrap; }
+
+.v61-workers-storm { min-width: 760px; }
+
+.v61-workers-chain {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.66rem;
+}
+
+.v61-workers-chain .status-pill { font-size: 0.56rem; }

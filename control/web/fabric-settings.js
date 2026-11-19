@@ -40,11 +40,21 @@ const MODULE_PRESENTATION = {
 forensics: { label: 'Cases', anchors: [{ label: 'Cases', target: 'forensicsHeading' }, { label: 'Quarantine', target: 'quarantineHeading' }, { label: 'Register', target: 'forensicsRegister' }] },
   release: { label: 'Gates', anchors: [{ label: 'Gates', target: 'releaseHeading' }, { label: 'Promotion', target: 'releasePromotion' }, { label: 'Fail-Safe', target: 'releaseEmergencySection' }] },
   settings: { label: 'Node', anchors: [{ label: 'Node', target: 'settingsHeading' }, { label: 'Allowlist', target: 'settingsAllowlist' }] },
-  system: { label: 'Diagnostics', anchors: [{ label: 'Diagnostics', target: 'systemHeading' }, { label: 'Cells', target: 'cellsHeading' }] }
+  system: { label: 'Diagnostics', anchors: [{ label: 'Diagnostics', target: 'systemHeading' }, { label: 'Cells', target: 'cellsHeading' }] },
+  web_exposure: { label: 'Exposure', page: 'web-exposure', anchors: [{ label: 'Exposure', target: 'webExposureHeading' }, { label: 'Advisories', target: 'exposureAffectedRows' }] },
+  worker_guard: { label: 'Workers', page: 'worker-guard', anchors: [{ label: 'Workers', target: 'workerGuardHeading' }, { label: 'Storms', target: 'workerStormRows' }] },
+  tls_sensor: { label: 'TLS Sensor', page: 'tls-sensor', anchors: [{ label: 'Capture', target: 'tlsSensorHeading' }, { label: 'Flows', target: 'tlsFlowRows' }] },
+  lpe_guard: { label: 'LPE Guard', page: 'lpe-guard', anchors: [{ label: 'Policy', target: 'lpeGuardHeading' }, { label: 'Hardening', target: 'lpeHardeningRows' }] },
+  edge_proxy: { label: 'Edge Proxy', page: 'edge-proxy', anchors: [{ label: 'Proxy', target: 'edgeProxyHeading' }, { label: 'TLS', target: 'edgeTlsFingerprint' }] },
+  styx: { label: 'StyX', anchors: [{ label: 'Egress', target: 'styxHeading' }, { label: 'Beacons', target: 'styxBeaconRows' }] },
+  titan_exec: { label: 'Titan Exec', page: 'titan-exec', anchors: [{ label: 'Exec Gate', target: 'titanExecHeading' }] },
+  parser_cells: { label: 'Parser Cells', page: 'parser-cells', anchors: [{ label: 'Cells', target: 'parserCellsHeading' }, { label: 'List', target: 'parserCellRows' }] },
+  lockdown: { label: 'Lockdown', anchors: [{ label: 'State', target: 'lockdownHeading' }, { label: 'Phases', target: 'lockdownPhaseRows' }] },
+  witness: { label: 'Witness', anchors: [{ label: 'Checkpoint', target: 'witnessHeading' }, { label: 'Identity', target: 'witnessCheckpointId' }] }
 };
 
 // Modules whose Settings tab is served by the Fabric module API.
-const FABRIC_MODULES = new Set(['detection', 'kinetic', 'network', 'protection', 'xdr', 'l7', 'threat_intel', 'hardening', 'integrity', 'boot_trust', 'policy_trust', 'forensics', 'system']);
+const FABRIC_MODULES = new Set(['detection', 'kinetic', 'network', 'protection', 'xdr', 'l7', 'threat_intel', 'hardening', 'integrity', 'boot_trust', 'policy_trust', 'forensics', 'system', 'web_exposure', 'worker_guard', 'tls_sensor', 'lpe_guard', 'edge_proxy', 'styx', 'titan_exec', 'parser_cells', 'lockdown', 'witness']);
 
 const FEED_ACTIONS = ['BLOCK', 'CORRELATE_ONLY', 'ANNOTATE_ONLY'];
 const FEED_FORMATS = ['lines', 'json', 'ipsum'];
@@ -272,7 +282,21 @@ class FabricSettingsController {
 
   selectTab(name) {
     const settingsMode = name === 'settings';
-    for (const child of this.mainChildren) child.hidden = settingsMode;
+    if (!this.stashedHidden) this.stashedHidden = new WeakMap();
+    if (settingsMode && !this.inSettings) {
+      for (const child of this.mainChildren) {
+        this.stashedHidden.set(child, Boolean(child.hidden));
+        child.hidden = true;
+      }
+      this.inSettings = true;
+    } else if (!settingsMode && this.inSettings) {
+      for (const child of this.mainChildren) {
+        if (this.stashedHidden.has(child)) {
+          child.hidden = Boolean(this.stashedHidden.get(child));
+        }
+      }
+      this.inSettings = false;
+    }
     this.area.hidden = !settingsMode;
     for (const button of this.tabs.querySelectorAll('[data-fabric-tab]')) {
       const active = button.dataset.fabricTab === name;

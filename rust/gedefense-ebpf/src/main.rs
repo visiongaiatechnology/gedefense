@@ -15,27 +15,31 @@ use aya_ebpf::{
 };
 use core::mem;
 use gedefense_common::{
-    parse_network_header, CellLsmDenyEvent, EgressDropEvent, ExecEvent, FlowEvent, IngressEvent,
-    NetworkHeader, TitanExecEvent, ACTION_DROP, CELL_LSM_DENY_NON_UNIX_SOCKET, EXEC_COMM_BYTES,
-    L2_PREFIX_BYTES, LOCKDOWN_FLAG_ALLOW_LOOPBACK, LOCKDOWN_FLAG_DROP_ALL, LOCKDOWN_MODE_ARMED,
-    LOCKDOWN_STATE_ABI, LOCKDOWN_STATE_ABI_SHIFT, LOCKDOWN_STATE_BYTE_MASK,
-    LOCKDOWN_STATE_FLAGS_SHIFT, LOCKDOWN_STATE_MAGIC, LOCKDOWN_STATE_MAGIC_SHIFT,
-    LOCKDOWN_STATE_MODE_SHIFT, MAX_BLOCKLIST_ENTRIES_V4, MAX_BLOCKLIST_ENTRIES_V6,
-    NETWORK_ADDRESS_BYTES,
-    NETWORK_FAMILY_V4, NETWORK_FAMILY_V6, NETWORK_PROTOCOL_TCP, STYX_DIR_EGRESS,
-    STYX_FLAG_ALLOW_HOST_ALLOWLIST, STYX_FLAG_ALLOW_METADATA, STYX_FLAG_DNS_RESOLVER,
-    STYX_FLAG_LOG_FLOWS, STYX_FLOW_EVENT_WIRE_BYTES, STYX_MODE_ENFORCE, STYX_MODE_MASK,
-    STYX_MODE_MONITOR, STYX_MODE_OFF, STYX_PROTO_TCP, STYX_PROTO_UNKNOWN, STYX_PROTO_UDP,
-    STYX_VERDICT_ALLOW, STYX_VERDICT_AUDIT_DROP, STYX_VERDICT_DEFAULT_DENY, STYX_VERDICT_DNS_PIN,
-    STYX_VERDICT_DROP, STYX_VERDICT_METADATA_VETO, TITAN_EXEC_ACTION_AUDIT,
-    TITAN_EXEC_ACTION_DENY, TITAN_EXEC_EVENT_WIRE_BYTES, TITAN_EXEC_HOOK_BPRM,
-    TITAN_EXEC_HOOK_MMAP, TITAN_EXEC_MODE_OFF, TITAN_EXEC_MODE_OBSERVE, TITAN_EXEC_MODE_STRICT,
-    TITAN_EXEC_OFFSETS_ABI, TITAN_EXEC_OFFSETS_MAGIC, TITAN_EXEC_REASON_ANON_NO_JIT,
-    TITAN_EXEC_REASON_CTIME_MISMATCH, TITAN_EXEC_REASON_FS_HARD, TITAN_EXEC_REASON_MEMFD,
-    TITAN_EXEC_REASON_NOT_ALLOWLISTED, TITAN_EXEC_REASON_READ_FAILURE, TITAN_EXEC_REASON_TMPFS,
-    TITAN_EXEC_REASON_UNLINKED, TITAN_EXEC_REASON_WX, TITAN_EXEC_SCOPE_FLAG_JIT_ALLOW,
-    TITAN_EXEC_STATE_ABI, TITAN_EXEC_STATE_MAGIC,
+    cell_lsm_socket_create_denied, parse_network_header, CellLsmDenyEvent, EgressDropEvent,
+    ExecEvent, FlowEvent, IngressEvent, NetworkHeader, TitanExecEvent, ACTION_DROP,
+    CELL_LSM_DENY_NON_UNIX_SOCKET, EXEC_COMM_BYTES, L2_PREFIX_BYTES,
+    LOCKDOWN_FLAG_ALLOW_LOOPBACK,
+    LOCKDOWN_FLAG_DROP_ALL, LOCKDOWN_MODE_ARMED, LOCKDOWN_STATE_ABI, LOCKDOWN_STATE_ABI_SHIFT,
+    LOCKDOWN_STATE_BYTE_MASK, LOCKDOWN_STATE_FLAGS_SHIFT, LOCKDOWN_STATE_MAGIC,
+    LOCKDOWN_STATE_MAGIC_SHIFT, LOCKDOWN_STATE_MODE_SHIFT, MAX_BLOCKLIST_ENTRIES_V4,
+    MAX_BLOCKLIST_ENTRIES_V6, NETWORK_ADDRESS_BYTES, NETWORK_FAMILY_V4, NETWORK_FAMILY_V6,
+    NETWORK_PROTOCOL_TCP, STYX_DIR_EGRESS, STYX_FLAG_ALLOW_HOST_ALLOWLIST,
+    STYX_FLAG_ALLOW_METADATA, STYX_FLAG_DNS_RESOLVER, STYX_FLAG_LOG_FLOWS,
+    STYX_FLOW_EVENT_WIRE_BYTES, STYX_MODE_ENFORCE, STYX_MODE_MASK, STYX_MODE_MONITOR,
+    STYX_MODE_OFF, STYX_PROTO_TCP, STYX_PROTO_UNKNOWN, STYX_PROTO_UDP, STYX_VERDICT_ALLOW,
+    STYX_VERDICT_AUDIT_DROP, STYX_VERDICT_DEFAULT_DENY, STYX_VERDICT_DNS_PIN, STYX_VERDICT_DROP,
+    STYX_VERDICT_METADATA_VETO, TITAN_EXEC_ACTION_AUDIT, TITAN_EXEC_ACTION_DENY,
+    TITAN_EXEC_EVENT_WIRE_BYTES, TITAN_EXEC_HOOK_BPRM, TITAN_EXEC_HOOK_MMAP,
+    TITAN_EXEC_MODE_OFF, TITAN_EXEC_MODE_OBSERVE, TITAN_EXEC_MODE_STRICT, TITAN_EXEC_OFFSETS_ABI,
+    TITAN_EXEC_OFFSETS_MAGIC, TITAN_EXEC_REASON_ANON_NO_JIT, TITAN_EXEC_REASON_CTIME_MISMATCH,
+    TITAN_EXEC_REASON_FS_HARD, TITAN_EXEC_REASON_MEMFD, TITAN_EXEC_REASON_NOT_ALLOWLISTED,
+    TITAN_EXEC_REASON_READ_FAILURE, TITAN_EXEC_REASON_TMPFS, TITAN_EXEC_REASON_UNLINKED,
+    TITAN_EXEC_REASON_WX, TITAN_EXEC_SCOPE_FLAG_JIT_ALLOW, TITAN_EXEC_STATE_ABI,
+    TITAN_EXEC_STATE_MAGIC,
 };
+
+/// 6.1.0 Module B: independent worker crash sensor (own maps/program).
+mod worker_guard;
 
 const MAX_ALLOWLIST_ENTRIES: u32 = 65_536;
 const EXEC_EVENT_RING_BYTES: u32 = 1 << 20;
@@ -66,6 +70,20 @@ const MAX_CELL_LSM_POLICIES: u32 = 4096;
 const MAX_CGROUP_ANCESTOR_LEVELS: i32 = 64;
 const AF_UNIX: i32 = 1;
 const EPERM: i32 = 1;
+
+/// 6.1.0 Module D: the per-cgroup socket-deny bits beyond the pre-existing
+/// NON_UNIX bit. The policy word stays a u8; the core rejects unknown bits.
+///
+/// The decision itself is `gedefense_common::cell_lsm_socket_create_denied`, so
+/// it is unit-tested by the host test suite instead of only by the BPF
+/// verifier. In particular the RDS bit is keyed on `family == AF_RDS` (Linux
+/// creates RDS as `socket(AF_RDS /*21*/, SOCK_SEQPACKET, 0)`), never on the
+/// protocol argument; SCTP/DCCP stay protocol-keyed because they are AF_INET
+/// sockets carrying that protocol value. FIND-002.
+#[inline(always)]
+fn socket_policy_denies(flags: u8, family: i32, protocol: i32) -> bool {
+    cell_lsm_socket_create_denied(flags, family, protocol)
+}
 
 // ---------------------------------------------------------------------------
 // Point 1 (Phase 1): Titan exec/library gate.
@@ -459,6 +477,10 @@ fn try_cell_socket_create(ctx: LsmContext) -> Result<i32, i32> {
         return Ok(previous);
     }
     let family: i32 = ctx.arg(0);
+    // 6.1.0 Module D: socket(2) protocol (third LSM argument). The kernel keeps
+    // it in the hook signature; the pre-6.1.0 hook ignored it. Reading it is
+    // required to refuse SCTP/DCCP/RDS on an otherwise allowed AF_INET socket.
+    let protocol: i32 = ctx.arg(2);
     if family == AF_UNIX {
         return Ok(0);
     }
@@ -496,7 +518,9 @@ fn try_cell_socket_create(ctx: LsmContext) -> Result<i32, i32> {
             break;
         }
         if let Some(policy) = unsafe { CELL_LSM_POLICIES.get(&cgroup_id) } {
-            if *policy & CELL_LSM_DENY_NON_UNIX_SOCKET != 0 {
+            if *policy & CELL_LSM_DENY_NON_UNIX_SOCKET != 0
+                || socket_policy_denies(*policy, family, protocol)
+            {
                 let pid_tgid = bpf_get_current_pid_tgid();
                 let uid_gid = bpf_get_current_uid_gid();
                 let event = CellLsmDenyEvent {

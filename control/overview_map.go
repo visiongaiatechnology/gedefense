@@ -225,21 +225,13 @@ func (s *APIServer) overviewThreatMap(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// 2. The incident stream: layer-7 findings, post-exploitation chains and their correlation.
+	// 2. The incident stream: layer-7 findings, post-exploitation chains and new 6.x modules.
 	snap := s.state.Snapshot()
 	for i := len(snap.Incidents) - 1; i >= 0 && len(order) < overviewThreatMapMaxSources; i-- {
 		inc := snap.Incidents[i]
-		area := "xdr"
-		if inc.RequestID != "" || inc.HTTPHost != "" || strings.HasPrefix(inc.Decision, "deny-http") {
-			area = "l7"
-		}
-		if len(order) >= limit && area == "kinetic" {
-			break
-		}
+		area := classifyIncidentMapArea(inc)
 		remote := strings.TrimSpace(inc.Remote)
 		if remote == "" {
-			// No remote endpoint: nothing to place. Skipping is the honest answer; a guessed position
-			// would put a dot on the map that no evidence supports.
 			continue
 		}
 		if host, _, err := net.SplitHostPort(remote); err == nil {
@@ -248,12 +240,15 @@ func (s *APIServer) overviewThreatMap(w http.ResponseWriter, r *http.Request) {
 		add(OverviewThreatMapSource{
 			IP: remote, Area: area, Severity: inc.Severity, Blocked: incidentBlocked(inc.Decision, inc.Action),
 			Score: inc.Score, LastSeen: inc.Time, Summary: inc.Summary, Rules: inc.RuleIDs,
-			Story: inc.AttackStory,
+			Service: inc.Process, Story: inc.AttackStory,
 		})
 		if len(order) >= limit {
 			break
 		}
 	}
+
+	// 2b. Module B (Worker Integrity), Module C (TLS/ALPN Sensor), Module E (Edge Proxy) and StyX Beacons.
+	s.collectExtendedThreatMapSources(limit, &order, add)
 
 	sources := make([]OverviewThreatMapSource, 0, len(order))
 	for _, ip := range order {
@@ -279,8 +274,7 @@ func (s *APIServer) overviewThreatMap(w http.ResponseWriter, r *http.Request) {
 	countries := aggregateOverviewCountries(sources, time.Time{})
 	countries24h := aggregateOverviewCountries(sources, time.Now().UTC().Add(-24*time.Hour))
 
-	// The activity band reads the ledger backwards, newest first. It deliberately keeps events that the
-	// map had to skip: no remote endpoint means no dot, but it is still something that happened.
+	// The activity band reads the ledger backwards, newest first, enriched with Module B/C/E & StyX events.
 	recent := make([]OverviewThreatMapEvent, 0, events)
 	for i := len(snap.Incidents) - 1; i >= 0 && len(recent) < events; i-- {
 		inc := snap.Incidents[i]
@@ -290,10 +284,7 @@ func (s *APIServer) overviewThreatMap(w http.ResponseWriter, r *http.Request) {
 			Summary: inc.Summary, Rules: inc.RuleIDs, Decision: inc.Decision,
 			Blocked: incidentBlocked(inc.Decision, inc.Action),
 		}
-		item.Area = "xdr"
-		if inc.RequestID != "" || inc.HTTPHost != "" || strings.HasPrefix(inc.Decision, "deny-http") {
-			item.Area = "l7"
-		}
+		item.Area = classifyIncidentMapArea(inc)
 		remote := strings.TrimSpace(inc.Remote)
 		if remote != "" {
 			if host, _, err := net.SplitHostPort(remote); err == nil {
@@ -310,6 +301,7 @@ func (s *APIServer) overviewThreatMap(w http.ResponseWriter, r *http.Request) {
 		}
 		recent = append(recent, item)
 	}
+	recent = s.appendExtendedThreatMapEvents(recent, events)
 
 	origin := s.resolveKineticOrigin()
 	totals := map[string]int{
@@ -319,6 +311,12 @@ func (s *APIServer) overviewThreatMap(w http.ResponseWriter, r *http.Request) {
 		"kinetic":     countArea(sources, "kinetic"),
 		"l7":          countArea(sources, "l7"),
 		"xdr":         countArea(sources, "xdr"),
+		"worker":      countArea(sources, "worker"),
+		"tls":         countArea(sources, "tls"),
+		"styx":        countArea(sources, "styx"),
+		"edge":        countArea(sources, "edge"),
+		"titan":       countArea(sources, "titan"),
+		"lpe":         countArea(sources, "lpe"),
 		"countries":   len(countries),
 		"events_read": events,
 	}
@@ -327,6 +325,282 @@ func (s *APIServer) overviewThreatMap(w http.ResponseWriter, r *http.Request) {
 		Origin: origin, OriginNote: describeOrigin(origin),
 		Geo: s.geoStatusOrNil(), Totals: totals, Generated: time.Now().UTC(),
 	})
+}
+
+func classifyIncidentMapArea(inc XDRIncident) string {
+	for _, r := range inc.RuleIDs {
+		upper := strings.ToUpper(r)
+		switch {
+		case strings.Contains(upper, "WORKER"):
+			return "worker"
+		case strings.Contains(upper, "TLS") || strings.Contains(upper, "ALPN") || strings.Contains(upper, "CONTROL_STORM"):
+			return "tls"
+		case strings.Contains(upper, "STYX"):
+			return "styx"
+		case strings.Contains(upper, "EDGE"):
+			return "edge"
+		case strings.Contains(upper, "LPE"):
+			return "lpe"
+		case strings.Contains(upper, "TITAN"):
+			return "titan"
+		}
+	}
+	if inc.RequestID != "" || inc.HTTPHost != "" || strings.HasPrefix(inc.Decision, "deny-http") {
+		return "l7"
+	}
+	return "xdr"
+}
+
+func (s *APIServer) collectExtendedThreatMapSources(limit int, order *[]string, add func(OverviewThreatMapSource)) {
+	if s.v61 != nil && s.v61.workerGuard != nil && len(*order) < limit {
+		wg := s.v61.workerGuard
+		wg.mu.Lock()
+		correlator := wg.correlator
+		events := append([]workerGuardEventView(nil), wg.events...)
+		wg.mu.Unlock()
+		if correlator != nil {
+			for _, storm := range correlator.RecentStorms(8) {
+				for _, peer := range storm.Peers {
+					if len(*order) >= limit {
+						break
+					}
+					host := normalizeHostIP(peer)
+					if host == "" {
+						continue
+					}
+					add(OverviewThreatMapSource{
+						IP: host, Area: "worker", Severity: storm.Severity, Blocked: false,
+						Hits: storm.Crashes, Score: 90, Service: storm.Comm, LastSeen: storm.LastAt,
+						Summary: "Worker crash storm peer (" + storm.Comm + ")",
+						Rules:   []string{"XDR.WORKER_CRASH_STORM"},
+					})
+				}
+			}
+		}
+		for i := len(events) - 1; i >= 0 && len(*order) < limit; i-- {
+			ev := events[i]
+			host := normalizeHostIP(ev.Peer)
+			if host == "" {
+				continue
+			}
+			add(OverviewThreatMapSource{
+				IP: host, Area: "worker", Severity: "medium", Hits: 1, Score: 65,
+				Service: ev.Comm, LastSeen: ev.At,
+				Summary: "Worker signal " + ev.Signal + " (" + ev.Comm + ")",
+				Rules:   []string{"WORKER." + strings.ToUpper(ev.Signal)},
+			})
+		}
+	}
+
+	if s.v61 != nil && s.v61.tlsSensor != nil && len(*order) < limit {
+		ts := s.v61.tlsSensor
+		ts.mu.Lock()
+		table := ts.flows
+		handshakes := append([]tlsSensorHandshakeView(nil), ts.handshakes...)
+		ts.mu.Unlock()
+		if table != nil {
+			entries, _ := table.Snapshot(64)
+			for _, entry := range entries {
+				if len(*order) >= limit {
+					break
+				}
+				if entry.Verdict == "" || entry.Verdict == "normal" {
+					continue
+				}
+				host := normalizeHostIP(entry.Sample.Peer)
+				if host == "" {
+					continue
+				}
+				sev := "medium"
+				blocked := false
+				if entry.Verdict == "storm" {
+					sev = "critical"
+					blocked = true
+				} else if entry.Verdict == "throttle" {
+					sev = "high"
+				}
+				add(OverviewThreatMapSource{
+					IP: host, Area: "tls", Severity: sev, Blocked: blocked,
+					Hits: entry.Matches, Score: 80, Service: "port " + strconv.Itoa(int(entry.Sample.Port)),
+					LastSeen: entry.LastSeen,
+					Summary:  "TLS/ALPN flow verdict: " + entry.Verdict,
+					Rules:    []string{"TLS.FLOW_" + strings.ToUpper(entry.Verdict)},
+				})
+			}
+		}
+		for i := len(handshakes) - 1; i >= 0 && len(*order) < limit; i-- {
+			hs := handshakes[i]
+			host := normalizeHostIP(hs.Peer)
+			if host == "" {
+				continue
+			}
+			svc := hs.SNI
+			if svc == "" && len(hs.ALPN) > 0 {
+				svc = strings.Join(hs.ALPN, ",")
+			}
+			add(OverviewThreatMapSource{
+				IP: host, Area: "tls", Severity: "low", Score: 20, Hits: 1,
+				Service: svc, LastSeen: hs.At,
+				Summary: "TLS handshake" + optionalParen(hs.SNI) + optionalALPN(hs.ALPN),
+				Rules:   []string{"TLS.CLIENT_HELLO"},
+			})
+		}
+	}
+
+	if s.xdr != nil && len(*order) < limit {
+		styxSnap := s.xdr.StyxBeaconSnapshot()
+		for _, flow := range styxSnap.Top {
+			if len(*order) >= limit {
+				break
+			}
+			host := normalizeHostIP(flow.Remote)
+			if host == "" {
+				continue
+			}
+			if flow.Score <= 0 && len(flow.Signals) == 0 {
+				continue
+			}
+			sev := "low"
+			if flow.Score >= 80 {
+				sev = "high"
+			} else if flow.Score >= 50 {
+				sev = "medium"
+			}
+			add(OverviewThreatMapSource{
+				IP: host, Area: "styx", Severity: sev, Score: flow.Score, Hits: 1,
+				Service: flow.Comm, LastSeen: time.Now().UTC(),
+				Summary: "StyX egress beacon (" + flow.Comm + ")",
+				Rules:   flow.Signals,
+			})
+		}
+	}
+
+	if len(*order) < limit {
+		edgeStatus := v61Edge.Status()
+		for i := len(edgeStatus.Recent) - 1; i >= 0 && len(*order) < limit; i-- {
+			ev := edgeStatus.Recent[i]
+			host := normalizeHostIP(ev.Peer)
+			if host == "" {
+				continue
+			}
+			add(OverviewThreatMapSource{
+				IP: host, Area: "edge", Severity: "high", Blocked: true, Hits: 1, Score: 85,
+				Service: ev.Method + " " + ev.Path, LastSeen: ev.At,
+				Summary: "Edge proxy blocked: " + ev.Reason,
+				Rules:   []string{"EDGE.PROXY_BLOCK"},
+			})
+		}
+	}
+}
+
+func (s *APIServer) appendExtendedThreatMapEvents(recent []OverviewThreatMapEvent, maxEvents int) []OverviewThreatMapEvent {
+	lookupGeo := func(ip string) (string, string) {
+		if s.geo == nil || ip == "" {
+			return "", ""
+		}
+		if g, ok := s.geo.Lookup(net.ParseIP(ip)); ok {
+			return g.Country, g.CountryCode
+		}
+		return "", ""
+	}
+	if s.v61 != nil && s.v61.tlsSensor != nil {
+		ts := s.v61.tlsSensor
+		ts.mu.Lock()
+		handshakes := append([]tlsSensorHandshakeView(nil), ts.handshakes...)
+		ts.mu.Unlock()
+		start := len(handshakes) - 1
+		added := 0
+		for i := start; i >= 0 && len(recent) < maxEvents && added < 25; i-- {
+			hs := handshakes[i]
+			host := normalizeHostIP(hs.Peer)
+			if host == "" {
+				continue
+			}
+			country, code := lookupGeo(host)
+			recent = append(recent, OverviewThreatMapEvent{
+				ID: "tls-hs-" + strconv.Itoa(i), Time: hs.At, Area: "tls", Severity: "low", Score: 15,
+				Remote: host, Country: country, CountryCode: code,
+				Method: strings.Join(hs.ALPN, ","), Host: hs.SNI, Path: hs.JA3,
+				Summary: "TLS ClientHello" + optionalParen(hs.SNI) + optionalALPN(hs.ALPN),
+				Rules:   []string{"TLS.SENSOR"}, Decision: "observed",
+			})
+			added++
+		}
+	}
+	if s.v61 != nil && s.v61.workerGuard != nil {
+		wg := s.v61.workerGuard
+		wg.mu.Lock()
+		events := append([]workerGuardEventView(nil), wg.events...)
+		wg.mu.Unlock()
+		for i := len(events) - 1; i >= 0 && len(recent) < maxEvents; i-- {
+			ev := events[i]
+			host := normalizeHostIP(ev.Peer)
+			country, code := lookupGeo(host)
+			recent = append(recent, OverviewThreatMapEvent{
+				ID: "wg-" + strconv.Itoa(ev.PID) + "-" + strconv.Itoa(i), Time: ev.At, Area: "worker", Severity: "medium", Score: 65,
+				Remote: host, Country: country, CountryCode: code, Process: ev.Comm,
+				Summary: "Worker " + ev.Comm + " exited on " + ev.Signal,
+				Rules:   []string{"WORKER." + strings.ToUpper(ev.Signal)}, Decision: "observed",
+			})
+		}
+	}
+	if s.xdr != nil && len(recent) < maxEvents {
+		titanReport := s.xdr.TitanExecEventsReport(20)
+		now := time.Now().UTC()
+		for idx, ev := range titanReport.Events {
+			if len(recent) >= maxEvents {
+				break
+			}
+			if ev.Action != titanExecActionDeny {
+				continue
+			}
+			rule := ev.RuleID
+			if rule == "" {
+				rule = "TITAN.EXEC_DENY"
+			}
+			recent = append(recent, OverviewThreatMapEvent{
+				ID: "titan-" + strconv.FormatUint(ev.TsNS, 36) + "-" + strconv.Itoa(idx), Time: now, Area: "titan", Severity: "high", Score: 90,
+				Process: ev.Comm, Path: "cgroup:" + strconv.FormatUint(ev.CgroupID, 10), Summary: "Titan exec gate denied: " + rule,
+				Rules: []string{rule}, Decision: "deny-exec", Blocked: true,
+			})
+		}
+	}
+	sort.SliceStable(recent, func(i, j int) bool {
+		return recent[i].Time.After(recent[j].Time)
+	})
+	if len(recent) > maxEvents {
+		recent = recent[:maxEvents]
+	}
+	return recent
+}
+
+func normalizeHostIP(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return ""
+	}
+	if host, _, err := net.SplitHostPort(trimmed); err == nil {
+		trimmed = host
+	}
+	trimmed = strings.Trim(trimmed, "[]")
+	if net.ParseIP(trimmed) == nil {
+		return ""
+	}
+	return trimmed
+}
+
+func optionalParen(value string) string {
+	if value == "" {
+		return ""
+	}
+	return " (" + value + ")"
+}
+
+func optionalALPN(alpn []string) string {
+	if len(alpn) == 0 {
+		return ""
+	}
+	return " [" + strings.Join(alpn, ",") + "]"
 }
 
 // geoStatusOrNil reports the GeoIP matrix state so the panel can say when the map is running without

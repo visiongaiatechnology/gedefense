@@ -163,6 +163,8 @@ function renderMetadata() {
   for (const [key, id] of Object.entries({ sources: 'Sources', placed: 'Placed', blocked: 'Blocked', countries: 'Countries', kinetic: 'Kinetic', l7: 'L7', xdr: 'Xdr' })) {
     text(`overviewMap${id}`, totals[key].toLocaleString(locale()));
   }
+  const modSensors = (totals.worker || 0) + (totals.tls || 0) + (totals.styx || 0) + (totals.edge || 0) + (totals.titan || 0) + (totals.lpe || 0);
+  text('overviewMapModules', modSensors.toLocaleString(locale()));
   text('overviewMapGeo', t(geo.loaded ? 'overview.map.geoReady' : 'overview.map.geoUnloaded', { count: geo.entries.toLocaleString(locale()) }));
   text('overviewMapHost', origin.ip ? `Host ${origin.ip}${origin.country ? ` · ${origin.country}` : ''}` : t('overview.map.originUnknown'));
   text('overviewMapOrigin', origin.known

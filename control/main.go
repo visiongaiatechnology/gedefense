@@ -17,7 +17,7 @@ import (
 	"time"
 )
 
-const version = "6.0.3"
+const version = "6.1.0"
 
 func detectInterface(requested string) (string, error) {
 	if requested != "" && requested != "auto" {
@@ -112,9 +112,17 @@ func main() {
 	releasePublicKey := flag.String("release-public-key", "", "trusted Ed25519 release public key")
 	initFeedSigning := flag.String("init-feed-signing", "", "generate the local feed-signing Ed25519 key pair in this directory and print the pinned public key")
 	feedPublicKeyOut := flag.String("feed-public-key", "", "optional output path for the generated feed-signing public key")
+	captureHelper := flag.Bool("capture-helper", false, "run the isolated read-only AF_PACKET / CN_PROC capture helper")
+	captureHelperSocket := flag.String("capture-helper-socket", defaultCaptureHelperSocket, "Unix socket path for the isolated capture helper")
 	flag.Parse()
 	if *showVersion {
 		fmt.Println(version)
+		return
+	}
+	if *captureHelper {
+		if err := runCaptureHelper(*captureHelperSocket); err != nil {
+			log.Fatalf("capture helper: %v", err)
+		}
 		return
 	}
 	if *signReleaseDir != "" {
@@ -972,6 +980,17 @@ func main() {
 			generated := srv.kinetic.IngestTLSFindings(clientIP, summary, findings, now)
 			srv.handleKineticDecisions(generated)
 		})
+	}
+	// GeDefense 6.1.0: attach the module A-D engines (web posture, worker guard,
+	// TLS sensor, LPE guard). Each engine polls the persisted namespace on its own
+	// tick, so a disabled module performs no kernel or host action at all.
+	attachV61Engines(srv, settings, state, core, xdr, xdrCtx)
+	// FIND-006: converge the optional edge listener once before serving, so an
+	// operator-enabled edge starts at boot instead of waiting for the first
+	// dashboard status poll. The edge is optional: a failure is logged and the
+	// control plane keeps serving, never blocked by it.
+	if edgeStatus, edgeSyncErr := srv.syncEdgeProxy(); edgeSyncErr != "" {
+		log.Printf("edge proxy startup sync failed (state=%s): %s", edgeStatus.State, edgeSyncErr)
 	}
 	errCh := make(chan error, 1)
 	readyCh := make(chan struct{})

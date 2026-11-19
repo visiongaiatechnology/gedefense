@@ -55,7 +55,12 @@ type CustomRule struct {
 // and mode=off mean no checkpoint, no witness request, no export and no event; an
 // upgrade keeps the exact host behaviour of 5.2.0 and the namespace is named in the
 // migration record for a v16 document.
-const fabricSettingsVersion = 17
+// v18 adds the five 6.1.0 namespaces (docs/V6.1.0-BLUEPRINT.md §3.3):
+// web_exposure (read-only sensor, enabled), worker_guard, tls_sensor and lpe_guard
+// (disabled) and edge_proxy (enabled=false, loopback listener unbound). A v17
+// document receives each namespace with its inert default and the migration record
+// names it; no kernel or host behaviour changes on upgrade.
+const fabricSettingsVersion = 18
 const runtimeSettingsHistoryLimit = 32
 
 type KineticRuntimeSettings struct {
@@ -195,6 +200,16 @@ type RuntimeSettings struct {
 	// disabled/off and no checkpoint, request or export is produced until an
 	// operator enables it.
 	Witness *WitnessFabricSettings `json:"witness,omitempty"`
+	// WebExposure is the 6.1.0 Module A namespace (read-only web posture).
+	WebExposure *WebExposureFabricSettings `json:"web_exposure,omitempty"`
+	// WorkerGuard is the 6.1.0 Module B namespace (worker crash correlation).
+	WorkerGuard *WorkerGuardFabricSettings `json:"worker_guard,omitempty"`
+	// TLSSensor is the 6.1.0 Module C namespace (AF_PACKET TLS sensor).
+	TLSSensor *TLSSensorFabricSettings `json:"tls_sensor,omitempty"`
+	// LPEGuard is the 6.1.0 Module D namespace (LPE kill-chain defence).
+	LPEGuard *LPEGuardFabricSettings `json:"lpe_guard,omitempty"`
+	// EdgeProxy is the 6.1.0 Module E namespace (memory-safe edge terminator).
+	EdgeProxy *EdgeProxyFabricSettings `json:"edge_proxy,omitempty"`
 	// V6AutoArmedApplied records whether GeDefense V6 safe defaults were applied
 	// upon entering enforce so explicit subsequent operator overrides stay preserved.
 	V6AutoArmedApplied bool `json:"v6_auto_armed_applied,omitempty"`
@@ -234,6 +249,11 @@ func defaultRuntimeSettings(cfg Config) RuntimeSettings {
 	parserCells := defaultParserCellsFabricSettings()
 	lockdown := defaultLockdownFabricSettings()
 	witness := defaultWitnessFabricSettings()
+	webExposure := defaultWebExposureFabricSettings()
+	workerGuard := defaultWorkerGuardFabricSettings()
+	tlsSensor := defaultTLSSensorFabricSettings()
+	lpeGuard := defaultLPEGuardFabricSettings()
+	edgeProxy := defaultEdgeProxyFabricSettings()
 	return RuntimeSettings{
 		FabricVersion:          fabricSettingsVersion,
 		Revision:               1,
@@ -290,6 +310,11 @@ func defaultRuntimeSettings(cfg Config) RuntimeSettings {
 		ParserCells: &parserCells,
 		Lockdown:    &lockdown,
 		Witness:     &witness,
+		WebExposure: &webExposure,
+		WorkerGuard: &workerGuard,
+		TLSSensor:   &tlsSensor,
+		LPEGuard:    &lpeGuard,
+		EdgeProxy:   &edgeProxy,
 	}
 }
 
@@ -526,6 +551,36 @@ func cloneRuntimeSettings(in RuntimeSettings) RuntimeSettings {
 	} else {
 		out.Witness = nil
 	}
+	if in.WebExposure != nil {
+		webExposure := cloneWebExposureFabricSettings(*in.WebExposure)
+		out.WebExposure = &webExposure
+	} else {
+		out.WebExposure = nil
+	}
+	if in.WorkerGuard != nil {
+		workerGuard := cloneWorkerGuardFabricSettings(*in.WorkerGuard)
+		out.WorkerGuard = &workerGuard
+	} else {
+		out.WorkerGuard = nil
+	}
+	if in.TLSSensor != nil {
+		tlsSensor := cloneTLSSensorFabricSettings(*in.TLSSensor)
+		out.TLSSensor = &tlsSensor
+	} else {
+		out.TLSSensor = nil
+	}
+	if in.LPEGuard != nil {
+		lpeGuard := cloneLPEGuardFabricSettings(*in.LPEGuard)
+		out.LPEGuard = &lpeGuard
+	} else {
+		out.LPEGuard = nil
+	}
+	if in.EdgeProxy != nil {
+		edgeProxy := cloneEdgeProxyFabricSettings(*in.EdgeProxy)
+		out.EdgeProxy = &edgeProxy
+	} else {
+		out.EdgeProxy = nil
+	}
 	return out
 }
 
@@ -639,6 +694,47 @@ func upgradeRuntimeSettings(settings *RuntimeSettings, defaults RuntimeSettings)
 		settings.Witness = &witness
 		if settings.FabricVersion >= 16 {
 			settings.Migrations = append(settings.Migrations, witnessMigrationNote)
+		}
+	}
+	// v18: the five 6.1.0 namespaces (docs/V6.1.0-BLUEPRINT.md §3.3). A v17
+	// document is the real upgrade path this release ships to, so every seeded
+	// namespace is named in the migration record; older documents receive them
+	// together with the earlier additive namespaces, exactly like v13..v17.
+	// Every default is inert: web_exposure is read-only, worker_guard/tls_sensor/
+	// lpe_guard are disabled and edge_proxy binds nothing.
+	if settings.WebExposure == nil {
+		webExposure := webExposureDefaults(defaults)
+		settings.WebExposure = &webExposure
+		if settings.FabricVersion >= 17 {
+			settings.Migrations = append(settings.Migrations, webExposureMigrationNote)
+		}
+	}
+	if settings.WorkerGuard == nil {
+		workerGuard := workerGuardDefaults(defaults)
+		settings.WorkerGuard = &workerGuard
+		if settings.FabricVersion >= 17 {
+			settings.Migrations = append(settings.Migrations, workerGuardMigrationNote)
+		}
+	}
+	if settings.TLSSensor == nil {
+		tlsSensor := tlsSensorDefaults(defaults)
+		settings.TLSSensor = &tlsSensor
+		if settings.FabricVersion >= 17 {
+			settings.Migrations = append(settings.Migrations, tlsSensorMigrationNote)
+		}
+	}
+	if settings.LPEGuard == nil {
+		lpeGuard := lpeGuardDefaults(defaults)
+		settings.LPEGuard = &lpeGuard
+		if settings.FabricVersion >= 17 {
+			settings.Migrations = append(settings.Migrations, lpeGuardMigrationNote)
+		}
+	}
+	if settings.EdgeProxy == nil {
+		edgeProxy := edgeProxyDefaults(defaults)
+		settings.EdgeProxy = &edgeProxy
+		if settings.FabricVersion >= 17 {
+			settings.Migrations = append(settings.Migrations, edgeProxyMigrationNote)
 		}
 	}
 	// v10 narrows one feed action.
@@ -1001,6 +1097,43 @@ func validateRuntimeSettings(settings *RuntimeSettings) error {
 			return fmt.Errorf("witness settings: %w", err)
 		}
 		settings.Witness = &witness
+	}
+	if settings.WebExposure != nil {
+		// Reject-not-repair: scan bounds, configuration roots and the advisory
+		// catalogue are validated before the revision can be persisted.
+		webExposure := cloneWebExposureFabricSettings(*settings.WebExposure)
+		if err := validateWebExposureFabricSettings(&webExposure); err != nil {
+			return fmt.Errorf("web exposure settings: %w", err)
+		}
+		settings.WebExposure = &webExposure
+	}
+	if settings.WorkerGuard != nil {
+		workerGuard := cloneWorkerGuardFabricSettings(*settings.WorkerGuard)
+		if err := validateWorkerGuardFabricSettings(&workerGuard); err != nil {
+			return fmt.Errorf("worker guard settings: %w", err)
+		}
+		settings.WorkerGuard = &workerGuard
+	}
+	if settings.TLSSensor != nil {
+		tlsSensor := cloneTLSSensorFabricSettings(*settings.TLSSensor)
+		if err := validateTLSSensorFabricSettings(&tlsSensor); err != nil {
+			return fmt.Errorf("tls sensor settings: %w", err)
+		}
+		settings.TLSSensor = &tlsSensor
+	}
+	if settings.LPEGuard != nil {
+		lpeGuard := cloneLPEGuardFabricSettings(*settings.LPEGuard)
+		if err := validateLPEGuardFabricSettings(&lpeGuard); err != nil {
+			return fmt.Errorf("lpe guard settings: %w", err)
+		}
+		settings.LPEGuard = &lpeGuard
+	}
+	if settings.EdgeProxy != nil {
+		edgeProxy := cloneEdgeProxyFabricSettings(*settings.EdgeProxy)
+		if err := validateEdgeProxyFabricSettings(&edgeProxy); err != nil {
+			return fmt.Errorf("edge proxy settings: %w", err)
+		}
+		settings.EdgeProxy = &edgeProxy
 	}
 	if settings.FabricVersion >= fabricSettingsVersion {
 		k := &settings.Kinetic

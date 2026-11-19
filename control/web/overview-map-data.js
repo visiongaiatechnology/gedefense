@@ -6,7 +6,7 @@ const record = value => value !== null && typeof value === 'object' && !Array.is
 const countryLimit = 60;
 const text = (value, max = 240) => typeof value === 'string' ? value.slice(0, max) : '';
 const count = value => typeof value === 'number' && Number.isFinite(value) ? Math.max(0, Math.min(1e12, Math.trunc(value))) : 0;
-const areas = new Set(['kinetic', 'l7', 'xdr', 'host']);
+const areas = new Set(['kinetic', 'l7', 'xdr', 'host', 'worker', 'tls', 'styx', 'edge', 'titan', 'lpe']);
 const area = value => areas.has(value) ? value : 'xdr';
 
 export function positionOf(latitude, longitude) {
@@ -79,7 +79,7 @@ export function normalizePayload(payload) {
     asn: text(originData.asn, 32), asName: text(originData.as_name, 160)
   };
   const totals = {};
-  for (const key of ['sources', 'placed', 'blocked', 'countries', 'kinetic', 'l7', 'xdr']) {
+  for (const key of ['sources', 'placed', 'blocked', 'countries', 'kinetic', 'l7', 'xdr', 'worker', 'tls', 'styx', 'edge', 'titan', 'lpe']) {
     totals[key] = count(record(payload.totals) ? payload.totals[key] : 0);
   }
   return {

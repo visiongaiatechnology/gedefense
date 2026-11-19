@@ -272,7 +272,7 @@ checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 
 [[package]]
 name = "gedefense-cell-helper"
-version = "6.0.3"
+version = "6.1.0"
 dependencies = [
  "base64",
  "hex",
@@ -283,11 +283,11 @@ dependencies = [
 
 [[package]]
 name = "gedefense-common"
-version = "6.0.3"
+version = "6.1.0"
 
 [[package]]
 name = "gedefense-core"
-version = "6.0.3"
+version = "6.1.0"
 dependencies = [
  "aes-gcm",
  "aya",
@@ -301,7 +301,7 @@ dependencies = [
 
 [[package]]
 name = "gedefense-ebpf"
-version = "6.0.3"
+version = "6.1.0"
 dependencies = [
  "aya-ebpf",
  "gedefense-common",

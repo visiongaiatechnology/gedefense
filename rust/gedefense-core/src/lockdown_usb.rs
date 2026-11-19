@@ -143,16 +143,25 @@ fn interfaces(dir: &Path) -> Vec<PathBuf> {
 }
 
 /// Power-only heuristic (§6): class-0, at most one interface and one
-/// configuration, no interface class and no bound driver = charger/port.
-fn is_power_only(dir: &Path, device_class: Option<u8>, num_interfaces: Option<u32>) -> bool {
+/// configuration, no interface class and no bound driver = charger/port.  The
+/// interface count must match `bNumInterfaces` too: an empty/partial sysfs
+/// interface list must never be read as "zero classes, therefore a charger".
+fn is_power_only(
+    dir: &Path,
+    device_class: Option<u8>,
+    num_interfaces: Option<u32>,
+    ifaces: &[PathBuf],
+) -> bool {
+    let Some(count) = num_interfaces else { return false };
     let configurations = read_trimmed(dir, "bNumConfigurations").and_then(|value| parse_u32(&value));
     if !matches!(configurations, Some(0) | Some(1))
         || device_class != Some(0)
-        || num_interfaces.unwrap_or(0) > 1
+        || count > 1
+        || count as usize != ifaces.len()
     {
         return false;
     }
-    interfaces(dir).iter().all(|interface| {
+    ifaces.iter().all(|interface| {
         read_trimmed(interface, "bInterfaceClass").and_then(|value| parse_class(&value)) == Some(0)
             && !interface.join("driver").exists()
     })
@@ -162,26 +171,33 @@ fn interface_class(interface: &Path) -> Option<u8> {
     read_trimmed(interface, "bInterfaceClass").and_then(|value| parse_class(&value))
 }
 
-/// Classifies one device directory according to the §9 policy matrix. HID can
-/// be declared on the interface (bDeviceClass=0), in which case every interface
-/// must be HID and match bNumInterfaces so composite BadUSB devices are blocked.
+/// Classifies one device directory according to the §9 policy matrix.
+///
+/// A console/hub claim is only trusted when the interface list is complete:
+/// an empty list (pre-enumeration or a uevent race) or `bNumInterfaces` that
+/// does not match the discovered interface count is a spoofed/partial
+/// descriptor and therefore `Block`, never `Console`.  HID may also be declared
+/// on the interface (`bDeviceClass=0`), in which case every interface must be
+/// HID and the count must match so composite BadUSB devices are blocked.
 pub(crate) fn classify(dir: &Path) -> DevicePolicy {
     let device_class = read_trimmed(dir, "bDeviceClass").and_then(|value| parse_class(&value));
     let num_interfaces = read_trimmed(dir, "bNumInterfaces").and_then(|value| parse_u32(&value));
     let ifaces = interfaces(dir);
-    let hid_only_interfaces = device_class == Some(0)
-        && !ifaces.is_empty()
-        && num_interfaces.is_some_and(|n| n as usize == ifaces.len())
+    let interfaces_complete =
+        !ifaces.is_empty() && num_interfaces.is_some_and(|count| count as usize == ifaces.len());
+    let hid_only_interfaces = interfaces_complete
+        && device_class == Some(0)
         && ifaces.iter().all(|interface| interface_class(interface) == Some(CLASS_HID));
-    let pure_device_console = match device_class {
-        Some(CLASS_HID) => ifaces.iter().all(|interface| interface_class(interface) == Some(CLASS_HID)),
-        Some(CLASS_HUB) => ifaces.iter().all(|interface| interface_class(interface) == Some(CLASS_HUB)),
-        _ => false,
-    };
+    let pure_device_console = interfaces_complete
+        && match device_class {
+            Some(CLASS_HID) => ifaces.iter().all(|interface| interface_class(interface) == Some(CLASS_HID)),
+            Some(CLASS_HUB) => ifaces.iter().all(|interface| interface_class(interface) == Some(CLASS_HUB)),
+            _ => false,
+        };
     if pure_device_console || hid_only_interfaces {
         return DevicePolicy::Console;
     }
-    if is_power_only(dir, device_class, num_interfaces) {
+    if is_power_only(dir, device_class, num_interfaces, &ifaces) {
         return DevicePolicy::PowerOnly;
     }
     DevicePolicy::Block
@@ -330,6 +346,22 @@ pub(crate) fn release_tb(paths: &UsbPaths) -> PolicyReport {
     run(paths, Scope::TbRelease)
 }
 
+/// Resolves the parent device path of a USB interface uevent: the last path
+/// component must be an interface name (`1-1:1.0`), the returned parent
+/// (`.../1-1`) still has to pass `UsbPaths::device_dir` validation.
+pub(crate) fn parent_device_devpath(devpath: &str) -> Option<&str> {
+    let (parent, last) = devpath.rsplit_once('/')?;
+    if parent.len() <= 1
+        || parent.len() > MAX_NAME_BYTES * 4
+        || !last.contains(':')
+        || last.len() > MAX_NAME_BYTES
+        || devpath.contains("..")
+    {
+        return None;
+    }
+    Some(parent)
+}
+
 /// Uevent path: classify one newly added USB device and block it in `locked`.
 /// `Err` names why no device action was taken; it is not a fake success.
 pub(crate) fn apply_device(paths: &UsbPaths, devpath: &str) -> Result<DevicePolicy, &'static str> {
@@ -448,16 +480,21 @@ pub(crate) mod tests {
         let keyboard = usb_device(&root, "1-2", "00", "01", "01", Some("1"));
         interface(&keyboard, "1-2:1.0", "03", true);
         assert_eq!(classify(&keyboard), DevicePolicy::Console);
+        // A device-level HID/hub console is only trusted with a complete
+        // interface list: non-empty and matching bNumInterfaces.
         let hid = usb_device(&root, "1-3", "03", "01", "01", Some("1"));
+        interface(&hid, "1-3:1.0", "03", true);
         assert_eq!(classify(&hid), DevicePolicy::Console);
         let hub = usb_device(&root, "usb1", "09", "01", "01", Some("1"));
+        interface(&hub, "usb1:1.0", "09", true);
         assert_eq!(classify(&hub), DevicePolicy::Console);
         let storage = usb_device(&root, "1-4", "00", "01", "01", Some("1"));
         interface(&storage, "1-4:1.0", "08", true);
         assert_eq!(classify(&storage), DevicePolicy::Block);
         let class_zero = usb_device(&root, "1-7", "00", "01", "01", Some("1"));
         interface(&class_zero, "1-7:1.0", "00", true);
-        assert_eq!(classify(&class_zero), DevicePolicy::Block);        for name in ["1-5", "1-6"] {
+        assert_eq!(classify(&class_zero), DevicePolicy::Block);
+        for name in ["1-5", "1-6"] {
             let class = if name == "1-5" { "ff" } else { "02" };
             assert_eq!(classify(&usb_device(&root, name, class, "01", "01", Some("1"))), DevicePolicy::Block);
         }
@@ -474,6 +511,21 @@ pub(crate) mod tests {
         let partial_enum = usb_device(&root, "1-10", "00", "02", "01", Some("1"));
         interface(&partial_enum, "1-10:1.0", "03", true);
         assert_eq!(classify(&partial_enum), DevicePolicy::Block);
+        // FIND-004 regression: an empty or count-mismatched interface list is
+        // never a console and never a power-only charger.
+        let lazy_hid = usb_device(&root, "1-11", "03", "00", "01", Some("1"));
+        assert_eq!(classify(&lazy_hid), DevicePolicy::Block, "HID class 3 without enumerated interfaces");
+        let hid_mismatch = usb_device(&root, "1-12", "03", "02", "01", Some("1"));
+        interface(&hid_mismatch, "1-12:1.0", "03", true);
+        assert_eq!(classify(&hid_mismatch), DevicePolicy::Block, "HID bNumInterfaces=2 with one interface");
+        let hub_mismatch = usb_device(&root, "1-13", "09", "02", "01", Some("1"));
+        interface(&hub_mismatch, "1-13:1.0", "09", true);
+        assert_eq!(classify(&hub_mismatch), DevicePolicy::Block, "hub bNumInterfaces=2 with one interface");
+        let spoof_hub_hid = usb_device(&root, "1-14", "09", "01", "01", Some("1"));
+        interface(&spoof_hub_hid, "1-14:1.0", "03", true);
+        assert_eq!(classify(&spoof_hub_hid), DevicePolicy::Block, "hub class with HID interface");
+        let lazy_charger = usb_device(&root, "1-15", "00", "01", "01", Some("1"));
+        assert_eq!(classify(&lazy_charger), DevicePolicy::Block, "power-only with missing interface dir");
     }
 
     #[test]
@@ -482,7 +534,9 @@ pub(crate) mod tests {
         let paths = UsbPaths::new(root.join("sys"));
         let storage = usb_device(&root, "1-3", "08", "01", "01", Some("1"));
         let keyboard = usb_device(&root, "1-2", "03", "01", "01", Some("1"));
+        interface(&keyboard, "1-2:1.0", "03", true);
         let hub = usb_device(&root, "usb1", "09", "01", "01", Some("1"));
+        interface(&hub, "usb1:1.0", "09", true);
         let report = apply_usb(&paths);
         assert_eq!((report.outcome, report.blocked), (APPLIED, 1), "{report:?}");
         assert_eq!((value(&paths.autoprobe()), value(&storage.join("authorized"))), ("0".into(), "0".into()));
@@ -494,6 +548,62 @@ pub(crate) mod tests {
         }
         let second = apply_usb(&paths);
         assert_eq!((second.outcome, second.blocked), (APPLIED, 1), "{second:?}");
+    }
+
+    #[test]
+    fn incomplete_console_claims_are_blocked_and_written_as_authorized_zero() {
+        // The same devices classify() rejects must be enforced by run(): a
+        // zero-interface HID claim and a mismatched hub claim end up with
+        // authorized=0 while a genuine console keeps authorized=1.
+        let root = fixture("write-zero");
+        let paths = UsbPaths::new(root.join("sys"));
+        let lazy_hid = usb_device(&root, "1-2", "03", "00", "01", Some("1"));
+        let hub_mismatch = usb_device(&root, "usb1", "09", "02", "01", Some("1"));
+        interface(&hub_mismatch, "usb1:1.0", "09", true);
+        let console = usb_device(&root, "1-3", "03", "01", "01", Some("1"));
+        interface(&console, "1-3:1.0", "03", true);
+        let report = apply_usb(&paths);
+        assert_eq!((report.outcome, report.blocked), (APPLIED, 2), "{report:?}");
+        assert_eq!(value(&lazy_hid.join("authorized")), "0");
+        assert_eq!(value(&hub_mismatch.join("authorized")), "0");
+        assert_eq!(value(&console.join("authorized")), "1");
+    }
+
+    #[test]
+    fn interface_uevent_parent_resolution_is_bounded_and_applies_parent_policy() {
+        let root = fixture("iface-parent");
+        let paths = UsbPaths::new(root.join("sys"));
+        let dir = root.join("sys/devices/pci0000:00/usb1/1-9");
+        fs::create_dir_all(&dir).expect("parent device dir");
+        fs::write(dir.join("bDeviceClass"), "00\n").expect("class");
+        fs::write(dir.join("bNumInterfaces"), "01\n").expect("interfaces");
+        fs::write(dir.join("bNumConfigurations"), "01\n").expect("configs");
+        fs::write(dir.join("authorized"), "1\n").expect("authorized");
+        interface(&dir, "1-9:1.0", "08", true);
+        let iface = "/devices/pci0000:00/usb1/1-9/1-9:1.0";
+        let parent = parent_device_devpath(iface).expect("interface parent");
+        assert_eq!(parent, "/devices/pci0000:00/usb1/1-9");
+        assert_eq!(apply_device(&paths, parent), Ok(DevicePolicy::Block));
+        assert_eq!(value(&dir.join("authorized")), "0", "late storage interface deauthorizes the parent");
+        // Not an interface path / traversal / too-short paths never resolve.
+        assert_eq!(parent_device_devpath("/devices/pci0000:00/usb1/1-9"), None);
+        assert_eq!(parent_device_devpath("/devices/../etc/passwd:1.0"), None);
+        assert_eq!(parent_device_devpath("/1-1:1.0"), None);
+        let relative = parent_device_devpath("relative/1-1:1.0").expect("split succeeds");
+        assert_eq!(relative, "relative");
+        assert!(paths.device_dir(relative).is_none(), "device_dir rejects relative parents");
+        // A genuine console parent stays authorized when its interface uevent
+        // is resolved and the parent policy is applied.
+        let console = root.join("sys/devices/pci0000:00/usb1/1-10");
+        fs::create_dir_all(&console).expect("console dir");
+        fs::write(console.join("bDeviceClass"), "03\n").expect("class");
+        fs::write(console.join("bNumInterfaces"), "01\n").expect("interfaces");
+        fs::write(console.join("bNumConfigurations"), "01\n").expect("configs");
+        fs::write(console.join("authorized"), "1\n").expect("authorized");
+        interface(&console, "1-10:1.0", "03", true);
+        let console_iface = "/devices/pci0000:00/usb1/1-10/1-10:1.0";
+        assert_eq!(apply_device(&paths, parent_device_devpath(console_iface).unwrap()), Ok(DevicePolicy::Console));
+        assert_eq!(value(&console.join("authorized")), "1");
     }
 
     #[test]

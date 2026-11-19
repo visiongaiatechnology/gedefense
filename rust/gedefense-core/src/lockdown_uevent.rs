@@ -218,9 +218,21 @@ fn rescan(shared: &LockdownShared, usb_paths: &lockdown_usb::UsbPaths) {
 }
 
 fn handle_message(shared: &LockdownShared, usb_paths: &lockdown_usb::UsbPaths, message: &UeventMessage) {
-    if message.action != UeventAction::Add || is_interface(&message.devpath) {
+    if message.action != UeventAction::Add {
         return;
     }
+    // A USB interface uevent is not a policy target itself, but a late
+    // interface (e.g. mass storage bound after the device was authorized) can
+    // turn a benign composite device into a data device.  Resolve the parent
+    // device and apply the parent policy there instead of skipping the event.
+    let devpath = if message.subsystem == UeventSubsystem::Usb && is_interface(&message.devpath) {
+        match lockdown_usb::parent_device_devpath(&message.devpath) {
+            Some(parent) => parent,
+            None => return,
+        }
+    } else {
+        message.devpath.as_str()
+    };
     let policy = shared.policy();
     shared.inc_uevent();
     // detail codes per phase (§6): 1 power-only, 2 console, 3 blocked,
@@ -234,7 +246,7 @@ fn handle_message(shared: &LockdownShared, usb_paths: &lockdown_usb::UsbPaths, m
         return;
     }
     let (outcome, detail, blocked) = match message.subsystem {
-        UeventSubsystem::Usb => match lockdown_usb::apply_device(usb_paths, &message.devpath) {
+        UeventSubsystem::Usb => match lockdown_usb::apply_device(usb_paths, devpath) {
             Ok(lockdown_usb::DevicePolicy::Block) => (LOCKDOWN_OUTCOME_APPLIED, 3, true),
             Ok(lockdown_usb::DevicePolicy::PowerOnly) => (LOCKDOWN_OUTCOME_SKIPPED, 1, false),
             Ok(lockdown_usb::DevicePolicy::Console) => (LOCKDOWN_OUTCOME_SKIPPED, 2, false),
@@ -370,10 +382,14 @@ impl crate::lockdown::LockdownCore {
         }
     }
 
-    /// Flag bits derived from applied phases and the arm policy.
+    /// Flag bits derived from applied phases, the arm policy and a hotplug
+    /// auto-drop that is owned by `LockdownShared` (never by the kernel word
+    /// alone).
     fn state_flags(&self) -> u8 {
         let mut flags = 0;
-        if self.phases[LOCKDOWN_PHASE_NET as usize] == LOCKDOWN_OUTCOME_APPLIED {
+        if self.phases[LOCKDOWN_PHASE_NET as usize] == LOCKDOWN_OUTCOME_APPLIED
+            || self.shared.auto_drop()
+        {
             flags |= LOCKDOWN_FLAG_DROP_ALL;
         }
         if self.policy & crate::lockdown::POLICY_ALLOW_LOOPBACK != 0 {
@@ -437,6 +453,60 @@ mod tests {
         assert!(parse_message(&[0xff, 0xfe, 0, 0]).is_none());
         assert!(is_interface("/devices/pci0000:00/usb1/1-2/1-2:1.0"));
         assert!(!is_interface("/devices/pci0000:00/usb1/1-2"));
+    }
+
+    #[test]
+    fn usb_interface_add_uevent_applies_the_parent_device_policy() {
+        use std::fs;
+        let root = lockdown_usb::tests::fixture("uevent-interface");
+        let paths = lockdown_usb::UsbPaths::new(root.join("sys"));
+        let shared = crate::LockdownShared::new(
+            Arc::new(crate::tests::MemoryWordStore::new()),
+            crate::UeventPolicy { arm: ArmMode::Locked, auto_network_drop: false, allow_loopback: true, epoch: 7 },
+        );
+        // Class-00 parent with a late mass-storage interface: the interface
+        // uevent has to resolve and block the parent device.
+        let parent = root.join("sys/devices/pci0000:00/usb1/1-9");
+        fs::create_dir_all(&parent).expect("parent device dir");
+        for (name, value) in
+            [("bDeviceClass", "00"), ("bNumInterfaces", "01"), ("bNumConfigurations", "01"), ("authorized", "1")]
+        {
+            fs::write(parent.join(name), format!("{value}\n")).expect(name);
+        }
+        let interface = parent.join("1-9:1.0");
+        fs::create_dir_all(&interface).expect("interface dir");
+        fs::write(interface.join("bInterfaceClass"), "08\n").expect("interface class");
+        let message = parse_message(&raw("/devices/pci0000:00/usb1/1-9/1-9:1.0", "usb", "add")).expect("interface add");
+        handle_message(&shared, &paths, &message);
+        assert_eq!(
+            fs::read_to_string(parent.join("authorized")).unwrap().trim(),
+            "0",
+            "late storage interface must deauthorize the parent"
+        );
+        assert_eq!(shared.uevent_counters(), (1, 1, 0));
+        let (_dropped, records) = shared.take_events(EVENTS_PER_RESPONSE);
+        assert!(records.iter().any(|event| {
+            event.phase == LOCKDOWN_PHASE_USB && event.outcome == LOCKDOWN_OUTCOME_APPLIED
+        }));
+        // A genuine HID console parent stays authorized: its interface list is
+        // complete and the parent policy is Console, not Block.
+        let console = root.join("sys/devices/pci0000:00/usb1/1-10");
+        fs::create_dir_all(&console).expect("console device dir");
+        for (name, value) in
+            [("bDeviceClass", "03"), ("bNumInterfaces", "01"), ("bNumConfigurations", "01"), ("authorized", "1")]
+        {
+            fs::write(console.join(name), format!("{value}\n")).expect(name);
+        }
+        let console_interface = console.join("1-10:1.0");
+        fs::create_dir_all(&console_interface).expect("console interface dir");
+        fs::write(console_interface.join("bInterfaceClass"), "03\n").expect("console interface class");
+        let console_message = parse_message(&raw("/devices/pci0000:00/usb1/1-10/1-10:1.0", "usb", "add")).expect("console iface add");
+        handle_message(&shared, &paths, &console_message);
+        assert_eq!(fs::read_to_string(console.join("authorized")).unwrap().trim(), "1");
+        // Non-add actions on an interface are still ignored (not a policy trigger).
+        let remove = parse_message(&raw("/devices/pci0000:00/usb1/1-9/1-9:1.0", "usb", "remove")).expect("interface remove");
+        handle_message(&shared, &paths, &remove);
+        assert_eq!(shared.uevent_counters(), (2, 1, 0));
     }
 
     #[test]

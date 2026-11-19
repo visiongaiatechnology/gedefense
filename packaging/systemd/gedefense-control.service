@@ -1,7 +1,7 @@
 [Unit]
 Description=VGT GeDefense Production Beta Control Plane
-After=gedefense-core.service
-Wants=gedefense-core.service
+After=gedefense-core.service gedefense-capture-helper.service
+Wants=gedefense-core.service gedefense-capture-helper.service
 StartLimitIntervalSec=120
 StartLimitBurst=4
 
@@ -12,6 +12,10 @@ WatchdogSec=20s
 User=gedefense
 Group=gedefense
 SupplementaryGroups=gedefense-l7 gedefense-desktop
+# FIND-008 (VGT-AUDIT-20261118-GD61-R2): the control plane holds zero Linux
+# capabilities and no AF_PACKET family. Passive AF_PACKET capture and CN_PROC
+# netlink fallback run inside the isolated gedefense-capture-helper.service unit.
+CapabilityBoundingSet=
 # Local Gaia-Cells fallback for hosts without the AstraeaOS runtime: the control
 # plane owns one dedicated cgroup-v2 subtree. Creating/chowning it needs root once;
 # every later freeze/list operation uses the control identity.
@@ -47,7 +51,7 @@ SystemCallArchitectures=native
 SystemCallFilter=@system-service
 SystemCallErrorNumber=EPERM
 ReadOnlyPaths=/opt/vgt/gedefense/current /etc/vgt/gedefense
-ReadWritePaths=/var/lib/vgt/gedefense /run/vgt-gedefense /run/vgt-gedefense-l7 /run/gedefense /sys/fs/cgroup/vgt-cells
+ReadWritePaths=/var/lib/vgt/gedefense /run/vgt-gedefense -/run/vgt-gedefense-capture /run/vgt-gedefense-l7 /run/gedefense /sys/fs/cgroup/vgt-cells
 UMask=0077
 
 [Install]

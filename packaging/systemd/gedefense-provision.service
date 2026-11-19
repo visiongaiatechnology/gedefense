@@ -8,7 +8,7 @@ Documentation=file:/usr/share/gedefense/README.md
 DefaultDependencies=no
 After=local-fs.target
 RequiresMountsFor=/etc /var/lib
-Before=gedefense-bpffs.service gedefense-core.service gedefense-control.service gedefense-access.service gedefense-cell-helper.service
+Before=gedefense-bpffs.service gedefense-core.service gedefense-capture-helper.service gedefense-control.service gedefense-access.service gedefense-cell-helper.service
 ConditionPathExists=/opt/vgt/gedefense/current/bin/gedefense-access
 
 [Service]

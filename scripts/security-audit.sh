@@ -1540,7 +1540,10 @@ for anchor in (
     'self.sys_root.join("bus/usb/drivers_autoprobe")',
     'self.sys_root.join("bus/thunderbolt/devices")',
     'const CLASS_HID: u8 = 0x03;', 'const CLASS_HUB: u8 = 0x09;',
-    'fn is_power_only(dir: &Path, device_class: Option<u8>, num_interfaces: Option<u32>) -> bool {',
+    'fn is_power_only(',
+    'let Some(count) = num_interfaces else { return false };',
+    'count as usize != ifaces.len()',
+    'fn parent_device_devpath(',
     'DevicePolicy::PowerOnly', 'DevicePolicy::Console',
     'pub(crate) fn apply_usb(paths: &UsbPaths) -> PolicyReport {',
     'pub(crate) fn release_usb(paths: &UsbPaths) -> PolicyReport {',
@@ -2035,7 +2038,64 @@ for directive in (
     'RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK',
 ):
     need('systemd-control-unit', control_unit, directive)
-forbid('systemd-control-unit', control_unit, r'(?m)^(?:AmbientCapabilities|CapabilityBoundingSet)=', 'a witness capability grant (the client needs none)')
+# FIND-008 (VGT-AUDIT-20261118-GD61-R2): the control plane holds zero Linux
+# capabilities and no AF_PACKET family; CAP_NET_RAW + CAP_NET_ADMIN + AF_PACKET
+# are isolated inside gedefense-capture-helper.service with IPAddressDeny=any,
+# no AF_INET/AF_INET6, and zero access to /etc/vgt/gedefense, /var/lib/vgt/gedefense,
+# or /run/vgt-gedefense.
+capability_lines = sorted(
+    line.strip() for line in control_unit.splitlines()
+    if line.strip().startswith(('CapabilityBoundingSet=', 'AmbientCapabilities='))
+)
+if capability_lines != ['CapabilityBoundingSet=']:
+    missing.append('systemd-control-unit: capability lines must be exactly CapabilityBoundingSet= (zero capabilities, FIND-008)')
+family_lines = [
+    line.strip() for line in control_unit.splitlines()
+    if line.strip().startswith('RestrictAddressFamilies=')
+]
+if family_lines != ['RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK']:
+    missing.append('systemd-control-unit: RestrictAddressFamilies must be exactly AF_UNIX AF_INET AF_INET6 AF_NETLINK (no AF_PACKET, FIND-008)')
+
+capture_unit = read('packaging/systemd/gedefense-capture-helper.service')
+for directive in (
+    'User=gedefense',
+    'Group=gedefense',
+    'RuntimeDirectory=vgt-gedefense-capture',
+    'RuntimeDirectoryMode=0700',
+    'NoNewPrivileges=true',
+    'ProtectSystem=strict',
+    'ProtectHome=true',
+    'PrivateDevices=true',
+    'IPAddressDeny=any',
+    'ReadOnlyPaths=/opt/vgt/gedefense/current',
+    'ReadWritePaths=/run/vgt-gedefense-capture',
+    '--capture-helper',
+    '--capture-helper-socket=/run/vgt-gedefense-capture/capture.sock',
+):
+    need('systemd-capture-helper-unit', capture_unit, directive)
+capture_cap_lines = sorted(
+    line.strip() for line in capture_unit.splitlines()
+    if line.strip().startswith(('CapabilityBoundingSet=', 'AmbientCapabilities='))
+)
+if capture_cap_lines != sorted((
+    'CapabilityBoundingSet=CAP_NET_RAW CAP_NET_ADMIN',
+    'AmbientCapabilities=CAP_NET_RAW CAP_NET_ADMIN',
+)):
+    missing.append('systemd-capture-helper-unit: capability lines must be exactly the reviewed CAP_NET_RAW CAP_NET_ADMIN pair (FIND-008)')
+capture_family_lines = [
+    line.strip() for line in capture_unit.splitlines()
+    if line.strip().startswith('RestrictAddressFamilies=')
+]
+if capture_family_lines != ['RestrictAddressFamilies=AF_UNIX AF_NETLINK AF_PACKET']:
+    missing.append('systemd-capture-helper-unit: RestrictAddressFamilies must be exactly AF_UNIX AF_NETLINK AF_PACKET (FIND-008)')
+forbid('systemd-capture-helper-unit', capture_unit, r'(?:ReadWritePaths|ReadOnlyPaths)=[^\n]*(?:/etc/vgt/gedefense|/var/lib/vgt/gedefense|/run/vgt-gedefense(?:\s|$))', 'access to control secrets, state, or core/cell-helper sockets')
+capture_helper_src = read('control/capture_helper_linux.go')
+need('capture-helper-source', capture_helper_src, 'SO_PEERCRED')
+need('capture-helper-source', capture_helper_src, '0o600')
+# FIND-009 regression pin: exposure.js must render advisories through renderRows, never undefined renderAdvisoryRows.
+exposure_js = read('control/web/v61/exposure.js')
+need('v61-exposure-js', exposure_js, "renderRows('exposureAdvisoryRows'")
+forbid('v61-exposure-js', exposure_js, r'\brenderAdvisoryRows\b', 'undefined renderAdvisoryRows call (FIND-009)')
 forbid('systemd-control-unit', control_unit, r'ReadWritePaths=[^\n]*/witness', 'a witness-specific ReadWritePaths exception (state stays inside /var/lib/vgt/gedefense)')
 core_unit = read('packaging/systemd/gedefense-core.service')
 need('systemd-core-unit', core_unit, 'ReadWritePaths=/var/lib/vgt/gedefense')

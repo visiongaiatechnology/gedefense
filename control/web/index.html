@@ -11,11 +11,19 @@
   <link rel="stylesheet" href="/assets/v4.css">
   <link rel="stylesheet" href="/assets/cms.css">
     <link rel="stylesheet" href="/assets/overview-map.css">
+  <link rel="stylesheet" href="/assets/v61/base.css">
+  <link rel="stylesheet" href="/assets/v61/exposure.css">
+  <link rel="stylesheet" href="/assets/v61/workers.css">
+  <link rel="stylesheet" href="/assets/v61/tls.css">
+  <link rel="stylesheet" href="/assets/v61/lpe.css">
+  <link rel="stylesheet" href="/assets/v61/edge.css">
+  <link rel="stylesheet" href="/assets/v61/v6.css">
+  <link rel="stylesheet" href="/assets/overview-connections.css">
+  <link rel="stylesheet" href="/assets/setup-wizard.css">
   <script type="module" src="/assets/app.js"></script>
 </head>
 <body>
   <a class="skip-link" href="#workspace" data-i18n="skip.content">Zum Inhalt</a>
-  <div class="background-grid" aria-hidden="true"></div>
   <div id="sidebarMobileBackdrop" class="sidebar-mobile-backdrop"></div>
 
   <div class="app-shell">
@@ -37,6 +45,11 @@
             <svg viewBox="0 0 24 24" class="nav-icon-svg"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
             <b data-i18n="nav.overview">Übersicht</b>
           </button>
+          <button class="nav-item" type="button" data-view="setup-wizard">
+            <svg viewBox="0 0 24 24" class="nav-icon-svg"><path d="M12 3l2.2 4.5 5 .7-3.6 3.5.9 5-4.5-2.4-4.5 2.4.9-5L4.8 8.2l5-.7z"/></svg>
+            <b data-i18n="wizard.navTitle">Einrichtungsassistent</b>
+            <span class="nav-badge">AGENTS.md</span>
+          </button>
         </div>
 
         <div class="nav-group">
@@ -45,6 +58,30 @@
             <svg viewBox="0 0 24 24" class="nav-icon-svg"><path d="M12 2.2l8 4.2v7.2c0 4.6-3.4 8.1-8 9.4-4.6-1.3-8-4.8-8-9.4V6.4z"/><path d="M12 7.3l4.4 2.3v3.5c0 2.4-1.9 4.3-4.4 5-2.5-.7-4.4-2.6-4.4-5V9.6z"/><path d="M12 10.4v3.8"/></svg>
             <b data-i18n="nav.titan">Titan Integrity</b>
             <span class="nav-badge-titan">CORE</span>
+          </button>
+        </div>
+
+        <div class="nav-group">
+          <span class="nav-group-title" data-i18n="v61.exposure.group">WEB POSTURE</span>
+          <button class="nav-item" type="button" data-view="web-exposure">
+            <svg viewBox="0 0 24 24" class="nav-icon-svg"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3.4 3.6 3.4 14.4 0 18M12 3c-3.4 3.6-3.4 14.4 0 18"/></svg>
+            <b data-i18n="v61.exposure.title">Web-Exposition</b>
+          </button>
+          <button class="nav-item" type="button" data-view="worker-guard">
+            <svg viewBox="0 0 24 24" class="nav-icon-svg"><circle cx="12" cy="7.5" r="4"/><path d="M4.5 21v-1.6a6.2 6.2 0 0 1 6.2-6.2h2.6a6.2 6.2 0 0 1 6.2 6.2V21"/></svg>
+            <b data-i18n="v61.workers.title">Worker-Integrität</b>
+          </button>
+          <button class="nav-item" type="button" data-view="tls-sensor">
+            <svg viewBox="0 0 24 24" class="nav-icon-svg"><path d="M4 9a12 12 0 0 1 16 0M7 13a7 7 0 0 1 10 0M10.5 17a3 3 0 0 1 3 0"/><circle cx="12" cy="20" r="1"/></svg>
+            <b data-i18n="v61.tls.title">TLS-Sensor</b>
+          </button>
+          <button class="nav-item" type="button" data-view="lpe-guard">
+            <svg viewBox="0 0 24 24" class="nav-icon-svg"><circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M17 6l3 3M14 9l3 3"/></svg>
+            <b data-i18n="v61.lpe.title">LPE-Guard</b>
+          </button>
+          <button class="nav-item" type="button" data-view="edge-proxy">
+            <svg viewBox="0 0 24 24" class="nav-icon-svg"><path d="M3 8h13M3 8l4-4M3 8l4 4M21 16H8M21 16l-4-4M21 16l-4 4"/></svg>
+            <b data-i18n="v61.edge.title">Edge-Proxy</b>
           </button>
         </div>
 
@@ -126,6 +163,30 @@
             <b data-i18n="nav.system">System</b>
           </button>
         </div>
+
+        <div class="nav-group">
+          <span class="nav-group-title" data-i18n="v61.v6.group">V6 FABRIC</span>
+          <button class="nav-item" type="button" data-view="styx">
+            <svg viewBox="0 0 24 24" class="nav-icon-svg"><path d="M3 7c3.5 0 3.5 5 7 5s3.5-5 7-5M3 17c3.5 0 3.5-5 7-5s3.5 5 7 5"/></svg>
+            <b data-i18n="v61.v6.styx.title">StyX Egress</b>
+          </button>
+          <button class="nav-item" type="button" data-view="titan-exec">
+            <svg viewBox="0 0 24 24" class="nav-icon-svg"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 10l3 2.5-3 2.5M13 15h4"/></svg>
+            <b data-i18n="v61.v6.titan.title">Titan Exec</b>
+          </button>
+          <button class="nav-item" type="button" data-view="parser-cells">
+            <svg viewBox="0 0 24 24" class="nav-icon-svg"><rect x="3" y="3" width="8" height="8" rx="2"/><rect x="13" y="3" width="8" height="8" rx="2"/><rect x="3" y="13" width="8" height="8" rx="2"/><circle cx="17" cy="17" r="4"/></svg>
+            <b data-i18n="v61.v6.cells.title">Parser Cells</b>
+          </button>
+          <button class="nav-item" type="button" data-view="lockdown">
+            <svg viewBox="0 0 24 24" class="nav-icon-svg"><path d="M12 2.2l8 4.2v7.2c0 4.6-3.4 8.1-8 9.4-4.6-1.3-8-4.8-8-9.4V6.4z"/><path d="M9.4 9.4l5.2 5.2M14.6 9.4l-5.2 5.2"/></svg>
+            <b data-i18n="v61.v6.lockdown.title">Lockdown</b>
+          </button>
+          <button class="nav-item" type="button" data-view="witness">
+            <svg viewBox="0 0 24 24" class="nav-icon-svg"><circle cx="12" cy="10" r="6"/><path d="M9.2 10l2 2 3.6-3.6M8 15.6L7 22l5-3 5 3-1-6.4"/></svg>
+            <b data-i18n="v61.v6.witness.title">Witness</b>
+          </button>
+        </div>
       </nav>
 
       <div class="sidebar-footer">
@@ -192,11 +253,36 @@
       <main id="workspace" class="workspace">
         <!-- 1. OVERVIEW VIEW -->
         <section class="view active" data-page="overview" aria-labelledby="overviewHeading">
+          <div id="overviewFirstRunWizard" class="wizard-first-run" hidden>
+            <div>
+              <p class="eyebrow m-0" data-i18n="wizard.firstRun.kicker">NEUE INSTALLATION // SCHNELLSTART</p>
+              <h3 data-i18n="wizard.firstRun.title">Einrichtungsassistent &amp; AGENTS.md für deinen Server verfügbar</h3>
+              <p data-i18n="wizard.firstRun.desc">Geführter Walkthrough durch alle GeDefense-Schutzmodule mit Beispielskripten sowie AGENTS.md für die sichere Einrichtung per lokalem KI-Agenten (ohne exponierte KI-API).</p>
+            </div>
+            <div class="v61-actions">
+              <button id="firstRunDismissWizardBtn" class="button button-quiet" type="button" data-i18n="wizard.firstRun.dismiss">Ausblenden</button>
+              <button id="firstRunLaunchWizardBtn" class="button button-primary" type="button" data-i18n="wizard.firstRun.launch">Assistenten starten</button>
+            </div>
+          </div>
+
           <div class="hero-cockpit">
             <div class="hero-copy">
-              <p class="eyebrow" data-i18n="overview.kicker">GEDEFENSE // SOVEREIGN KINETIC DEFENSE</p>
-              <h2 id="overviewHeading" data-i18n="overview.heading">Abwehr, die den Host als Gesamtsystem versteht.</h2>
-              <p data-i18n="overview.description">Rust-XDP, signierte Policy-Snapshots, native L7 Application Defense und Linux-XDR korrelieren Netzwerk, Prozesse, Integrität und Verhalten – lokal, nachvollziehbar und ohne Cloud-Abhängigkeit.</p>
+              <div class="hero-ampel-wrap">
+                <div id="heroAmpel" class="hero-ampel" data-level="yellow" aria-label="Systemlage Ampel">
+                  <span class="hero-ampel-light is-red" aria-hidden="true"></span>
+                  <span class="hero-ampel-light is-yellow" aria-hidden="true"></span>
+                  <span class="hero-ampel-light is-green" aria-hidden="true"></span>
+                </div>
+                <div>
+                  <div class="hero-protection-row">
+                    <span id="heroAmpelBadge" class="status-pill warn" data-i18n="overview.hero.levelYellow">LAGE ANALYSE</span>
+                    <span class="eyebrow m-0" data-i18n="overview.kicker">SYSTEMLAGE &amp; ECHTZEIT-KORRELATION</span>
+                  </div>
+                  <h2 id="overviewHeading" data-i18n="overview.heading">Host-Lage wird korreliert …</h2>
+                </div>
+              </div>
+              <p id="heroSituationSummary" data-i18n="overview.description">Systemdaten, Sensoren und heutige Abwehraktionen werden zusammengeführt.</p>
+              <div id="heroLayersStrip" class="hero-layers-strip" aria-label="Aktive Schutzebenen"></div>
               <div class="hero-state">
                 <span id="heroPulse" class="status-dot"></span>
                 <b id="shieldState" data-i18n="dynamic.controlOnly">CONTROL ONLY</b>
@@ -205,18 +291,21 @@
               </div>
             </div>
             <div class="hero-right-zone">
-              <div class="hero-protection-row">
-                <div class="flex-col-end gap-xs">
-                  <span id="heroProtectionBadge" class="status-pill muted" data-i18n="overview.hero.observeBadge">REINE ÜBERWACHUNG</span>
-                  <!-- The title carried the same translation key as the badge above it, so the headline was always a verbatim repeat of the pill. The badge names the state; the title states its consequence. -->
-              <span id="heroProtectionTitle" class="hero-protection-title" data-i18n="overview.hero.observeTitle">Abwehr ist derzeit nicht aktiv</span>
+              <div class="flex-col-end gap-sm">
+                <div class="hero-protection-row">
+                  <div class="flex-col-end gap-xs">
+                    <span id="heroProtectionBadge" class="status-pill muted" data-i18n="overview.hero.observeBadge">REINE ÜBERWACHUNG</span>
+                    <span id="heroProtectionTitle" class="hero-protection-title" data-i18n="overview.hero.observeTitle">Abwehr ist derzeit nicht aktiv</span>
+                  </div>
+                  <button id="heroProtectionAction" class="button button-primary" type="button" data-i18n="overview.hero.btnActivate">Schutz aktivieren</button>
+                  <button id="heroWizardBtn" class="button button-quiet" type="button" data-i18n="wizard.heroBtn">Assistent</button>
                 </div>
-                <button id="heroProtectionAction" class="button button-primary" type="button" data-i18n="overview.hero.btnActivate">Schutz aktivieren</button>
-              </div>
-              <div class="defense-radar" aria-hidden="true">
-                <div class="radar-sweep"></div>
-                <div class="radar-ring"></div>
-                <div class="radar-dot"></div>
+                <div class="hero-kpis-mini">
+                  <div class="hero-kpi-mini"><span data-i18n="overview.hero.kpi24h">Heute 24h</span><strong id="heroKpiIncidents">0</strong></div>
+                  <div class="hero-kpi-mini"><span data-i18n="overview.hero.kpiBlocked">Abgewehrt</span><strong id="heroKpiBlocked">0</strong></div>
+                  <div class="hero-kpi-mini"><span data-i18n="overview.hero.kpiSensors">Web / TLS</span><strong id="heroKpiSensors">0 / 0</strong></div>
+                  <div class="hero-kpi-mini"><span data-i18n="overview.hero.kpiCoverage">Vollschutz</span><strong id="heroKpiCoverage">0%</strong></div>
+                </div>
               </div>
             </div>
           </div>
@@ -261,6 +350,7 @@
               <div class="overview-threat-chip area-kinetic" role="listitem"><span data-i18n="overview.map.kinetic">Kinetic</span><strong id="overviewMapKinetic">0</strong></div>
               <div class="overview-threat-chip area-l7" role="listitem"><span data-i18n="overview.map.l7">L7</span><strong id="overviewMapL7">0</strong></div>
               <div class="overview-threat-chip area-xdr" role="listitem"><span data-i18n="overview.map.xdr">XDR</span><strong id="overviewMapXdr">0</strong></div>
+              <div class="overview-threat-chip" role="listitem"><span data-i18n="overview.map.modules">Sensoren (B–E/StyX)</span><strong id="overviewMapModules">0</strong></div>
             </div>
 
             <div class="overview-threat-stage">
@@ -469,6 +559,55 @@
               <button id="overviewToL7Btn" class="button button-secondary w-full" type="button" data-i18n="overview.l7Card.view">Zu Application Defense →</button>
             </article>
           </div>
+
+          <article class="glass-panel panel-padded overview-connections-panel" id="overviewConnectionsPanel">
+            <div class="overview-conn-header">
+              <div class="overview-conn-title">
+                <p class="eyebrow m-0" data-i18n="overview.conn.kicker">LOKALE GEOIP-VERBINDUNGSMATRIX</p>
+                <h3 data-i18n="overview.conn.title">Echtzeit-Verbindungen: Webseiten, Apps &amp; Ziele</h3>
+                <p class="fs-xs text-muted m-0" data-i18n="overview.conn.subtitle">Aktive System-, Web- und Egress-Kommunikation korreliert über Kernel-Sockets, TLS-Sensor, StyX und die lokale GeoIP-Datenbank.</p>
+              </div>
+              <div class="overview-conn-controls">
+                <span id="overviewConnGeoBadge" class="status-pill muted" data-i18n="overview.conn.geoLocal">GeoIP lokal</span>
+                <input id="overviewConnSearch" class="overview-conn-search" type="search" data-i18n-placeholder="overview.conn.search" placeholder="App, Domain, IP, Land suchen…" aria-label="Verbindungen filtern">
+                <div class="overview-conn-filters" role="group" aria-label="Verbindungstyp">
+                  <button type="button" class="overview-conn-filter" data-conn-filter="all" aria-pressed="true" data-i18n="overview.conn.filterAll">Alle</button>
+                  <button type="button" class="overview-conn-filter" data-conn-filter="web" aria-pressed="false" data-i18n="overview.conn.filterWeb">Websites / HTTP</button>
+                  <button type="button" class="overview-conn-filter" data-conn-filter="apps" aria-pressed="false" data-i18n="overview.conn.filterApps">Apps &amp; Dienste</button>
+                  <button type="button" class="overview-conn-filter" data-conn-filter="external" aria-pressed="false" data-i18n="overview.conn.filterExternal">Nur Extern</button>
+                </div>
+                <button id="overviewConnRefresh" class="button button-quiet" type="button" data-i18n="v61.edge.refresh">Aktualisieren</button>
+              </div>
+            </div>
+            <div class="overview-conn-summary">
+              <span class="overview-conn-chip"><span data-i18n="overview.conn.kpiTotal">Verbindungen</span><strong id="overviewConnTotal">0</strong></span>
+              <span class="overview-conn-chip"><span data-i18n="overview.conn.kpiWeb">Web-Traffic</span><strong id="overviewConnWeb">0</strong></span>
+              <span class="overview-conn-chip"><span data-i18n="overview.conn.kpiApps">Apps</span><strong id="overviewConnApps">0</strong></span>
+              <span class="overview-conn-chip"><span data-i18n="overview.conn.kpiExternal">Extern</span><strong id="overviewConnExternal">0</strong></span>
+              <span class="overview-conn-chip is-danger"><span data-i18n="overview.conn.kpiBlocked">Geblockt</span><strong id="overviewConnBlocked">0</strong></span>
+              <span class="overview-conn-chip"><span data-i18n="overview.conn.kpiCountries">Länder</span><strong id="overviewConnCountries">0</strong></span>
+            </div>
+            <div class="overview-conn-table-wrap">
+              <table class="overview-conn-table">
+                <thead><tr>
+                  <th scope="col" data-i18n="overview.conn.colApp">Webseite / Anwendung</th>
+                  <th scope="col" data-i18n="overview.conn.colProto">Richtung &amp; Proto</th>
+                  <th scope="col" data-i18n="overview.conn.colPeer">Ziel-IP &amp; Port</th>
+                  <th scope="col" data-i18n="overview.conn.colGeo">GeoIP &amp; ASN</th>
+                  <th scope="col" data-i18n="overview.conn.colVolume">Volumen</th>
+                  <th scope="col" data-i18n="overview.conn.colStatus">Status</th>
+                </tr></thead>
+                <tbody id="overviewConnRows"></tbody>
+              </table>
+            </div>
+            <div class="overview-conn-footer">
+              <span id="overviewConnPageInfo" data-i18n="overview.conn.loading">Lade aktive Verbindungen …</span>
+              <div class="overview-conn-pager">
+                <button id="overviewConnPrev" class="button button-quiet" type="button" data-i18n="wizard.prevStep" disabled>Zurück</button>
+                <button id="overviewConnNext" class="button button-quiet" type="button" data-i18n="wizard.nextStep" disabled>Weiter</button>
+              </div>
+            </div>
+          </article>
 
           <article class="glass-panel panel-padded mt-lg">
             <div class="section-head flex-between">
@@ -758,6 +897,998 @@
               <h3 data-i18n="titan.heading.evidence">Nachweisgrenze</h3>
               <p class="fs-sm text-muted" data-i18n="titan.heading.evidenceSub">Titan zeigt beobachtete technische Fakten, Autorisierungsstatus und Korrelationsgüte. Eine unabhängige Witness- oder Evidenzexport-Fläche benötigt eigene Control-Plane-Endpunkte und wird hier nicht simuliert.</p>
             </article>
+          </div>
+        </section>
+
+        <!-- V6.1 MODULE A · WEB EXPOSURE & POSTURE -->
+        <section class="view v61-view" data-page="web-exposure" aria-labelledby="webExposureHeading" hidden>
+          <div class="view-context-bar v61-context glass-panel">
+            <div>
+              <p class="eyebrow m-0" data-i18n="v61.exposure.eyebrow">WEB POSTURE // MODULE A</p>
+              <h2 id="webExposureHeading" data-i18n="v61.exposure.title">Web-Exposition &amp; Posture</h2>
+              <p class="view-context-desc" data-i18n="v61.exposure.desc">Erkannte Webserver, ALPN-Aushandlung, Erreichbarkeit und passende Advisories je Host. Ein Advisory zählt nur dann als Exposition, wenn der Listener tatsächlich erreichbar ist.</p>
+            </div>
+            <div class="view-context-actions v61-actions">
+              <span id="exposurePill" class="status-pill muted">—</span>
+              <button id="exposureScanBtn" class="button button-primary" type="button" data-i18n="v61.exposure.scan">Scan starten</button>
+            </div>
+          </div>
+          <p id="exposureReason" class="v61-reason" role="status" aria-live="polite" hidden></p>
+          <div class="defense-telemetry" role="group" data-i18n-aria="v61.exposure.rail">
+            <div class="telemetry-group">
+              <h3 class="telemetry-title" data-i18n="v61.exposure.group.posture">POSTURE</h3>
+              <dl class="telemetry-list">
+                <div class="telemetry-row"><dt data-i18n="v61.exposure.kpi.servers">Webserver</dt><dd id="exposureServersKpi" class="font-mono">—</dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.exposure.kpi.exposed">Exponiert</dt><dd id="exposureExposedKpi" class="font-mono">—</dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.exposure.kpi.reachable">Erreichbar</dt><dd id="exposureReachableKpi" class="font-mono">—</dd></div>
+              </dl>
+              <p class="telemetry-note" data-i18n="v61.exposure.note.posture">Erreichbarkeit entscheidet, ob ein Advisory als Exposition gewertet wird.</p>
+            </div>
+            <div class="telemetry-group">
+              <h3 class="telemetry-title" data-i18n="v61.exposure.group.advisories">ADVISORIES</h3>
+              <dl class="telemetry-list">
+                <div class="telemetry-row"><dt data-i18n="v61.exposure.kpi.cves">Betroffene CVEs</dt><dd id="exposureCvesKpi" class="font-mono">—</dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.exposure.kpi.score">Score</dt><dd id="exposureScoreKpi" class="font-mono">—</dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.exposure.kpi.grade">Grad</dt><dd><span id="exposureGradePill" class="status-pill muted">—</span></dd></div>
+              </dl>
+              <p class="telemetry-note" data-i18n="v61.exposure.note.advisories">Version und Build-Flags aus ELF-.rodata, nicht aus einem Paketnamen.</p>
+            </div>
+            <div class="telemetry-group">
+              <h3 class="telemetry-title" data-i18n="v61.exposure.group.evidence">EVIDENCE</h3>
+              <dl class="telemetry-list">
+                <div class="telemetry-row"><dt data-i18n="v61.exposure.kpi.configs">Konfig-Belege</dt><dd id="exposureConfigKpi" class="font-mono">—</dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.exposure.kpi.evidence">Evidenzpfade</dt><dd id="exposureEvidenceKpi" class="font-mono">—</dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.exposure.kpi.scanned">Scan-Status</dt><dd><span id="exposureScannedKpi" class="status-pill muted">—</span></dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.exposure.kpi.updated">Stand</dt><dd id="exposureUpdatedKpi" class="font-mono fs-xs">—</dd></div>
+              </dl>
+              <p class="telemetry-note" data-i18n="v61.exposure.note.evidence">Jeder Beleg nennt Datei und Zeile.</p>
+            </div>
+          </div>
+          <article class="glass-panel panel-padded v61-panel">
+            <div class="section-head">
+              <p class="eyebrow" data-i18n="v61.exposure.serversKicker">DISCOVERY</p>
+              <h3 data-i18n="v61.exposure.serversTitle">Erkannte Webserver</h3>
+              <p class="fs-xs text-muted" data-i18n="v61.exposure.serversHint">Prozess, Version, Listener und ALPN-Sonde je Host. Die Probe läuft ausschließlich gegen Loopback.</p>
+            </div>
+            <div class="table-wrap v61-table-wrap v61-exposure-table-wide" tabindex="0" role="region" data-i18n-aria="v61.exposure.serversTitle">
+              <table class="v61-table">
+                <thead>
+                  <tr>
+                    <th data-i18n="v61.exposure.col.comm">Prozess</th>
+                    <th data-i18n="v61.exposure.col.version">Version</th>
+                    <th data-i18n="v61.exposure.col.binary">Binary</th>
+                    <th data-i18n="v61.exposure.col.listen">Listener</th>
+                    <th data-i18n="v61.exposure.col.alpn">ALPN</th>
+                    <th data-i18n="v61.exposure.col.quic">QUIC</th>
+                    <th data-i18n="v61.exposure.col.http2">HTTP/2</th>
+                    <th data-i18n="v61.exposure.col.reachable">Erreichbar</th>
+                  </tr>
+                </thead>
+                <tbody id="exposureServerRows"></tbody>
+              </table>
+            </div>
+          </article>
+          <article class="glass-panel panel-padded v61-panel">
+            <div class="section-head">
+              <p class="eyebrow" data-i18n="v61.exposure.configKicker">CONFIG EVIDENCE</p>
+              <h3 data-i18n="v61.exposure.configTitle">Direktiven mit Datei:Zeile</h3>
+              <p class="fs-xs text-muted" data-i18n="v61.exposure.configHint">Nur gelesene Konfiguration. Symlinks außerhalb der Wurzel werden nicht verfolgt.</p>
+            </div>
+            <div class="table-wrap v61-table-wrap" tabindex="0" role="region" data-i18n-aria="v61.exposure.configTitle">
+              <table class="v61-table">
+                <thead>
+                  <tr>
+                    <th data-i18n="v61.exposure.col.path">Datei</th>
+                    <th data-i18n="v61.exposure.col.line">Zeile</th>
+                    <th data-i18n="v61.exposure.col.directive">Direktive</th>
+                    <th data-i18n="v61.exposure.col.flags">Flags</th>
+                  </tr>
+                </thead>
+                <tbody id="exposureConfigRows"></tbody>
+              </table>
+            </div>
+          </article>
+          <article class="glass-panel panel-padded v61-panel">
+            <div class="section-head">
+              <p class="eyebrow" data-i18n="v61.exposure.affectedKicker">MATCHED ADVISORIES</p>
+              <h3 data-i18n="v61.exposure.affectedTitle">Betroffene CVEs je Host</h3>
+              <p class="fs-xs text-muted" data-i18n="v61.exposure.affectedHint">Version-Range-Treffer mit Workaround. Die Reichweite steht im Server-Status, nicht in der CVE-Zeile versteckt.</p>
+            </div>
+            <div class="table-wrap v61-table-wrap" tabindex="0" role="region" data-i18n-aria="v61.exposure.affectedTitle">
+              <table class="v61-table">
+                <thead>
+                  <tr>
+                    <th data-i18n="v61.exposure.col.host">Host</th>
+                    <th data-i18n="v61.exposure.col.cve">CVE</th>
+                    <th data-i18n="v61.exposure.col.severity">Schwere</th>
+                    <th data-i18n="v61.exposure.col.summary">Zusammenfassung</th>
+                    <th data-i18n="v61.exposure.col.workaround">Workaround</th>
+                  </tr>
+                </thead>
+                <tbody id="exposureAffectedRows"></tbody>
+              </table>
+            </div>
+          </article>
+          <article class="glass-panel panel-padded v61-panel">
+            <div class="section-head">
+              <p class="eyebrow" data-i18n="v61.exposure.advisoryKicker">ADVISORY CATALOGUE</p>
+              <h3 data-i18n="v61.exposure.advisoryTitle">Advisory-Katalog</h3>
+              <p class="fs-xs text-muted" data-i18n="v61.exposure.advisoryHint">Serverseitiger Katalog mit Versionsbereichen. Der Katalog ist unabhängig von den erkannten Hosts.</p>
+            </div>
+            <p id="exposureAdvisoryNote" class="v61-reason" role="status" aria-live="polite" hidden></p>
+            <div class="table-wrap v61-table-wrap" tabindex="0" role="region" data-i18n-aria="v61.exposure.advisoryTitle">
+              <table class="v61-table">
+                <thead>
+                  <tr>
+                    <th data-i18n="v61.exposure.col.cve">CVE</th>
+                    <th data-i18n="v61.exposure.col.severity">Schwere</th>
+                    <th data-i18n="v61.exposure.col.summary">Zusammenfassung</th>
+                    <th data-i18n="v61.exposure.col.workaround">Workaround</th>
+                  </tr>
+                </thead>
+                <tbody id="exposureAdvisoryRows"></tbody>
+              </table>
+            </div>
+          </article>
+        </section>
+
+        <!-- V6.1 MODULE B · WORKER GUARD -->
+        <section class="view v61-view" data-page="worker-guard" aria-labelledby="workerGuardHeading" hidden>
+          <div class="view-context-bar v61-context glass-panel">
+            <div>
+              <p class="eyebrow m-0" data-i18n="v61.workers.eyebrow">WEB POSTURE // MODULE B</p>
+              <h2 id="workerGuardHeading" data-i18n="v61.workers.title">Worker-Integrität</h2>
+              <p class="view-context-desc" data-i18n="v61.workers.desc">Crash-Korrelation für Web-Worker: Quelle, Fähigkeit, Registry, Zähler und Crash-Stürme. Fehlt die Crash-Quelle, wird das benannt statt als ruhiger Host dargestellt.</p>
+            </div>
+            <div class="view-context-actions v61-actions">
+              <span id="workerGuardPill" class="status-pill muted">—</span>
+              <button id="workerGuardRefreshBtn" class="button button-quiet" type="button" data-i18n="v61.workers.refresh">Aktualisieren</button>
+            </div>
+          </div>
+          <p id="workerGuardReason" class="v61-reason" role="status" aria-live="polite" hidden></p>
+          <div class="defense-telemetry" role="group" data-i18n-aria="v61.workers.rail">
+            <div class="telemetry-group">
+              <h3 class="telemetry-title" data-i18n="v61.workers.group.capture">CAPTURE</h3>
+              <dl class="telemetry-list">
+                <div class="telemetry-row"><dt data-i18n="v61.workers.kpi.source">Crash-Quelle</dt><dd id="workerSourceKpi">—</dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.workers.kpi.capability">Fähigkeit</dt><dd id="workerCapabilityKpi">—</dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.workers.kpi.mode">Modus</dt><dd id="workerModeKpi">—</dd></div>
+              </dl>
+              <p class="telemetry-note" data-i18n="v61.workers.note.capture">eBPF ist die primäre Quelle, der Proc-Connector der Portabilitäts-Fallback.</p>
+            </div>
+            <div class="telemetry-group">
+              <h3 class="telemetry-title" data-i18n="v61.workers.group.counters">COUNTERS</h3>
+              <dl class="telemetry-list">
+                <div class="telemetry-row"><dt data-i18n="v61.workers.kpi.events">Crash-Events</dt><dd id="workerEventsKpi" class="font-mono">—</dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.workers.kpi.storms">Stürme</dt><dd id="workerStormsKpi" class="font-mono">—</dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.workers.kpi.deniedExec">Exec verweigert</dt><dd id="workerDeniedExecKpi" class="font-mono">—</dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.workers.kpi.deniedMmap">mmap verweigert</dt><dd id="workerDeniedMmapKpi" class="font-mono">—</dd></div>
+              </dl>
+              <p class="telemetry-note" data-i18n="v61.workers.note.counters">Exec/mmap-Verweigerungen stammen aus dem Titan-Exec-Gate.</p>
+            </div>
+            <div class="telemetry-group">
+              <h3 class="telemetry-title" data-i18n="v61.workers.group.registry">REGISTRY</h3>
+              <dl class="telemetry-list">
+                <div class="telemetry-row"><dt data-i18n="v61.workers.kpi.comms">Comms</dt><dd id="workerCommsKpi" class="font-mono">—</dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.workers.kpi.uids">UIDs</dt><dd id="workerUidsKpi" class="font-mono">—</dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.workers.kpi.cgroups">Strict-Cgroups</dt><dd id="workerCgroupsKpi" class="font-mono">—</dd></div>
+              </dl>
+              <p class="telemetry-note" data-i18n="v61.workers.note.registry">Master- und Control-Units werden nie als strict eingestuft.</p>
+            </div>
+          </div>
+          <article class="glass-panel panel-padded v61-panel">
+            <div class="section-head">
+              <p class="eyebrow" data-i18n="v61.workers.workersKicker">CLASSIFICATION</p>
+              <h3 data-i18n="v61.workers.workersTitle">Registrierte Worker</h3>
+              <p class="fs-xs text-muted" data-i18n="v61.workers.workersHint">PID, UID und Cgroup-ID je Worker; strict markiert die Cgroup-Mitgliedschaft im Exec-Gate.</p>
+            </div>
+            <div class="table-wrap v61-table-wrap" tabindex="0" role="region" data-i18n-aria="v61.workers.workersTitle">
+              <table class="v61-table">
+                <thead>
+                  <tr>
+                    <th data-i18n="v61.workers.col.comm">Prozess</th>
+                    <th data-i18n="v61.workers.col.pid">PID</th>
+                    <th data-i18n="v61.workers.col.uid">UID</th>
+                    <th data-i18n="v61.workers.col.cgroup">Cgroup</th>
+                    <th data-i18n="v61.workers.col.strict">Strict</th>
+                  </tr>
+                </thead>
+                <tbody id="workerRows"></tbody>
+              </table>
+            </div>
+          </article>
+          <article class="glass-panel panel-padded v61-panel">
+            <div class="section-head">
+              <p class="eyebrow" data-i18n="v61.workers.eventsKicker">CRASH FEED</p>
+              <h3 data-i18n="v61.workers.eventsTitle">Crash-Ereignisse</h3>
+              <p class="fs-xs text-muted" data-i18n="v61.workers.eventsHint">Fatal-Signale auf registrierten Comms. Saubere Exits und Panel-Reloads werden ignoriert.</p>
+            </div>
+            <p id="workerEventNotice" class="v61-reason" role="status" aria-live="polite" hidden></p>
+            <div class="table-wrap v61-table-wrap v61-workers-events" tabindex="0" role="region" data-i18n-aria="v61.workers.eventsTitle">
+              <table class="v61-table">
+                <thead>
+                  <tr>
+                    <th data-i18n="v61.workers.col.at">Zeit</th>
+                    <th data-i18n="v61.workers.col.comm">Prozess</th>
+                    <th data-i18n="v61.workers.col.pid">PID</th>
+                    <th data-i18n="v61.workers.col.uid">UID</th>
+                    <th data-i18n="v61.workers.col.signal">Signal</th>
+                    <th data-i18n="v61.workers.col.exitCode">Exit</th>
+                    <th data-i18n="v61.workers.col.cgroup">Cgroup</th>
+                    <th data-i18n="v61.workers.col.peer">Peer</th>
+                    <th data-i18n="v61.workers.col.source">Quelle</th>
+                  </tr>
+                </thead>
+                <tbody id="workerEventRows"></tbody>
+              </table>
+            </div>
+          </article>
+          <article class="glass-panel panel-padded v61-panel">
+            <div class="section-head">
+              <p class="eyebrow" data-i18n="v61.workers.stormsKicker">STORM INCIDENTS</p>
+              <h3 data-i18n="v61.workers.stormsTitle">Crash-Stürme</h3>
+              <p class="fs-xs text-muted" data-i18n="v61.workers.stormsHint">Korrelation je comm+uid im konfigurierten Fenster; ein Sturm wird als XDR-Incident geführt.</p>
+            </div>
+            <div class="table-wrap v61-table-wrap v61-workers-storm" tabindex="0" role="region" data-i18n-aria="v61.workers.stormsTitle">
+              <table class="v61-table">
+                <thead>
+                  <tr>
+                    <th data-i18n="v61.workers.col.stormId">Incident</th>
+                    <th data-i18n="v61.workers.col.comm">Prozess</th>
+                    <th data-i18n="v61.workers.col.crashes">Crashes / Fenster</th>
+                    <th data-i18n="v61.workers.col.severity">Schwere</th>
+                    <th data-i18n="v61.workers.col.first">Erster</th>
+                    <th data-i18n="v61.workers.col.last">Letzter</th>
+                    <th data-i18n="v61.workers.col.peers">Peers</th>
+                  </tr>
+                </thead>
+                <tbody id="workerStormRows"></tbody>
+              </table>
+            </div>
+          </article>
+        </section>
+
+        <!-- V6.1 MODULE C · TLS SENSOR -->
+        <section class="view v61-view" data-page="tls-sensor" aria-labelledby="tlsSensorHeading" hidden>
+          <div class="view-context-bar v61-context glass-panel">
+            <div>
+              <p class="eyebrow m-0" data-i18n="v61.tls.eyebrow">WEB POSTURE // MODULE C</p>
+              <h2 id="tlsSensorHeading" data-i18n="v61.tls.title">TLS-/ALPN-Sensor</h2>
+              <p class="view-context-desc" data-i18n="v61.tls.desc">Passive ClientHello- und QUIC-Beobachtung mit Flow-Budget. Das Sturm-Prädikat wird mit den tatsächlich ausgewerteten Werten angezeigt, nicht nur als Urteil.</p>
+            </div>
+            <div class="view-context-actions v61-actions">
+              <span id="tlsSensorPill" class="status-pill muted">—</span>
+              <button id="tlsSensorRefreshBtn" class="button button-quiet" type="button" data-i18n="v61.tls.refresh">Aktualisieren</button>
+            </div>
+          </div>
+          <p id="tlsSensorReason" class="v61-reason" role="status" aria-live="polite" hidden></p>
+          <div class="defense-telemetry" role="group" data-i18n-aria="v61.tls.rail">
+            <div class="telemetry-group">
+              <h3 class="telemetry-title" data-i18n="v61.tls.group.capture">CAPTURE</h3>
+              <dl class="telemetry-list">
+                <div class="telemetry-row"><dt data-i18n="v61.tls.kpi.capture">Capture</dt><dd><span id="tlsCaptureKpi" class="status-pill muted">—</span></dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.tls.kpi.handshakes">Handshakes</dt><dd id="tlsHandshakesKpi" class="font-mono">—</dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.tls.kpi.quic">QUIC Initials</dt><dd id="tlsQuicKpi" class="font-mono">—</dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.tls.kpi.flows">Flows</dt><dd id="tlsFlowsKpi" class="font-mono">—</dd></div>
+              </dl>
+              <p class="telemetry-note" data-i18n="v61.tls.note.capture">AF_PACKET mit klassischem BPF-Filter; kein eBPF im Paketpfad.</p>
+            </div>
+            <div class="telemetry-group">
+              <h3 class="telemetry-title" data-i18n="v61.tls.group.engine">TLS ENGINE</h3>
+              <dl class="telemetry-list">
+                <div class="telemetry-row"><dt data-i18n="v61.tls.kpi.findings">Feststellungen</dt><dd id="tlsFindingsKpi" class="font-mono">—</dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.tls.kpi.tracked">Verfolgt</dt><dd id="tlsTrackedKpi" class="font-mono">—</dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.tls.kpi.budget">Flow-Budget</dt><dd id="tlsBudgetNote" class="fs-xs font-mono">—</dd></div>
+              </dl>
+              <p class="telemetry-note" data-i18n="v61.tls.note.engine">Bounded Rings; Zählerstände stammen aus dem laufenden Sensor.</p>
+            </div>
+            <div class="telemetry-group">
+              <h3 class="telemetry-title" data-i18n="v61.tls.group.alpn">ALPN</h3>
+              <div id="tlsAlpnList" class="v61-kv-grid v61-tls-alpn"></div>
+              <p class="telemetry-note" data-i18n="v61.tls.note.alpn">Verteilung der ausgehandelten Protokolle aus den ClientHellos.</p>
+            </div>
+          </div>
+          <div id="tlsStormBanner" class="v61-banner v61-banner-stack is-attention">
+            <div class="v61-tls-storm">
+              <div class="v61-tls-storm-copy">
+                <span id="tlsStormState" class="status-pill muted">—</span>
+                <h3 data-i18n="v61.tls.storm.title">Control-Storm-Budget</h3>
+                <p data-i18n="v61.tls.storm.peersLabel">Beobachtete Peers</p>
+                <p id="tlsStormPeers" class="font-mono fs-xs">—</p>
+              </div>
+              <dl class="v61-tls-predicate">
+                <div><dt data-i18n="v61.tls.storm.rx">rx_bytes</dt><dd id="tlsStormRx">—</dd></div>
+                <div><dt data-i18n="v61.tls.storm.tx">tx_bytes</dt><dd id="tlsStormTx">—</dd></div>
+                <div><dt data-i18n="v61.tls.storm.ratio">rx/tx</dt><dd id="tlsStormRatio">—</dd></div>
+                <div><dt data-i18n="v61.tls.storm.avg">avg_pkt_len</dt><dd id="tlsStormAvg">—</dd></div>
+                <div><dt data-i18n="v61.tls.storm.pps">pps_ratio</dt><dd id="tlsStormPps">—</dd></div>
+              </dl>
+            </div>
+            <p id="tlsStormNote" class="v61-reason mt-sm" role="status" aria-live="polite" hidden></p>
+          </div>
+          <article class="glass-panel panel-padded v61-panel">
+            <div class="section-head">
+              <p class="eyebrow" data-i18n="v61.tls.handshakesKicker">CLIENT HELLO</p>
+              <h3 data-i18n="v61.tls.handshakesTitle">Handshakes</h3>
+              <p class="fs-xs text-muted" data-i18n="v61.tls.handshakesHint">Die ersten 1536 Payload-Bytes je Verbindung werden geparst; danach endet der Overhead.</p>
+            </div>
+            <p id="tlsHandshakeNotice" class="v61-reason" role="status" aria-live="polite" hidden></p>
+            <div class="table-wrap v61-table-wrap v61-tls-handshakes" tabindex="0" role="region" data-i18n-aria="v61.tls.handshakesTitle">
+              <table class="v61-table">
+                <thead>
+                  <tr>
+                    <th data-i18n="v61.tls.col.at">Zeit</th>
+                    <th data-i18n="v61.tls.col.peer">Peer</th>
+                    <th data-i18n="v61.tls.col.sni">SNI</th>
+                    <th data-i18n="v61.tls.col.alpn">ALPN</th>
+                    <th data-i18n="v61.tls.col.ja3">JA3</th>
+                    <th data-i18n="v61.tls.col.tlsVersion">TLS-Version</th>
+                    <th data-i18n="v61.tls.col.cipher">Cipher</th>
+                  </tr>
+                </thead>
+                <tbody id="tlsHandshakeRows"></tbody>
+              </table>
+            </div>
+          </article>
+          <article class="glass-panel panel-padded v61-panel">
+            <div class="section-head">
+              <p class="eyebrow" data-i18n="v61.tls.flowsKicker">FLOW SNAPSHOT</p>
+              <h3 data-i18n="v61.tls.flowsTitle">Flows &amp; Urteil</h3>
+              <p class="fs-xs text-muted" data-i18n="v61.tls.flowsHint">Zähler stammen aus den Kernel-Socket-Diag-Informationen. Ein Urteil ist eine Bewertung, keine Durchsetzung.</p>
+            </div>
+            <p id="tlsFlowNotice" class="v61-reason" role="status" aria-live="polite" hidden></p>
+            <div class="table-wrap v61-table-wrap v61-tls-flows" tabindex="0" role="region" data-i18n-aria="v61.tls.flowsTitle">
+              <table class="v61-table">
+                <thead>
+                  <tr>
+                    <th data-i18n="v61.tls.col.peer">Peer</th>
+                    <th data-i18n="v61.tls.col.port">Port</th>
+                    <th data-i18n="v61.tls.col.rx">rx</th>
+                    <th data-i18n="v61.tls.col.tx">tx</th>
+                    <th data-i18n="v61.tls.col.segsIn">segs_in</th>
+                    <th data-i18n="v61.tls.col.segsOut">segs_out</th>
+                    <th data-i18n="v61.tls.col.avgPktLen">avg_pkt_len</th>
+                    <th data-i18n="v61.tls.col.age">Alter</th>
+                    <th data-i18n="v61.tls.col.verdict">Urteil</th>
+                  </tr>
+                </thead>
+                <tbody id="tlsFlowRows"></tbody>
+              </table>
+            </div>
+          </article>
+        </section>
+
+        <!-- V6.1 MODULE D · LPE GUARD -->
+        <section class="view v61-view" data-page="lpe-guard" aria-labelledby="lpeGuardHeading" hidden>
+          <div class="view-context-bar v61-context glass-panel">
+            <div>
+              <p class="eyebrow m-0" data-i18n="v61.lpe.eyebrow">WEB POSTURE // MODULE D</p>
+              <h2 id="lpeGuardHeading" data-i18n="v61.lpe.title">LPE-Guard</h2>
+              <p class="view-context-desc" data-i18n="v61.lpe.desc">Socket-Policy, StyX-Web-Ingress-Profil und Kernel-Baseline je Web-Worker-Cgroup. Ein Plan ist keine Durchsetzung: angewendet wird nur, was der Kernel bestätigt.</p>
+            </div>
+            <div class="view-context-actions v61-actions">
+              <span id="lpeGuardPill" class="status-pill muted">—</span>
+              <button id="lpeGuardRefreshBtn" class="button button-quiet" type="button" data-i18n="v61.lpe.refresh">Aktualisieren</button>
+              <button id="lpeGuardApplyBtn" class="button button-primary" type="button" data-i18n="v61.lpe.apply">Plan anwenden</button>
+            </div>
+          </div>
+          <p id="lpeGuardReason" class="v61-reason" role="status" aria-live="polite" hidden></p>
+          <div class="defense-telemetry" role="group" data-i18n-aria="v61.lpe.rail">
+            <div class="telemetry-group">
+              <h3 class="telemetry-title" data-i18n="v61.lpe.group.policy">SOCKET POLICY</h3>
+              <dl class="telemetry-list">
+                <div class="telemetry-row"><dt data-i18n="v61.lpe.kpi.mode">Modus</dt><dd id="lpeModeKpi">—</dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.lpe.kpi.capability">Fähigkeit</dt><dd id="lpeCapabilityKpi">—</dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.lpe.kpi.policies">Policies</dt><dd id="lpePoliciesKpi" class="font-mono">—</dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.lpe.kpi.applied">Angewendet</dt><dd id="lpeAppliedKpi" class="font-mono">—</dd></div>
+              </dl>
+              <p class="telemetry-note" data-i18n="v61.lpe.note.policy">Deny-Bits werden ausschließlich über den bestehenden Kernel-Policy-Pfad gesetzt.</p>
+            </div>
+            <div class="telemetry-group">
+              <h3 class="telemetry-title" data-i18n="v61.lpe.group.hardening">HARDENING</h3>
+              <dl class="telemetry-list">
+                <div class="telemetry-row"><dt data-i18n="v61.lpe.kpi.pass">Pass</dt><dd id="lpePassKpi" class="font-mono">—</dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.lpe.kpi.fail">Fail</dt><dd id="lpeFailKpi" class="font-mono">—</dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.lpe.kpi.enforceable">Durchsetzbar</dt><dd id="lpeEnforceableKpi" class="font-mono">—</dd></div>
+              </dl>
+              <p class="telemetry-note" data-i18n="v61.lpe.note.hardening">ASLR und Modul-Sperren laufen über den vorhandenen Sysctl-/Modprobe-Pfad.</p>
+            </div>
+            <div class="telemetry-group">
+              <h3 class="telemetry-title" data-i18n="v61.lpe.group.styx">STYX PROFILE</h3>
+              <dl class="telemetry-list">
+                <div class="telemetry-row"><dt data-i18n="v61.lpe.kpi.styxState">Status</dt><dd><span id="lpeStyxState" class="status-pill muted">—</span></dd></div>
+              </dl>
+              <p class="telemetry-note" data-i18n="v61.lpe.note.styx">Deny-by-Default: nur Loopback, konfigurierte Backend-CIDRs und DNS-Server.</p>
+            </div>
+          </div>
+          <p id="lpeGuardResult" class="v61-reason" role="status" aria-live="polite" hidden></p>
+          <article class="glass-panel panel-padded v61-panel">
+            <div class="section-head">
+              <p class="eyebrow" data-i18n="v61.lpe.policyKicker">KILL-CHAIN SURFACE</p>
+              <h3 data-i18n="v61.lpe.policyTitle">Socket-Policy-Matrix</h3>
+              <p class="fs-xs text-muted" data-i18n="v61.lpe.policyHint">Verweigerte Adressfamilien und Protokolle je Web-Worker-Cgroup.</p>
+            </div>
+            <div class="table-wrap v61-table-wrap v61-lpe-policy" tabindex="0" role="region" data-i18n-aria="v61.lpe.policyTitle">
+              <table class="v61-table">
+                <thead>
+                  <tr>
+                    <th data-i18n="v61.lpe.col.cgroup">Cgroup</th>
+                    <th data-i18n="v61.lpe.col.comm">Prozess</th>
+                    <th data-i18n="v61.lpe.col.deny">Verweigert</th>
+                    <th data-i18n="v61.lpe.col.applied">Angewendet</th>
+                  </tr>
+                </thead>
+                <tbody id="lpeSocketRows"></tbody>
+              </table>
+            </div>
+          </article>
+          <article class="glass-panel panel-padded v61-panel">
+            <div class="section-head">
+              <p class="eyebrow" data-i18n="v61.lpe.styxKicker">WEB-INGRESS-ONLY</p>
+              <h3 data-i18n="v61.lpe.styxTitle">StyX-Profil</h3>
+              <p class="fs-xs text-muted" data-i18n="v61.lpe.styxHint">Gerendertes Egress-Profil für den Web-Ingress. Wirksam wird es nur bei aktiviertem Profil.</p>
+            </div>
+            <dl class="v61-kv-grid v61-lpe-profile">
+              <div class="v61-kv"><dt data-i18n="v61.lpe.kpi.styxName">Profil</dt><dd id="lpeStyxName">—</dd></div>
+              <div class="v61-kv"><dt data-i18n="v61.lpe.kpi.styxAllow">Allow</dt><dd id="lpeStyxAllow">—</dd></div>
+              <div class="v61-kv"><dt data-i18n="v61.lpe.kpi.styxDns">DNS</dt><dd id="lpeStyxDns">—</dd></div>
+              <div class="v61-kv"><dt data-i18n="v61.lpe.kpi.styxBackend">Backend</dt><dd id="lpeStyxBackend">—</dd></div>
+            </dl>
+            <div class="v61-lpe-apply-row">
+              <p class="v61-action-note" data-i18n="v61.lpe.applyNote">Der Plan wird serverseitig validiert. Fehlt die Kernel-Fähigkeit, bleibt die Antwort eine Ablehnung mit Begründung.</p>
+            </div>
+          </article>
+          <article class="glass-panel panel-padded v61-panel">
+            <div class="section-head">
+              <p class="eyebrow" data-i18n="v61.lpe.hardeningKicker">KERNEL BASELINE</p>
+              <h3 data-i18n="v61.lpe.hardeningTitle">Hardening-Prüfungen</h3>
+              <p class="fs-xs text-muted" data-i18n="v61.lpe.hardeningHint">Soll/Ist je Prüfung. Pass und Fail sind gemessene Werte, keine Annahmen.</p>
+            </div>
+            <div class="table-wrap v61-table-wrap v61-lpe-hardening" tabindex="0" role="region" data-i18n-aria="v61.lpe.hardeningTitle">
+              <table class="v61-table">
+                <thead>
+                  <tr>
+                    <th data-i18n="v61.lpe.col.key">Kontrolle</th>
+                    <th data-i18n="v61.lpe.col.expected">Soll</th>
+                    <th data-i18n="v61.lpe.col.actual">Ist</th>
+                    <th data-i18n="v61.lpe.col.state">Status</th>
+                    <th data-i18n="v61.lpe.col.enforceable">Durchsetzbar</th>
+                  </tr>
+                </thead>
+                <tbody id="lpeHardeningRows"></tbody>
+              </table>
+            </div>
+          </article>
+        </section>
+
+        <!-- V6.1 MODULE E · EDGE PROXY -->
+        <section class="view v61-view" data-page="edge-proxy" aria-labelledby="edgeProxyHeading" hidden>
+          <div class="view-context-bar v61-context glass-panel">
+            <div>
+              <p class="eyebrow m-0" data-i18n="v61.edge.eyebrow">WEB POSTURE // MODULE E</p>
+              <h2 id="edgeProxyHeading" data-i18n="v61.edge.title">Edge-Proxy</h2>
+              <p class="view-context-desc" data-i18n="v61.edge.desc">Memory-safer TLS-Terminator vor dem Webserver: Listener, Upstream, TLS-Fingerprint, h2-Hartlimits und Request-Zähler. Standardmäßig aus.</p>
+            </div>
+            <div class="view-context-actions v61-actions">
+              <span id="edgeProxyPill" class="status-pill muted">—</span>
+              <button id="edgeProxyRefreshBtn" class="button button-quiet" type="button" data-i18n="v61.edge.refresh">Aktualisieren</button>
+              <button id="edgeProxyRestartBtn" class="button button-secondary" type="button" data-i18n="v61.edge.restart">Proxy neu starten</button>
+            </div>
+          </div>
+          <p id="edgeProxyReason" class="v61-reason" role="status" aria-live="polite" hidden></p>
+          <p id="edgeProxyResult" class="v61-reason" role="status" aria-live="polite" hidden></p>
+          <div class="defense-telemetry" role="group" data-i18n-aria="v61.edge.rail">
+            <div class="telemetry-group">
+              <h3 class="telemetry-title" data-i18n="v61.edge.group.state">STATE</h3>
+              <dl class="telemetry-list">
+                <div class="telemetry-row"><dt data-i18n="v61.edge.kpi.state">Zustand</dt><dd id="edgeStateKpi">—</dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.edge.kpi.enabled">Aktiviert</dt><dd><span id="edgeEnabledKpi" class="status-pill muted">—</span></dd></div>
+              </dl>
+              <p class="telemetry-note" data-i18n="v61.edge.note.state">Ein konfigurierter, aber gestoppter Listener schützt nichts.</p>
+            </div>
+            <div class="telemetry-group">
+              <h3 class="telemetry-title" data-i18n="v61.edge.group.listener">LISTENER</h3>
+              <dl class="telemetry-list">
+                <div class="telemetry-row"><dt data-i18n="v61.edge.kpi.listen">Listen</dt><dd id="edgeListenKpi" class="font-mono fs-xs">—</dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.edge.kpi.upstream">Upstream</dt><dd id="edgeUpstreamKpi" class="font-mono fs-xs">—</dd></div>
+              </dl>
+              <p class="telemetry-note" data-i18n="v61.edge.note.listener">Upstream spricht HTTP/1.1, der Client spricht TLS 1.3 und h2.</p>
+            </div>
+            <div class="telemetry-group">
+              <h3 class="telemetry-title" data-i18n="v61.edge.group.counters">REQUESTS</h3>
+              <dl class="telemetry-list">
+                <div class="telemetry-row"><dt data-i18n="v61.edge.kpi.requests">Requests</dt><dd id="edgeRequestsKpi" class="font-mono">—</dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.edge.kpi.blocked">Blockiert</dt><dd id="edgeBlockedKpi" class="font-mono">—</dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.edge.kpi.active">Aktiv</dt><dd id="edgeActiveKpi" class="font-mono">—</dd></div>
+              </dl>
+              <p class="telemetry-note" data-i18n="v61.edge.note.counters">Blockierte Requests erzeugen einen Incident im Evidenzpfad.</p>
+            </div>
+          </div>
+          <article class="glass-panel panel-padded v61-panel">
+            <div class="section-head">
+              <p class="eyebrow" data-i18n="v61.edge.tlsKicker">TERMINATION</p>
+              <h3 data-i18n="v61.edge.tlsTitle">TLS-Fingerprint &amp; h2-Hartlimits</h3>
+              <p class="fs-xs text-muted" data-i18n="v61.edge.tlsHint">Die Werte sind die effektiv gesetzten Grenzen des laufenden http.Server, keine Wunschwerte.</p>
+            </div>
+            <div class="v61-edge-grid">
+              <div class="v61-edge-block">
+                <h3 data-i18n="v61.edge.tlsFingerprint">Fingerprint</h3>
+                <p id="edgeTlsFingerprint" class="v61-edge-fingerprint">—</p>
+                <h3 class="mt-md" data-i18n="v61.edge.minTls">Min. TLS-Version</h3>
+                <p id="edgeTlsMin" class="v61-edge-listen">—</p>
+              </div>
+              <div class="v61-edge-block">
+                <h3 data-i18n="v61.edge.h2Title">HTTP/2-Grenzen</h3>
+                <dl class="v61-edge-limits">
+                  <div><dt data-i18n="v61.edge.h2.streams">max_concurrent_streams</dt><dd id="edgeH2Streams">—</dd></div>
+                  <div><dt data-i18n="v61.edge.h2.frame">max_read_frame_size</dt><dd id="edgeH2Frame">—</dd></div>
+                  <div><dt data-i18n="v61.edge.h2.header">max_header_bytes</dt><dd id="edgeH2Header">—</dd></div>
+                </dl>
+                <p class="v61-action-note" data-i18n="v61.edge.h2Note">RFC-9113-Grenzen werden beim Start gesetzt; eine Änderung benötigt einen Neustart des Proxys.</p>
+              </div>
+            </div>
+          </article>
+        </section>
+
+        <!-- /V6.1 WEB POSTURE PANELS -->
+
+        <!-- V6 · STYX KERNEL EGRESS -->
+        <section class="view v61-view" data-page="styx" aria-labelledby="styxHeading" hidden>
+          <div class="view-context-bar v61-context glass-panel">
+            <div>
+              <p class="eyebrow m-0" data-i18n="v61.v6.styx.eyebrow">V6 FABRIC // EGRESS</p>
+              <h2 id="styxHeading" data-i18n="v61.v6.styx.title">StyX Kernel-Egress</h2>
+              <p class="view-context-desc" data-i18n="v61.v6.styx.desc">Sync-Zustand, Kernel-Flow-Health und die Beacon-Sicht des Detektors. Kernel-Zähler sind echte Messwerte; fehlt eine Stichprobe, steht „unbekannt“ statt einer Null.</p>
+            </div>
+            <div class="view-context-actions v61-actions">
+              <span id="styxPill" class="status-pill muted">—</span>
+              <button id="styxRefreshBtn" class="button button-quiet" type="button" data-i18n="v61.v6.common.refresh">Aktualisieren</button>
+            </div>
+          </div>
+          <p id="styxReason" class="v61-reason" role="status" aria-live="polite" hidden></p>
+          <div class="defense-telemetry" role="group" data-i18n-aria="v61.v6.styx.rail">
+            <div class="telemetry-group">
+              <h3 class="telemetry-title" data-i18n="v61.v6.styx.group.sync">SYNC</h3>
+              <dl class="telemetry-list">
+                <div class="telemetry-row"><dt data-i18n="v61.v6.styx.kpi.state">Zustand</dt><dd id="styxStateKpi">—</dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.v6.styx.kpi.capability">Fähigkeit</dt><dd id="styxCapabilityKpi">—</dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.v6.styx.kpi.mode">Modus</dt><dd id="styxModeKpi">—</dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.v6.styx.kpi.epoch">Epoch</dt><dd id="styxEpochKpi" class="font-mono fs-xs">—</dd></div>
+              </dl>
+              <p class="telemetry-note" data-i18n="v61.v6.styx.note.sync">Der Epoch benennt die zuletzt angewendete Policy-Revision.</p>
+            </div>
+            <div class="telemetry-group">
+              <h3 class="telemetry-title" data-i18n="v61.v6.styx.group.beacon">BEACON</h3>
+              <dl class="telemetry-list">
+                <div class="telemetry-row"><dt data-i18n="v61.v6.styx.kpi.tracked">Flows</dt><dd id="styxTrackedKpi" class="font-mono">—</dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.v6.styx.kpi.events">Ereignisse</dt><dd id="styxEventsKpi" class="font-mono">—</dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.v6.styx.kpi.incidents">Incidents</dt><dd id="styxIncidentsKpi" class="font-mono">—</dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.v6.styx.kpi.suppressed">Unterdrückt</dt><dd id="styxSuppressedKpi" class="font-mono">—</dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.v6.styx.kpi.dropped">Verworfen</dt><dd id="styxDroppedKpi" class="font-mono">—</dd></div>
+              </dl>
+              <p class="telemetry-note" data-i18n="v61.v6.styx.note.beacon">Die Beacon-Sicht ist auf zehn Flows begrenzt.</p>
+            </div>
+            <div class="telemetry-group">
+              <h3 class="telemetry-title" data-i18n="v61.v6.styx.group.go">GO EVALUATOR</h3>
+              <dl class="telemetry-list">
+                <div class="telemetry-row"><dt data-i18n="v61.v6.styx.kpi.goRules">Regeln</dt><dd id="styxGoRulesKpi" class="font-mono">—</dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.v6.styx.kpi.goDrops">Drops</dt><dd id="styxGoDropsKpi" class="font-mono">—</dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.v6.styx.kpi.goMetadata">Metadaten-Treffer</dt><dd id="styxGoMetadataKpi" class="font-mono">—</dd></div>
+              </dl>
+              <p class="telemetry-note" data-i18n="v61.v6.styx.note.go">Zähler der Go-Auswertung, getrennt von der Kernel-Durchsetzung.</p>
+            </div>
+          </div>
+          <article class="glass-panel panel-padded v61-panel">
+            <div class="section-head">
+              <p class="eyebrow" data-i18n="v61.v6.styx.kernelKicker">KERNEL FLOW HEALTH</p>
+              <h3 data-i18n="v61.v6.styx.kernelTitle">Kernel-Zähler</h3>
+              <p class="fs-xs text-muted" data-i18n="v61.v6.styx.kernelHint">Sechs Zähler aus der festen STYX_FLOW_HEALTH-Struktur, letzte Stichprobe separat benannt.</p>
+            </div>
+            <dl class="v61-kv-grid v61-v6-kernel">
+              <div class="v61-kv"><dt data-i18n="v61.v6.styx.kernel.emitted">Emitted</dt><dd id="styxKernelEmitted" class="v61-mono">—</dd></div>
+              <div class="v61-kv"><dt data-i18n="v61.v6.styx.kernel.ringDrops">Ring-Drops</dt><dd id="styxKernelRingDrops" class="v61-mono">—</dd></div>
+              <div class="v61-kv"><dt data-i18n="v61.v6.styx.kernel.agg">Aggregation-Fehler</dt><dd id="styxKernelAgg" class="v61-mono">—</dd></div>
+              <div class="v61-kv"><dt data-i18n="v61.v6.styx.kernel.parse">Parse-Fehler</dt><dd id="styxKernelParse" class="v61-mono">—</dd></div>
+              <div class="v61-kv"><dt data-i18n="v61.v6.styx.kernel.drops">Drops gesamt</dt><dd id="styxKernelDrops" class="v61-mono">—</dd></div>
+              <div class="v61-kv"><dt data-i18n="v61.v6.styx.kernel.policyDrops">Policy-Drops</dt><dd id="styxKernelPolicyDrops" class="v61-mono">—</dd></div>
+              <div class="v61-kv"><dt data-i18n="v61.v6.styx.kernel.sampledAt">Stichprobe</dt><dd id="styxKernelUpdated" class="v61-mono">—</dd></div>
+            </dl>
+          </article>
+          <article class="glass-panel panel-padded v61-panel">
+            <div class="section-head">
+              <p class="eyebrow" data-i18n="v61.v6.styx.beaconKicker">DETECTOR TOP 10</p>
+              <h3 data-i18n="v61.v6.styx.beaconTitle">Auffällige Egress-Flows</h3>
+              <p class="fs-xs text-muted" data-i18n="v61.v6.styx.beaconHint">Bounded Top-10 des Detektors. Score und Signale sind Bewertungen, keine Behördenzuschreibung.</p>
+            </div>
+            <div class="table-wrap v61-table-wrap v61-v6-beacons" tabindex="0" role="region" data-i18n-aria="v61.v6.styx.beaconTitle">
+              <table class="v61-table">
+                <thead>
+                  <tr>
+                    <th data-i18n="v61.v6.styx.col.remote">Remote</th>
+                    <th data-i18n="v61.v6.styx.col.comm">Prozess</th>
+                    <th data-i18n="v61.v6.styx.col.pid">PID</th>
+                    <th data-i18n="v61.v6.styx.col.tx">tx</th>
+                    <th data-i18n="v61.v6.styx.col.rx">rx</th>
+                    <th data-i18n="v61.v6.styx.col.score">Score</th>
+                    <th data-i18n="v61.v6.styx.col.signals">Signale</th>
+                  </tr>
+                </thead>
+                <tbody id="styxBeaconRows"></tbody>
+              </table>
+            </div>
+          </article>
+        </section>
+
+        <!-- V6 · TITAN EXEC GATE -->
+        <section class="view v61-view" data-page="titan-exec" aria-labelledby="titanExecHeading" hidden>
+          <div class="view-context-bar v61-context glass-panel">
+            <div>
+              <p class="eyebrow m-0" data-i18n="v61.v6.titan.eyebrow">V6 FABRIC // EXEC GATE</p>
+              <h2 id="titanExecHeading" data-i18n="v61.v6.titan.title">Titan Exec-Gate</h2>
+              <p class="view-context-desc" data-i18n="v61.v6.titan.desc">Kernel-Entscheidungen für exec und mmap: angewendete Scopes, Kernel-Sicht, Ingestion-Zähler und Health. Ohne verdrahteten Syncer bleibt der Sensor ehrlich inaktiv.</p>
+            </div>
+            <div class="view-context-actions v61-actions">
+              <span id="titanExecPill" class="status-pill muted">—</span>
+              <button id="titanExecRefreshBtn" class="button button-quiet" type="button" data-i18n="v61.v6.common.refresh">Aktualisieren</button>
+            </div>
+          </div>
+          <p id="titanExecReason" class="v61-reason" role="status" aria-live="polite" hidden></p>
+          <div class="defense-telemetry" role="group" data-i18n-aria="v61.v6.titan.rail">
+            <div class="telemetry-group">
+              <h3 class="telemetry-title" data-i18n="v61.v6.titan.group.sensor">SENSOR</h3>
+              <dl class="telemetry-list">
+                <div class="telemetry-row"><dt data-i18n="v61.v6.titan.kpi.state">Zustand</dt><dd id="titanExecStateKpi">—</dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.v6.titan.kpi.capability">Fähigkeit</dt><dd id="titanExecCapabilityKpi">—</dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.v6.titan.kpi.sensor">Sensor</dt><dd id="titanExecSensorKpi">—</dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.v6.titan.kpi.mode">Modus</dt><dd id="titanExecModeKpi">—</dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.v6.titan.kpi.lsm">LSM</dt><dd id="titanExecLsmKpi" class="font-mono fs-xs">—</dd></div>
+              </dl>
+              <p class="telemetry-note" data-i18n="v61.v6.titan.note.sensor">Die Kernel-Sicht wird getrennt von der Anwendungssicht geführt.</p>
+            </div>
+            <div class="telemetry-group">
+              <h3 class="telemetry-title" data-i18n="v61.v6.titan.group.scope">SCOPE</h3>
+              <dl class="telemetry-list">
+                <div class="telemetry-row"><dt data-i18n="v61.v6.titan.kpi.entries">Entries</dt><dd id="titanExecEntriesKpi" class="font-mono">—</dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.v6.titan.kpi.scopes">Scopes</dt><dd id="titanExecScopesKpi" class="font-mono">—</dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.v6.titan.kpi.path">Pfad</dt><dd id="titanExecPathKpi" class="font-mono fs-xs">—</dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.v6.titan.kpi.offsets">Offsets</dt><dd id="titanExecOffsetsKpi" class="font-mono fs-xs">—</dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.v6.titan.kpi.history">Historie</dt><dd id="titanExecHistoryKpi" class="font-mono">—</dd></div>
+              </dl>
+              <p class="telemetry-note" data-i18n="v61.v6.titan.note.scope">Entry- und Scope-Grenzen werden serverseitig validiert.</p>
+            </div>
+            <div class="telemetry-group">
+              <h3 class="telemetry-title" data-i18n="v61.v6.titan.group.counters">INGESTION</h3>
+              <dl class="telemetry-list">
+                <div class="telemetry-row"><dt data-i18n="v61.v6.titan.kpi.events">Events</dt><dd id="titanExecEventsKpi" class="font-mono">—</dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.v6.titan.kpi.denies">Denies</dt><dd id="titanExecDeniesKpi" class="font-mono">—</dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.v6.titan.kpi.audits">Audits</dt><dd id="titanExecAuditsKpi" class="font-mono">—</dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.v6.titan.kpi.dropped">Verworfen</dt><dd id="titanExecDroppedKpi" class="font-mono">—</dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.v6.titan.kpi.parse">Parse-Fehler</dt><dd id="titanExecParseKpi" class="font-mono">—</dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.v6.titan.kpi.incidents">Incidents</dt><dd id="titanExecIncidentsKpi" class="font-mono">—</dd></div>
+              </dl>
+              <p class="telemetry-note" data-i18n="v61.v6.titan.note.counters">Zähler aus der begrenzten Ingestion-Historie.</p>
+            </div>
+          </div>
+          <article class="glass-panel panel-padded v61-panel">
+            <div class="section-head">
+              <p class="eyebrow" data-i18n="v61.v6.titan.syncKicker">APPLIED VS KERNEL</p>
+              <h3 data-i18n="v61.v6.titan.syncTitle">Sync- und Kernel-Fakten</h3>
+              <p class="fs-xs text-muted" data-i18n="v61.v6.titan.syncHint">Angewendet und Kernel-bestätigt sind zwei verschiedene Aussagen. Beide werden getrennt angezeigt.</p>
+            </div>
+            <dl class="v61-kv-grid v61-v6-kernel">
+              <div class="v61-kv"><dt data-i18n="v61.v6.titan.kpi.epoch">Epoch</dt><dd id="titanExecEpoch" class="v61-mono">—</dd></div>
+              <div class="v61-kv"><dt data-i18n="v61.v6.titan.kpi.appliedEntries">Angewendete Entries</dt><dd id="titanExecAppliedEntries" class="v61-mono">—</dd></div>
+              <div class="v61-kv"><dt data-i18n="v61.v6.titan.kpi.appliedScopes">Angewendete Scopes</dt><dd id="titanExecAppliedScopes" class="v61-mono">—</dd></div>
+              <div class="v61-kv"><dt data-i18n="v61.v6.titan.kpi.kernelEntries">Kernel-Entries</dt><dd id="titanExecKernelEntries" class="v61-mono">—</dd></div>
+              <div class="v61-kv"><dt data-i18n="v61.v6.titan.kpi.kernelScopes">Kernel-Scopes</dt><dd id="titanExecKernelScopes" class="v61-mono">—</dd></div>
+              <div class="v61-kv"><dt data-i18n="v61.v6.titan.kpi.rejected">Abgelehnt</dt><dd id="titanExecRejected" class="v61-mono">—</dd></div>
+              <div class="v61-kv"><dt data-i18n="v61.v6.titan.kpi.unverified">Unbestätigt</dt><dd id="titanExecUnverified" class="v61-mono">—</dd></div>
+              <div class="v61-kv"><dt data-i18n="v61.v6.titan.kpi.healthAt">Health-Stichprobe</dt><dd id="titanExecHealthAt" class="v61-mono">—</dd></div>
+            </dl>
+            <dl class="v61-kv-grid v61-v6-kernel mt-sm">
+              <div class="v61-kv"><dt data-i18n="v61.v6.titan.kernel.emitted">Emitted</dt><dd id="titanExecKernelEmitted" class="v61-mono">—</dd></div>
+              <div class="v61-kv"><dt data-i18n="v61.v6.titan.kernel.ringDrops">Ring-Drops</dt><dd id="titanExecKernelRingDrops" class="v61-mono">—</dd></div>
+              <div class="v61-kv"><dt data-i18n="v61.v6.titan.kernel.readFailures">Read-Fehler</dt><dd id="titanExecKernelReadFailures" class="v61-mono">—</dd></div>
+              <div class="v61-kv"><dt data-i18n="v61.v6.titan.kernel.ctime">ctime-Rejects</dt><dd id="titanExecKernelCtime" class="v61-mono">—</dd></div>
+            </dl>
+          </article>
+        </section>
+
+        <!-- V6 · PARSER CELLS -->
+        <section class="view v61-view" data-page="parser-cells" aria-labelledby="parserCellsHeading" hidden>
+          <div class="view-context-bar v61-context glass-panel">
+            <div>
+              <p class="eyebrow m-0" data-i18n="v61.v6.cells.eyebrow">V6 FABRIC // EPHEMERAL</p>
+              <h2 id="parserCellsHeading" data-i18n="v61.v6.cells.title">Parser-Zellen</h2>
+              <p class="view-context-desc" data-i18n="v61.v6.cells.desc">Flüchtige Parser-Zellen mit Sandbox, Netz-Namespace und Host-Isolationsschichten. Burn ist bestätigungspflichtig; Freeze ist umkehrbar.</p>
+            </div>
+            <div class="view-context-actions v61-actions">
+              <span id="cellsPill" class="status-pill muted">—</span>
+              <button id="cellsRefreshBtn" class="button button-quiet" type="button" data-i18n="v61.v6.common.refresh">Aktualisieren</button>
+            </div>
+          </div>
+          <p id="cellsReason" class="v61-reason" role="status" aria-live="polite" hidden></p>
+          <p id="cellsActionResult" class="v61-reason" role="status" aria-live="polite" hidden></p>
+          <div class="defense-telemetry" role="group" data-i18n-aria="v61.v6.cells.rail">
+            <div class="telemetry-group">
+              <h3 class="telemetry-title" data-i18n="v61.v6.cells.group.runtime">RUNTIME</h3>
+              <dl class="telemetry-list">
+                <div class="telemetry-row"><dt data-i18n="v61.v6.cells.kpi.enabled">Aktiviert</dt><dd><span id="cellsEnabledKpi" class="status-pill muted">—</span></dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.v6.cells.kpi.available">Verfügbar</dt><dd><span id="cellsAvailableKpi" class="status-pill muted">—</span></dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.v6.cells.kpi.helper">Helper</dt><dd id="cellsHelperKpi">—</dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.v6.cells.kpi.helperCells">Helper-Zellen</dt><dd id="cellsHelperCells" class="font-mono">—</dd></div>
+              </dl>
+              <p class="telemetry-note" data-i18n="v61.v6.cells.note.runtime">Deaktiviert beantwortet den Status ohne Helper-Kontakt.</p>
+            </div>
+            <div class="telemetry-group">
+              <h3 class="telemetry-title" data-i18n="v61.v6.cells.group.cells">CELLS</h3>
+              <dl class="telemetry-list">
+                <div class="telemetry-row"><dt data-i18n="v61.v6.cells.kpi.active">Aktiv</dt><dd id="cellsActiveKpi" class="font-mono">—</dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.v6.cells.kpi.burned">Gebrannt</dt><dd id="cellsBurnedKpi" class="font-mono">—</dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.v6.cells.kpi.failed">Fehlgeschlagen</dt><dd id="cellsFailedKpi" class="font-mono">—</dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.v6.cells.kpi.refused">Abgelehnt</dt><dd id="cellsRefusedKpi" class="font-mono">—</dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.v6.cells.kpi.max">Max. parallel</dt><dd id="cellsMaxKpi" class="font-mono">—</dd></div>
+              </dl>
+              <p class="telemetry-note" data-i18n="v61.v6.cells.note.cells">Grenzen sind die administrierten Werte, nicht die Wunschwerte.</p>
+            </div>
+            <div class="telemetry-group">
+              <h3 class="telemetry-title" data-i18n="v61.v6.cells.group.isolation">ISOLATION</h3>
+              <dl class="telemetry-list">
+                <div class="telemetry-row"><dt data-i18n="v61.v6.cells.kpi.sandbox">Sandbox</dt><dd><span id="cellsSandboxKpi" class="status-pill muted">—</span></dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.v6.cells.kpi.bpf">BPF-LSM</dt><dd><span id="cellsBpfKpi" class="status-pill muted">—</span></dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.v6.cells.kpi.ttl">TTL</dt><dd id="cellsTtl" class="font-mono">—</dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.v6.cells.kpi.maxInput">Max. Input</dt><dd id="cellsMaxInput" class="font-mono">—</dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.v6.cells.kpi.profiles">Profile</dt><dd id="cellsProfilesKpi" class="fs-xs">—</dd></div>
+              </dl>
+              <p class="telemetry-note" data-i18n="v61.v6.cells.note.isolation">Host-Schichten: Cell-LSM, StyX-Egress und Titan-Exec getrennt benannt.</p>
+            </div>
+          </div>
+          <article class="glass-panel panel-padded v61-panel">
+            <div class="section-head">
+              <p class="eyebrow" data-i18n="v61.v6.cells.layersKicker">HOST LAYERS</p>
+              <h3 data-i18n="v61.v6.cells.layersTitle">Isolationsschichten</h3>
+              <p class="fs-xs text-muted" data-i18n="v61.v6.cells.layersHint">Jede Schicht meldet ihren eigenen Zustand; eine fehlende Schicht wird nicht als vorhanden dargestellt.</p>
+            </div>
+            <dl class="v61-kv-grid v61-v6-kernel">
+              <div class="v61-kv"><dt data-i18n="v61.v6.cells.layer.cellLsm">Cell-LSM</dt><dd id="cellsLayerLsm" class="v61-mono">—</dd></div>
+              <div class="v61-kv"><dt data-i18n="v61.v6.cells.layer.styx">StyX-Egress</dt><dd id="cellsLayerStyx" class="v61-mono">—</dd></div>
+              <div class="v61-kv"><dt data-i18n="v61.v6.cells.layer.titan">Titan-Exec</dt><dd id="cellsLayerTitan" class="v61-mono">—</dd></div>
+            </dl>
+          </article>
+          <article class="glass-panel panel-padded v61-panel">
+            <div class="section-head">
+              <p class="eyebrow" data-i18n="v61.v6.cells.listKicker">BOUNDED LIST</p>
+              <h3 data-i18n="v61.v6.cells.listTitle">Zellen</h3>
+              <p class="fs-xs text-muted" data-i18n="v61.v6.cells.listHint">Burn verlangt die Eingabe von BURN &lt;uuid&gt;. Freeze und Unfreeze sind umkehrbare Zustandswechsel.</p>
+            </div>
+            <div class="table-wrap v61-table-wrap v61-v6-cells" tabindex="0" role="region" data-i18n-aria="v61.v6.cells.listTitle">
+              <table class="v61-table">
+                <thead>
+                  <tr>
+                    <th data-i18n="v61.v6.cells.col.uuid">UUID</th>
+                    <th data-i18n="v61.v6.cells.col.profile">Profil</th>
+                    <th data-i18n="v61.v6.cells.col.state">Zustand</th>
+                    <th data-i18n="v61.v6.cells.col.pid">PID</th>
+                    <th data-i18n="v61.v6.cells.col.cgroup">Cgroup</th>
+                    <th data-i18n="v61.v6.cells.col.ttl">TTL</th>
+                    <th data-i18n="v61.v6.cells.col.created">Erstellt</th>
+                    <th data-i18n="v61.v6.cells.col.actions">Aktionen</th>
+                  </tr>
+                </thead>
+                <tbody id="parserCellRows"></tbody>
+              </table>
+            </div>
+          </article>
+          <article class="glass-panel panel-padded v61-panel">
+            <div class="section-head">
+              <p class="eyebrow" data-i18n="v61.v6.cells.recentKicker">RECENT RESULTS</p>
+              <h3 data-i18n="v61.v6.cells.recentTitle">Letzte Zell-Ergebnisse</h3>
+              <p class="fs-xs text-muted" data-i18n="v61.v6.cells.recentHint">Begrenzte Historie aus Dispatch und Lifecycle.</p>
+            </div>
+            <div class="table-wrap v61-table-wrap" tabindex="0" role="region" data-i18n-aria="v61.v6.cells.recentTitle">
+              <table class="v61-table">
+                <thead>
+                  <tr>
+                    <th data-i18n="v61.v6.cells.col.at">Zeit</th>
+                    <th data-i18n="v61.v6.cells.col.action">Aktion</th>
+                    <th data-i18n="v61.v6.cells.col.state">Zustand</th>
+                    <th data-i18n="v61.v6.cells.col.uuid">UUID</th>
+                    <th data-i18n="v61.v6.cells.col.reason">Begründung</th>
+                  </tr>
+                </thead>
+                <tbody id="cellsRecentRows"></tbody>
+              </table>
+            </div>
+          </article>
+        </section>
+
+        <!-- V6 · EMERGENCY LOCKDOWN -->
+        <section class="view v61-view" data-page="lockdown" aria-labelledby="lockdownHeading" hidden>
+          <div class="view-context-bar v61-context glass-panel">
+            <div>
+              <p class="eyebrow m-0" data-i18n="v61.v6.lockdown.eyebrow">V6 FABRIC // ISOLATION</p>
+              <h2 id="lockdownHeading" data-i18n="v61.v6.lockdown.title">Emergency Lockdown</h2>
+              <p class="view-context-desc" data-i18n="v61.v6.lockdown.desc">Isolations-Phasen, Latch, Epoch und Cooldown. Auslösen und Aufheben verlangen eine getippte Bestätigung; die Clear-Epoch stammt aus dem zuletzt gelesenen Status.</p>
+            </div>
+            <div class="view-context-actions v61-actions">
+              <span id="lockdownPill" class="status-pill muted">—</span>
+              <button id="lockdownRefreshBtn" class="button button-quiet" type="button" data-i18n="v61.v6.common.refresh">Aktualisieren</button>
+            </div>
+          </div>
+          <p id="lockdownReason" class="v61-reason" role="status" aria-live="polite" hidden></p>
+          <div class="defense-telemetry" role="group" data-i18n-aria="v61.v6.lockdown.rail">
+            <div class="telemetry-group">
+              <h3 class="telemetry-title" data-i18n="v61.v6.lockdown.group.state">STATE</h3>
+              <dl class="telemetry-list">
+                <div class="telemetry-row"><dt data-i18n="v61.v6.lockdown.kpi.state">Zustand</dt><dd id="lockdownStateKpi">—</dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.v6.lockdown.kpi.armed">Bewaffnet</dt><dd><span id="lockdownArmedKpi" class="status-pill muted">—</span></dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.v6.lockdown.kpi.latched">Verriegelt</dt><dd><span id="lockdownLatchedKpi" class="status-pill muted">—</span></dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.v6.lockdown.kpi.mode">Modus</dt><dd id="lockdownModeKpi">—</dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.v6.lockdown.kpi.epoch">Epoch</dt><dd id="lockdownEpochKpi" class="font-mono fs-xs">—</dd></div>
+              </dl>
+              <p class="telemetry-note" data-i18n="v61.v6.lockdown.note.state">Der Latch endet nur über ein Clear mit der passenden Epoch.</p>
+            </div>
+            <div class="telemetry-group">
+              <h3 class="telemetry-title" data-i18n="v61.v6.lockdown.group.core">CORE</h3>
+              <dl class="telemetry-list">
+                <div class="telemetry-row"><dt data-i18n="v61.v6.lockdown.kpi.capability">Fähigkeit</dt><dd id="lockdownCoreKpi">—</dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.v6.lockdown.kpi.pending">Wartende Quellen</dt><dd id="lockdownPendingKpi" class="font-mono">—</dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.v6.lockdown.kpi.falsePos">False-Positive-Guards</dt><dd id="lockdownFalsePosKpi" class="font-mono">—</dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.v6.lockdown.kpi.dropped">Verworfene Core-Events</dt><dd id="lockdownDroppedKpi" class="font-mono">—</dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.v6.lockdown.kpi.cooldown">Cooldown</dt><dd id="lockdownCooldownKpi" class="fs-xs">—</dd></div>
+              </dl>
+              <p class="telemetry-note" data-i18n="v61.v6.lockdown.note.core">Die Fähigkeit ist ein Fakt, keine Durchsetzungsaussage.</p>
+            </div>
+            <div class="telemetry-group">
+              <h3 class="telemetry-title" data-i18n="v61.v6.lockdown.group.policy">POLICY</h3>
+              <dl class="telemetry-list">
+                <div class="telemetry-row"><dt data-i18n="v61.v6.lockdown.kpi.enabled">Aktiviert</dt><dd><span id="lockdownEnabledKpi" class="status-pill muted">—</span></dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.v6.lockdown.kpi.duress">Duress-Token</dt><dd><span id="lockdownDuressKpi" class="status-pill muted">—</span></dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.v6.lockdown.kpi.requireSources">Nötige Quellen</dt><dd id="lockdownRequireSources" class="font-mono">—</dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.v6.lockdown.kpi.evidence">Evidenz</dt><dd id="lockdownEvidenceKpi">—</dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.v6.lockdown.kpi.updated">Stand</dt><dd id="lockdownUpdatedKpi" class="font-mono fs-xs">—</dd></div>
+              </dl>
+              <p class="telemetry-note" data-i18n="v61.v6.lockdown.note.policy">Pfade und Secrets sind nicht Teil dieser Projektion.</p>
+            </div>
+          </div>
+          <p id="lockdownActionResult" class="v61-reason" role="status" aria-live="polite" hidden></p>
+          <article class="glass-panel panel-padded v61-panel danger-zone">
+            <div class="section-head">
+              <p class="eyebrow" data-i18n="v61.v6.lockdown.actionsKicker">OPERATOR ACTIONS</p>
+              <h3 data-i18n="v61.v6.lockdown.actionsTitle">Bewaffnen, auslösen, aufheben</h3>
+              <p class="fs-xs text-muted" data-i18n="v61.v6.lockdown.actionsHint">Bewaffnen ist umkehrbar. Auslösen und Aufheben verlangen die getippte Bestätigung und eine Begründung mit mindestens acht Zeichen.</p>
+            </div>
+            <div class="v61-v6-actions">
+              <button id="lockdownArmBtn" class="button button-secondary" type="button" data-i18n="v61.v6.lockdown.arm">Bewaffnen (locked)</button>
+              <button id="lockdownDisarmBtn" class="button button-quiet" type="button" data-i18n="v61.v6.lockdown.disarm">Entwaffnen (unlocked)</button>
+              <button id="lockdownTriggerBtn" class="button button-danger" type="button" data-i18n="v61.v6.lockdown.trigger">Lockdown auslösen</button>
+              <button id="lockdownClearBtn" class="button button-warning" type="button" data-i18n="v61.v6.lockdown.clear">Lockdown aufheben</button>
+            </div>
+            <div class="v61-v6-lockdown-facts">
+              <p id="lockdownTriggerInfo">—</p>
+              <p id="lockdownClearInfo">—</p>
+            </div>
+            <dl class="v61-kv-grid v61-v6-kernel mt-sm">
+              <div class="v61-kv"><dt data-i18n="v61.v6.lockdown.kpi.applied">Angewendet</dt><dd id="lockdownCoreApplied" class="v61-mono">—</dd></div>
+              <div class="v61-kv"><dt data-i18n="v61.v6.lockdown.kpi.unsupported">Nicht unterstützt</dt><dd id="lockdownCoreUnsupported" class="v61-mono">—</dd></div>
+            </dl>
+          </article>
+          <article class="glass-panel panel-padded v61-panel">
+            <div class="section-head">
+              <p class="eyebrow" data-i18n="v61.v6.lockdown.phasesKicker">ISOLATION PHASES</p>
+              <h3 data-i18n="v61.v6.lockdown.phasesTitle">Phasen-Status</h3>
+              <p class="fs-xs text-muted" data-i18n="v61.v6.lockdown.phasesHint">Je Phase: angewendet, nicht unterstützt oder fehlgeschlagen — mit konkreter Begründung.</p>
+            </div>
+            <div class="table-wrap v61-table-wrap v61-v6-phases" tabindex="0" role="region" data-i18n-aria="v61.v6.lockdown.phasesTitle">
+              <table class="v61-table">
+                <thead>
+                  <tr>
+                    <th data-i18n="v61.v6.lockdown.col.phase">Phase</th>
+                    <th data-i18n="v61.v6.lockdown.col.status">Status</th>
+                    <th data-i18n="v61.v6.lockdown.col.targets">Ziele</th>
+                    <th data-i18n="v61.v6.lockdown.col.detail">Detail</th>
+                  </tr>
+                </thead>
+                <tbody id="lockdownPhaseRows"></tbody>
+              </table>
+            </div>
+          </article>
+        </section>
+
+        <!-- V6 · OUT-OF-BAND WITNESS -->
+        <section class="view v61-view" data-page="witness" aria-labelledby="witnessHeading" hidden>
+          <div class="view-context-bar v61-context glass-panel">
+            <div>
+              <p class="eyebrow m-0" data-i18n="v61.v6.witness.eyebrow">V6 FABRIC // EVIDENCE</p>
+              <h2 id="witnessHeading" data-i18n="v61.v6.witness.title">Out-of-Band Witness</h2>
+              <p class="view-context-desc" data-i18n="v61.v6.witness.desc">Signierter Checkpoint, letzte Witness-Bestätigung und Outbox-Druck. Push verlässt den Host und verlangt deshalb die getippte Bestätigung PUSH WITNESS.</p>
+            </div>
+            <div class="view-context-actions v61-actions">
+              <span id="witnessPill" class="status-pill muted">—</span>
+              <button id="witnessRefreshBtn" class="button button-quiet" type="button" data-i18n="v61.v6.common.refresh">Aktualisieren</button>
+            </div>
+          </div>
+          <p id="witnessReason" class="v61-reason" role="status" aria-live="polite" hidden></p>
+          <div class="defense-telemetry" role="group" data-i18n-aria="v61.v6.witness.rail">
+            <div class="telemetry-group">
+              <h3 class="telemetry-title" data-i18n="v61.v6.witness.group.state">STATE</h3>
+              <dl class="telemetry-list">
+                <div class="telemetry-row"><dt data-i18n="v61.v6.witness.kpi.enabled">Aktiviert</dt><dd><span id="witnessEnabledKpi" class="status-pill muted">—</span></dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.v6.witness.kpi.mode">Modus</dt><dd id="witnessModeKpi">—</dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.v6.witness.kpi.wired">Verdrahtet</dt><dd><span id="witnessWiredKpi" class="status-pill muted">—</span></dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.v6.witness.kpi.healthy">Gesund</dt><dd><span id="witnessHealthyKpi" class="status-pill muted">—</span></dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.v6.witness.kpi.degraded">Degradiert</dt><dd><span id="witnessDegradedKpi" class="status-pill muted">—</span></dd></div>
+              </dl>
+              <p class="telemetry-note" data-i18n="v61.v6.witness.note.state">„Gesund“ verlangt aktiviert, verdrahtet und nicht degradiert.</p>
+            </div>
+            <div class="telemetry-group">
+              <h3 class="telemetry-title" data-i18n="v61.v6.witness.group.trust">TRUST</h3>
+              <dl class="telemetry-list">
+                <div class="telemetry-row"><dt data-i18n="v61.v6.witness.kpi.challenge">Challenge offen</dt><dd><span id="witnessChallengeKpi" class="status-pill muted">—</span></dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.v6.witness.kpi.equivocation">Equivocation</dt><dd><span id="witnessEquivocationKpi" class="status-pill muted">—</span></dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.v6.witness.kpi.quote">Quote-Art</dt><dd id="witnessQuoteKpi" class="fs-xs">—</dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.v6.witness.kpi.keyBinding">Key-Binding</dt><dd id="witnessKeyBindingKpi" class="fs-xs">—</dd></div>
+              </dl>
+              <p class="telemetry-note" data-i18n="v61.v6.witness.note.trust">Equivocation wird als Widerspruch zweier witnessbarer Aussagen gemeldet.</p>
+            </div>
+            <div class="telemetry-group">
+              <h3 class="telemetry-title" data-i18n="v61.v6.witness.group.outbox">OUTBOX</h3>
+              <dl class="telemetry-list">
+                <div class="telemetry-row"><dt data-i18n="v61.v6.witness.kpi.depth">Tiefe</dt><dd id="witnessOutboxDepthKpi" class="font-mono">—</dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.v6.witness.kpi.bytes">Bytes</dt><dd id="witnessOutboxBytesKpi" class="font-mono">—</dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.v6.witness.kpi.full">Voll</dt><dd><span id="witnessOutboxFullKpi" class="status-pill muted">—</span></dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.v6.witness.kpi.oldest">Ältester</dt><dd id="witnessOutboxOldest" class="font-mono fs-xs">—</dd></div>
+              </dl>
+              <p class="telemetry-note" data-i18n="v61.v6.witness.note.outbox">Eine volle Outbox verhindert neue Checkpoints, nicht die Signatur selbst.</p>
+            </div>
+          </div>
+          <p id="witnessActionResult" class="v61-reason" role="status" aria-live="polite" hidden></p>
+          <article class="glass-panel panel-padded v61-panel">
+            <div class="section-head">
+              <p class="eyebrow" data-i18n="v61.v6.witness.checkpointKicker">SIGNED CHECKPOINT</p>
+              <h3 data-i18n="v61.v6.witness.checkpointTitle">Lokaler Checkpoint</h3>
+              <p class="fs-xs text-muted" data-i18n="v61.v6.witness.checkpointHint">Erzeugt nur einen lokalen Checkpoint. Erst der Push verlässt den Host.</p>
+            </div>
+            <dl class="v61-kv-grid v61-v6-checkpoint">
+              <div class="v61-kv"><dt data-i18n="v61.v6.witness.kpi.checkpointId">ID</dt><dd id="witnessCheckpointId" class="v61-mono">—</dd></div>
+              <div class="v61-kv"><dt data-i18n="v61.v6.witness.kpi.epoch">Epoch</dt><dd id="witnessCheckpointEpoch" class="v61-mono">—</dd></div>
+              <div class="v61-kv"><dt data-i18n="v61.v6.witness.kpi.sequence">Sequenz</dt><dd id="witnessCheckpointSeq" class="v61-mono">—</dd></div>
+              <div class="v61-kv"><dt data-i18n="v61.v6.witness.kpi.headHash">Head-Hash</dt><dd id="witnessCheckpointHash" class="v61-mono">—</dd></div>
+              <div class="v61-kv"><dt data-i18n="v61.v6.witness.kpi.createdAt">Erstellt</dt><dd id="witnessCheckpointAt" class="v61-mono">—</dd></div>
+            </dl>
+            <dl class="v61-kv-grid v61-v6-checkpoint mt-sm">
+              <div class="v61-kv"><dt data-i18n="v61.v6.witness.kpi.ackSeq">Witness-Sequenz</dt><dd id="witnessAckSeq" class="v61-mono">—</dd></div>
+              <div class="v61-kv"><dt data-i18n="v61.v6.witness.kpi.ackId">Bestätigter Checkpoint</dt><dd id="witnessAckId" class="v61-mono">—</dd></div>
+              <div class="v61-kv"><dt data-i18n="v61.v6.witness.kpi.ackAt">Bestätigt am</dt><dd id="witnessAckAt" class="v61-mono">—</dd></div>
+            </dl>
+            <p id="witnessEquivocationDetail" class="v61-v6-equivocation">—</p>
+            <div class="v61-v6-actions mt-sm">
+              <button id="witnessCheckpointBtn" class="button button-secondary" type="button" data-i18n="v61.v6.witness.checkpoint">Checkpoint erzeugen</button>
+              <button id="witnessPushBtn" class="button button-danger" type="button" data-i18n="v61.v6.witness.push">Checkpoint pushen</button>
+            </div>
+            <p class="v61-v6-action-note" data-i18n="v61.v6.witness.actionsNote">Der Push ist der einzige Weg, auf dem Evidenz den Host verlässt. Die Rate ist serverseitig begrenzt.</p>
+          </article>
+        </section>
+
+        <!-- /V6.1 V6 PANELS -->
+
+        <!-- SETUP WIZARD & AGENTS.md VIEW -->
+        <section class="view v61-view" data-page="setup-wizard" aria-labelledby="setupWizardHeading" hidden>
+          <div class="view-context-bar v61-context glass-panel">
+            <div>
+              <p class="eyebrow m-0" data-i18n="wizard.eyebrow">ONBOARDING // ASSISTENT &amp; AGENTS.MD</p>
+              <h2 id="setupWizardHeading" data-i18n="wizard.title">Geführter Einrichtungsassistent</h2>
+              <p class="view-context-desc" data-i18n="wizard.desc">Schritt-für-Schritt Einrichtung aller GeDefense-Module inkl. Beispielkonfigurationen und sicherer AGENTS.md-Anleitung für lokale CLI-Agenten.</p>
+            </div>
+            <div class="view-context-actions v61-actions">
+              <button id="wizardResetBannerBtn" class="button button-quiet" type="button" data-i18n="wizard.resetBanner">Banner einblenden</button>
+              <button id="wizardRefreshBtn" class="button button-quiet" type="button" data-i18n="v61.edge.refresh">Aktualisieren</button>
+              <button id="wizardDownloadAgentsTopBtn" class="button button-primary" type="button" data-i18n="wizard.downloadAgents">AGENTS.md herunterladen</button>
+            </div>
+          </div>
+          <div class="wizard-shell">
+            <nav id="wizardStepsNav" class="glass-panel wizard-steps-nav" aria-label="Einrichtungsschritte"></nav>
+            <article id="wizardMainCard" class="glass-panel panel-padded wizard-main"></article>
           </div>
         </section>
 
@@ -2781,6 +3912,33 @@
        transport in use, where the key lives and what authorising it grants. The right
        plane carries the single action. Both planes answer a question an operator
        genuinely has at a trust boundary; nothing here is decorative. -->
+  <!-- Shared typed-confirmation dialog for the V6.1 surfaces. The title, body and
+       required phrase are filled per action; the labels below stay static. -->
+  <dialog id="v61ConfirmDialog" class="modal-dialog v61-dialog">
+    <form id="v61ConfirmForm" class="modal-content" autocomplete="off">
+      <div class="modal-header">
+        <h3 id="v61ConfirmTitle" class="modal-title">—</h3>
+        <p id="v61ConfirmBody" class="modal-subtitle">—</p>
+      </div>
+      <div class="v61-dialog-body">
+        <p id="v61ConfirmDetail" class="v61-dialog-detail" hidden></p>
+        <label id="v61ConfirmPhraseWrap">
+          <span data-i18n="v61.v6.confirm.phraseLabel">Bestätigungsphrase eingeben</span>
+          <input id="v61ConfirmPhraseInput" class="v61-dialog-phrase" type="text" autocomplete="off" spellcheck="false" data-i18n-placeholder="v61.v6.confirm.phrasePlaceholder" placeholder="—">
+        </label>
+        <label id="v61ConfirmReasonWrap">
+          <span data-i18n="v61.v6.confirm.reasonLabel">Begründung (min. 8 Zeichen)</span>
+          <input id="v61ConfirmReasonInput" type="text" autocomplete="off" spellcheck="false" maxlength="240" data-i18n-placeholder="v61.v6.confirm.reasonPlaceholder" placeholder="Grund für das Audit-Log">
+        </label>
+        <p id="v61ConfirmError" class="v61-dialog-error" role="alert" hidden></p>
+        <div class="modal-action-row">
+          <button id="v61ConfirmCancel" class="button button-quiet" type="button" data-i18n="v61.v6.confirm.cancel">Abbrechen</button>
+          <button id="v61ConfirmSubmit" class="button button-danger" type="submit" data-i18n="v61.v6.confirm.submit">Bestätigen</button>
+        </div>
+      </div>
+    </form>
+  </dialog>
+
   <dialog id="authDialog" class="modal-dialog auth-dialog">
     <div class="auth-plane">
       <section class="auth-identity" aria-labelledby="authTitle">

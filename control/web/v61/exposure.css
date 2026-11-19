@@ -1,0 +1,41 @@
+/* STATUS: DIAMANT VGT SUPREME */
+/* Module A — web exposure & posture. Only the rules this view needs; the shared
+   surface lives in v61/base.css. */
+
+.v61-exposure-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.v61-exposure-table-wide { min-width: 860px; }
+
+/* The advisory column pair is the part an operator compares across rows, so it
+   gets the room while the identity columns stay narrow. */
+.v61-exposure-table-wide th:nth-child(3),
+.v61-exposure-table-wide td:nth-child(3) { min-width: 240px; }
+.v61-exposure-table-wide th:nth-child(4),
+.v61-exposure-table-wide td:nth-child(4) { min-width: 260px; }
+
+.v61-exposure-path {
+  display: inline-block;
+  max-width: 44ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+  white-space: nowrap;
+}
+
+.v61-exposure-cve-count {
+  font-variant-numeric: tabular-nums;
+  font-weight: 720;
+}
+
+@media (max-width: 900px) {
+  .v61-exposure-table-wide { min-width: 720px; }
+  .v61-exposure-table-wide th:nth-child(3),
+  .v61-exposure-table-wide td:nth-child(3),
+  .v61-exposure-table-wide th:nth-child(4),
+  .v61-exposure-table-wide td:nth-child(4) { min-width: 0; }
+}

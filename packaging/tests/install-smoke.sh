@@ -78,6 +78,7 @@ readonly REQUIRED_FILES=(
   packaging/systemd/gedefense-access.service.in
   packaging/systemd/gedefense-bpffs.service
   packaging/systemd/gedefense-core.service
+  packaging/systemd/gedefense-capture-helper.service
   packaging/systemd/gedefense-control.service
   packaging/systemd/gedefense-cell-helper.service
   packaging/systemd/gedefense-provision.service
@@ -118,7 +119,7 @@ else
 fi
 
 provision_unit="${SOURCE_ROOT}/packaging/systemd/gedefense-provision.service"
-assert_contains "$provision_unit" 'Before=gedefense-bpffs.service gedefense-core.service gedefense-control.service gedefense-access.service gedefense-cell-helper.service' "provision unit must run before every GeDefense service"
+assert_contains "$provision_unit" 'Before=gedefense-bpffs.service gedefense-core.service gedefense-capture-helper.service gedefense-control.service gedefense-access.service gedefense-cell-helper.service' "provision unit must run before every GeDefense service"
 assert_contains "$provision_unit" 'ConditionPathExists=/opt/vgt/gedefense/current/bin/gedefense-access' "provision unit must be conditioned on the installed release"
 assert_contains "$provision_unit" '/usr/libexec/gedefense/gedefense-provision' "provision unit must execute the packaged provisioning contract"
 
@@ -317,6 +318,7 @@ for needle in \
   'sysusers/vgt-gedefense.conf' \
   'install-smoke.sh' \
   'dist/gedefense-cell-helper' \
+  'packaging/systemd/gedefense-capture-helper.service' \
   'packaging/systemd/gedefense-cell-helper.service' \
   'packaging/templates/parser-profiles.conf' \
   '-o root -g gedefense "${srcdir}/gedefense.packaged.toml"' \
@@ -326,6 +328,7 @@ done
 
 hook="${SOURCE_ROOT}/packaging/pacman/gedefense-provision.hook"
 assert_contains "$hook" 'systemctl enable gedefense-provision.service' "pacman hook must enable the provisioning unit"
+assert_contains "$hook" 'gedefense-capture-helper.service' "pacman hook must enable the isolated capture helper unit"
 assert_contains "$hook" 'gedefense-cell-helper.service' "pacman hook must enable the parser-cell helper unit"
 assert_contains "$hook" 'When=PostTransaction' "pacman hook must run after the package transaction"
 
@@ -398,6 +401,10 @@ sed \
   > "${stage}/usr/lib/systemd/system/gedefense-core.service"
 sed \
   -e "s#/opt/vgt/gedefense/current#${stage}/opt/vgt/gedefense/current#g" \
+  "${SOURCE_ROOT}/packaging/systemd/gedefense-capture-helper.service" \
+  > "${stage}/usr/lib/systemd/system/gedefense-capture-helper.service"
+sed \
+  -e "s#/opt/vgt/gedefense/current#${stage}/opt/vgt/gedefense/current#g" \
   "${SOURCE_ROOT}/packaging/systemd/gedefense-control.service" \
   > "${stage}/usr/lib/systemd/system/gedefense-control.service"
 sed \
@@ -421,7 +428,7 @@ if grep -q '@RELEASE@' "${stage}/usr/lib/systemd/system/gedefense-cell-helper.se
 else
   pass "parser-cell helper unit renders the @RELEASE@ placeholder"
 fi
-for unit in gedefense-bpffs.service gedefense-core.service gedefense-control.service \
+for unit in gedefense-bpffs.service gedefense-core.service gedefense-capture-helper.service gedefense-control.service \
   gedefense-provision.service gedefense-access.service gedefense-cell-helper.service; do
   assert_unit_syntax "${stage}/usr/lib/systemd/system/${unit}"
 done

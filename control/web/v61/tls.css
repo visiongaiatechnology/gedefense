@@ -1,0 +1,58 @@
+/* STATUS: DIAMANT VGT SUPREME */
+/* Module C — TLS/ALPN sensor and control-storm budget. Shared: v61/base.css. */
+
+.v61-tls-storm {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.9fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.v61-tls-storm-copy h3 { margin: 6px 0 4px; }
+
+/* The predicate is shown as the rule it is: four evaluated values in one row,
+   each labelled, so an operator can recompute the verdict. */
+.v61-tls-predicate {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(120px, 100%), 1fr));
+  gap: 1px;
+  border: 1px solid rgba(82, 199, 255, 0.12);
+  border-radius: var(--radius-sm);
+  background: rgba(82, 199, 255, 0.12);
+  overflow: hidden;
+}
+
+.v61-tls-predicate div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 9px 11px;
+  background: rgba(3, 12, 23, 0.86);
+}
+
+.v61-tls-predicate dt {
+  margin: 0;
+  color: var(--muted-dark);
+  font: 700 0.54rem/1.3 ui-monospace, SFMono-Regular, Consolas, monospace;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.v61-tls-predicate dd {
+  margin: 0;
+  color: var(--text-bright);
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.v61-tls-alpn { grid-template-columns: repeat(auto-fit, minmax(min(140px, 100%), 1fr)); }
+
+.v61-tls-flows { min-width: 900px; }
+.v61-tls-flows th,
+.v61-tls-flows td { white-space: nowrap; }
+.v61-tls-handshakes { min-width: 820px; }
+
+@media (max-width: 900px) {
+  .v61-tls-storm { grid-template-columns: 1fr; }
+}

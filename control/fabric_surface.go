@@ -304,6 +304,14 @@ var fabricModuleSnapshotOrder = []string{
 	// deterministic export/search/drift surface. It carries no secret: the export
 	// contains the transport file paths and bounds, never a token or a key body.
 	"witness",
+	// 6.1.0: every administrable namespace participates in export, import,
+	// search and drift. Before 6.1.0 the StyX, Titan exec and Lockdown namespaces
+	// were missing here, so a signed bundle silently omitted three operator-visible
+	// subsystems and drift could not see their divergence from the running engine.
+	"styx", "titan_exec", "lockdown",
+	// Modules A–E: the new 6.1.0 namespaces. All five are editable from the
+	// dashboard since 6.1.0 and therefore must be exportable/diffable too.
+	"web_exposure", "worker_guard", "tls_sensor", "lpe_guard", "edge_proxy",
 }
 
 // fabricRevisionDiff diffs two full revisions module by module, keeping only the

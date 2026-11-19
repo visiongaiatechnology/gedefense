@@ -1,0 +1,54 @@
+[Unit]
+Description=VGT GeDefense Isolated Capture Helper (AF_PACKET / CN_PROC)
+After=network.target
+Before=gedefense-control.service
+StartLimitIntervalSec=120
+StartLimitBurst=4
+
+[Service]
+Type=notify
+NotifyAccess=main
+User=gedefense
+Group=gedefense
+RuntimeDirectory=vgt-gedefense-capture
+RuntimeDirectoryMode=0700
+RuntimeDirectoryPreserve=yes
+# FIND-008 (VGT-AUDIT-20261118-GD61-R2): isolates the two network capabilities
+# needed by Module C (AF_PACKET via CAP_NET_RAW) and Module B's CN_PROC fallback
+# (CAP_NET_ADMIN) outside the control plane. The helper has no AF_INET/AF_INET6,
+# IPAddressDeny=any, and zero access to /etc/vgt/gedefense, /var/lib/vgt/gedefense,
+# or /run/vgt-gedefense (core/cell-helper sockets).
+CapabilityBoundingSet=CAP_NET_RAW CAP_NET_ADMIN
+AmbientCapabilities=CAP_NET_RAW CAP_NET_ADMIN
+ExecStart=/opt/vgt/gedefense/current/bin/gedefense-control --capture-helper --capture-helper-socket=/run/vgt-gedefense-capture/capture.sock
+Restart=on-failure
+RestartSec=3s
+TimeoutStartSec=30s
+TimeoutStopSec=15s
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectClock=true
+ProtectHostname=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX AF_NETLINK AF_PACKET
+IPAddressDeny=any
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+ReadOnlyPaths=/opt/vgt/gedefense/current
+ReadWritePaths=/run/vgt-gedefense-capture
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

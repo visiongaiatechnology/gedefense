@@ -30,7 +30,7 @@ import (
 	"time"
 )
 
-const version = "6.0.3-access"
+const version = "6.1.0-access"
 const cookieName = "__Host-vgt_gedefense_session"
 const csrfCookieName = "vgt_gedefense_login_csrf"
 
@@ -580,11 +580,39 @@ func (g *gateway) removed(w http.ResponseWriter, r *http.Request) {
 	http.NotFound(w, r)
 }
 
+// stripHopByHopHeaders removes the RFC 7230 hop-by-hop set and, more
+// importantly, every header the client nominated in Connection. Go's
+// ReverseProxy performs the same removal after Director returns; if the
+// nomination survived until then it would delete the attested Authorization and
+// gateway-session headers this function's caller sets afterwards (FIND-005).
+func stripHopByHopHeaders(header http.Header) {
+	for _, value := range header.Values("Connection") {
+		for _, token := range strings.Split(value, ",") {
+			if name := strings.TrimSpace(token); name != "" {
+				header.Del(name)
+			}
+		}
+	}
+	for _, name := range []string{
+		"Connection", "Proxy-Connection", "Keep-Alive", "Proxy-Authenticate",
+		"Proxy-Authorization", "Te", "Trailer", "Transfer-Encoding", "Upgrade",
+	} {
+		header.Del(name)
+	}
+}
+
 func (g *gateway) newProxy() *httputil.ReverseProxy {
 	proxy := httputil.NewSingleHostReverseProxy(g.backend)
 	original := proxy.Director
 	proxy.Director = func(r *http.Request) {
 		original(r)
+		// FIND-005 (VGT-AUDIT-2026-11-19): strip hop-by-hop headers and every
+		// header named by the client's Connection header *before* the attested
+		// backend headers are set. Go's ReverseProxy removes Connection-named
+		// headers after Director returns; without this, a client could nominate
+		// Authorization or the gateway-session header for removal and collapse
+		// every request into one backend rate bucket.
+		stripHopByHopHeaders(r.Header)
 		// Trust-boundary reset: the internal backend must never see browser origin,
 		// public cookies, or public forwarding metadata.
 		r.Host = g.backend.Host

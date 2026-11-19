@@ -4,13 +4,23 @@
 //!
 //! 1. architecture check: `AUDIT_ARCH_X86_64` is mandatory, any other ABI is
 //!    killed with `SECCOMP_RET_KILL_PROCESS` (fail-closed, no ptrace tricks);
-//! 2. deny list from spec §4.4 returns `EPERM` (never `ENOSYS`, so callers see
+//! 2. **x32 ABI guard**: a syscall number carrying `__X32_SYSCALL_BIT`
+//!    (`0x4000_0000`) is refused with `EPERM` before any deny/socket rule.
+//!    Without it `syscall(0x4000_0000 | nr)` addresses a *different* syscall
+//!    table entry than the bare `nr` and would slip past every `JEQ` rule;
+//! 3. deny list from spec §4.4 returns `EPERM` (never `ENOSYS`, so callers see
 //!    a hard refusal instead of silent fallbacks);
-//! 3. `socket(2)`/`socketpair(2)` are allowed only for `AF_UNIX`
+//! 4. `socket(2)`/`socketpair(2)` are allowed only for `AF_UNIX`
 //!    (`args[0]` is a scalar and therefore inspectable in classic BPF);
-//! 4. everything else is allowed.  The remaining confinement is provided by
+//! 5. everything else is allowed.  The remaining confinement is provided by
 //!    the private mount namespace/tmpfs root, the empty network namespace,
 //!    zero capabilities, `no_new_privs` and `PR_SET_PDEATHSIG` (sandbox.rs).
+//!
+//! `EPERM` (not `KILL_PROCESS`) is chosen for the x32 guard: it is the same
+//! hard refusal the deny list already uses, a parser that accidentally issues
+//! an x32 call stays observable instead of being killed, and the whole x32 ABI
+//! becomes unusable, which is exactly the fail-closed outcome a filter designed
+//! for the x86_64 ABI needs.
 //!
 //! # Documented classic-BPF limitation
 //!
@@ -31,6 +41,10 @@ use crate::types::ErrorCode;
 
 /// `AUDIT_ARCH_X86_64` (linux/audit.h).
 pub const AUDIT_ARCH_X86_64: u32 = 0xC000_003E;
+/// `__X32_SYSCALL_BIT` (arch/x86/include/uapi/asm/unistd.h): set on every
+/// syscall number issued through the x32 ABI.  Such numbers index a separate
+/// syscall table, so they must be rejected before the `JEQ` deny list runs.
+pub const X32_SYSCALL_BIT: u32 = 0x4000_0000;
 
 const SECCOMP_SET_MODE_FILTER: libc::c_uint = 1;
 const RET_KILL_PROCESS: u32 = 0x8000_0000;
@@ -39,9 +53,10 @@ const RET_ALLOW: u32 = 0x7fff_0000;
 /// `BPF_MAXINSNS` is not exposed consistently by libc; pin the kernel value.
 const MAX_INSNS: usize = 4096;
 
-// Classic BPF opcodes (linux/filter.h): LD|W|ABS, JMP|JEQ|K, RET|K.
+// Classic BPF opcodes (linux/filter.h): LD|W|ABS, JMP|JEQ|K, JMP|JSET|K, RET|K.
 const LD_W_ABS: libc::c_ushort = 0x20;
 const JMP_JEQ_K: libc::c_ushort = 0x15;
+const JMP_JSET_K: libc::c_ushort = 0x45;
 const RET_K: libc::c_ushort = 0x06;
 
 /// Offsets inside `struct seccomp_data` (linux/seccomp.h).
@@ -106,13 +121,18 @@ pub fn build_program() -> Result<Vec<libc::sock_filter>, ErrorCode> {
         return Err(ErrorCode::SandboxUnavailable);
     }
     let extra = DENY.len() + EXTRA_DENY.len();
-    let mut p: Vec<libc::sock_filter> = Vec::with_capacity(4 + 2 * extra + 7);
+    let mut p: Vec<libc::sock_filter> = Vec::with_capacity(6 + 2 * extra + 7);
     // arch guard: [0] load arch, [1] match => skip kill, else [2] kill.
     p.push(stmt(LD_W_ABS, OFF_ARCH));
     p.push(jump(JMP_JEQ_K, AUDIT_ARCH_X86_64, 1, 0));
     p.push(stmt(RET_K, RET_KILL_PROCESS));
     // syscall number.
     p.push(stmt(LD_W_ABS, OFF_NR));
+    // x32 ABI guard: any number with __X32_SYSCALL_BIT set indexes the x32
+    // syscall table and would bypass every JEQ rule below, so it is denied
+    // before the deny list.  jt=0 falls into the EPERM, jf=1 skips it.
+    p.push(jump(JMP_JSET_K, X32_SYSCALL_BIT, 0, 1));
+    p.push(stmt(RET_K, RET_ERRNO | libc::EPERM as u32));
     for &(nr, _) in DENY.iter().chain(EXTRA_DENY.iter()) {
         // equal => fall through to the RET, not equal => skip it.
         p.push(jump(JMP_JEQ_K, nr as u32, 0, 1));
@@ -179,6 +199,10 @@ mod tests {
                     let skip = if a == ins.k { ins.jt as usize } else { ins.jf as usize };
                     pc += 1 + skip;
                 }
+                JMP_JSET_K => {
+                    let skip = if a & ins.k != 0 { ins.jt as usize } else { ins.jf as usize };
+                    pc += 1 + skip;
+                }
                 RET_K => return ins.k,
                 other => panic!("unexpected BPF opcode {other:#x}"),
             }
@@ -196,7 +220,7 @@ mod tests {
         for (x, y) in a.iter().zip(b.iter()) {
             assert_eq!((x.code, x.jt, x.jf, x.k), (y.code, y.jt, y.jf, y.k));
         }
-        let expected = 4 + 2 * (DENY.len() + EXTRA_DENY.len()) + 7;
+        let expected = 6 + 2 * (DENY.len() + EXTRA_DENY.len()) + 7;
         assert_eq!(a.len(), expected);
         assert!(a.len() <= 512 && a.len() < MAX_INSNS);
         // every jump target must stay inside the program (u8 range is fine).
@@ -235,6 +259,44 @@ mod tests {
         assert_eq!(libc::SYS_clone3, 435);
         assert_eq!(libc::SYS_socket, 41);
         assert_eq!(libc::SYS_open_by_handle_at, 304);
+    }
+
+    #[test]
+    fn x32_syscall_numbers_are_rejected_before_the_deny_and_socket_rules() {
+        let p = build_program().unwrap();
+        // The x32 guard is instruction [4], directly after `LD nr` and before
+        // the first deny rule (which starts at [6]).
+        assert_eq!((p[3].k, p[4].code, p[4].k), (OFF_NR, JMP_JSET_K, X32_SYSCALL_BIT));
+        let x32 = |nr: libc::c_long| nr as u32 | X32_SYSCALL_BIT;
+        // x32 variants of deny-listed and socket-pinned syscalls are refused,
+        // even with an AF_UNIX domain argument that the 64-bit path allows.
+        for nr in [
+            libc::SYS_ptrace,
+            libc::SYS_bpf,
+            libc::SYS_io_uring_setup,
+            libc::SYS_clone3,
+            libc::SYS_socket,
+            libc::SYS_socketpair,
+        ] {
+            assert_eq!(
+                eval(&p, AUDIT_ARCH_X86_64, x32(nr), libc::AF_UNIX as u64),
+                EPERM,
+                "x32 variant of syscall {nr} escaped the filter"
+            );
+        }
+        // The guard rejects *every* x32-numbered syscall, not just the list;
+        // the AF_INET socket variants stay refused regardless of args[0].
+        assert_eq!(eval(&p, AUDIT_ARCH_X86_64, x32(libc::SYS_read), 0), EPERM);
+        assert_eq!(eval(&p, AUDIT_ARCH_X86_64, x32(libc::SYS_openat), 0), EPERM);
+        assert_eq!(eval(&p, AUDIT_ARCH_X86_64, x32(libc::SYS_socket), libc::AF_INET as u64), EPERM);
+        assert_eq!(eval(&p, AUDIT_ARCH_X86_64, x32(libc::SYS_socketpair), libc::AF_INET as u64), EPERM);
+        // Normal x86_64 numbers keep their exact previous behaviour.
+        assert_eq!(eval(&p, AUDIT_ARCH_X86_64, libc::SYS_read as u32, 0), ALLOW);
+        assert_eq!(eval(&p, AUDIT_ARCH_X86_64, libc::SYS_socket as u32, libc::AF_UNIX as u64), ALLOW);
+        assert_eq!(eval(&p, AUDIT_ARCH_X86_64, libc::SYS_socket as u32, libc::AF_INET as u64), EPERM);
+        assert_eq!(eval(&p, AUDIT_ARCH_X86_64, libc::SYS_ptrace as u32, 0), EPERM);
+        // A foreign ABI is still killed before the x32 guard runs.
+        assert_eq!(eval(&p, 0xC000_00B7, x32(libc::SYS_read), 0), RET_KILL_PROCESS);
     }
 
     #[test]

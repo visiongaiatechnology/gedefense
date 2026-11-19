@@ -22,6 +22,9 @@ pub use titan_exec::*;
 mod lockdown;
 pub use lockdown::*;
 
+mod worker_guard;
+pub use worker_guard::*;
+
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct DeceptionAccessEvent {

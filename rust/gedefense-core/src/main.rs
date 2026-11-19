@@ -12,7 +12,7 @@ use aya::{
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use gedefense_common::{
     decode_ingress_event, decode_styx_flow_event, decode_titan_exec_event, CellLsmDenyEvent,
-    EgressDropEvent, ExecEvent, ACTION_DROP, CELL_LSM_DENY_NON_UNIX_SOCKET,
+    EgressDropEvent, ExecEvent, ACTION_DROP, CELL_LSM_DENY_ALL_KNOWN,
     EXEC_COMM_BYTES, NETWORK_ADDRESS_BYTES, NETWORK_FAMILY_V4, NETWORK_FAMILY_V6,
     STYX_FLOW_EVENT_WIRE_BYTES, STYX_MODE_OFF, TITAN_EXEC_EVENT_WIRE_BYTES,
     TITAN_EXEC_MODE_OFF, TITAN_EXEC_OFFSETS_ABI, TITAN_EXEC_OFFSETS_MAGIC, TITAN_EXEC_SCOPE_FLAG_JIT_ALLOW,
@@ -32,6 +32,7 @@ mod process_control;
 mod quarantine;
 mod styx_flow;
 mod titan_exec;
+mod worker_guard;
 use canary::{collect_canary_roots, CanaryBroker};
 use malware::{handle_user_scan, MalwareScanner};
 #[cfg(test)]
@@ -53,7 +54,7 @@ use std::{
     },
     path::Path,
     sync::{
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         Arc, Mutex,
     },
     time::{Duration, SystemTime, UNIX_EPOCH},
@@ -234,6 +235,10 @@ pub(crate) struct LockdownShared {
     pub(crate) word: Arc<dyn lockdown::LockdownWordStore>,
     events: Mutex<LockdownEventQueue>,
     policy: Mutex<UeventPolicy>,
+    /// Set once a hotplug auto-drop wrote `LOCKDOWN_FLAG_DROP_ALL`; keeps the
+    /// flag owned by the shared state instead of only by the kernel word, so a
+    /// later phase refresh cannot silently clear the drop.
+    auto_drop: AtomicBool,
     uevent_events: AtomicU64,
     usb_blocks: AtomicU64,
     tb_blocks: AtomicU64,
@@ -245,6 +250,7 @@ impl LockdownShared {
             word,
             events: Mutex::new(LockdownEventQueue::default()),
             policy: Mutex::new(policy),
+            auto_drop: AtomicBool::new(false),
             uevent_events: AtomicU64::new(0),
             usb_blocks: AtomicU64::new(0),
             tb_blocks: AtomicU64::new(0),
@@ -293,19 +299,55 @@ impl LockdownShared {
             .unwrap_or(0)
     }
     /// Immediate kernel network drop after a blocked hotplug (§2 auto flag).
+    ///
+    /// The drop is tracked in `auto_drop` and merged into the flags already
+    /// persisted for the current epoch: an operator phase refresh (or another
+    /// concurrent writer) no longer erases `DROP_ALL`, and this write no longer
+    /// erases `USB_LOCKED`/`HARDENING_APPLIED`.
     pub(crate) fn auto_network_drop(&self) -> Result<(), &'static str> {
         let policy = self.policy();
         if !policy.auto_network_drop {
             return Ok(());
         }
-        let flags = LOCKDOWN_FLAG_DROP_ALL
-            | if policy.allow_loopback { LOCKDOWN_FLAG_ALLOW_LOOPBACK } else { 0 };
+        let mut flags = self
+            .word
+            .read()
+            .ok()
+            .and_then(decode_lockdown_word)
+            .filter(|word| word.epoch == policy.epoch)
+            .map(|word| word.flags)
+            .unwrap_or(0);
+        flags |= LOCKDOWN_FLAG_DROP_ALL;
+        if policy.allow_loopback {
+            flags |= LOCKDOWN_FLAG_ALLOW_LOOPBACK;
+        }
+        // Fail-secure: the drop is claimed before the write, so a failed or
+        // unverified write is re-applied by the next `refresh_word()` instead
+        // of being forgotten.  The caller still observes the error.
+        self.auto_drop.store(true, Ordering::SeqCst);
         let word = encode_lockdown_word(policy.epoch, LOCKDOWN_MODE_ARMED, flags);
         self.word.write(word).map_err(|_| "state-map-write-failed")?;
         match decode_lockdown_word(self.word.read().map_err(|_| "state-map-read-failed")?) {
-            Some(decoded) if decoded.epoch == policy.epoch && decoded.flags == flags => Ok(()),
+            Some(decoded)
+                if decoded.epoch == policy.epoch && decoded.flags & LOCKDOWN_FLAG_DROP_ALL != 0 =>
+            {
+                Ok(())
+            }
             _ => Err("state-map-readback-mismatch"),
         }
+    }
+    /// `true` while a hotplug auto-drop owns `LOCKDOWN_FLAG_DROP_ALL`.
+    pub(crate) fn auto_drop(&self) -> bool {
+        self.auto_drop.load(Ordering::SeqCst)
+    }
+    /// Releases the auto-drop ownership (CLEAR, a new epoch, explicit NET off).
+    pub(crate) fn clear_auto_drop(&self) {
+        self.auto_drop.store(false, Ordering::SeqCst);
+    }
+    /// Marks an already verified word drop as auto-drop ownership discovered
+    /// during startup re-arm, so the next refresh does not clear it.
+    pub(crate) fn mark_auto_drop(&self) {
+        self.auto_drop.store(true, Ordering::SeqCst);
     }
 }
 
@@ -1757,6 +1799,9 @@ struct KernelCore {
     // Point 5 (§5/§6): lockdown state machine (word store + net counters are
     // owned by it; the maps are mandatory above so it can always verify).
     lockdown: lockdown::LockdownCore,
+    // 6.1.0 Module B: worker crash-storm sensor (mandatory maps, optional
+    // tracepoint attach reported honestly through WORKER_GUARD_STATUS).
+    worker_guard: worker_guard::WorkerGuardCore,
 }
 
 impl KernelCore {
@@ -2157,6 +2202,10 @@ impl KernelCore {
                 witness_passes: lockdown_witness,
             }),
         )?;
+        // 6.1.0 Module B: takes its mandatory maps and attaches the signal
+        // tracepoint when the kernel permits it. An unavailable tracepoint is
+        // reported as `attached=0`, never as enforcement.
+        let worker_guard = worker_guard::WorkerGuardCore::load(&mut ebpf)?;
         Ok(Self {
             _ebpf: ebpf,
             exec_events,
@@ -2202,6 +2251,7 @@ impl KernelCore {
             styx_flow_rejected: 0,
             titan_exec,
             lockdown,
+            worker_guard,
         })
     }
 
@@ -2759,7 +2809,10 @@ fn parse_cell_cgroup_id(value: &str) -> Result<u64, BoxError> {
 
 fn parse_cell_policy_flags(value: &str) -> Result<u8, BoxError> {
     let parsed = value.parse::<u8>()?;
-    if parsed != CELL_LSM_DENY_NON_UNIX_SOCKET {
+    // 6.1.0 Module D widens the policy word with the LPE deny bits. Zero and
+    // unknown bits stay rejected; every pre-6.1.0 value (1) keeps its exact
+    // meaning.
+    if parsed == 0 || parsed & !CELL_LSM_DENY_ALL_KNOWN != 0 {
         return Err("Gaia Cell LSM policy flags are invalid".into());
     }
     Ok(parsed)
@@ -3186,6 +3239,14 @@ fn process_command(
         ["TITAN_EXEC_SCOPE_DEL", cgroup] => core.titan_exec.scope_del(cgroup),
         ["TITAN_EXEC_EVENTS"] => core.titan_exec.take_events(),
         ["TITAN_EXEC_HEALTH"] => core.titan_exec.health(),
+        // 6.1.0 Module B: worker crash-storm sensor command surface.
+        ["WORKER_GUARD_SET", state] => core.worker_guard.set_enabled(state),
+        ["WORKER_GUARD_COMM_ADD", comm] => core.worker_guard.comm_add(comm),
+        ["WORKER_GUARD_COMM_DEL", comm] => core.worker_guard.comm_del(comm),
+        ["WORKER_GUARD_UID_ADD", uid] => core.worker_guard.uid_add(uid),
+        ["WORKER_GUARD_UID_DEL", uid] => core.worker_guard.uid_del(uid),
+        ["WORKER_GUARD_EVENTS"] => core.worker_guard.take_events(),
+        ["WORKER_GUARD_STATUS"] => core.worker_guard.status(),
         ["MALWARE_EVENTS"] => scanner.take_events(),
         ["CLEAR_BLOCKLIST"] => core.clear_blocklist().map(|_| "cleared".into()),
         ["VERIFY_EMPTY"] if core.blocked.is_empty() => Ok("empty".into()),
@@ -3583,6 +3644,11 @@ fn main() -> Result<(), BoxError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    // 6.1.0 policy-bit expectations are test-only: the production path only
+    // needs the aggregate mask, so these stay out of the shipped import set.
+    use gedefense_common::{
+        CELL_LSM_DENY_AF_PACKET, CELL_LSM_DENY_NON_UNIX_SOCKET, CELL_LSM_DENY_RDS,
+    };
 
     #[test]
     fn target_parser_normalizes_networks() {
@@ -3629,8 +3695,21 @@ mod tests {
             parse_cell_policy_flags("1").unwrap(),
             CELL_LSM_DENY_NON_UNIX_SOCKET
         );
+        // 6.1.0: bit 0 (NON_UNIX) and bit 1 (AF_PACKET) are both known, so 3 is
+        // a valid policy word. FIND-004: the old assertion still encoded the
+        // pre-6.1.0 exclusive contract and failed.
+        assert_eq!(
+            parse_cell_policy_flags("3").unwrap(),
+            CELL_LSM_DENY_NON_UNIX_SOCKET | CELL_LSM_DENY_AF_PACKET
+        );
+        // Every defined bit (0x7f = all seven) is accepted.
+        assert_eq!(parse_cell_policy_flags("127").unwrap(), 0x7f);
+        assert_eq!(parse_cell_policy_flags("127").unwrap(), CELL_LSM_DENY_ALL_KNOWN);
+        assert_eq!(parse_cell_policy_flags("64").unwrap(), CELL_LSM_DENY_RDS);
+        // Zero and unknown bits stay rejected.
         assert!(parse_cell_policy_flags("0").is_err());
-        assert!(parse_cell_policy_flags("3").is_err());
+        assert!(parse_cell_policy_flags("128").is_err());
+        assert!(parse_cell_policy_flags("255").is_err());
     }
 
     #[test]
@@ -5723,6 +5802,94 @@ mod tests {
             );
         }
         assert_eq!(core.ping_suffix(), "+lockdown:active");
+    }
+
+    #[test]
+    fn lockdown_auto_network_drop_survives_a_later_phase_refresh() {
+        let root = lockdown_fixture("auto-drop-phase");
+        let store = std::sync::Arc::new(MemoryWordStore::new());
+        let mut core = lockdown_core(&root, std::sync::Arc::clone(&store));
+        // flags=3 = auto_network_drop + allow_loopback.
+        lockdown_command_raw(&mut core, &["LOCKDOWN_ARM", "locked", "manual", "3"]).unwrap();
+        core.shared.auto_network_drop().expect("auto drop write");
+        assert!(core.shared.auto_drop(), "auto-drop ownership is recorded");
+        let word = lockdown_word(&store);
+        assert_eq!(word.epoch, core.epoch());
+        assert_ne!(word.flags & gedefense_common::LOCKDOWN_FLAG_DROP_ALL, 0);
+        assert_ne!(word.flags & gedefense_common::LOCKDOWN_FLAG_ALLOW_LOOPBACK, 0);
+        // A later USB phase refresh must keep the drop and add its own bit.
+        assert_eq!(
+            lockdown_command_raw(&mut core, &["LOCKDOWN_PHASE", "usb", "on"]).unwrap(),
+            "applied:usb"
+        );
+        let word = lockdown_word(&store);
+        assert_ne!(word.flags & gedefense_common::LOCKDOWN_FLAG_DROP_ALL, 0, "phase refresh cleared the auto drop");
+        assert_ne!(word.flags & gedefense_common::LOCKDOWN_FLAG_USB_LOCKED, 0, "USB phase bit was not persisted");
+        assert_ne!(word.flags & gedefense_common::LOCKDOWN_FLAG_ALLOW_LOOPBACK, 0);
+    }
+
+    #[test]
+    fn lockdown_auto_network_drop_survives_a_startup_rearm() {
+        let root = lockdown_fixture("auto-drop-rearm");
+        let store = std::sync::Arc::new(MemoryWordStore::new());
+        let mut core = lockdown_core(&root, std::sync::Arc::clone(&store));
+        // flags=3 = auto_network_drop + allow_loopback.
+        lockdown_command_raw(&mut core, &["LOCKDOWN_ARM", "locked", "manual", "3"]).unwrap();
+        core.shared.auto_network_drop().expect("auto drop write");
+        assert_eq!(
+            lockdown_command_raw(&mut core, &["LOCKDOWN_PHASE", "usb", "on"]).unwrap(),
+            "applied:usb"
+        );
+        let before = lockdown_word(&store);
+        assert_ne!(before.flags & gedefense_common::LOCKDOWN_FLAG_DROP_ALL, 0);
+
+        // A daemon restart re-arms from the persisted USB phase. The DROP_ALL
+        // already verified in the kernel word must not be cleared silently.
+        let mut restarted = lockdown_core(&root, std::sync::Arc::clone(&store));
+        restarted.startup_rearm().expect("startup rearm");
+        let after = lockdown_word(&store);
+        assert_eq!(after.epoch, before.epoch);
+        assert_ne!(
+            after.flags & gedefense_common::LOCKDOWN_FLAG_DROP_ALL,
+            0,
+            "startup re-arm cleared the auto-drop"
+        );
+        assert_ne!(after.flags & gedefense_common::LOCKDOWN_FLAG_USB_LOCKED, 0);
+        assert!(restarted.shared.auto_drop(), "auto-drop ownership was not re-established");
+    }
+
+    #[test]
+    fn lockdown_auto_network_drop_is_released_by_an_explicit_net_phase_off() {        let root = lockdown_fixture("auto-drop-net-off");
+        let store = std::sync::Arc::new(MemoryWordStore::new());
+        let mut core = lockdown_core(&root, std::sync::Arc::clone(&store));
+        lockdown_command_raw(&mut core, &["LOCKDOWN_ARM", "locked", "manual", "1"]).unwrap();
+        core.shared.auto_network_drop().expect("auto drop write");
+        assert_ne!(lockdown_word(&store).flags & gedefense_common::LOCKDOWN_FLAG_DROP_ALL, 0);
+        assert_eq!(
+            lockdown_command_raw(&mut core, &["LOCKDOWN_PHASE", "net", "off"]).unwrap(),
+            "applied:net"
+        );
+        assert!(!core.shared.auto_drop(), "explicit NET off clears the auto-drop flag");
+        assert_eq!(lockdown_word(&store).flags & gedefense_common::LOCKDOWN_FLAG_DROP_ALL, 0);
+    }
+
+    #[test]
+    fn lockdown_auto_network_drop_is_cleared_by_clear() {
+        let root = lockdown_fixture("auto-drop-clear");
+        let store = std::sync::Arc::new(MemoryWordStore::new());
+        let mut core = lockdown_core(&root, std::sync::Arc::clone(&store));
+        lockdown_command_raw(&mut core, &["LOCKDOWN_ARM", "locked", "manual", "1"]).unwrap();
+        core.shared.auto_network_drop().expect("auto drop write");
+        assert!(core.shared.auto_drop());
+        let epoch = format!("{:08x}", core.epoch());
+        assert_eq!(
+            lockdown_command_raw(&mut core, &["LOCKDOWN_CLEAR", &epoch, "manual"]).unwrap(),
+            "cleared"
+        );
+        assert!(!core.shared.auto_drop(), "CLEAR releases the auto-drop flag");
+        let word = lockdown_word(&store);
+        assert_eq!(word.mode, gedefense_common::LOCKDOWN_MODE_OFF);
+        assert_eq!(word.flags, 0, "CLEAR writes the OFF word");
     }
 
     #[test]

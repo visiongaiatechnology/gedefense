@@ -20,6 +20,7 @@ mkdir -p \
 
 install -m 0644 "$ROOT/packaging/systemd/gedefense-bpffs.service" "$UNIT_DIR/"
 install -m 0644 "$ROOT/packaging/systemd/gedefense-core.service" "$UNIT_DIR/"
+install -m 0644 "$ROOT/packaging/systemd/gedefense-capture-helper.service" "$UNIT_DIR/"
 install -m 0644 "$ROOT/packaging/systemd/gedefense-control.service" "$UNIT_DIR/"
 # POINT 2: the privileged parser-cell helper unit is rendered from its @RELEASE@
 # placeholder exactly like the installer/PKGBUILD do - an unrendered unit would
@@ -70,6 +71,7 @@ mkdir -p "${TEST_ROOT}/var/lib/vgt/gedefense/parser-inputs" \
   "${TEST_ROOT}/etc/vgt/gedefense/secrets" \
   "${TEST_ROOT}/etc/sysctl.d" \
   "${TEST_ROOT}/run/vgt-gedefense" \
+  "${TEST_ROOT}/run/vgt-gedefense-capture" \
   "${TEST_ROOT}/run/gedefense-scan" \
   "${TEST_ROOT}/sys/fs/bpf" \
   "${TEST_ROOT}/sys/fs/cgroup/vgt-cells" \
@@ -93,6 +95,7 @@ install -m 0755 /usr/bin/install "${TEST_ROOT}/usr/bin/install"
 systemd-analyze verify --recursive-errors=no --root="$TEST_ROOT" \
   gedefense-bpffs.service \
   gedefense-core.service \
+  gedefense-capture-helper.service \
   gedefense-control.service \
   gedefense-access.service \
   gedefense-cell-helper.service \
@@ -238,27 +241,72 @@ grep -Fq -- '--max-cells=16' <<<"$helper_unit"
 
 # POINT 4 (docs/POINT4-WITNESS.md §4/§7/§8): the Out-of-Band Witness state
 # (encrypted outbox.enc + authenticated ack.enc below <state>/witness/) is
-# written at runtime by the unprivileged control plane. Phase 1 adds no unit,
-# no capability and no address-family/syscall widening: the client only uses the
-# pre-existing outbound AF_INET/AF_INET6 families. Pin the boundary: the state
-# stays inside the reviewed directory grant, no per-witness grant exists, and the
-# tmpfiles state root keeps the 1770 root:gedefense mode that lets the control
-# user create <state>/witness/ (0700) itself.
+# written at runtime by the unprivileged control plane. The witness client itself
+# adds no capability and no address-family/syscall widening: it only uses the
+# pre-existing outbound AF_INET/AF_INET6 families.
+# FIND-008 (VGT-AUDIT-20261118-GD61-R2): the control plane holds zero Linux
+# capabilities and no AF_PACKET family. Passive AF_PACKET capture (Module C)
+# and CN_PROC netlink fallback (Module B) are isolated into the dedicated
+# gedefense-capture-helper.service unit (IPAddressDeny=any, no AF_INET/AF_INET6,
+# zero access to /etc/vgt/gedefense, /var/lib/vgt/gedefense or /run/vgt-gedefense).
 control_unit=$(
   <"$UNIT_DIR/gedefense-control.service"
 )
 for directive in \
   'User=gedefense' \
   'ReadWritePaths=/var/lib/vgt/gedefense' \
-  'RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK' \
   'NoNewPrivileges=true'; do
   grep -Fq -- "$directive" <<<"$control_unit" || {
     printf 'gedefense-control.service is missing required POINT 4 directive: %s\n' "$directive" >&2
     exit 1
   }
 done
-if grep -Eq '^[[:space:]]*(AmbientCapabilities|CapabilityBoundingSet)=' <<<"$control_unit"; then
-  printf 'gedefense-control.service must not gain a witness capability (the witness client needs none).\n' >&2
+control_capabilities=$(grep -E '^[[:space:]]*(CapabilityBoundingSet|AmbientCapabilities)=' <<<"$control_unit" | sed 's/^[[:space:]]*//' || true)
+if [[ "$control_capabilities" != 'CapabilityBoundingSet=' ]]; then
+  printf 'gedefense-control.service must hold ZERO capabilities (CapabilityBoundingSet= only, FIND-008).\n' >&2
+  exit 1
+fi
+control_families=$(grep -E '^[[:space:]]*RestrictAddressFamilies=' <<<"$control_unit" | sed 's/^[[:space:]]*//' || true)
+if [[ "$control_families" != 'RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK' ]]; then
+  printf 'gedefense-control.service must not allow AF_PACKET (FIND-008).\n' >&2
+  exit 1
+fi
+
+capture_unit=$(
+  <"$UNIT_DIR/gedefense-capture-helper.service"
+)
+for directive in \
+  'User=gedefense' \
+  'Group=gedefense' \
+  'RuntimeDirectory=vgt-gedefense-capture' \
+  'RuntimeDirectoryMode=0700' \
+  'NoNewPrivileges=true' \
+  'ProtectSystem=strict' \
+  'ProtectHome=true' \
+  'PrivateDevices=true' \
+  'IPAddressDeny=any' \
+  'ReadOnlyPaths=/opt/vgt/gedefense/current' \
+  'ReadWritePaths=/run/vgt-gedefense-capture' \
+  '--capture-helper' \
+  '--capture-helper-socket=/run/vgt-gedefense-capture/capture.sock'; do
+  grep -Fq -- "$directive" <<<"$capture_unit" || {
+    printf 'gedefense-capture-helper.service is missing required FIND-008 directive: %s\n' "$directive" >&2
+    exit 1
+  }
+done
+capture_capabilities=$(grep -E '^[[:space:]]*(CapabilityBoundingSet|AmbientCapabilities)=' <<<"$capture_unit" | sed 's/^[[:space:]]*//' || true)
+expected_capture_capabilities=$'CapabilityBoundingSet=CAP_NET_RAW CAP_NET_ADMIN\nAmbientCapabilities=CAP_NET_RAW CAP_NET_ADMIN'
+if [[ "$capture_capabilities" != "$expected_capture_capabilities" ]]; then
+  printf 'gedefense-capture-helper.service must hold exactly CAP_NET_RAW CAP_NET_ADMIN (FIND-008).\n' >&2
+  exit 1
+fi
+capture_families=$(grep -E '^[[:space:]]*RestrictAddressFamilies=' <<<"$capture_unit" | sed 's/^[[:space:]]*//' || true)
+if [[ "$capture_families" != 'RestrictAddressFamilies=AF_UNIX AF_NETLINK AF_PACKET' ]]; then
+  printf 'gedefense-capture-helper.service must allow exactly AF_UNIX AF_NETLINK AF_PACKET (FIND-008).\n' >&2
+  exit 1
+fi
+if grep -Eq '^[[:space:]]*(ReadWritePaths|ReadOnlyPaths)=.*(/etc/vgt/gedefense|/var/lib/vgt/gedefense|/run/vgt-gedefense([[:space:]]|$))' <<<"$capture_unit"; then
+  printf 'gedefense-capture-helper.service must not access /etc/vgt/gedefense, /var/lib/vgt/gedefense, or /run/vgt-gedefense (FIND-008).\n' >&2
   exit 1
 fi
 if grep -Eq 'ReadWritePaths=[^[:space:]]*witness' <<<"$control_unit"; then

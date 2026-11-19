@@ -1,0 +1,300 @@
+/* STATUS: DIAMANT VGT SUPREME */
+/* ==========================================================================
+   GeDefense 6.1.0 — shared surface for the V6.1 dashboard views
+   --------------------------------------------------------------------------
+   The V6.1 views (web posture A-E) and the V6 fabric panels reuse the product
+   tokens from app.css/v4.css. This file adds only what the new views need and
+   that the legacy stylesheets do not already carry: the view rhythm, the
+   capability/reason line, the detail table shell and the shared typed
+   confirmation dialog. No colour is invented here; every value resolves to an
+   existing semantic token so the surfaces keep one material language.
+   ========================================================================== */
+
+.v61-view {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* ---------------------------------------------------------------- context */
+.v61-context {
+  align-items: flex-start;
+  background:
+    radial-gradient(560px 190px at 94% -25%, rgba(91, 212, 255, 0.11), transparent 72%),
+    linear-gradient(155deg, rgba(10, 29, 52, 0.88), rgba(4, 14, 27, 0.94));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 14px 36px rgba(2, 8, 20, 0.45);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+.v61-context > div:first-child { min-width: 0; flex: 1 1 460px; }
+.v61-context h2 {
+  margin: 3px 0 0;
+  color: var(--text-bright);
+  font-size: clamp(1.06rem, 1.6vw, 1.28rem);
+  font-weight: 740;
+  letter-spacing: -0.01em;
+}
+.v61-context .view-context-desc {
+  margin-top: 6px;
+  max-width: 78ch;
+  font-size: 0.76rem;
+  line-height: 1.55;
+}
+.v61-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* ------------------------------------------------------- capability truth */
+/* The reason line is not decoration: it is the only place a missing kernel or
+   helper capability is named. An empty or hidden reason must never occupy space. */
+.v61-reason {
+  margin: 0;
+  padding: 10px 14px;
+  border: 1px solid rgba(244, 199, 106, 0.28);
+  border-left: 3px solid var(--amber);
+  border-radius: var(--radius-sm);
+  background: linear-gradient(145deg, rgba(244, 199, 106, 0.09), rgba(20, 16, 6, 0.45));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  color: #f4e3be;
+  font-size: 0.74rem;
+  line-height: 1.55;
+}
+.v61-reason[hidden],
+.v61-reason:empty {
+  display: none !important;
+}
+.v61-reason.tone-good {
+  border-color: rgba(55, 217, 174, 0.24);
+  border-left-color: var(--green);
+  background: rgba(55, 217, 174, 0.05);
+  color: #c4f3e6;
+}
+.v61-reason.tone-bad {
+  border-color: rgba(255, 100, 130, 0.26);
+  border-left-color: var(--red);
+  background: rgba(255, 100, 130, 0.06);
+  color: #ffd3dc;
+}
+
+/* --------------------------------------------------------------- panels */
+.v61-panel {
+  min-width: 0;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 12px 32px rgba(2, 8, 20, 0.36);
+}
+.v61-panel .section-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.v61-panel .section-head h3 {
+  margin: 0;
+  font-size: 0.98rem;
+  font-weight: 720;
+}
+.v61-panel .section-head .fs-xs { margin: 2px 0 0; max-width: 92ch; line-height: 1.5; }
+.v61-panel + .v61-panel { margin-top: 0; }
+.v61-panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+/* --------------------------------------------------------------- tables */
+.v61-table-wrap {
+  margin-top: 12px;
+  border: 1px solid rgba(82, 199, 255, 0.14);
+  border-radius: var(--radius-sm);
+  background: rgba(3, 12, 23, 0.54);
+  overflow-x: auto;
+}
+.v61-table-wrap:focus-visible { outline: 2px solid var(--primary-ice); outline-offset: 2px; }
+.v61-table { min-width: 640px; width: 100%; border-collapse: collapse; }
+.v61-table th { background: rgba(5, 18, 31, 0.94); padding: 9px 12px; }
+.v61-table td { padding: 9px 12px; font-size: 0.72rem; }
+.v61-table tbody tr { transition: background 0.14s ease; }
+.v61-table tbody tr:hover { background: rgba(76, 201, 255, 0.055); }
+.v61-table tbody tr:last-child td { border-bottom: 0; }
+.v61-table .v61-tight { max-width: 460px; }
+.v61-empty {
+  color: var(--muted);
+  text-align: center;
+  font-size: 0.72rem;
+  padding: 22px 12px;
+}
+.v61-mono {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+}
+.v61-nowrap { white-space: nowrap; }
+.v61-badge-list { display: flex; flex-wrap: wrap; gap: 4px; }
+.v61-badge-list .badge { white-space: nowrap; }
+
+/* ------------------------------------------------------ key/value matrix */
+.v61-kv-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(230px, 100%), 1fr));
+  gap: 1px;
+  margin-top: 12px;
+  border: 1px solid rgba(82, 199, 255, 0.1);
+  border-radius: var(--radius-sm);
+  background: rgba(82, 199, 255, 0.1);
+  overflow: hidden;
+}
+.v61-kv {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 13px;
+  background: linear-gradient(160deg, rgba(6, 19, 34, 0.9), rgba(3, 12, 23, 0.9));
+}
+.v61-kv dt {
+  margin: 0;
+  color: var(--muted-dark);
+  font: 700 0.56rem/1.3 ui-monospace, SFMono-Regular, Consolas, monospace;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.v61-kv dd {
+  margin: 0;
+  color: var(--text-bright);
+  font-size: 0.8rem;
+  font-weight: 640;
+  overflow-wrap: anywhere;
+}
+.v61-kv dd.v61-mono { font-size: 0.74rem; }
+
+/* --------------------------------------------------------------- banners */
+.v61-banner {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 13px 16px;
+  border: 1px solid rgba(82, 199, 255, 0.16);
+  border-radius: var(--radius-md);
+  background: linear-gradient(150deg, rgba(8, 25, 44, 0.9), rgba(4, 14, 27, 0.9));
+}
+.v61-banner[hidden] { display: none; }
+.v61-banner h3 { margin: 0 0 3px; font-size: 0.9rem; color: var(--text-bright); }
+.v61-banner p { margin: 0; font-size: 0.71rem; line-height: 1.55; color: var(--muted); }
+.v61-banner.is-alert {
+  border-color: rgba(255, 100, 130, 0.32);
+  background: linear-gradient(150deg, rgba(45, 12, 25, 0.45), rgba(7, 18, 31, 0.92));
+}
+.v61-banner.is-attention {
+  border-color: rgba(244, 199, 106, 0.3);
+  background: linear-gradient(150deg, rgba(42, 32, 10, 0.4), rgba(7, 18, 31, 0.92));
+}
+/* A banner that stacks a banner-specific block above its own note keeps the
+   column rhythm instead of turning the two children into flex siblings. */
+.v61-banner-stack {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+}
+
+/* --------------------------------------------------------- action footer */
+.v61-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+.v61-action-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.68rem;
+  line-height: 1.55;
+  max-width: 82ch;
+}
+.v61-provider {
+  margin: 0;
+  color: var(--muted-dark);
+  font-size: 0.64rem;
+  line-height: 1.5;
+}
+
+/* ------------------------------------------------- typed confirm dialog */
+.v61-dialog .v61-dialog-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px 24px 24px;
+}
+.v61-dialog .v61-dialog-detail {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(82, 199, 255, 0.12);
+  border-radius: var(--radius-sm);
+  background: rgba(3, 12, 23, 0.55);
+  color: var(--muted);
+  font-size: 0.7rem;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+.v61-dialog .v61-dialog-detail[hidden] { display: none; }
+.v61-dialog label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+.v61-dialog label > span { color: var(--muted); }
+.v61-dialog input {
+  width: 100%;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: rgba(3, 12, 23, 0.72);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.78rem;
+}
+.v61-dialog input:focus-visible {
+  outline: 2px solid var(--primary-ice);
+  outline-offset: 1px;
+  border-color: var(--line-strong);
+}
+.v61-dialog .v61-dialog-phrase {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  letter-spacing: 0.02em;
+}
+.v61-dialog .v61-dialog-error {
+  margin: 0;
+  color: var(--red);
+  font-size: 0.7rem;
+  line-height: 1.5;
+}
+.v61-dialog .v61-dialog-error[hidden] { display: none; }
+.v61-dialog [hidden] { display: none !important; }
+
+/* ------------------------------------------------------------ responsive */
+@media (max-width: 900px) {
+  .v61-context { flex-direction: column; align-items: stretch; }
+  .v61-actions { justify-content: flex-start; }
+  .v61-kv-grid { grid-template-columns: 1fr; }
+  .v61-table { min-width: 560px; }
+}
+@media (max-width: 560px) {
+  .v61-actions .button { flex: 1 1 auto; }
+  .v61-context h2 { font-size: 1.02rem; }
+  .v61-dialog .v61-dialog-body { padding: 16px; }
+}
+
+/* Motion explains a state change; it never runs as ambience. */
+@media (prefers-reduced-motion: reduce) {
+  .v61-view *,
+  .v61-view *::before,
+  .v61-view *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}

@@ -1,0 +1,116 @@
+/* STATUS: DIAMANT VGT SUPREME */
+/* V6 fabric panels — StyX, Titan Exec, Parser Cells, Lockdown, Witness.
+   Only panel-specific rules; the shared view surface is v61/base.css. */
+
+/* A V6 panel is an operator surface with one primary action group, not a card
+   wall: the action row sits in the context bar and the detail follows. */
+.v61-v6-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.v61-v6-action-note {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 0.68rem;
+  line-height: 1.55;
+  max-width: 90ch;
+}
+
+/* Kernel health and sync facts are counters with long names; two columns keep
+   a six-counter block readable without becoming a card grid. */
+.v61-v6-kernel { grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr)); }
+
+.v61-v6-inline-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(210px, 100%), 1fr));
+  gap: 1px;
+  margin-top: 12px;
+  border: 1px solid rgba(82, 199, 255, 0.1);
+  border-radius: var(--radius-sm);
+  background: rgba(82, 199, 255, 0.1);
+  overflow: hidden;
+}
+
+.v61-v6-inline-grid > div {
+  padding: 10px 13px;
+  background: linear-gradient(160deg, rgba(6, 19, 34, 0.9), rgba(3, 12, 23, 0.9));
+}
+
+.v61-v6-inline-grid dt {
+  margin: 0;
+  color: var(--muted-dark);
+  font: 700 0.54rem/1.3 ui-monospace, SFMono-Regular, Consolas, monospace;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.v61-v6-inline-grid dd {
+  margin: 0;
+  color: var(--text-bright);
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+
+.v61-v6-beacons { min-width: 780px; }
+.v61-v6-beacons th,
+.v61-v6-beacons td { white-space: nowrap; }
+
+/* Parser cells: the action column must stay narrow and the uuid may wrap. */
+.v61-v6-cells { min-width: 900px; }
+.v61-v6-cells td:first-child { max-width: 30ch; overflow-wrap: anywhere; }
+.v61-v6-cells .rule-actions { flex-wrap: nowrap; }
+.v61-v6-cells .icon-button { white-space: nowrap; font-size: 0.62rem; }
+
+.v61-v6-phases { min-width: 620px; }
+
+/* Lockdown is a state machine; the mode badge carries the latched state and the
+   trigger/clear facts are two lines that must never be truncated. */
+.v61-v6-lockdown-state {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.v61-v6-lockdown-facts {
+  display: grid;
+  gap: 4px;
+  margin-top: 10px;
+}
+
+.v61-v6-lockdown-facts p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.7rem;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+/* Witness: checkpoint identity values are long hex strings and get a full-width
+   block so they can be read and copied, not ellipsised. */
+.v61-v6-checkpoint { grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr)); }
+.v61-v6-checkpoint dd { font-size: 0.72rem; overflow-wrap: anywhere; }
+
+.v61-v6-equivocation {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 0.7rem;
+  line-height: 1.55;
+}
+
+.v61-v6-outbox {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+@media (max-width: 900px) {
+  .v61-v6-cells .rule-actions { flex-wrap: wrap; }
+  .v61-v6-beacons { min-width: 680px; }
+  .v61-v6-cells { min-width: 760px; }
+}

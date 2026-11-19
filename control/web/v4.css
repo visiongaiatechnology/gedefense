@@ -26,7 +26,7 @@
   --text-bright: #f7fbff;
   --muted: #9eb5c9;
   --muted-dark: #688298;
-  --sidebar-w: 248px;
+  --sidebar-w: 296px;
   --radius-sm: 10px;
   --radius-md: 15px;
   --radius-lg: 20px;
@@ -42,17 +42,10 @@ body {
   letter-spacing: -0.005em;
 }
 
-.background-grid {
-  opacity: .7;
-  background-size: 48px 48px;
-  background-image:
-    linear-gradient(rgba(91, 212, 255, .018) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(91, 212, 255, .018) 1px, transparent 1px);
-}
-
 /* Shell */
 .sidebar {
   padding: 18px 14px 16px;
+  overflow-x: hidden;
   background:
     linear-gradient(180deg, rgba(5, 17, 31, .99), rgba(5, 18, 33, .97)),
     var(--surface-strong);
@@ -110,6 +103,7 @@ body {
 }
 .nav-item {
   min-height: 39px;
+  min-width: 0;
   padding: 8px 10px;
   gap: 10px;
   border-radius: 9px;
@@ -117,7 +111,14 @@ body {
   font-size: .76rem;
   font-weight: 660;
 }
-.nav-item b { font-weight: 660; }
+.nav-item b {
+  flex: 1;
+  min-width: 0;
+  font-weight: 660;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .nav-item .nav-icon-svg {
   width: 17px;
   height: 17px;
@@ -136,7 +137,10 @@ body {
   box-shadow: inset 3px 0 0 #5bdbff, 0 8px 20px rgba(0, 0, 0, .12);
 }
 .nav-item.active .nav-icon-svg { color: #60dcff; }
-.nav-badge-l7 {
+.nav-badge-l7,
+.nav-badge {
+  flex-shrink: 0;
+  white-space: nowrap;
   margin-left: auto;
   padding: 2px 6px;
   border: 1px solid rgba(87, 208, 255, .22);
@@ -295,14 +299,7 @@ body {
     linear-gradient(135deg, rgba(8, 27, 49, .95), rgba(4, 15, 29, .94));
 }
 .hero-cockpit::after {
-  content: "";
-  position: absolute;
-  right: 138px;
-  top: 0;
-  width: 1px;
-  height: 100%;
-  background: linear-gradient(transparent, rgba(82, 199, 255, .13), transparent);
-  pointer-events: none;
+  display: none;
 }
 .hero-copy { gap: 9px; }
 .hero-copy h2 {
@@ -719,7 +716,7 @@ dialog::backdrop { background: rgba(1, 6, 13, .77); backdrop-filter: blur(12px) 
 
 /* Responsive */
 @media (max-width: 1320px) {
-  :root { --sidebar-w: 228px; }
+  :root { --sidebar-w: 276px; }
   .workspace { width: min(1420px, calc(100% - 36px)); }
   .metric-grid.kpi-5, .metric-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .hardening-switches { grid-template-columns: 1fr; }
@@ -2433,6 +2430,8 @@ dialog::backdrop { background: rgba(1, 6, 13, .77); backdrop-filter: blur(12px) 
   background: linear-gradient(100deg, rgba(231, 189, 87, .13), rgba(91, 212, 255, .05));
 }
 .nav-badge-titan {
+  flex-shrink: 0;
+  white-space: nowrap;
   margin-left: auto;
   padding: 1px 6px;
   border: 1px solid rgba(231, 189, 87, .34);

@@ -41,9 +41,12 @@ const (
 // instead of blessing "whatever changed under /etc".
 var fimRebaselineConfigPaths = []string{
 	"/etc/vgt/gedefense/gedefense.toml",
+	"/etc/vgt/gedefense/xdr-baseline.json",
 	"/etc/systemd/system/gedefense-core.service",
+	"/etc/systemd/system/gedefense-capture-helper.service",
 	"/etc/systemd/system/gedefense-control.service",
 	"/etc/systemd/system/gedefense-access.service",
+	"/etc/systemd/system/gedefense-cell-helper.service",
 	"/etc/systemd/system/gedefense-bpffs.service",
 	"/etc/systemd/system/gedefense-provision.service",
 	"/etc/tmpfiles.d/vgt-gedefense.conf",

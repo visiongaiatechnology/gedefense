@@ -1,0 +1,184 @@
+/* STATUS: DIAMANT VGT SUPREME */
+/* GeDefense 6.1.0 — Full-width Live Apps / Websites -> Peer GeoIP Connections Panel */
+
+.overview-connections-panel {
+  margin-top: 20px;
+  border-top: 2px solid rgba(76, 201, 255, 0.55);
+}
+
+.overview-conn-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid rgba(82, 199, 255, 0.14);
+}
+
+.overview-conn-title h3 {
+  margin: 2px 0 3px;
+  color: var(--text-bright);
+  font-size: 1rem;
+  font-weight: 740;
+}
+
+.overview-conn-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.overview-conn-search {
+  width: 220px;
+  max-width: 100%;
+  padding: 6px 11px;
+  font-size: 0.74rem;
+  border-radius: 999px;
+}
+
+.overview-conn-filters {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 3px;
+  border-radius: 999px;
+  background: rgba(4, 12, 24, 0.75);
+  border: 1px solid rgba(82, 199, 255, 0.16);
+}
+
+.overview-conn-filter {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  padding: 5px 11px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 680;
+  cursor: pointer;
+  transition: background 0.16s, color 0.16s;
+}
+
+.overview-conn-filter[aria-pressed='true'] {
+  background: rgba(76, 201, 255, 0.18);
+  color: var(--highlight-cyan);
+}
+
+.overview-conn-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.overview-conn-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  background: rgba(5, 16, 31, 0.72);
+  border: 1px solid rgba(82, 199, 255, 0.12);
+  font-size: 0.68rem;
+  color: var(--muted);
+}
+
+.overview-conn-chip strong {
+  color: var(--text-bright);
+  font-variant-numeric: tabular-nums;
+}
+
+.overview-conn-chip.is-danger strong { color: var(--red); }
+
+.overview-conn-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid rgba(82, 199, 255, 0.12);
+  border-radius: var(--radius-sm);
+  background: rgba(3, 11, 22, 0.52);
+}
+
+.overview-conn-table {
+  width: 100%;
+  min-width: 820px;
+  border-collapse: collapse;
+}
+
+.overview-conn-table th {
+  text-align: left;
+  padding: 9px 12px;
+  background: rgba(6, 18, 34, 0.92);
+  color: var(--muted-dark);
+  font: 700 0.6rem/1.3 ui-monospace, SFMono-Regular, Consolas, monospace;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  border-bottom: 1px solid rgba(82, 199, 255, 0.14);
+}
+
+.overview-conn-table td {
+  padding: 9px 12px;
+  font-size: 0.74rem;
+  border-bottom: 1px solid rgba(82, 199, 255, 0.08);
+  vertical-align: middle;
+}
+
+.overview-conn-table tbody tr:hover {
+  background: rgba(76, 201, 255, 0.05);
+}
+
+.overview-conn-app {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.overview-conn-app strong {
+  color: var(--text-bright);
+  font-size: 0.76rem;
+}
+
+.overview-conn-app small {
+  color: var(--muted);
+  font-size: 0.66rem;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.overview-conn-geo {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.overview-conn-cc {
+  display: inline-grid;
+  place-items: center;
+  min-width: 26px;
+  padding: 2px 5px;
+  border-radius: 5px;
+  background: rgba(76, 201, 255, 0.12);
+  border: 1px solid rgba(76, 201, 255, 0.24);
+  color: var(--primary-ice);
+  font: 700 0.62rem/1.2 ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.overview-conn-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+.overview-conn-pager {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+@media (max-width: 720px) {
+  .overview-conn-search { width: 100%; }
+}

@@ -13,11 +13,12 @@ use crate::lockdown_uevent::Monitor;
 use crate::lockdown_usb::UsbPaths;
 use crate::{ArmMode, LoadedPhase, LockdownShared, LockdownStateLoad, UeventPolicy};
 use gedefense_common::{
-    LockdownEvent, LOCKDOWN_OUTCOME_APPLIED, LOCKDOWN_OUTCOME_FAILED, LOCKDOWN_OUTCOME_PARTIAL,
-    LOCKDOWN_OUTCOME_SKIPPED, LOCKDOWN_OUTCOME_UNSUPPORTED, LOCKDOWN_PHASE_BROKERS,
-    LOCKDOWN_PHASE_CELLS, LOCKDOWN_PHASE_DM, LOCKDOWN_PHASE_HARDENING, LOCKDOWN_PHASE_INTENT,
-    LOCKDOWN_PHASE_NET, LOCKDOWN_PHASE_SESSIONS, LOCKDOWN_PHASE_TB, LOCKDOWN_PHASE_USB,
-    LOCKDOWN_REASON_POLICY, LOCKDOWN_SOURCE_MANUAL, LOCKDOWN_SOURCE_POLICY,
+    decode_lockdown_word, LockdownEvent, LOCKDOWN_FLAG_DROP_ALL, LOCKDOWN_OUTCOME_APPLIED,
+    LOCKDOWN_OUTCOME_FAILED, LOCKDOWN_OUTCOME_PARTIAL, LOCKDOWN_OUTCOME_SKIPPED,
+    LOCKDOWN_OUTCOME_UNSUPPORTED, LOCKDOWN_PHASE_BROKERS, LOCKDOWN_PHASE_CELLS,
+    LOCKDOWN_PHASE_DM, LOCKDOWN_PHASE_HARDENING, LOCKDOWN_PHASE_INTENT, LOCKDOWN_PHASE_NET,
+    LOCKDOWN_PHASE_SESSIONS, LOCKDOWN_PHASE_TB, LOCKDOWN_PHASE_USB, LOCKDOWN_REASON_POLICY,
+    LOCKDOWN_SOURCE_MANUAL, LOCKDOWN_SOURCE_POLICY,
 };
 use std::{
     fs,
@@ -251,6 +252,9 @@ impl LockdownCore {
             return Err("unknown lockdown policy flag".into());
         }
         self.epoch = new_epoch(self.epoch)?;
+        // A new epoch invalidates any hotplug auto-drop of the previous epoch;
+        // the phase loop below owns the flag bits from here on.
+        self.shared.clear_auto_drop();
         self.policy = flags;
         self.latch = Latch::Active;
         self.degraded = false;
@@ -317,6 +321,8 @@ impl LockdownCore {
         // Kernel enforcement ends before the latch is released; a failed write
         // stays an error and leaves the stored latch untouched.
         self.write_word_verified(LOCKDOWN_STATE_OFF, 0).map_err(str::to_owned)?;
+        // The kernel word is off and verified: the hotplug auto-drop is gone.
+        self.shared.clear_auto_drop();
         self.latch = Latch::Off;
         self.phases = [0; PHASE_COUNT];
         self.degraded = release_failed;
@@ -380,7 +386,9 @@ impl LockdownCore {
     fn release_phase(&mut self, phase: u8) -> PhaseOutcome {
         let (outcome, why) = match phase {
             LOCKDOWN_PHASE_NET => {
+                // An explicit NET release also releases a hotplug auto-drop.
                 self.phases[phase as usize] = 0;
+                self.shared.clear_auto_drop();
                 match self.refresh_word() {
                     Ok(()) => (LOCKDOWN_OUTCOME_APPLIED, "applied"),
                     Err(error) => (LOCKDOWN_OUTCOME_FAILED, error),
@@ -425,6 +433,17 @@ impl LockdownCore {
                 self.policy = state.flags;
                 let persisted: Vec<u8> = state.phases.iter().map(|phase| phase.phase).collect();
                 self.phases = [0; PHASE_COUNT];
+                // FIND-003: a verified DROP_ALL left in the kernel word by an
+                // auto-drop must survive startup re-arm, not be cleared by the
+                // phase refresh below. Only a word of this epoch and mode counts.
+                let previous = self.shared.word.read().ok().and_then(decode_lockdown_word);
+                if previous.is_some_and(|word| {
+                    word.epoch == self.epoch
+                        && word.mode == LOCKDOWN_STATE_ARMED
+                        && word.flags & LOCKDOWN_FLAG_DROP_ALL != 0
+                }) {
+                    self.shared.mark_auto_drop();
+                }
                 let active = persisted.iter().any(|phase| *phase != LOCKDOWN_PHASE_INTENT);
                 self.latch = if active { Latch::Active } else { Latch::Armed };
                 self.sync_policy();

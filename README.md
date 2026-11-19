@@ -7,8 +7,8 @@
 ### Linux Security Fabric - Your Entenprise System
 
 [![License](https://img.shields.io/badge/License-AGPL--3.0--only-blue?style=for-the-badge)](https://www.gnu.org/licenses/agpl-3.0)
-[![Version](https://img.shields.io/badge/Version-6.0.3-orange?style=for-the-badge)](#)
-[![Status](https://img.shields.io/badge/Status-Release_V6_(6.0.3)-brightgreen?style=for-the-badge)](#)
+[![Version](https://img.shields.io/badge/Version-6.1.0-orange?style=for-the-badge)](#)
+[![Status](https://img.shields.io/badge/Status-Release_V6_(6.1.0)-brightgreen?style=for-the-badge)](#)
 [![Installer](https://img.shields.io/badge/Installer-Universal_Linux-green?style=for-the-badge)](#-quick-start)
 [![Platform](https://img.shields.io/badge/Platform-Linux_x86__64-lightgrey?style=for-the-badge&logo=linux)](#)
 [![Data Plane](https://img.shields.io/badge/Data_Plane-Rust_eBPF%2FXDP-red?style=for-the-badge&logo=rust)](#-architecture)
@@ -30,16 +30,47 @@
 
 <br />
 
-⬇️ **Direct Installers (v6.0.3 / V6):**  
-[**OneClick Installer (`.run`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.0.3/VGT_GeDefense_V6_6.0.3_OneClick.run) · [`.sha256`](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.0.3/VGT_GeDefense_V6_6.0.3_OneClick.run.sha256) · [**Desktop Tray (`.run`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.0.3/GeDefense-6.0.3-Desktop-OneClick.run) · [`.sha256`](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.0.3/GeDefense-6.0.3-Desktop-OneClick.run.sha256) · [**Source (`.zip`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.0.3/VGT_GeDefense_V6_6.0.3_Source.zip) · [**v6.0.3 Release**](https://github.com/visiongaiatechnology/gedefense/releases/tag/v6.0.3) · [Quick Start](#-quick-start)
+⬇️ **Direct Installers (v6.1.0 / V6):**  
+[**OneClick Installer (`.run`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.1.0/VGT_GeDefense_V6_6.1.0_OneClick.run) · [`.sha256`](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.1.0/VGT_GeDefense_V6_6.1.0_OneClick.run.sha256) · [**Desktop Tray (`.run`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.1.0/GeDefense-6.1.0-Desktop-OneClick.run) · [`.sha256`](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.1.0/GeDefense-6.1.0-Desktop-OneClick.run.sha256) · [**Source (`.zip`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.1.0/VGT_GeDefense_V6_6.1.0_Source.zip) · [**v6.1.0 Release**](https://github.com/visiongaiatechnology/gedefense/releases/tag/v6.1.0) · [Quick Start](#-quick-start)
 
 </div>
 
-> **GeDefense V6 (`6.0.3`, 2026-11-17) — Anti-Spyware & Host Sovereignty Architecture**
->
-> - **Five-Point Anti-Spyware Blueprint:** **StyX Egress & C2/Beacon Detection**, **Titan + eBPF-LSM Exec/Library Gate**, **Ephemeral Parser Cells** (`gedefense-cell-helper.service`), **Out-of-Band Witness Client**, and **Emergency Lockdown**, built directly onto the hardened 5.2.0 security baseline (Settings **v17**).
-> - **Safe Auto-Activation on `enforce` (No Dedicated V6 UI Yet):** While in `observe` / `canary`, V6 modules stay off. Once GeDefense is armed (**`enforce`**), Go Control automatically activates the safe V6 baseline (**StyX=`monitor`**, **Titan Exec=`contain`**, **Parser Cells=`enabled`**), while **Emergency Lockdown** and **Witness** stay opt-in (avoiding unattended remote `XDP_DROP` cutoffs) and explicit API overrides remain sticky.
-> - **Honest Telemetry & Kernel 7.0 Compatibility:** Reports `inactive` cleanly if `bpf` is absent from `/sys/kernel/security/lsm`, handles split `ctime` BTF layouts on Kernel 7.0.x, enforces composite BadUSB classification, 15-byte `comm` broker freezes, SSRF-blocked Witness dialing, and loader-env filtering in `gedefense-cell-helper`.
+## 📋 Changelog — GeDefense V6.1 (`6.1.0`, 2026-11-19)
+
+### ✨ What Changed in V6.1
+- **Modules A–E (New in 6.1.0):**
+  - **Module A — Web Exposure & Posture Engine:** Discovers web daemons via `/proc` and reads `/proc/<pid>/exe` ELF `.rodata` read-only (no `os/exec`, no shell), parses nginx/Apache configs, runs bounded loopback ALPN probes, and matches advisories (e.g. CVE-2026-123007 / 123633 / 121810) only when actually reachable.
+  - **Module B — Worker Integrity Guard:** Watches registered web workers for fatal `SIGSEGV`/`SIGBUS`/`SIGILL`/`SIGABRT` via kernel `signal:signal_deliver` tracepoint (with netlink `CN_PROC` fallback), escalates ≥ 3 crashes in 60 s to `XDR.WORKER_CRASH_STORM`, and classifies worker cgroups (`JIT_ALLOW = 0`) while excluding master/control units.
+  - **Module C — TLS/ALPN Sensor & h2 Control-Storm Budget:** Passive `AF_PACKET` capture (TCP 443/8443 ClientHello ≤ 1536 B + QUIC UDP/443) via the dedicated unprivileged-control split helper `gedefense-capture-helper.service`, paired with kernel `INET_DIAG` socket counters (`bytes_received`/`bytes_acked`, `segs_in`/`segs_out`) and staged alert → throttle → TTL ban reaction.
+  - **Module D — LPE Kill-Chain Blocker:** `socket_create` eBPF LSM hook denies `AF_PACKET`, `AF_TIPC`, `AF_VSOCK`, `SCTP`, `DCCP`, and `RDS` for web-worker cgroups, plus StyX `web-ingress-only` profile, `kernel.randomize_va_space = 2`, and `sctp`/`dccp`/`rds` module blacklisting.
+  - **Module E — Memory-Safe Edge Terminator:** Optional Go `crypto/tls` + `net/http` ingress terminator in front of NGINX/Apache with strict RFC-9113 limits, structural inline WAF, and HTTP/1.1-only upstream (default off, loopback-only, requires valid cert).
+- **10 Dedicated Dashboard Views & Settings v18:** Full UI panels with live status, actions, and server-schema-driven Settings tabs for **Web Exposure**, **Worker Guard**, **TLS Sensor**, **LPE Guard**, **Edge Proxy**, **StyX**, **Titan Exec**, **Parser Cells**, **Emergency Lockdown**, and **Witness**.
+- **Guided Setup Wizard (`Einrichtungsassistent`) & Offline `AGENTS.md` Workflow:** Built-in step-by-step first-start onboarding wizard (`00`–`08`) in the Web UI (see below).
+- **Safe Auto-Activation on `enforce` & Honest Telemetry:** `observe`/`canary` keep V6 modules off; switching to `enforce` activates `styx=monitor`, `titan_exec=contain`, `parser_cells=enabled` (Lockdown & Witness stay opt-in). Missing kernel capabilities (`bpf` LSM, tracepoint, `AF_PACKET`, cert) are always reported as `inactive`/`error` with concrete reasons.
+
+### 🛡️ Security Fixes in V6.1.0 (Complete Summary)
+- **2026-11-19 Security Audit Fixes (`FIND-001` – `FIND-005`, `docs/V6.1.0-AUDIT-REMEDIATION-20261119.md`):**
+  - `FIND-001` **Parser-Cell Seccomp x32 ABI Bypass:** Added `JMP|JSET|K` guard on `__X32_SYSCALL_BIT` (`0x40000000` → `EPERM`) in `gedefense-cell-helper` before all deny and `AF_UNIX` socket rules.
+  - `FIND-002` **Bounded TLS-Sensor Maps:** Sanitized and deduplicated ALPN strings (≤ 32 B, ≤ 8 per hello), capped ALPN counter map at 32 keys + `(other)` bucket, and capped tracked peer set at 4096 entries.
+  - `FIND-003` **Lockdown Auto-Network-Drop Desync:** Added shared `AtomicBool` ownership so `auto_network_drop()` merges `DROP_ALL|ALLOW_LOOPBACK` with phase flags and survives `LOCKDOWN_PHASE` refreshes and `startup_rearm()`, clearing on trigger/new epoch, `CLEAR`, or explicit `NET`-off.
+  - `FIND-004` **USB Composite/Class Bypass:** Enforced non-empty interface lists **and** `bNumInterfaces == interfaces.len()` for HID/Hub/Power-only classification, and wired USB interface add uevents to resolve and de-authorize the parent device.
+  - `FIND-005` **Gateway `Connection` Header Injection:** `stripHopByHopHeaders()` now strips RFC 7230 hop-by-hop headers and every client-nominated `Connection` header field before setting `Authorization` and `X-Gedefense-Gateway-Session`.
+- **2026-11-18 V6.1 Audit Remediation (`VGT-AUDIT-20261118-GD61`, `docs/V6.1.0-AUDIT-REMEDIATION.md`):**
+  - Isolated `AF_PACKET`/`CN_PROC` capture into `gedefense-capture-helper.service` so `gedefense-control.service` runs with zero capabilities; switched RDS denial to `family == AF_RDS`; extended `INET_DIAG` and cBPF prefilter to IPv4+IPv6; prevented false `active` claims on unattached worker tracepoints and excluded shared nginx-master cgroups; stripped inbound `X-Forwarded-For` on Edge Proxy; enforced ASLR via core sysctl path and fail-honest 503/409 LPE reporting; eliminated `innerHTML`/mojibake in V6.1 UI.
+- **Included 5.2.0 / 6.0.x Hardened Baseline:** Includes all 36 fixes from `VGT-AUDIT-20261114-GD51` (Ed25519 installer pre-verification, Argon2id admission gate, strict AEAD/HistoryMAC, Qt tray plain-text rendering, atomic Rust quarantine, eBPF batch accounting) plus lowercase incident severity normalization (`6.0.3`).
+
+### 🧭 Guided Setup Wizard (`Einrichtungsassistent`) & `AGENTS.md` Workflow
+GeDefense 6.1.0 includes an interactive **Setup Wizard** directly in the Dashboard (`control/web/setup-wizard.js`) to guide operators from initial installation to safe `enforce` operation without accidental lockouts:
+- **Step `00` — `AGENTS.md` Blueprint (No Remote AI Control API):** GeDefense deliberately exposes **no** inbound AI control channel or prompt API. Instead, the wizard provides a ready-to-copy `AGENTS.md` runbook so an administrator can run a trusted local CLI coding agent (e.g., Codex, Antigravity, Claude Code) via SSH for **read-only discovery first**, evaluate every module against live workloads, and apply changes safely via `POST /api/v1/settings/{module}/preview` → `PUT /api/v1/settings/{module}`.
+- **Steps `01`–`08` — Live Guided Onboarding:**
+  1. `01` **Management Allowlist & Services:** Verify SSH/admin IPs and core service health before switching to `enforce`.
+  2. `02` **L7 Traffic Guard:** Configure NGINX/Apache `auth_request` snippet and validate in `observe` before enforcing.
+  3. `03` **Web Exposure & TLS/ALPN Sensor:** Verify `gedefense-capture-helper` and exposed web ports.
+  4. `04` **LPE Guard & Edge Proxy:** Check `kernel.randomize_va_space`, kernel module blacklists, and `:8443`/`:8080` port availability.
+  5. `05` **Kinetic XDP & Threat Feeds:** Inspect `native`/`generic`/`tc` ingress mode and active feed vectors.
+  6. `06` **XDR, StyX & Titan Exec-Gate:** Warm up behavior profiles and inspect `skipped_cgroups` before enabling strict containment.
+  7. `07` **Parser Cells & FIM Baseline:** Verify `gedefense-cell-helper` and seal the `release` FIM baseline (`POST /api/v1/fim/baseline`).
+  8. `08` **Witness & Emergency Lockdown:** Configure optional off-host checkpoint anchoring, duress/cooldown, and `/gateway/livez` health.
 
 > **GeDefense Ecosystem / Ökosystem / Экосистема / 生态系统:** [GeDefense WP](https://github.com/visiongaiatechnology/gedefensewp) — the WordPress side of the same security fabric.
 
@@ -61,13 +92,21 @@ GeDefense is one local-first security fabric — for Linux, Windows, Android and
 | [![Android](https://img.shields.io/badge/Android-22D3EE?style=flat-square&logo=android&logoColor=0B1220)](https://github.com/visiongaiatechnology/gedefenseandroid) **GeDefense Android** | Native Android security platform: local VPN enforcement, endpoint telemetry, XDR/EDR correlation, threat intelligence, app-risk analysis and encrypted evidence. |
 | [![WordPress](https://img.shields.io/badge/WordPress-1F8FFF?style=flat-square&logo=wordpress&logoColor=ffffff)](https://github.com/visiongaiatechnology/gedefensewp) **GeDefense WordPress** | AGPL-3.0 open-core suite for WordPress: ZEUS WAF, AEGIS deep-packet inspection, TRINITY XDR, ThroneGuard lockdown and HADES admin cloaking. |
 
-## 🚀 GeDefense V6 (`6.0.3`) — What's New, PC vs. Server & Architecture Integration
+## 🚀 GeDefense V6 (`6.1.0`) — What's New, PC vs. Server & Architecture Integration
 
 > [!NOTE]
-> **No Dedicated V6 Web UI Yet — Automatic Safe Activation When Armed:**  
-> GeDefense V6 exposes all five subsystems via Runtime Settings **v17** and REST APIs (`/api/v1/styx/...`, `/api/v1/titan/exec/...`, `/api/v1/parser-cells/...`, `/api/v1/lockdown/...`, `/api/v1/witness/...`), without a dedicated V6 Web UI panel yet. In `observe` and `canary`, V6 planes remain disabled so initial qualification runs unchanged. > **As soon as GeDefense transitions to `enforce` (or starts in `enforce`), Go Control automatically activates the safe default profile:** `styx=monitor` (+ flow telemetry), `titan_exec=contain`, and `parser_cells=enabled` — while **Emergency Lockdown** and **Witness** remain explicit opt-in (Lockdown prevents unintended remote lockout; Witness requires external endpoint & key/SPKI pinning). Explicit API overrides stay sticky across restarts.
+> **Dedicated V6 Panels and Module Surfaces — Automatic Safe Activation When Armed:**  
+> All five V6 subsystems (**StyX**, **Titan Exec Gate**, **Parser Cells**, **Emergency Lockdown**, **Witness**) now have dedicated dashboard views with live status, actions and a Settings tab; the REST APIs (`/api/v1/styx/...`, `/api/v1/titan/exec/...`, `/api/v1/parser-cells/...`, `/api/v1/lockdown/...`, `/api/v1/witness/...`) remain unchanged. The views **Web Exposure**, **Worker Guard**, **TLS Sensor**, **LPE Guard** and **Edge Proxy** additionally drive Modules A–E. In `observe` and `canary`, V6 planes remain disabled so initial qualification runs unchanged. **As soon as GeDefense transitions to `enforce` (or starts in `enforce`), Go Control automatically activates the safe default profile:** `styx=monitor` (+ flow telemetry), `titan_exec=contain`, and `parser_cells=enabled` — while **Emergency Lockdown** and **Witness** remain explicit opt-in (Lockdown prevents unintended remote lockout; Witness requires external endpoint & key/SPKI pinning). Explicit API and UI overrides stay sticky across restarts.
 
-### 🆕 Highlights of V6 (`6.0.3`)
+### 🆕 Modules A–E (6.1.0)
+
+- **Module A — Web Exposure & Posture:** discovers web daemons through `/proc` and reads `/proc/<pid>/exe` ELF `.rodata` read-only (no `os/exec`, no shell): nginx/Apache version, compile flags, static OpenSSL. Parses `/etc/nginx`, `/www/server/nginx/conf` and `/www/server/panel/vhost/nginx` for `listen … ssl`, `http2` and `quic`/`http3`, and runs one bounded loopback ALPN probe per listener. Advisory matches (including CVE-2026-123007 / 123633 / 121810) require **real reachability** and name the workaround.
+- **Module B — Worker Integrity Guard:** watches only registered web workers for fatal `SIGSEGV`/`SIGBUS`/`SIGILL`/`SIGABRT`. One crash is a medium audit event; **≥ 3 in 60 s** is a CRITICAL incident plus case `XDR.WORKER_CRASH_STORM`, optionally correlated with open `:443` peers. Worker cgroups are classified into the existing Titan exec/mmap gate with `JIT_ALLOW = 0`; master/control units are excluded. Applying the strict scopes is deliberately opt-in via `auto_apply_strict`, so a wrong allowlist profile cannot immediately strangle worker execution; the status names the plan and whether it was applied. The eBPF tracepoint is the primary source, the netlink proc-connector the fallback, and the status names the live source.
+- **Module C — TLS/ALPN Sensor & h2 Control-Storm Budget:** passive `AF_PACKET` capture of the first ≤1536 bytes of each ClientHello (and QUIC initial packets) feeds the existing TLS engine for every stack, including statically linked OpenSSL. TCP byte accounting comes from the kernel per-socket counters (`INET_DIAG` `bytes_received`/`bytes_acked`, `segs_in`/`segs_out`) in a bounded LRU. The storm predicate requires volume **and** `rx > 4·tx` **and** `avg_pkt_len < 240 B` **and** pps asymmetry, so a normal 5 GB upload never triggers; reactions are staged alert → throttle plan → TTL ban only on persistence or a correlated worker crash.
+- **Module D — LPE Kill-Chain Blocker:** the existing `socket_create` LSM hook denies `AF_PACKET`, `AF_TIPC`, `AF_VSOCK`, `SCTP`, `DCCP` and `RDS` for web-worker cgroups (policy bits 1–6; bit 0 stays the existing non-UNIX deny), plus an optional StyX `web-ingress-only` profile and a hardening baseline for `kernel.randomize_va_space = 2` and the `sctp`/`dccp`/`rds` module blacklist.
+- **Module E — Memory-Safe Edge Terminator:** optional Go `crypto/tls` + `net/http` ingress in front of NGINX/Apache with explicit RFC-9113 limits, structural inline WAF, bounded per-peer rate budget and HTTP/1.1-only upstream. Default off, loopback-only, refuses to start without a valid certificate.
+
+### 🆕 Highlights of V6 (`6.1.0`)
 
 1. **Point 1 — Titan + eBPF-LSM Exec & Shared-Library Gate (`docs/POINT1-TITAN-EXEC-GATE.md`):**
    Kernel eBPF LSM enforcement on `bprm_check_security` and `mmap_file` (`PROT_EXEC`) backed by live vmlinux BTF offsets (including Kernel 7.0 split `ctime` layouts) and Unprivileged Go policy sync over VGT3. Detects/blocks `memfd_create`, unlinked binary execution, `tmpfs` exec, `W^X` violations, and untrusted `mmap(PROT_EXEC)` in `contain`/`strict` scopes. Never fakes enforcement: reports `inactive` if `/sys/kernel/security/lsm` lacks `bpf`.
@@ -576,10 +615,10 @@ If the Gaia Cells runtime is **not present**, the adapter reports `runtime_not_i
 ### One-Click installer
 
 ```bash
-wget https://github.com/visiongaiatechnology/gedefense/releases/download/v6.0.3/VGT_GeDefense_V6_6.0.3_OneClick.run
-sha256sum --check VGT_GeDefense_V6_6.0.3_OneClick.run.sha256
-chmod 700 VGT_GeDefense_V6_6.0.3_OneClick.run
-sudo ./VGT_GeDefense_V6_6.0.3_OneClick.run
+wget https://github.com/visiongaiatechnology/gedefense/releases/download/v6.1.0/VGT_GeDefense_V6_6.1.0_OneClick.run
+sha256sum --check VGT_GeDefense_V6_6.1.0_OneClick.run.sha256
+chmod 700 VGT_GeDefense_V6_6.1.0_OneClick.run
+sudo ./VGT_GeDefense_V6_6.1.0_OneClick.run
 ```
 
 The installer is source-self-contained and verifies its signed release index,
@@ -610,7 +649,7 @@ has to pass kernel verifier, XDP attachment, IPC, backend and TLS gates.
 
 ---
 
-## 🚧 Known Limitations (6.0.3 / V6)
+## 🚧 Known Limitations (6.1.0 / V6)
 
 - No Swarm / Mesh support
 - No QUIC offloading
@@ -624,7 +663,9 @@ has to pass kernel verifier, XDP attachment, IPC, backend and TLS gates.
 - Replacing a protected release component is reported at high severity and does not disarm the platform; ledger rotation requires its archive directory to belong to the service with mode `0700` and refuses to run rather than writing into a shared directory
 - The Rust core counts and logs skipped ingress samples but does not yet report the count in its health response, so the figure is visible in the service log rather than in the panel
 - The FIM byte-hash baseline covers stable configuration, persistence and product files. Volatile log trees (`/var/log`, `/var/log/journal`) and root-only SSH host private keys are excluded: normal log growth cannot be a stable byte baseline, log tampering remains covered by the XDR `KD.LINUX.LOG_TAMPER` rules, and host-key custody remains with root and the package-integrity database
-- **No Dedicated V6 Web UI Panels Yet:** StyX, Titan Exec Gate, Parser Cells, Emergency Lockdown, and Witness operate via Runtime Settings v17 and REST APIs; when armed (`enforce`), safe V6 defaults (`styx`, `titan_exec`, `parser_cells`) activate automatically while Emergency Lockdown and Witness stay opt-in.
+- **V6 panels and module surfaces exist but remain kernel-capability bound:** StyX, Titan Exec Gate, Parser Cells, Emergency Lockdown and Witness have dedicated views and Settings tabs, as do Web Exposure, Worker Guard, TLS Sensor, LPE Guard and Edge Proxy. Real kernel blocking still depends on `bpf` LSM, the 6.1.0 eBPF tracepoint or `AF_PACKET` privileges and is otherwise reported as `inactive`/`error` with the reason. Arming (`enforce`) still activates the safe baseline (`styx`, `titan_exec`, `parser_cells`), while Emergency Lockdown and Witness stay opt-in.
+- **Module E (edge terminator) is Phase 1:** TLS termination with HTTP/2 limits, structural WAF and HTTP/1.1 upstream; NGINX remains the production HTTP/2/QUIC path until the V7 Rust edge (rustls + h2/quinn) lands. Default off, loopback-only, certificate required.
+- **Worker crash detection:** the eBPF `signal_deliver` tracepoint is the primary source; without it the netlink proc-connector is the fallback. Both report only fatal signals of registered workers, never panel reloads (`SIGTERM`/`SIGKILL`).
 - **Kernel `bpf` LSM Requirement (Point 1 & Cell Socket LSM):** Full `bprm_check_security` / `mmap_file` enforcement requires `bpf` in `/sys/kernel/security/lsm` (`lsm=...,bpf` kernel cmdline + reboot); without it, GeDefense honestly reports `inactive` rather than claiming protection.
 - **Parser Cells (Point 2):** Ships with an empty parser profile list until configured by the operator; Wayland/PipeWire broker passthrough is deferred to Phase 2.
 - **Witness & Hardware Attestation (Point 4):** Ships the hardened Mode A HTTP client and Mode B `vgtw1` offline bundles (no external witness server/quorum in-repo); on hosts without TPM2/UEFI attestation, checkpoints honestly carry `quote_kind="none"` and `key_binding="software"`.
@@ -634,7 +675,16 @@ has to pass kernel verifier, XDP attachment, IPC, backend and TLS gates.
 
 ## 📋 Changelog
 
-### v6.0.3 — Case-Pipeline Fail-Visible Fix & Audit Gate Hardening *(Current release — 2026-11-17)*
+### v6.1.0 — Web Exposure, Worker Integrity, TLS Sensor, LPE Guard & Edge Terminator *(Current release — 2026-11-18)*
+
+- **Modules A–E:** web exposure engine (`/proc` + ELF `.rodata` + config reachability + loopback ALPN; CVEs only when reachable), worker crash-storm guard (eBPF tracepoint + netlink fallback, `XDR.WORKER_CRASH_STORM`, strict worker cgroups with `JIT_ALLOW = 0`), TLS/ALPN sensor with kernel socket budget and a false-positive-free control-storm predicate, LPE blocker (socket families, StyX `web-ingress-only`, ASLR/module baseline) and an optional memory-safe edge.
+- **Ten new dashboard views:** Web Exposure, Worker Guard, TLS Sensor, LPE Guard, Edge Proxy, StyX, Titan Exec, Parser Cells, Emergency Lockdown and Witness — each with live status, actions and its own Settings tab. Every value can be changed, disabled and re-enabled at runtime with server-side validation.
+- **Runtime Settings v18:** five additive namespaces (`web_exposure`, `worker_guard`, `tls_sensor`, `lpe_guard`, `edge_proxy`); a v17 document upgrades unchanged and all new features start safe (disabled or sensor-only). The migration names every seeded namespace.
+- **Kernel & toolchain:** 6.1.0 eBPF module `worker_guard` (`signal:signal_deliver`, `WorkerCrashEvent`), LSM policy bits 1–6 with backward-compatible flag validation, `WORKER_GUARD_*` core commands and a capability-classifying Go client; Go language level 1.24 for `http.HTTP2Config`, toolchain floor remains `go1.27.4`.
+- **Honesty:** a missing tracepoint, LSM hook, `AF_PACKET` capability, certificate or core command family is reported as `inactive`/`error` with the reason.
+- **Audit remediation `VGT-AUDIT-20261118-GD61`:** FIND-001–007 and CHAIN-001/002 fixed — RDS family check, dual-stack/port-aware filters, honest worker source status with master-cgroup exclusion, minimal control capabilities (`CAP_NET_RAW`/`CAP_NET_ADMIN` + `AF_PACKET`, pinned as an exact allowlist in the gates), XFF scrub + boot-time edge start, 503/409 on partial LPE failures, real ASLR enforcement and mojibake-free 6.1 panels. Details and residual risk: `docs/V6.1.0-AUDIT-REMEDIATION.md`, `SECURITY.md`.
+
+### v6.0.3 — Case-Pipeline Fail-Visible Fix & Audit Gate Hardening *(Previous release — 2026-11-17)*
 
 - **End-to-end lowercase incident severity pipeline:** Unified `morpheus_rasp`, `styx_egress`, `styx_beacon`, and `deception` onto lowercase severities, normalized severities across `appendIncident`, `emitStyxBeaconIncident`, and `State.AddIncident`, and made `CaseEngine.IngestIncident` fail-visible on unknown severities so critical incidents can never silently skip case creation.
 - **UI severity class normalization:** Normalized severity badge/row classes with `.toLowerCase()` across `xdr.js`, `l7.js`, `render.js`, and `app.js`, alongside Protection Overview UI refinements.
@@ -960,6 +1010,6 @@ these assets locally; no runtime CDN or cloud lookup is used.
 
 [![VGT](https://img.shields.io/badge/VisionGaia-Technology-cyan?style=for-the-badge)](https://visiongaiatechnology.de)
 
-*VGT GeDefense 6.0.3 (V6) — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
+*VGT GeDefense 6.1.0 (V6) — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
 
 </div>

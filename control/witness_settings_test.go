@@ -138,8 +138,10 @@ func TestWitnessMigrationV16ToV17SeedsDisabledNamespace(t *testing.T) {
 	if upgraded := upgradeRuntimeSettings(&document, bootstrap); !upgraded {
 		t.Fatal("a v16 document must be upgraded")
 	}
-	if document.FabricVersion != fabricSettingsVersion || fabricSettingsVersion != 17 {
-		t.Fatalf("schema version is %d, want 17", document.FabricVersion)
+	if document.FabricVersion != fabricSettingsVersion || fabricSettingsVersion != 18 {
+		// GeDefense 6.1.0 bumped the Fabric schema to v18 (the five A-E
+		// namespaces); the v16->v17 witness seeding this test guards is unchanged.
+		t.Fatalf("schema version is %d, want 18", document.FabricVersion)
 	}
 	if document.Witness == nil {
 		t.Fatal("the v17 document carries no witness namespace")

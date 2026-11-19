@@ -80,7 +80,8 @@ type fabricRollbackRequest struct {
 func fabricModuleName(raw string) (string, bool) {
 	module := strings.ToLower(strings.TrimSpace(raw))
 	switch module {
-	case "kinetic", "network", "protection", "xdr", "l7", "threat_intel", "hardening", "integrity", "boot_trust", "policy_trust", "forensics", "system", "detection", "styx", "titan_exec", "parser_cells", "lockdown", "witness":
+	case "kinetic", "network", "protection", "xdr", "l7", "threat_intel", "hardening", "integrity", "boot_trust", "policy_trust", "forensics", "system", "detection", "styx", "titan_exec", "parser_cells", "lockdown", "witness",
+		"web_exposure", "worker_guard", "tls_sensor", "lpe_guard", "edge_proxy":
 		return module, true
 	default:
 		return "", false
@@ -138,6 +139,16 @@ func fabricModuleSnapshot(settings RuntimeSettings, module string) (interface{},
 		return effectiveLockdownSettings(settings), nil
 	case "witness":
 		return effectiveWitnessSettings(settings), nil
+	case "web_exposure":
+		return effectiveWebExposureSettings(settings), nil
+	case "worker_guard":
+		return effectiveWorkerGuardSettings(settings), nil
+	case "tls_sensor":
+		return effectiveTLSSensorSettings(settings), nil
+	case "lpe_guard":
+		return effectiveLPEGuardSettings(settings), nil
+	case "edge_proxy":
+		return effectiveEdgeProxySettings(settings), nil
 	default:
 		return nil, fmt.Errorf("unsupported settings module %q", module)
 	}
@@ -360,6 +371,51 @@ func decodeModuleSettings(raw json.RawMessage, module string, next *RuntimeSetti
 			return err
 		}
 		next.Witness = &in
+	case "web_exposure":
+		var in WebExposureFabricSettings
+		if err := decode(&in); err != nil {
+			return err
+		}
+		if err := validateWebExposureFabricSettings(&in); err != nil {
+			return err
+		}
+		next.WebExposure = &in
+	case "worker_guard":
+		var in WorkerGuardFabricSettings
+		if err := decode(&in); err != nil {
+			return err
+		}
+		if err := validateWorkerGuardFabricSettings(&in); err != nil {
+			return err
+		}
+		next.WorkerGuard = &in
+	case "tls_sensor":
+		var in TLSSensorFabricSettings
+		if err := decode(&in); err != nil {
+			return err
+		}
+		if err := validateTLSSensorFabricSettings(&in); err != nil {
+			return err
+		}
+		next.TLSSensor = &in
+	case "lpe_guard":
+		var in LPEGuardFabricSettings
+		if err := decode(&in); err != nil {
+			return err
+		}
+		if err := validateLPEGuardFabricSettings(&in); err != nil {
+			return err
+		}
+		next.LPEGuard = &in
+	case "edge_proxy":
+		var in EdgeProxyFabricSettings
+		if err := decode(&in); err != nil {
+			return err
+		}
+		if err := validateEdgeProxyFabricSettings(&in); err != nil {
+			return err
+		}
+		next.EdgeProxy = &in
 	default:
 		return fmt.Errorf("unsupported settings module %q", module)
 	}
@@ -662,6 +718,9 @@ func (s *APIServer) fabricModuleApplyState(settings RuntimeSettings, module stri
 		}
 		return "applied"
 	}
+	if state, handled := s.v61ModuleApplyState(settings, module); handled {
+		return state
+	}
 	return "applied"
 }
 
@@ -846,6 +905,9 @@ func (s *APIServer) fabricModuleDetails(module string) map[string]any {
 				details["canaries"] = deception.ListCanaries()
 			}
 		}
+		return details
+	}
+	if details := s.v61ModuleDetails(module); details != nil {
 		return details
 	}
 	return nil

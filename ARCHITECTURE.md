@@ -3350,8 +3350,19 @@ Tests:
   outbox_full|push.failed|export_created|import_rejected`.
 
 #### Packaging / Deployment
-- Kein neues systemd-Unit, keine Capability-/AF-/Syscall-Änderung: die Control-Unit
-  behält `RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK` und
+- **6.1.0-Nachtrag (VGT-AUDIT-20261118-GD61 FIND-001):** Die folgenden Sätze
+  beschreiben den Point-4-Phase-1-Stand (5.2.0/6.0.x) und sind für 6.1.0
+  **überholt**. Die Control-Unit hält jetzt exakt `CAP_NET_RAW CAP_NET_ADMIN`
+  (`CapabilityBoundingSet` + `AmbientCapabilities`) und erlaubt zusätzlich
+  `AF_PACKET`; das ist die minimale, in `scripts/security-audit.sh` und
+  `scripts/validate-systemd.sh` als exakte Allowlist kodifizierte Freigabe für
+  Modul C (AF_PACKET-Capture) und den CN_PROC-Fallback von Modul B. Alle übrigen
+  Sandbox-Direktiven (`NoNewPrivileges`, Seccomp, Adressfamilien außer
+  `AF_PACKET`) bleiben unverändert. Begründung, Restrisiko und der geplante
+  privilegierte Capture-Helper stehen in `SECURITY.md` und
+  `docs/V6.1.0-VERIFICATION.md` §7.
+- Kein neues systemd-Unit, keine Capability-/AF-/Syscall-Änderung **im
+  Point-4-Kontext**: die Control-Unit behält
   `ReadWritePaths=/var/lib/vgt/gedefense` (State-Root 1770 root:gedefense via
   tmpfiles), der Core erhält keinen Witness-Grant. `security-audit.sh` pinnt das
   (`POINT 4`-Block), `validate-systemd.sh`/`install-smoke.sh` prüfen es additiv.

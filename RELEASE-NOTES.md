@@ -1,5 +1,44 @@
 # Release Notes
 
+## 6.1.0 — 2026-11-18 — Web Exposure, Worker Guard, TLS Sensor, LPE Guard & Edge Terminator
+
+GeDefense **6.1.0** closes the gap between "a CVE exists" and "this host is actually exposed", and adds the kernel-near worker, TLS and local-privilege-escalation defenses that the 6.0.x line announced but left API-only. All new subsystems are default-safe, configurable from the dashboard, and report the capability they actually obtained.
+
+### Module A — Web exposure & posture
+- Finds web daemons via `/proc` and reads `/proc/<pid>/exe` (ELF `.rodata`) without executing anything: nginx/Apache version, `--with-http_v2_module`/`v3_module` flags, static OpenSSL.
+- Parses `/etc/nginx`, `/www/server/nginx/conf` and `/www/server/panel/vhost/nginx` for `listen … ssl`, `http2` and `quic`/`http3`; performs one loopback ALPN probe per listener.
+- Advisory matches (including CVE-2026-123007, CVE-2026-123633, CVE-2026-121810) require **reachability**, and the view shows the matching workaround next to the finding.
+
+### Module B — Worker integrity guard
+- Kernel `signal:signal_deliver` tracepoint (6.1.0 eBPF module) plus a netlink proc-connector fallback; only registered worker comm/uid are watched.
+- One crash is an audit event; three crashes in 60 s are a CRITICAL incident and a case (`XDR.WORKER_CRASH_STORM`), optionally correlated with open :443 peers.
+- Web worker cgroups are classified into the existing Titan exec/mmap gate with `JIT_ALLOW = 0`; master/control units are never included.
+
+### Module C — TLS/ALPN sensor & h2 control-storm budget
+- Passive `AF_PACKET` capture of the TLS ClientHello (≤1536 B) and QUIC initial packets feeds the existing TLS engine for every stack, including static-OpenSSL NGINX.
+- TCP rx/tx bytes come from the kernel per-socket counters (`INET_DIAG`), not from an ingress-only XDP ratio.
+- The storm predicate requires large volume **and** small average packets **and** an inbound pps asymmetry, so a normal 5 GB upload is not throttled. Reactions are staged: alert, then throttle plan, then TTL ban only on persistence or a correlated worker crash.
+
+### Module D — LPE kill-chain blocker
+- Per-worker-cgroup `socket_create` policy denies `AF_PACKET`, `AF_TIPC`, `AF_VSOCK`, `SCTP`, `DCCP`, `RDS`.
+- Optional StyX `web-ingress-only` profile plus `kernel.randomize_va_space = 2` and the `sctp`/`dccp`/`rds` module blacklist in the hardening catalog.
+
+### Module E — Memory-safe edge terminator
+- Optional Go TLS/h2 ingress in front of NGINX/Apache with explicit RFC-9113 limits, structural WAF and HTTP/1.1 upstream. Default off, loopback-only, certificate required.
+
+### Dashboard & settings
+- Ten new views: Web Exposure, Worker Guard, TLS Sensor, LPE Guard, Edge Proxy, StyX, Titan Exec, Parser Cells, Emergency Lockdown, Witness.
+- Every module has a settings tab generated from the authoritative server schema; values can be changed, disabled and re-enabled at runtime.
+- **Runtime Settings v18** adds the five namespaces; a v17 document upgrades without changing any existing behavior.
+
+### Verification honesty
+- Go: full `go test -count=1 -timeout 1800s ./...` and `go vet ./...` pass on Linux (Go 1.27.4); the gateway suite passes; `-race` passes for all five new internal packages.
+- Rust: `cargo +1.97.1 test` passes for `gedefense-common`/`gedefense-core`/`gedefense-cell-helper` (core 113 tests), the eBPF object builds for `bpfel-unknown-none` with the pinned nightly, and the release binaries build warning-free.
+- Release gates: `scripts/security-audit.sh` → PASS, `scripts/validate-systemd.sh` → 0, `packaging/tests/install-smoke.sh` → 71 passed, Go/Python/OpenSSL manifest crosscheck → PASS, i18n → 2055 keys × 4 languages.
+- **Audit remediation `VGT-AUDIT-20261118-GD61`:** FIND-001…007 and CHAIN-001/002 are fixed and recorded in `docs/V6.1.0-AUDIT-REMEDIATION.md`; the privileged `AF_PACKET`/`CN_PROC` capture was subsequently split into the dedicated `gedefense-capture-helper.service`, so `gedefense-control.service` holds zero capabilities again (see the R2/R3 section of that document).
+- **Audit remediation `VGT-AUDIT-2026-11-19` (quick profile, FIND-001…005):** parser-cell seccomp blocks the x32 ABI before every deny/socket rule; TLS-sensor ALPN/peer maps are hard-bounded; lockdown auto-network-drop merges with phase flags and survives phase refreshes; USB console/hub/power-only classification requires complete interface counts and interface uevents de-authorize the parent; the gateway strips `Connection`-nominated headers before attesting Authorization/session. Evidence: `docs/V6.1.0-AUDIT-REMEDIATION-20261119.md`.
+- Still NOT_TESTED on this host: BPF verifier/load on a target kernel, sustained live capture/packet-connector traffic, and the offline SCA gate.
+
 ## 6.0.1 — 2026-11-16 — GeDefense V6 Hotfix (Server-Safe Auto-Arm & AIDE Calibration)
 
 - **Emergency Lockdown remains opt-in:** `ApplySafeV6DefaultsOnEnforce()` no longer auto-arms Emergency Lockdown (`network_lockdown=true`, `require_sources=1`) when transitioning to `enforce`. **StyX** (`monitor`), **Titan Exec Gate** (`contain`), and **Parser Cells** (`enabled`) remain active automatically on `enforce`, while both **Emergency Lockdown** and **Witness** require explicit operator activation.

@@ -1,0 +1,33 @@
+/* STATUS: DIAMANT VGT SUPREME */
+/* Module D — LPE guard (socket policy, StyX web-ingress, hardening). */
+
+.v61-lpe-deny {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.v61-lpe-deny .badge {
+  font-size: 0.54rem;
+  letter-spacing: 0.04em;
+}
+
+.v61-lpe-policy { min-width: 620px; }
+
+/* The StyX profile is a policy statement, not a metric row: it gets a readable
+   column width and lets the CIDR lists wrap instead of being truncated. */
+.v61-lpe-profile { grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); }
+.v61-lpe-profile dd { white-space: normal; overflow-wrap: anywhere; font-size: 0.74rem; }
+
+.v61-lpe-hardening { min-width: 760px; }
+.v61-lpe-hardening td:nth-child(1) { max-width: 260px; }
+
+.v61-lpe-apply-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.v61-lpe-apply-row .v61-action-note { flex: 1 1 320px; }
