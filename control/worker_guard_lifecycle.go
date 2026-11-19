@@ -210,9 +210,7 @@ func (e *WorkerGuardEngine) liveSourceState() (mode, reason string, active bool)
 	if source != nil {
 		if liveMode, liveReason := source.Status(); liveMode != "" {
 			mode = liveMode
-			if liveReason != "" {
-				reason = liveReason
-			}
+			reason = liveReason
 		}
 	}
 	active = mode == workerguard.SourceEBPF || mode == workerguard.SourceNetlink

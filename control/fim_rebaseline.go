@@ -248,7 +248,7 @@ func (e *FIMEngine) RebaselineRelease(auth FIMRebaselineAuthorization, reason st
 		candidates = append(candidates, path)
 	}
 	if len(accepted) == 0 {
-		return e.rebaselineFault(errors.New("no release artifact differs from the approved baseline; nothing to rebaseline"))
+		return FIMRebaselineResult{}, errors.New("no release artifact differs from the approved baseline; nothing to rebaseline")
 	}
 	if len(accepted) > fimRebaselineMaxPaths {
 		return FIMRebaselineResult{}, errors.New("release rebaseline accepted set exceeds its bounded file count")

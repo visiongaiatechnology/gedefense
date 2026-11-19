@@ -248,6 +248,27 @@ func (s *APIServer) lpeGuardStatus(w http.ResponseWriter, _ *http.Request) {
 	view.SocketPolicy = append([]lpeguard.SocketPolicyEntry{}, plan.socket...)
 	view.StyxProfile = plan.styx
 	view.Hardening = append([]lpeguard.HardeningCheck{}, plan.checks...)
+	if !settings.Enabled {
+		view.Mode = "disabled"
+	} else if view.Capability == "active" {
+		appliedAny := false
+		for _, row := range plan.socket {
+			if row.Applied {
+				appliedAny = true
+				break
+			}
+		}
+		allHardeningPass := len(plan.checks) > 0
+		for _, chk := range plan.checks {
+			if chk.State != "pass" {
+				allHardeningPass = false
+				break
+			}
+		}
+		if appliedAny || allHardeningPass {
+			view.Mode = "enforce"
+		}
+	}
 	writeJSON(w, http.StatusOK, view)
 }
 
@@ -301,6 +322,7 @@ func (s *APIServer) lpeGuardApply(w http.ResponseWriter, r *http.Request) {
 	styxOK := !plan.settings.StyxProfile || (styxErr == nil && styxState == "applied")
 	aslrOK := !plan.settings.EnforceASLR || aslrState == "applied" || aslrState == "already_applied"
 	if socketOK && styxOK && aslrOK {
+		result["mode"] = "enforce"
 		if s.state != nil {
 			s.state.AddEvent(Event{Severity: "info", Kind: "lpe_guard.applied", Source: "operator",
 				Message: "LPE guard plan applied: " + strconv.Itoa(len(socketRows)) + " socket target(s), styx " + styxState + ", aslr " + aslrState})

@@ -1587,6 +1587,11 @@ func (s *APIServer) clientSnapshot() Snapshot {
 	for index := range snapshot.Incidents {
 		snapshot.Incidents[index].AttackStory = nil
 	}
+	// Bridge active Module C passive TLS/ALPN capture into the L7 TLS path view
+	// so Application Defense reflects live ClientHello visibility automatically.
+	if s.v61 != nil && s.v61.tlsSensor != nil {
+		s.v61.tlsSensor.ApplyToL7Status(&snapshot.L7)
+	}
 	// POINT 1 / P1-T5: a bounded Titan exec-gate projection is attached when the
 	// engine carries the syncer. It is a separate field on purpose - it never
 	// feeds xdrSensorMode or the enforcement label, and without wiring the payload

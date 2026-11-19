@@ -128,13 +128,24 @@ function renderStatus(data) {
 
   const exposed = servers.filter(server => String(server.posture || '').toLowerCase() === 'exposed').length;
   const grade = summary.grade || '';
-  const posture = servers.length ? String(servers[0].posture || '') : '';
-  setTone('exposurePill', postureLabel(posture), postureTone(posture));
+  const postureRank = { exposed: 6, reachable: 5, internal: 4, loopback: 3, filtered: 2, observed: 1 };
+  let posture = '';
+  let bestRank = -1;
+  for (const srv of servers) {
+    const p = String(srv.posture || '').toLowerCase();
+    const r = postureRank[p] ?? 0;
+    if (r > bestRank) {
+      bestRank = r;
+      posture = srv.posture || '';
+    }
+  }
+  const cveCount = Number(summary.affected_cves ?? affected.length);
+  setTone('exposurePill', postureLabel(posture), postureTone(posture, cveCount > 0));
 
   setText('exposureServersKpi', formatCount(summary.servers ?? servers.length));
   setText('exposureExposedKpi', formatCount(summary.exposed ?? exposed));
   setText('exposureReachableKpi', formatCount(reachable));
-  setText('exposureCvesKpi', formatCount(summary.affected_cves ?? affected.length));
+  setText('exposureCvesKpi', formatCount(cveCount));
   setText('exposureScoreKpi', source.scanned ? formatCount(summary.score) : '—');
   setTone('exposureGradePill', grade || '—', severityTone(grade === 'A' || grade === 'B' ? 'low' : grade === 'C' ? 'medium' : grade ? 'high' : 'muted'));
   setText('exposureConfigKpi', formatCount(configs.length));
@@ -153,10 +164,10 @@ function renderStatus(data) {
   renderRows('exposureAffectedRows', 5, affected.map(affectedRow), 'v61.exposure.empty.affected');
 }
 
-function postureTone(posture) {
+function postureTone(posture, hasCVEs = false) {
   switch (String(posture || '').toLowerCase()) {
     case 'exposed':
-      return 'danger';
+      return hasCVEs ? 'danger' : 'warn';
     case 'reachable':
     case 'observed':
       return 'warn';
@@ -203,7 +214,7 @@ function serverRow(server) {
     { text: alpnLabel, cls: 'v61-mono' },
     { pill: { label: t(asBool(server.quic) ? 'v61.v6.common.yes' : 'v61.v6.common.no'), tone: asBool(server.quic) ? 'warn' : 'muted' } },
     { pill: { label: t(asBool(server.http2) ? 'v61.v6.common.yes' : 'v61.v6.common.no'), tone: asBool(server.http2) ? 'warn' : 'muted' } },
-    { pill: { label: t(asBool(server.reachable) ? 'v61.v6.common.yes' : 'v61.v6.common.no'), tone: asBool(server.reachable) ? 'danger' : 'good' } }
+    { pill: { label: t(asBool(server.reachable) ? 'v61.v6.common.yes' : 'v61.v6.common.no'), tone: asBool(server.reachable) ? (asArray(server.affected).length > 0 ? 'danger' : 'warn') : 'good' } }
   ];
 }
 

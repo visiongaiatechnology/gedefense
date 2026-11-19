@@ -172,13 +172,36 @@ func NormalizeOptions(in Options) Options {
 func ComputeSummary(servers []Server) Summary {
 	summary := Summary{Servers: len(servers)}
 	score := 100
+	seenService := make(map[string]struct{}, len(servers))
+	seenCVEs := make(map[string]struct{}, 8)
 	for _, server := range servers {
 		switch server.Posture {
 		case PostureExposed:
 			summary.Exposed++
-			score -= 20
 			summary.AffectedCVEs += len(server.Affected)
+		case PostureInternal:
+			summary.AffectedCVEs += len(server.Affected)
+		}
+		// Score unique (binary/comm, version, posture) service units so N prefork
+		// workers do not multiply a listener penalty N times down to Grade F.
+		serviceKey := strings.TrimSpace(server.Comm) + "|" + strings.TrimSpace(server.Binary) + "|" + strings.TrimSpace(server.Version) + "|" + server.Posture
+		if _, dup := seenService[serviceKey]; dup {
+			continue
+		}
+		seenService[serviceKey] = struct{}{}
+		switch server.Posture {
+		case PostureExposed:
+			if len(server.Affected) > 0 {
+				score -= 15
+			} else {
+				score -= 5
+			}
 			for _, hit := range server.Affected {
+				cveKey := serviceKey + "|" + hit.ID
+				if _, seen := seenCVEs[cveKey]; seen {
+					continue
+				}
+				seenCVEs[cveKey] = struct{}{}
 				switch strings.ToLower(hit.Severity) {
 				case "critical":
 					score -= 15
@@ -191,8 +214,11 @@ func ComputeSummary(servers []Server) Summary {
 				}
 			}
 		case PostureInternal:
-			summary.AffectedCVEs += len(server.Affected)
-			score -= 8
+			if len(server.Affected) > 0 {
+				score -= 8
+			} else {
+				score -= 2
+			}
 		}
 	}
 	if score < 0 {

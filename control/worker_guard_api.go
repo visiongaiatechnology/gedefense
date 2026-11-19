@@ -111,6 +111,13 @@ func (s *APIServer) workerGuardStatus(w http.ResponseWriter, _ *http.Request) {
 	view.Registry.Comms = append([]string{}, settings.Comms...)
 	view.Registry.UIDs = append([]uint32{}, settings.UIDs...)
 	view.Registry.StrictCgroups = strictCgroupIDs(workers)
+	if !settings.Enabled {
+		view.Mode = "disabled"
+	} else if active && (len(view.Registry.StrictCgroups) > 0 || settings.StrictExec || settings.StrictMmap) {
+		view.Mode = "enforce"
+	} else if active {
+		view.Mode = "active"
+	}
 	for _, worker := range workers {
 		view.Workers = append(view.Workers, workerGuardWorkerView{PID: worker.PID, Comm: worker.Comm, UID: worker.UID, CgroupID: worker.CgroupID, Strict: worker.Strict})
 	}

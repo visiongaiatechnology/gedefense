@@ -177,3 +177,37 @@ type tlsSensorBudgetView struct {
 	MaxFlows int `json:"max_flows"`
 	Used     int `json:"used"`
 }
+
+// ApplyToL7Status projects an active Module C TLS/ALPN capture into the L7
+// snapshot telemetry when L7's legacy inline TLS header path is not separately enabled.
+func (e *TLSSensorEngine) ApplyToL7Status(dst *L7Status) {
+	if e == nil || dst == nil {
+		return
+	}
+	e.mu.Lock()
+	capture := e.capture
+	handshakes := e.handshakeCnt
+	findings := e.findings
+	var lastAt *time.Time
+	if len(e.handshakes) > 0 && !e.handshakes[0].At.IsZero() {
+		at := e.handshakes[0].At
+		lastAt = &at
+	}
+	e.mu.Unlock()
+	if capture != "active" {
+		return
+	}
+	dst.TLSEnabled = true
+	if handshakes > dst.TLSHandshakesTotal {
+		dst.TLSHandshakesTotal = handshakes
+	}
+	if findings > dst.TLSFindingsTotal {
+		dst.TLSFindingsTotal = findings
+	}
+	if dst.TLSHandshakesTotal > 0 {
+		dst.TLSPathVerified = true
+	}
+	if dst.TLSLastHandshake == nil || (lastAt != nil && lastAt.After(*dst.TLSLastHandshake)) {
+		dst.TLSLastHandshake = lastAt
+	}
+}
