@@ -1,5 +1,25 @@
 # Release Notes
 
+## 6.1.1 — 2026-11-19 — Security & Kernel-Compatibility Hotfix
+
+**6.1.1 is the deployable hotfix for the 6.1 line.** It closes the findings of the 2026-11-18 and 2026-11-19 security audits (including the issues that blocked the 6.1.0 deployment gate), isolates the privileged packet capture from the control plane, and adds Kernel 7.3 BTF compatibility. Deploy 6.1.1 instead of 6.1.0. Full release note: `docs/V6.1.1-HOTFIX.md`.
+
+### Security
+- **`VGT-AUDIT-20261118-GD61` (FIND-001…007, CHAIN-001/002):** RDS family check, dual-stack `INET_DIAG`/cBPF ports, honest worker crash source with master-cgroup exclusion, XFF scrub + boot-time edge start, 503/409 LPE partial failures with real ASLR enforcement, and UI contract/mojibake fixes.
+- **`VGT-AUDIT-20261118-GD61-R2` (FIND-008/009):** `gedefense-capture-helper.service` now owns the raw `AF_PACKET`/`CN_PROC` capture; `gedefense-control.service` is back to zero capabilities and no `AF_PACKET`. The helper is a separate account/unit with a `0600` `SO_PEERCRED` socket, no `AF_INET`/`AF_INET6`, no config/state access and an isolated runtime directory. Also fixed `renderAdvisoryRows` in `exposure.js`, `X-Real-IP` stripping, Worker Guard `strict_reason`, and the Arch `PKGBUILD` version.
+- **`VGT-AUDIT-2026-11-19` quick profile (FIND-001…005):** seccomp x32 ABI block, bounded TLS-sensor ALPN/peer maps, lockdown auto-drop ownership across phases and startup re-arm, complete USB console/hub/power-only classification with interface-uevent parent handling, and `Connection`-nominated header stripping in the gateway.
+
+### Kernel compatibility & Cockpit
+- **Kernel 7.3 BTF v1:** the Titan BTF parser accepts `24 <= hdr_len <= data.len()` (32-byte header) instead of requiring exactly 24 bytes; section offsets are overflow-checked and truncated/out-of-image headers remain fail-closed. Regression tests cover the 32-byte fixture and `hdr_len > data.len()`.
+- **Cockpit Auto-Cooldown:** correlated worker crash storms and critical/high alerts use a two-stage cooldown (`0–15m` RED → `15–60m` YELLOW → `> 60m` GREEN `calm_mitigated`), preventing lifetime counters from pinning the traffic light on RED after incidents subside.
+
+### Version and artifacts
+- **6.1.1** across `VERSION`, Control (`6.1.1`), Gateway (`6.1.1-access`), Rust workspace/`Cargo.lock`, AstraeaOS contract, Arch `PKGBUILD`, OneClick installer headers and README release links. Artifacts: `VGT_GeDefense_V6_6.1.1_*`, `GeDefense-6.1.1-*`.
+
+### Verification
+- Linux: control `go test -count=1 -timeout 1800s ./...` and gateway tests pass; Rust `cargo +1.97.1 test --locked -p gedefense-common -p gedefense-core -p gedefense-cell-helper` passes (common 43, core 121, cell-helper 41 + 1 root-gated ignored); release and eBPF builds pass; `security-audit.sh`, `validate-systemd.sh`, `validate-i18n.mjs` and install-smoke pass. See `docs/V6.1.0-VERIFICATION.md`, `docs/V6.1.0-AUDIT-REMEDIATION.md` and `docs/V6.1.0-AUDIT-REMEDIATION-20261119.md`.
+- NOT_TESTED on this host: BPF verifier/load on a target kernel, sustained live capture/packet-connector traffic, and the offline SCA gate.
+
 ## 6.1.0 — 2026-11-18 — Web Exposure, Worker Guard, TLS Sensor, LPE Guard & Edge Terminator
 
 GeDefense **6.1.0** closes the gap between "a CVE exists" and "this host is actually exposed", and adds the kernel-near worker, TLS and local-privilege-escalation defenses that the 6.0.x line announced but left API-only. All new subsystems are default-safe, configurable from the dashboard, and report the capability they actually obtained.
@@ -34,9 +54,7 @@ GeDefense **6.1.0** closes the gap between "a CVE exists" and "this host is actu
 ### Verification honesty
 - Go: full `go test -count=1 -timeout 1800s ./...` and `go vet ./...` pass on Linux (Go 1.27.4); the gateway suite passes; `-race` passes for all five new internal packages.
 - Rust: `cargo +1.97.1 test` passes for `gedefense-common`/`gedefense-core`/`gedefense-cell-helper` (core 113 tests), the eBPF object builds for `bpfel-unknown-none` with the pinned nightly, and the release binaries build warning-free.
-- Release gates: `scripts/security-audit.sh` → PASS, `scripts/validate-systemd.sh` → 0, `packaging/tests/install-smoke.sh` → 71 passed, Go/Python/OpenSSL manifest crosscheck → PASS, i18n → 2055 keys × 4 languages.
-- **Audit remediation `VGT-AUDIT-20261118-GD61`:** FIND-001…007 and CHAIN-001/002 are fixed and recorded in `docs/V6.1.0-AUDIT-REMEDIATION.md`; the privileged `AF_PACKET`/`CN_PROC` capture was subsequently split into the dedicated `gedefense-capture-helper.service`, so `gedefense-control.service` holds zero capabilities again (see the R2/R3 section of that document).
-- **Audit remediation `VGT-AUDIT-2026-11-19` (quick profile, FIND-001…005):** parser-cell seccomp blocks the x32 ABI before every deny/socket rule; TLS-sensor ALPN/peer maps are hard-bounded; lockdown auto-network-drop merges with phase flags and survives phase refreshes; USB console/hub/power-only classification requires complete interface counts and interface uevents de-authorize the parent; the gateway strips `Connection`-nominated headers before attesting Authorization/session. Evidence: `docs/V6.1.0-AUDIT-REMEDIATION-20261119.md`.
+- Release gates at 6.1.0 baseline: `scripts/security-audit.sh` → PASS, `scripts/validate-systemd.sh` → 0, `packaging/tests/install-smoke.sh` → 71 passed, Go/Python/OpenSSL manifest crosscheck → PASS, i18n → 2055 keys × 4 languages.
 - Still NOT_TESTED on this host: BPF verifier/load on a target kernel, sustained live capture/packet-connector traffic, and the offline SCA gate.
 
 ## 6.0.1 — 2026-11-16 — GeDefense V6 Hotfix (Server-Safe Auto-Arm & AIDE Calibration)

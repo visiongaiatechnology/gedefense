@@ -5079,12 +5079,15 @@ mod tests {
         wrong_version[2] = 2;
         let mut wrong_hdr_len = good.clone();
         wrong_hdr_len[4] = 23;
+        let mut oversized_hdr_len = good.clone();
+        oversized_hdr_len[4..8].copy_from_slice(&(good.len() as u32 + 1).to_le_bytes());
         let broken_bodies: Vec<(&str, Vec<u8>)> = vec![
             ("empty", Vec::new()),
             ("short header", good[..12].to_vec()),
             ("wrong magic", wrong_magic),
             ("wrong version", wrong_version),
             ("wrong hdr_len", wrong_hdr_len),
+            ("hdr_len beyond image", oversized_hdr_len),
             ("truncated string table", good[..good.len() - 4].to_vec()),
         ];
         for (label, data) in broken_bodies {
@@ -5116,6 +5119,24 @@ mod tests {
                 .expect("arity is plausible");
             assert!(!titan_exec_offsets_match_ebpf_slots(&offsets), "arity {arity}");
         }
+    }
+
+    #[test]
+    fn titan_btf_accepts_extended_v1_header() {
+        let baseline_data = titan_btf_fixture(&TitanBtfSpec::default());
+        let baseline = resolve_titan_btf(baseline_data.clone()).expect("baseline BTF");
+        // Kernel 7.3 grows the BTF v1 header to 32 bytes; the section offsets
+        // stay relative to hdr_len, so an 8-byte extension must parse exactly
+        // like the 24-byte header (and must not be mistaken for section data).
+        let mut extended = baseline_data;
+        extended.splice(24..24, [0u8; 8]);
+        extended[4..8].copy_from_slice(&32u32.to_le_bytes());
+        let offsets = resolve_titan_btf(extended).expect("32-byte BTF header");
+        assert_eq!(offsets.file_f_inode_off, baseline.file_f_inode_off);
+        assert_eq!(offsets.inode_i_ino_off, baseline.inode_i_ino_off);
+        assert_eq!(offsets.inode_i_mode_off, baseline.inode_i_mode_off);
+        assert_eq!(offsets.bprm_nargs, baseline.bprm_nargs);
+        assert_eq!(offsets.mmap_nargs, baseline.mmap_nargs);
     }
 
     #[test]

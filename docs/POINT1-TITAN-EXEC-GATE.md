@@ -269,7 +269,8 @@ anderes steht. Maßgeblich ist der Code, nicht die Prosa.
    (Reject statt Reparatur; keine halbe Identität, keine erfundene Null-Identität).
 5. **Mini-BTF-Parser ist Little-Endian-only.** `rust/gedefense-core/src/btf_offsets.rs`
    dekodiert BTF-Header/Typen ausschließlich mit `u16/u32/u64::from_le_bytes` (max.
-   64 MiB, Version 1, `hdr_len == 24`, rekursive anonyme Unions, Tiefenlimit 16).
+   64 MiB, Version 1, `hdr_len >= 24` (32-Byte-Header ab Kernel 7.3 werden
+ akzeptiert), rekursive anonyme Unions, Tiefenlimit 16).
    Andere Endianness wird nicht unterstützt; jeder Parserfehler ⇒ `Err` ⇒
    `offsets=invalid` ⇒ kein Attach (keine Heuristik, keine Attrappe).
 6. **Attach nur bei exakt unterstützter Hook-Arität.** `titan_exec_offsets_match_ebpf_slots`

@@ -7,8 +7,8 @@
 ### Linux Security Fabric - Your Entenprise System
 
 [![License](https://img.shields.io/badge/License-AGPL--3.0--only-blue?style=for-the-badge)](https://www.gnu.org/licenses/agpl-3.0)
-[![Version](https://img.shields.io/badge/Version-6.1.0-orange?style=for-the-badge)](#)
-[![Status](https://img.shields.io/badge/Status-Release_V6_(6.1.0)-brightgreen?style=for-the-badge)](#)
+[![Version](https://img.shields.io/badge/Version-6.1.1-orange?style=for-the-badge)](#)
+[![Status](https://img.shields.io/badge/Status-Release_V6_(6.1.1)-brightgreen?style=for-the-badge)](#)
 [![Installer](https://img.shields.io/badge/Installer-Universal_Linux-green?style=for-the-badge)](#-quick-start)
 [![Platform](https://img.shields.io/badge/Platform-Linux_x86__64-lightgrey?style=for-the-badge&logo=linux)](#)
 [![Data Plane](https://img.shields.io/badge/Data_Plane-Rust_eBPF%2FXDP-red?style=for-the-badge&logo=rust)](#-architecture)
@@ -30,12 +30,18 @@
 
 <br />
 
-⬇️ **Direct Installers (v6.1.0 / V6):**  
-[**OneClick Installer (`.run`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.1.0/VGT_GeDefense_V6_6.1.0_OneClick.run) · [`.sha256`](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.1.0/VGT_GeDefense_V6_6.1.0_OneClick.run.sha256) · [**Desktop Tray (`.run`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.1.0/GeDefense-6.1.0-Desktop-OneClick.run) · [`.sha256`](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.1.0/GeDefense-6.1.0-Desktop-OneClick.run.sha256) · [**Source (`.zip`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.1.0/VGT_GeDefense_V6_6.1.0_Source.zip) · [**v6.1.0 Release**](https://github.com/visiongaiatechnology/gedefense/releases/tag/v6.1.0) · [Quick Start](#-quick-start)
+⬇️ **Direct Installers (v6.1.1 / V6):**  
+[**OneClick Installer (`.run`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.1.1/VGT_GeDefense_V6_6.1.1_OneClick.run) · [`.sha256`](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.1.1/VGT_GeDefense_V6_6.1.1_OneClick.run.sha256) · [**Desktop Tray (`.run`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.1.1/GeDefense-6.1.1-Desktop-OneClick.run) · [`.sha256`](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.1.1/GeDefense-6.1.1-Desktop-OneClick.run.sha256) · [**Source (`.zip`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.1.1/VGT_GeDefense_V6_6.1.1_Source.zip) · [**v6.1.1 Release**](https://github.com/visiongaiatechnology/gedefense/releases/tag/v6.1.1) · [Quick Start](#-quick-start)
 
 </div>
 
-## 📋 Changelog — GeDefense V6.1 (`6.1.0`, 2026-11-19)
+## 📋 Changelog — GeDefense V6.1 (`6.1.1`, 2026-11-19)
+
+### 🔥 Hotfix 6.1.1 (2026-11-19)
+- **Security:** The confirmed findings of `VGT-AUDIT-20261118-GD61` (including R2/R3 `FIND-008`/`FIND-009`) and `VGT-AUDIT-2026-11-19` (`FIND-001`–`FIND-005`) are fixed. Privileged `AF_PACKET`/`CN_PROC` capture now runs in the isolated `gedefense-capture-helper.service`; `gedefense-control.service` remains capability-free.
+- **Kernel 7.3:** The Titan BTF parser accepts extended BTF v1 headers (`24 <= hdr_len <= data.len()`, 32-byte header) and stays fail-closed for truncated or out-of-image headers.
+- **Cockpit Auto-Cooldown:** Correlated worker crash storms and alerts step down automatically (`0–15m` RED → `15–60m` YELLOW → `> 60m` GREEN) once the host calms down.
+- **Version/artifacts:** 6.1.1 in Control (`6.1.1`), Gateway (`6.1.1-access`), Rust/`Cargo.lock`, AstraeaOS contract, Arch `PKGBUILD`, OneClick installer and README (`VGT_GeDefense_V6_6.1.1_*`).
 
 ### ✨ What Changed in V6.1
 - **Modules A–E (New in 6.1.0):**
@@ -48,7 +54,7 @@
 - **Guided Setup Wizard (`Einrichtungsassistent`) & Offline `AGENTS.md` Workflow:** Built-in step-by-step first-start onboarding wizard (`00`–`08`) in the Web UI (see below).
 - **Safe Auto-Activation on `enforce` & Honest Telemetry:** `observe`/`canary` keep V6 modules off; switching to `enforce` activates `styx=monitor`, `titan_exec=contain`, `parser_cells=enabled` (Lockdown & Witness stay opt-in). Missing kernel capabilities (`bpf` LSM, tracepoint, `AF_PACKET`, cert) are always reported as `inactive`/`error` with concrete reasons.
 
-### 🛡️ Security Fixes in V6.1.0 (Complete Summary)
+### 🛡️ Security Fixes in V6.1.1 (Complete Summary)
 - **2026-11-19 Security Audit Fixes (`FIND-001` – `FIND-005`, `docs/V6.1.0-AUDIT-REMEDIATION-20261119.md`):**
   - `FIND-001` **Parser-Cell Seccomp x32 ABI Bypass:** Added `JMP|JSET|K` guard on `__X32_SYSCALL_BIT` (`0x40000000` → `EPERM`) in `gedefense-cell-helper` before all deny and `AF_UNIX` socket rules.
   - `FIND-002` **Bounded TLS-Sensor Maps:** Sanitized and deduplicated ALPN strings (≤ 32 B, ≤ 8 per hello), capped ALPN counter map at 32 keys + `(other)` bucket, and capped tracked peer set at 4096 entries.
@@ -60,7 +66,7 @@
 - **Included 5.2.0 / 6.0.x Hardened Baseline:** Includes all 36 fixes from `VGT-AUDIT-20261114-GD51` (Ed25519 installer pre-verification, Argon2id admission gate, strict AEAD/HistoryMAC, Qt tray plain-text rendering, atomic Rust quarantine, eBPF batch accounting) plus lowercase incident severity normalization (`6.0.3`).
 
 ### 🧭 Guided Setup Wizard (`Einrichtungsassistent`) & `AGENTS.md` Workflow
-GeDefense 6.1.0 includes an interactive **Setup Wizard** directly in the Dashboard (`control/web/setup-wizard.js`) to guide operators from initial installation to safe `enforce` operation without accidental lockouts:
+GeDefense 6.1.1 includes an interactive **Setup Wizard** directly in the Dashboard (`control/web/setup-wizard.js`) to guide operators from initial installation to safe `enforce` operation without accidental lockouts:
 - **Step `00` — `AGENTS.md` Blueprint (No Remote AI Control API):** GeDefense deliberately exposes **no** inbound AI control channel or prompt API. Instead, the wizard provides a ready-to-copy `AGENTS.md` runbook so an administrator can run a trusted local CLI coding agent (e.g., Codex, Antigravity, Claude Code) via SSH for **read-only discovery first**, evaluate every module against live workloads, and apply changes safely via `POST /api/v1/settings/{module}/preview` → `PUT /api/v1/settings/{module}`.
 - **Steps `01`–`08` — Live Guided Onboarding:**
   1. `01` **Management Allowlist & Services:** Verify SSH/admin IPs and core service health before switching to `enforce`.
@@ -615,10 +621,10 @@ If the Gaia Cells runtime is **not present**, the adapter reports `runtime_not_i
 ### One-Click installer
 
 ```bash
-wget https://github.com/visiongaiatechnology/gedefense/releases/download/v6.1.0/VGT_GeDefense_V6_6.1.0_OneClick.run
-sha256sum --check VGT_GeDefense_V6_6.1.0_OneClick.run.sha256
-chmod 700 VGT_GeDefense_V6_6.1.0_OneClick.run
-sudo ./VGT_GeDefense_V6_6.1.0_OneClick.run
+wget https://github.com/visiongaiatechnology/gedefense/releases/download/v6.1.1/VGT_GeDefense_V6_6.1.1_OneClick.run
+sha256sum --check VGT_GeDefense_V6_6.1.1_OneClick.run.sha256
+chmod 700 VGT_GeDefense_V6_6.1.1_OneClick.run
+sudo ./VGT_GeDefense_V6_6.1.1_OneClick.run
 ```
 
 The installer is source-self-contained and verifies its signed release index,
@@ -1010,6 +1016,6 @@ these assets locally; no runtime CDN or cloud lookup is used.
 
 [![VGT](https://img.shields.io/badge/VisionGaia-Technology-cyan?style=for-the-badge)](https://visiongaiatechnology.de)
 
-*VGT GeDefense 6.1.0 (V6) — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
+*VGT GeDefense 6.1.1 (V6) — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
 
 </div>

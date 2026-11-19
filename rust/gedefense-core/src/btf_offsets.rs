@@ -1,7 +1,7 @@
 //! Point 1 (§4.1/§6): mini-BTF parser and Titan exec-gate runtime offsets.
 //!
 //! Reads `/sys/kernel/btf/vmlinux` (64 MiB bound), accepts BTF v1 with
-//! `hdr_len == 24`, walks STRUCT/UNION/FUNC/FUNC_PROTO (other documented kinds
+//! `hdr_len >= 24`, walks STRUCT/UNION/FUNC/FUNC_PROTO (other documented kinds
 //! are skipped by their exact length) and resolves the §4.1 byte offsets,
 //! including both ctime layouts (`i_ctime_sec`/`i_ctime_nsec` split or
 //! `i_ctime.tv_sec`/`tv_nsec`). Anonymous members recurse, `kind_flag`
@@ -167,8 +167,17 @@ impl VmlinuxBtf {
         if magic != BTF_MAGIC {
             return Err(format!("BTF magic {magic:#06x} is not {BTF_MAGIC:#06x}"));
         }
-        if version != BTF_VERSION || hdr_len != BTF_HEADER_BYTES {
-            return Err(format!("BTF version {version}/hdr_len {hdr_len} is not 1/24"));
+        // BTF v1 allows a header longer than 24 bytes (the kernel grew it to 32
+        // bytes in 7.3). hdr_len is the base of both section offsets, so only
+        // an undersized or structurally impossible header is rejected.
+        if version != BTF_VERSION {
+            return Err(format!("BTF version {version} is not {BTF_VERSION}"));
+        }
+        if hdr_len < BTF_HEADER_BYTES || hdr_len > data.len() {
+            return Err(format!(
+                "BTF hdr_len {hdr_len} is outside {BTF_HEADER_BYTES}..={}",
+                data.len()
+            ));
         }
         let type_off = u32_at(&data, 8)? as usize;
         let type_len = u32_at(&data, 12)? as usize;
@@ -177,9 +186,9 @@ impl VmlinuxBtf {
         if str_len == 0 {
             return Err("BTF string section is empty".to_owned());
         }
-        let type_start = hdr_len + type_off;
+        let type_start = hdr_len.checked_add(type_off).ok_or("BTF type section overflows")?;
         let type_end = type_start.checked_add(type_len).ok_or("BTF type section overflows")?;
-        let str_start = hdr_len + str_off;
+        let str_start = hdr_len.checked_add(str_off).ok_or("BTF string section overflows")?;
         let str_end = str_start.checked_add(str_len).ok_or("BTF string section overflows")?;
         if type_end > data.len() || str_end > data.len() {
             return Err("BTF section lies outside the image".to_owned());

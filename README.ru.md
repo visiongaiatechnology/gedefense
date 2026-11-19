@@ -7,8 +7,8 @@
 ### Linux Security Fabric - Your Entenprise System
 
 [![License](https://img.shields.io/badge/License-AGPL--3.0--only-blue?style=for-the-badge)](https://www.gnu.org/licenses/agpl-3.0)
-[![Version](https://img.shields.io/badge/Version-6.1.0-orange?style=for-the-badge)](#)
-[![Status](https://img.shields.io/badge/Status-Release_V6_(6.1.0)-brightgreen?style=for-the-badge)](#)
+[![Version](https://img.shields.io/badge/Version-6.1.1-orange?style=for-the-badge)](#)
+[![Status](https://img.shields.io/badge/Status-Release_V6_(6.1.1)-brightgreen?style=for-the-badge)](#)
 [![Installer](https://img.shields.io/badge/Installer-Universal_Linux-green?style=for-the-badge)](#-быстрый-старт)
 [![Platform](https://img.shields.io/badge/Platform-Linux_x86__64-lightgrey?style=for-the-badge&logo=linux)](#)
 [![Data Plane](https://img.shields.io/badge/Data_Plane-Rust_eBPF%2FXDP-red?style=for-the-badge&logo=rust)](#-архитектура)
@@ -30,12 +30,18 @@
 
 <br />
 
-⬇️ **Прямые ссылки на установщики (v6.1.0 / V6):**  
-[**OneClick-установщик (`.run`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.1.0/VGT_GeDefense_V6_6.1.0_OneClick.run) · [`.sha256`](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.1.0/VGT_GeDefense_V6_6.1.0_OneClick.run.sha256) · [**Desktop Tray (`.run`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.1.0/GeDefense-6.1.0-Desktop-OneClick.run) · [`.sha256`](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.1.0/GeDefense-6.1.0-Desktop-OneClick.run.sha256) · [**Исходный код (`.zip`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.1.0/VGT_GeDefense_V6_6.1.0_Source.zip) · [**Релиз v6.1.0**](https://github.com/visiongaiatechnology/gedefense/releases/tag/v6.1.0) · [Быстрый старт](#-быстрый-старт)
+⬇️ **Прямые ссылки на установщики (v6.1.1 / V6):**  
+[**OneClick-установщик (`.run`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.1.1/VGT_GeDefense_V6_6.1.1_OneClick.run) · [`.sha256`](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.1.1/VGT_GeDefense_V6_6.1.1_OneClick.run.sha256) · [**Desktop Tray (`.run`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.1.1/GeDefense-6.1.1-Desktop-OneClick.run) · [`.sha256`](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.1.1/GeDefense-6.1.1-Desktop-OneClick.run.sha256) · [**Исходный код (`.zip`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.1.1/VGT_GeDefense_V6_6.1.1_Source.zip) · [**Релиз v6.1.1**](https://github.com/visiongaiatechnology/gedefense/releases/tag/v6.1.1) · [Быстрый старт](#-быстрый-старт)
 
 </div>
 
-## 📋 Журнал изменений — GeDefense V6.1 (`6.1.0`, 19.11.2026)
+## 📋 Журнал изменений — GeDefense V6.1 (`6.1.1`, 19.11.2026)
+
+### 🔥 Хотфикс 6.1.1 (19.11.2026)
+- **Безопасность:** исправлены подтверждённые findings аудитов `VGT-AUDIT-20261118-GD61` (включая R2/R3 `FIND-008`/`FIND-009`) и `VGT-AUDIT-2026-11-19` (`FIND-001`–`FIND-005`). Привилегированный захват `AF_PACKET`/`CN_PROC` теперь работает в изолированном `gedefense-capture-helper.service`; `gedefense-control.service` остаётся без capabilities.
+- **Kernel 7.3:** парсер Titan BTF принимает расширенные заголовки BTF v1 (`24 <= hdr_len <= data.len()`, 32-байтовый заголовок) и остаётся fail-closed для усечённых/выходящих за образ заголовков.
+- **Авто-охлаждение светофора:** коррелированные штормы падений воркеров и инциденты автоматически снижают уровень (`0–15 мин` красный → `15–60 мин` жёлтый → `> 60 мин` зелёный) после стабилизации.
+- **Версия/артефакты:** 6.1.1 в Control (`6.1.1`), Gateway (`6.1.1-access`), Rust/`Cargo.lock`, контракте AstraeaOS, Arch-`PKGBUILD`, OneClick-установщике и README (`VGT_GeDefense_V6_6.1.1_*`).
 
 ### ✨ Что нового в V6.1
 - **Модули A–E (новое в 6.1.0):**
@@ -48,7 +54,7 @@
 - **Мастер первоначальной настройки (`Setup Wizard` / `Einrichtungsassistent`) и `AGENTS.md`:** пошаговый мастер (`00`–`08`) прямо в Web UI (см. ниже).
 - **Безопасная авто-активация при `enforce` и честная телеметрия:** в `observe`/`canary` модули V6 выключены; при переходе в `enforce` включаются `styx=monitor`, `titan_exec=contain`, `parser_cells=enabled` (Lockdown и Witness остаются opt-in). Отсутствующие возможности ядра (`bpf` LSM, tracepoint, `AF_PACKET`, сертификат) всегда отображаются как `inactive`/`error`.
 
-### 🛡️ Исправления безопасности в V6.1.0 (общий список)
+### 🛡️ Исправления безопасности в V6.1.1 (общий список)
 - **Исправления аудита безопасности от 19.11.2026 (`FIND-001` – `FIND-005`, `docs/V6.1.0-AUDIT-REMEDIATION-20261119.md`):**
   - `FIND-001` **Обход seccomp через x32 ABI в ячейках парсинга:** добавлена проверка `JMP|JSET|K` бита `__X32_SYSCALL_BIT` (`0x40000000` → `EPERM`) в `gedefense-cell-helper` перед всеми правилами deny и `AF_UNIX`.
   - `FIND-002` **Ограниченные карты TLS-сенсора:** значения ALPN очищаются и дедуплицируются (≤ 32 Б, ≤ 8 на Hello), карта счётчиков ограничена 32 ключами + `(other)`, множество пиров — 4096 записями.
@@ -60,7 +66,7 @@
 - **База 5.2.0 / 6.0.x:** включает все 36 исправлений `VGT-AUDIT-20261114-GD51` (предпроверка Ed25519 в OneClick, шлюз Argon2id, строгий AEAD/HistoryMAC, plain-text Qt-трей, атомарный карантин Rust, точный учёт eBPF) и нормализацию уровней серьёзности инцидентов (`6.0.3`).
 
 ### 🧭 Мастер настройки (`Setup Wizard`) и сценарий `AGENTS.md`
-В GeDefense 6.1.0 встроен интерактивный **Мастер настройки** (`control/web/setup-wizard.js`) для безопасного ввода хоста в режим `enforce`:
+В GeDefense 6.1.1 встроен интерактивный **Мастер настройки** (`control/web/setup-wizard.js`) для безопасного ввода хоста в режим `enforce`:
 - **Шаг `00` — Шаблон `AGENTS.md` (без удалённого AI API):** GeDefense намеренно не открывает входящий AI-канал управления. Мастер предоставляет готовый `AGENTS.md` для запуска локального CLI-агента (Codex, Antigravity, Claude Code) по SSH в режиме **сначала только чтение (read-only)** с безопасным применением настроек через `POST /api/v1/settings/{module}/preview` → `PUT /api/v1/settings/{module}`.
 - **Шаги `01`–`08`:** `01` Allowlist администратора и сервисы → `02` L7 Traffic Guard (`observe` → `enforce`) → `03` Web Exposure и TLS-сенсор (`gedefense-capture-helper`) → `04` LPE Guard и Edge Proxy (проверка портов `:8443`/`:8080`) → `05` Kinetic XDP и фиды → `06` XDR, StyX и Titan Exec-Gate (`skipped_cgroups`) → `07` Parser Cells и эталон FIM (`POST /api/v1/fim/baseline`) → `08` Witness, Emergency Lockdown и проверка `/gateway/livez`.
 
@@ -535,17 +541,17 @@ Observe ──→ Canary ──→ Enforce
 
 ```bash
 # Загрузить инсталлятор
-wget https://github.com/visiongaiatechnology/gedefense/releases/download/v6.1.0/VGT_GeDefense_V6_6.1.0_OneClick.run
+wget https://github.com/visiongaiatechnology/gedefense/releases/download/v6.1.1/VGT_GeDefense_V6_6.1.1_OneClick.run
 
 # Проверить SHA-256
-sha256sum --check VGT_GeDefense_V6_6.1.0_OneClick.run.sha256
+sha256sum --check VGT_GeDefense_V6_6.1.1_OneClick.run.sha256
 
 # Установить (требуются права root)
-chmod 700 VGT_GeDefense_V6_6.1.0_OneClick.run
-sudo ./VGT_GeDefense_V6_6.1.0_OneClick.run
+chmod 700 VGT_GeDefense_V6_6.1.1_OneClick.run
+sudo ./VGT_GeDefense_V6_6.1.1_OneClick.run
 ```
 
-> **Доступность инсталлятора:** Официальные автономные установочные ассеты v6.0.3 (`VGT_GeDefense_V6_6.1.0_OneClick.run`) будут опубликованы вместе с подписанным GitHub Release.
+> **Доступность инсталлятора:** Официальные автономные установочные ассеты v6.0.3 (`VGT_GeDefense_V6_6.1.1_OneClick.run`) будут опубликованы вместе с подписанным GitHub Release.
 
 > Инсталлятор и контрольные суммы публикуются только после успешного прохождения всех этапов GitHub CI и квалификационных проверок целевого хоста. Никогда не запускайте непроверенные файлы RUN.
 
@@ -884,6 +890,6 @@ sudo python3 scripts/update-geoip-db.py /var/lib/vgt/gedefense/geoip.csv
 
 [![VGT](https://img.shields.io/badge/VisionGaia-Technology-cyan?style=for-the-badge)](https://visiongaiatechnology.de)
 
-*VGT GeDefense 6.1.0 (V6) — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
+*VGT GeDefense 6.1.1 (V6) — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
 
 </div>
