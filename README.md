@@ -24,7 +24,7 @@
 **KERNEL-NEAR NETWORK DEFENSE · HOST XDR · ENCRYPTED EVIDENCE · REVERSIBLE HARDENING · NO CLOUD CONTROL PLANE**
 
 
-<img width="1199" height="1312" alt="sirdu_vgt_min" src="https://github.com/user-attachments/assets/1ce4d172-df4f-49a5-aaa1-dd24074b8073" />
+<img width="299" height="412" alt="sirdu_vgt_min" src="https://github.com/user-attachments/assets/1ce4d172-df4f-49a5-aaa1-dd24074b8073" />
 
 
 <br />
