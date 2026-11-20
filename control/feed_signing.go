@@ -269,10 +269,22 @@ func writeFeedSigningFile(path string, data []byte, mode os.FileMode, allowed fu
 // accepted raw key sizes is returned verbatim, so a key whose last byte happens
 // to be 0x0a/0x0d is never mistaken for a terminated shorter key.
 func feedSigningKeyFileBytes(raw []byte, rawSizes ...int) []byte {
-	for _, size := range rawSizes {
-		if len(raw) == size {
-			return raw
+	matchesRawSize := func(n int) bool {
+		for _, size := range rawSizes {
+			if n == size {
+				return true
+			}
 		}
+		return false
+	}
+	if matchesRawSize(len(raw)) {
+		return raw
+	}
+	// If a raw 32/64-byte key ends with 0x0d ('\r') and has a single '\n'
+	// terminator appended (length 33/65), only the trailing '\n' is the
+	// terminator; stripping "\r\n" first would drop the last key byte.
+	if len(raw) > 0 && raw[len(raw)-1] == '\n' && matchesRawSize(len(raw)-1) {
+		return raw[:len(raw)-1]
 	}
 	if len(raw) >= 2 && raw[len(raw)-2] == '\r' && raw[len(raw)-1] == '\n' {
 		return raw[:len(raw)-2]

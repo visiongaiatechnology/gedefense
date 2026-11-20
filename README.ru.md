@@ -7,8 +7,8 @@
 ### Linux Security Fabric - Your Entenprise System
 
 [![License](https://img.shields.io/badge/License-AGPL--3.0--only-blue?style=for-the-badge)](https://www.gnu.org/licenses/agpl-3.0)
-[![Version](https://img.shields.io/badge/Version-6.1.1-orange?style=for-the-badge)](#)
-[![Status](https://img.shields.io/badge/Status-Release_V6_(6.1.1)-brightgreen?style=for-the-badge)](#)
+[![Version](https://img.shields.io/badge/Version-6.1.2-orange?style=for-the-badge)](#)
+[![Status](https://img.shields.io/badge/Status-Release_V6_(6.1.2)-brightgreen?style=for-the-badge)](#)
 [![Installer](https://img.shields.io/badge/Installer-Universal_Linux-green?style=for-the-badge)](#-быстрый-старт)
 [![Platform](https://img.shields.io/badge/Platform-Linux_x86__64-lightgrey?style=for-the-badge&logo=linux)](#)
 [![Data Plane](https://img.shields.io/badge/Data_Plane-Rust_eBPF%2FXDP-red?style=for-the-badge&logo=rust)](#-архитектура)
@@ -30,12 +30,17 @@
 
 <br />
 
-⬇️ **Прямые ссылки на установщики (v6.1.1 / V6):**  
-[**OneClick-установщик (`.run`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.1.1/VGT_GeDefense_V6_6.1.1_OneClick.run) · [`.sha256`](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.1.1/VGT_GeDefense_V6_6.1.1_OneClick.run.sha256) · [**Desktop Tray (`.run`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.1.1/GeDefense-6.1.1-Desktop-OneClick.run) · [`.sha256`](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.1.1/GeDefense-6.1.1-Desktop-OneClick.run.sha256) · [**Исходный код (`.zip`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.1.1/VGT_GeDefense_V6_6.1.1_Source.zip) · [**Релиз v6.1.1**](https://github.com/visiongaiatechnology/gedefense/releases/tag/v6.1.1) · [Быстрый старт](#-быстрый-старт)
+⬇️ **Прямые ссылки на установщики (v6.1.2 / V6):**  
+[**OneClick-установщик (`.run`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.1.2/VGT_GeDefense_V6_6.1.2_OneClick.run) · [`.sha256`](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.1.2/VGT_GeDefense_V6_6.1.2_OneClick.run.sha256) · [**Desktop Tray (`.run`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.1.2/GeDefense-6.1.2-Desktop-OneClick.run) · [`.sha256`](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.1.2/GeDefense-6.1.2-Desktop-OneClick.run.sha256) · [**Исходный код (`.zip`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.1.2/VGT_GeDefense_V6_6.1.2_Source.zip) · [**Релиз v6.1.2**](https://github.com/visiongaiatechnology/gedefense/releases/tag/v6.1.2) · [Быстрый старт](#-быстрый-старт)
 
 </div>
 
-## 📋 Журнал изменений — GeDefense V6.1 (`6.1.1`, 19.11.2026)
+## 📋 Журнал изменений — GeDefense V6.1 (`6.1.2`, 20.11.2026)
+
+### 🔥 Хотфикс 6.1.2 (20.11.2026)
+- **Предварительные условия для чистой установки (`scripts/oneclick-installer-header.sh`):** добавлена системная группа `gedefense-desktop` (`systemd-sysusers` и `groupadd` fallback), а также предварительное создание `/run/gedefense-scan` (`0750 root:gedefense`), `/run/gedefense` (`2750 gedefense:gedefense-desktop`) и `/sys/fs/cgroup/vgt-cells` (`0775 gedefense:gedefense`) до запуска `gedefense-cell-helper`, `gedefense-core` и `gedefense-control` без необходимости перезагрузки; также добавлена защита JSON-парсинга в `reconcile_post_upgrade_posture()`.
+- **Загрузка ключа подписи фидов (`control/feed_signing.go`):** исправлена обрезка валидного 32-/64-байтового бинарного ключа Ed25519, оканчивающегося на `0x0d` + `\n`.
+- **Версия/артефакты:** 6.1.2 в Control (`6.1.2`), Gateway (`6.1.2-access`), Rust/`Cargo.lock`, контракте AstraeaOS, Arch-`PKGBUILD`, OneClick-установщике и README (`VGT_GeDefense_V6_6.1.2_*`, `GeDefense-6.1.2-*`).
 
 ### 🔥 Хотфикс 6.1.1 (19.11.2026)
 - **Безопасность:** исправлены подтверждённые findings аудитов `VGT-AUDIT-20261118-GD61` (включая R2/R3 `FIND-008`/`FIND-009`) и `VGT-AUDIT-2026-11-19` (`FIND-001`–`FIND-005`). Привилегированный захват `AF_PACKET`/`CN_PROC` теперь работает в изолированном `gedefense-capture-helper.service`; `gedefense-control.service` остаётся без capabilities.
@@ -541,17 +546,17 @@ Observe ──→ Canary ──→ Enforce
 
 ```bash
 # Загрузить инсталлятор
-wget https://github.com/visiongaiatechnology/gedefense/releases/download/v6.1.1/VGT_GeDefense_V6_6.1.1_OneClick.run
+wget https://github.com/visiongaiatechnology/gedefense/releases/download/v6.1.2/VGT_GeDefense_V6_6.1.2_OneClick.run
 
 # Проверить SHA-256
-sha256sum --check VGT_GeDefense_V6_6.1.1_OneClick.run.sha256
+sha256sum --check VGT_GeDefense_V6_6.1.2_OneClick.run.sha256
 
 # Установить (требуются права root)
-chmod 700 VGT_GeDefense_V6_6.1.1_OneClick.run
-sudo ./VGT_GeDefense_V6_6.1.1_OneClick.run
+chmod 700 VGT_GeDefense_V6_6.1.2_OneClick.run
+sudo ./VGT_GeDefense_V6_6.1.2_OneClick.run
 ```
 
-> **Доступность инсталлятора:** Официальные автономные установочные ассеты v6.0.3 (`VGT_GeDefense_V6_6.1.1_OneClick.run`) будут опубликованы вместе с подписанным GitHub Release.
+> **Доступность инсталлятора:** Официальные автономные установочные ассеты v6.1.2 (`VGT_GeDefense_V6_6.1.2_OneClick.run`) публикуются вместе с подписанным GitHub Release.
 
 > Инсталлятор и контрольные суммы публикуются только после успешного прохождения всех этапов GitHub CI и квалификационных проверок целевого хоста. Никогда не запускайте непроверенные файлы RUN.
 
@@ -890,6 +895,6 @@ sudo python3 scripts/update-geoip-db.py /var/lib/vgt/gedefense/geoip.csv
 
 [![VGT](https://img.shields.io/badge/VisionGaia-Technology-cyan?style=for-the-badge)](https://visiongaiatechnology.de)
 
-*VGT GeDefense 6.1.1 (V6) — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
+*VGT GeDefense 6.1.2 (V6) — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
 
 </div>

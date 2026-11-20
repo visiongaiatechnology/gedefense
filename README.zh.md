@@ -7,8 +7,8 @@
 ### Linux Security Fabric - Your Entenprise System
 
 [![License](https://img.shields.io/badge/License-AGPL--3.0--only-blue?style=for-the-badge)](https://www.gnu.org/licenses/agpl-3.0)
-[![Version](https://img.shields.io/badge/Version-6.1.1-orange?style=for-the-badge)](#)
-[![Status](https://img.shields.io/badge/Status-Release_V6_(6.1.1)-brightgreen?style=for-the-badge)](#)
+[![Version](https://img.shields.io/badge/Version-6.1.2-orange?style=for-the-badge)](#)
+[![Status](https://img.shields.io/badge/Status-Release_V6_(6.1.2)-brightgreen?style=for-the-badge)](#)
 [![Installer](https://img.shields.io/badge/Installer-Universal_Linux-green?style=for-the-badge)](#-快速上手)
 [![Platform](https://img.shields.io/badge/Platform-Linux_x86__64-lightgrey?style=for-the-badge&logo=linux)](#)
 [![Data Plane](https://img.shields.io/badge/Data_Plane-Rust_eBPF%2FXDP-red?style=for-the-badge&logo=rust)](#-系统架构)
@@ -30,12 +30,17 @@
 
 <br />
 
-⬇️ **安装程序直链下载 (v6.1.1 / V6):**  
-[**OneClick 安装程序 (`.run`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.1.1/VGT_GeDefense_V6_6.1.1_OneClick.run) · [`.sha256`](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.1.1/VGT_GeDefense_V6_6.1.1_OneClick.run.sha256) · [**Desktop Tray (`.run`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.1.1/GeDefense-6.1.1-Desktop-OneClick.run) · [`.sha256`](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.1.1/GeDefense-6.1.1-Desktop-OneClick.run.sha256) · [**源码归档 (`.zip`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.1.1/VGT_GeDefense_V6_6.1.1_Source.zip) · [**v6.1.1 发布页**](https://github.com/visiongaiatechnology/gedefense/releases/tag/v6.1.1) · [快速上手](#-快速上手)
+⬇️ **安装程序直链下载 (v6.1.2 / V6):**  
+[**OneClick 安装程序 (`.run`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.1.2/VGT_GeDefense_V6_6.1.2_OneClick.run) · [`.sha256`](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.1.2/VGT_GeDefense_V6_6.1.2_OneClick.run.sha256) · [**Desktop Tray (`.run`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.1.2/GeDefense-6.1.2-Desktop-OneClick.run) · [`.sha256`](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.1.2/GeDefense-6.1.2-Desktop-OneClick.run.sha256) · [**源码归档 (`.zip`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.1.2/VGT_GeDefense_V6_6.1.2_Source.zip) · [**v6.1.2 发布页**](https://github.com/visiongaiatechnology/gedefense/releases/tag/v6.1.2) · [快速上手](#-快速上手)
 
 </div>
 
-## 📋 更新日志 — GeDefense V6.1（`6.1.1`，2026-11-19）
+## 📋 更新日志 — GeDefense V6.1（`6.1.2`，2026-11-20）
+
+### 🔥 6.1.2 热修复（2026-11-20）
+- **全新安装 `systemd` 前置条件（`scripts/oneclick-installer-header.sh`）：** 在 `systemd-sysusers` 与 `groupadd` 回退路径中补齐 `gedefense-desktop` 系统组，并在 `activate_release()` 启动 `gedefense-cell-helper`、`gedefense-core` 和 `gedefense-control` 之前预先创建并校验 `/run/gedefense-scan`（`0750 root:gedefense`）、`/run/gedefense`（`2750 gedefense:gedefense-desktop`）与 `/sys/fs/cgroup/vgt-cells`（`0775 gedefense:gedefense`），无需重启即可一次启动全部 6 个单元；同时加固 `reconcile_post_upgrade_posture()` 的 JSON 解析保护。
+- **Feed 签名密钥解析修复（`control/feed_signing.go`）：** 修复以 `0x0d` + `\n` 结尾的有效 32/64 字节 Ed25519 二进制密钥被误截断末尾字节的边界问题。
+- **版本/制品：** Control（`6.1.2`）、Gateway（`6.1.2-access`）、Rust/`Cargo.lock`、AstraeaOS 契约、Arch `PKGBUILD`、OneClick 安装程序与 README 均更新为 6.1.2（`VGT_GeDefense_V6_6.1.2_*`、`GeDefense-6.1.2-*`）。
 
 ### 🔥 6.1.1 热修复（2026-11-19）
 - **安全：** 已修复 `VGT-AUDIT-20261118-GD61`（含 R2/R3 `FIND-008`/`FIND-009`）与 `VGT-AUDIT-2026-11-19`（`FIND-001`–`FIND-005`）的全部已确认问题。特权 `AF_PACKET`/`CN_PROC` 采集现在运行于隔离的 `gedefense-capture-helper.service`，`gedefense-control.service` 保持零 capabilities。
@@ -537,17 +542,17 @@ Rust Core **未提供任何通用的系统 Shell、文件系统或 Sysctl 执行
 
 ```bash
 # 下载安装程序
-wget https://github.com/visiongaiatechnology/gedefense/releases/download/v6.1.1/VGT_GeDefense_V6_6.1.1_OneClick.run
+wget https://github.com/visiongaiatechnology/gedefense/releases/download/v6.1.2/VGT_GeDefense_V6_6.1.2_OneClick.run
 
 # 校验 SHA-256 完整性指纹
-sha256sum --check VGT_GeDefense_V6_6.1.1_OneClick.run.sha256
+sha256sum --check VGT_GeDefense_V6_6.1.2_OneClick.run.sha256
 
 # 执行安装（需要 root 权限）
-chmod 700 VGT_GeDefense_V6_6.1.1_OneClick.run
-sudo ./VGT_GeDefense_V6_6.1.1_OneClick.run
+chmod 700 VGT_GeDefense_V6_6.1.2_OneClick.run
+sudo ./VGT_GeDefense_V6_6.1.2_OneClick.run
 ```
 
-> **安装程序可用性：** 官方 v6.0.3 自包含安装程序（`VGT_GeDefense_V6_6.1.1_OneClick.run`）将随签名的 GitHub Release 一同发布。
+> **安装程序可用性：** 官方 v6.1.2 自包含安装程序（`VGT_GeDefense_V6_6.1.2_OneClick.run`）随签名的 GitHub Release 一同发布。
 
 > 安装包与校验和文件仅在通过全部 GitHub CI 测试及实体 Linux 节点验证后发布。切勿运行未经验签的 RUN 可执行文件。
 
@@ -912,6 +917,6 @@ sudo python3 scripts/update-geoip-db.py /var/lib/vgt/gedefense/geoip.csv
 
 [![VGT](https://img.shields.io/badge/VisionGaia-Technology-cyan?style=for-the-badge)](https://visiongaiatechnology.de)
 
-*VGT GeDefense 6.1.1 (V6) — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
+*VGT GeDefense 6.1.2 (V6) — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
 
 </div>

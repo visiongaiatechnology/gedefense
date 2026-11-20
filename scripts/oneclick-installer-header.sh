@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# VGT GeDefense 6.1.1 Universal Linux One-Click Installer
+# VGT GeDefense 6.1.2 Universal Linux One-Click Installer
 set -Eeuo pipefail
 umask 0077
 
-readonly SETUP_VERSION="6.1.1"
-readonly PRODUCT_VERSION="6.1.1"
+readonly SETUP_VERSION="6.1.2"
+readonly PRODUCT_VERSION="6.1.2"
 readonly PAYLOAD_SHA256="__PAYLOAD_SHA256__"
 readonly CONTROL_SHA256="__CONTROL_SHA256__"
 readonly ACCESS_SHA256="__ACCESS_SHA256__"
@@ -33,7 +33,7 @@ readonly ACCESS_STATE_DIR="${ACCESS_STATE_PARENT}/state"
 readonly PASSWORD_FILE="${ACCESS_DIR}/access-password"
 readonly TLS_DIR="${CONFIG_DIR}/tls"
 readonly SECRETS_DIR="${CONFIG_DIR}/secrets"
-readonly CERT_FILE="${ACCESS_DIR}/access.crt"
+readonly CERT_FILE="${TLS_DIR}/access.crt"
 readonly TLS_KEY_FILE="${TLS_DIR}/access.key"
 readonly TOKEN_FILE="${ACCESS_STATE_PARENT}/dashboard.token"
 readonly CORE_KEY_FILE="${SECRETS_DIR}/core-ipc.key"
@@ -221,6 +221,13 @@ rollback(){
 fail(){ log "FEHLER: $*"; rollback 1; }
 trap 'rollback $?' ERR
 trap cleanup EXIT
+
+for _arg in "$@"; do
+  if [[ $_arg == "-h" || $_arg == "--help" ]]; then
+    printf 'VGT GeDefense %s installer\n\nOptions:\n  --allow-downgrade  explicit recovery downgrade (still blocked below the release floor)\n  --help\n' "$PRODUCT_VERSION"
+    exit 0
+  fi
+done
 
 [[ ${EUID} -eq 0 ]] || fail "Bitte als root ausführen."
 mkdir -p "$(dirname "$LOG_FILE")"
@@ -604,6 +611,7 @@ ensure_service_accounts(){
 g gedefense - -
 g gedefense-l7 - -
 g gedefense-access - -
+g gedefense-desktop - -
 u gedefense - "VGT GeDefense control plane" /var/lib/vgt/gedefense ${nologin}
 u gedefense-access - "VGT GeDefense HTTPS gateway" /var/lib/vgt/gedefense-access ${nologin}
 EOF
@@ -617,8 +625,10 @@ EOF
   getent group gedefense >/dev/null 2>&1 || groupadd --system gedefense
   getent group gedefense-l7 >/dev/null 2>&1 || groupadd --system gedefense-l7
   getent group gedefense-access >/dev/null 2>&1 || groupadd --system gedefense-access
+  getent group gedefense-desktop >/dev/null 2>&1 || groupadd --system gedefense-desktop
   id gedefense >/dev/null 2>&1 || useradd --system --gid gedefense --home-dir "$STATE" --shell "$nologin" gedefense
   id gedefense-access >/dev/null 2>&1 || useradd --system --gid gedefense-access --home-dir "$ACCESS_STATE_PARENT" --shell "$nologin" gedefense-access
+  getent group gedefense-desktop >/dev/null 2>&1 || fail "Dienstgruppe gedefense-desktop fehlt nach der Anlage."
   id gedefense >/dev/null 2>&1 || fail "Dienstkonto gedefense fehlt nach der Anlage."
   id gedefense-access >/dev/null 2>&1 || fail "Dienstkonto gedefense-access fehlt nach der Anlage."
 }
@@ -648,6 +658,20 @@ ensure_user_and_dirs(){
   install -d -o gedefense -g gedefense -m 0730 "$PARSER_INPUTS_DIR"
   install -d -o root -g gedefense -m 0750 "$PARSER_EXPORTS_DIR"
   install -d -o gedefense -g gedefense -m 0750 "$PARSER_IMPORTS_DIR"
+  # Pre-boot runtime & cgroup directories required by systemd ReadWritePaths
+  # before a reboot executes tmpfiles.d/vgt-gedefense.conf (and before
+  # gedefense-cell-helper starts ahead of gedefense-control).
+  install -d -o root -g gedefense -m 0750 /run/gedefense-scan
+  install -d -o gedefense -g gedefense-desktop -m 2750 /run/gedefense
+  if [[ -d /sys/fs/cgroup ]]; then
+    install -d -o gedefense -g gedefense -m 0775 /sys/fs/cgroup/vgt-cells
+    [[ $(stat -c '%U:%G:%a' /sys/fs/cgroup/vgt-cells) == 'gedefense:gedefense:775' ]] ||
+      fail "Cgroup-Zellenverzeichnis /sys/fs/cgroup/vgt-cells konnte nicht sicher angelegt werden."
+  fi
+  [[ $(stat -c '%U:%G:%a' /run/gedefense-scan) == 'root:gedefense:750' ]] ||
+    fail "Scan-Runtime-Verzeichnis /run/gedefense-scan konnte nicht sicher angelegt werden."
+  [[ $(stat -c '%U:%G:%a' /run/gedefense) == 'gedefense:gedefense-desktop:2750' ]] ||
+    fail "Desktop-IPC-Verzeichnis /run/gedefense konnte nicht sicher angelegt werden."
   [[ $(stat -c '%U:%G:%a' "$PARSER_INPUTS_DIR") == 'gedefense:gedefense:730' ]] ||
     fail "Parser-Inputs-Rechte konnten nicht sicher gesetzt werden."
   [[ $(stat -c '%U:%G:%a' "$PARSER_EXPORTS_DIR") == 'root:gedefense:750' ]] ||
@@ -978,6 +1002,9 @@ tls_identity_compatible(){
 }
 
 generate_tls(){
+  if [[ ! -e $CERT_FILE && -f "${ACCESS_DIR}/access.crt" && ! -L "${ACCESS_DIR}/access.crt" ]]; then
+    install -o root -g gedefense -m 0644 "${ACCESS_DIR}/access.crt" "$CERT_FILE"
+  fi
   if tls_identity_compatible; then
     log "Bestehende kompatible TLS-IdentitÃ¤t wird Ã¼bernommen."
   else
@@ -986,6 +1013,7 @@ generate_tls(){
     tls_identity_compatible || fail "Neu erzeugte TLS-IdentitÃ¤t ist ungÃ¼ltig."
   fi
   chown root:gedefense "$CERT_FILE"; chmod 0644 "$CERT_FILE"
+  install -o gedefense-access -g gedefense-access -m 0644 "$CERT_FILE" "${ACCESS_DIR}/access.crt"
   # FIND-003: the TLS private key is root-only 0600. The gateway runs as
   # gedefense-access and receives it as a systemd LoadCredential; neither the
   # control-plane account nor the gateway account may read the canonical file.
@@ -1148,7 +1176,10 @@ reconcile_post_upgrade_posture(){
 
   info=$(printf '%s' "$raw" | python3 - <<'PY'
 import json, sys
-d = json.load(sys.stdin)
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    sys.exit(1)
 rel = d.get("release") or {}
 pol = d.get("policy") or {}
 fim = d.get("fim") or {}
@@ -1192,7 +1223,10 @@ PY
     [[ -n $raw ]] || break
     info=$(printf '%s' "$raw" | python3 - <<'PY'
 import json, sys
-d = json.load(sys.stdin)
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    sys.exit(1)
 rel = d.get("release") or {}
 pol = d.get("policy") or {}
 fim = d.get("fim") or {}

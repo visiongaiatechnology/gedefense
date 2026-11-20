@@ -1,5 +1,18 @@
 # Changelog
 
+## 6.1.2 — 2026-11-20 — Installer Preconditions & Feed-Signing Hotfix
+
+Targeted hotfix on top of `6.1.1`. Fixes four missing fresh-install `systemd` unit preconditions in the OneClick installer so all six service units start cleanly without requiring an intervening reboot, hardens post-upgrade status polling against non-JSON payloads, and fixes a 1-in-256 Ed25519 feed-signing key parser flake when a raw key ends in `0x0d`. Release note: `docs/V6.1.2-HOTFIX.md`.
+
+- **OneClick installer (`scripts/oneclick-installer-header.sh`):**
+  - `ensure_service_accounts()` now creates and verifies the `gedefense-desktop` system group in both `systemd-sysusers` and the `groupadd --system` fallback (required by `gedefense-control.service` `SupplementaryGroups=` and `vgt-gedefense.conf`).
+  - `ensure_user_and_dirs()` now pre-creates and asserts `/run/gedefense-scan` (`0750 root:gedefense`), `/run/gedefense` (`2750 gedefense:gedefense-desktop`), and `/sys/fs/cgroup/vgt-cells` (`0775 gedefense:gedefense` when `/sys/fs/cgroup` exists) before `activate_release()` starts `gedefense-cell-helper.service`, `gedefense-core.service`, or `gedefense-control.service`.
+  - `CERT_FILE` now uses the canonical `"${TLS_DIR}/access.crt"` (`/etc/vgt/gedefense/tls/access.crt`, migrating any legacy `${ACCESS_DIR}/access.crt` on upgrade and installing the served copy for `gedefense-access`), so `gedefense-access.service` `ExecStartPre` succeeds on fresh installs; `--help` now prints before the `root` check while installs remain root-only.
+  - `reconcile_post_upgrade_posture()` guards non-JSON/empty responses cleanly in Python instead of printing a `JSONDecodeError` traceback during service restart.
+- **Desktop packaging (`scripts/build-desktop-oneclick.sh`):** emits a portable basename entry in `GeDefense-*.run.sha256`.
+- **Control (`control/feed_signing.go`, `control/feed_signing_test.go`):** `feedSigningKeyFileBytes()` checks single-`\n` terminated raw key sizes (`32`/`64` bytes + `\n`) before trimming `\r\n`, preventing valid binary Ed25519 keys ending in `0x0d` from losing their last byte.
+- **Regression & release gates:** `scripts/tests/check_installer_templates.sh` verifies all four installer preconditions; version bumped to **6.1.2** across `VERSION`, Control (`6.1.2`), Gateway (`6.1.2-access`), Rust/`Cargo.lock`, AstraeaOS contract/PKGBUILD, Arch `PKGBUILD`, installers, and documentation.
+
 ## 6.1.1 — 2026-11-19 — Security & Kernel-Compatibility Hotfix
 
 Hotfix release for the 6.1 line. It closes the confirmed findings of the 2026-11-18 and 2026-11-19 audits (including the findings that blocked the 6.1.0 deployment gate), isolates the privileged packet capture from the control plane, and adds Kernel 7.3 BTF compatibility. Deploy 6.1.1 instead of 6.1.0. Release note: `docs/V6.1.1-HOTFIX.md`.

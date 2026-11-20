@@ -87,5 +87,5 @@ python3 "$ROOT/scripts/tests/verify_rendered_installer.py" \
     --installer "$OUTPUT" --public-key-hex "$PUBLIC_HEX" --expected-version "$VERSION" \
     --expected-payload-sha "$PAYLOAD_SHA" >/dev/null
 cp "$ASSETS/release-index.signed.json" "$OUT/release-index.signed.json"
-sha256sum "$OUTPUT" > "$OUTPUT.sha256"
+(cd "$OUT" && sha256sum "$(basename "$OUTPUT")" > "$(basename "$OUTPUT").sha256")
 printf 'Created %s\nSHA256 %s\n' "$OUTPUT" "$(sha256sum "$OUTPUT" | awk '{print $1}')"

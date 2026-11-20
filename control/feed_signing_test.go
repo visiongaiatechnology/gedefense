@@ -686,7 +686,12 @@ func TestFeedSigningKeyFileBytesAreNotTrimmed(t *testing.T) {
 			t.Fatalf("private seed with edge bytes 0x%02x was altered", edge)
 		}
 	}
-	for _, keyMaterial := range [][]byte{seed, privateKey} {
+	// Also test deterministic trailing-0x0d/0x0a seeds with both "\n" and "\r\n"
+	// terminators so a random key ending in '\r' never gets corrupted by "\r\n" stripping.
+	crSeed := append([]byte(nil), seed...)
+	crSeed[ed25519.SeedSize-1] = '\r'
+	crPriv := ed25519.NewKeyFromSeed(crSeed)
+	for _, keyMaterial := range [][]byte{seed, privateKey, crSeed, crPriv} {
 		want := ed25519.PrivateKey(append([]byte(nil), keyMaterial...))
 		if len(keyMaterial) == ed25519.SeedSize {
 			want = ed25519.NewKeyFromSeed(keyMaterial)

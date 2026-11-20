@@ -1,5 +1,18 @@
 # Release Notes
 
+## 6.1.2 — 2026-11-20 — Installer Preconditions & Feed-Signing Hotfix
+
+**6.1.2 is a targeted installer and reliability hotfix on top of 6.1.1.** It closes four fresh-install `systemd` unit preconditions in the OneClick installer and fixes a 1-in-256 binary key-parsing edge case in `control/feed_signing.go`. Full release note: `docs/V6.1.2-HOTFIX.md`.
+
+### Changes
+- **Fresh-install `systemd` preconditions (`scripts/oneclick-installer-header.sh`):**
+  - Provisions `gedefense-desktop` group in both `systemd-sysusers` and `groupadd --system` fallback.
+  - Pre-creates `/run/gedefense-scan` (`0750 root:gedefense`), `/run/gedefense` (`2750 gedefense:gedefense-desktop`), and `/sys/fs/cgroup/vgt-cells` (`0775 gedefense:gedefense` when `/sys/fs/cgroup` exists) in `ensure_user_and_dirs()` before `activate_release()` starts `gedefense-cell-helper`, `gedefense-core`, and `gedefense-control`.
+  - Pins `CERT_FILE` to canonical `"${TLS_DIR}/access.crt"` (`/etc/vgt/gedefense/tls/access.crt`, with upgrade migration from `${ACCESS_DIR}/access.crt`) so `gedefense-access.service` `ExecStartPre` passes on fresh installs, handles `--help` before the root check, and writes portable `.sha256` basenames in `build-desktop-oneclick.sh`.
+  - Guards `reconcile_post_upgrade_posture()` JSON parsing cleanly during control-plane restart.
+- **Ed25519 feed signing key loader (`control/feed_signing.go`):** fixes `feedSigningKeyFileBytes()` so a 32-byte seed or 64-byte key ending in `0x0d` followed by `\n` keeps all key bytes; covered by deterministic `0x0d` unit tests.
+- **Version and artifacts:** **6.1.2** across `VERSION`, Control (`6.1.2`), Gateway (`6.1.2-access`), Rust workspace/`Cargo.lock`, AstraeaOS contract/PKGBUILD, Arch `PKGBUILD`, OneClick installers, and README links (`VGT_GeDefense_V6_6.1.2_*`, `GeDefense-6.1.2-*`).
+
 ## 6.1.1 — 2026-11-19 — Security & Kernel-Compatibility Hotfix
 
 **6.1.1 is the deployable hotfix for the 6.1 line.** It closes the findings of the 2026-11-18 and 2026-11-19 security audits (including the issues that blocked the 6.1.0 deployment gate), isolates the privileged packet capture from the control plane, and adds Kernel 7.3 BTF compatibility. Deploy 6.1.1 instead of 6.1.0. Full release note: `docs/V6.1.1-HOTFIX.md`.

@@ -276,6 +276,13 @@ server_installer_hardening_gate(){
   forbid '.tmp.$$' "predictable secret/password temp file name remains"
   check 'tempfile.mkstemp' "release floor is not written through an O_EXCL temp file"
   check 'chown root:root "$TLS_KEY_FILE"; chmod 0600 "$TLS_KEY_FILE"' "TLS private key is not root-only 0600"
+  check 'readonly CERT_FILE="${TLS_DIR}/access.crt"' "installer does not write canonical TLS certificate to \${TLS_DIR}/access.crt"
+  forbid 'readonly CERT_FILE="${ACCESS_DIR}/access.crt"' "installer still sets CERT_FILE to \${ACCESS_DIR}/access.crt instead of \${TLS_DIR}/access.crt"
+  check 'g gedefense-desktop - -' "systemd-sysusers block is missing gedefense-desktop"
+  check 'groupadd --system gedefense-desktop' "groupadd fallback is missing gedefense-desktop"
+  check 'install -d -o root -g gedefense -m 0750 /run/gedefense-scan' "installer does not pre-create /run/gedefense-scan (0750 root:gedefense)"
+  check 'install -d -o gedefense -g gedefense-desktop -m 2750 /run/gedefense' "installer does not pre-create /run/gedefense (2750 gedefense:gedefense-desktop)"
+  check 'install -d -o gedefense -g gedefense -m 0775 /sys/fs/cgroup/vgt-cells' "installer does not pre-create /sys/fs/cgroup/vgt-cells before gedefense-cell-helper starts"
   if (( failures > 0 )); then
     echo "FAIL: server installer hardening gate ($failures finding(s))" >&2
     return 1
