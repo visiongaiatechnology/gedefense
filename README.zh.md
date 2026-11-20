@@ -4,7 +4,9 @@
 
 
 # VGT GeDefense
-### Linux Security Fabric - Your Entenprise System
+### Linux 安全织网 — 您的 Entenprise System — 由 Sir Quacksec 认证
+
+<sub>*(注：“Entenprise” 并非拼写错误，而是源自德语 “Ente”（鸭子）的双关语，致敬 Sir Quacksec 🦆)*</sub>
 
 [![License](https://img.shields.io/badge/License-AGPL--3.0--only-blue?style=for-the-badge)](https://www.gnu.org/licenses/agpl-3.0)
 [![Version](https://img.shields.io/badge/Version-6.1.2-orange?style=for-the-badge)](#)

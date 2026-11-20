@@ -4,7 +4,9 @@
 
 
 # VGT GeDefense
-### Linux Security Fabric - Your Entenprise System
+### Платформа безопасности Linux — Ваша Entenprise System — Одобрено Sir Quacksec
+
+<sub>*(Примечание: «Entenprise» — это не опечатка, а умышленная игра слов от нем. «Ente» — «утка» и отсылка к Sir Quacksec 🦆)*</sub>
 
 [![License](https://img.shields.io/badge/License-AGPL--3.0--only-blue?style=for-the-badge)](https://www.gnu.org/licenses/agpl-3.0)
 [![Version](https://img.shields.io/badge/Version-6.1.2-orange?style=for-the-badge)](#)
