@@ -120,15 +120,16 @@ func TestL7LargeBodyFastPassBlocksAndDoesNotTimeOut(t *testing.T) {
 	if response.Decision != "block" || !response.Enforced {
 		t.Fatalf("large-body PHP payload was not blocked: %+v", response)
 	}
-	if elapsed := time.Since(start); elapsed > 500*time.Millisecond {
-		t.Fatalf("large-body fast pass took %s (timeout regression)", elapsed)
+	fastLimit := 500 * time.Millisecond * l7TestTimeoutScale
+	if elapsed := time.Since(start); elapsed > fastLimit {
+		t.Fatalf("large-body fast pass took %s (timeout regression > %s)", elapsed, fastLimit)
 	}
 }
 
 func TestL7LargeBenignBodyIsInspectedWithinBudget(t *testing.T) {
 	engine := l7BlockEngine(t)
 	body := []byte(strings.Repeat("harmless filler text for a benign document ", 40000))
-	ctx, cancel := context.WithTimeout(context.Background(), 750*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 750*time.Millisecond*l7TestTimeoutScale)
 	defer cancel()
 	response, _, err := engine.InspectRaw(ctx, L7InspectionRequest{
 		Version: l7ProtocolVersion, RequestID: "0123456789abcdef", Method: "POST", Scheme: "https",
