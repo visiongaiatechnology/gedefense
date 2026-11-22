@@ -35,7 +35,13 @@ var supportedXDRRuleOverrides = map[string]struct{}{
 	"KD.LINUX.TUNNEL_BINARY": {}, "KD.LINUX.PERSISTENCE_DROPIN": {},
 	"XDR.EXE_DELETED": {}, "XDR.MEMFD_EXEC": {}, "XDR.TEMP_EXEC": {}, "XDR.WEB_SHELL_LINEAGE": {},
 	"XDR.NAME_PATH_MISMATCH": {}, "XDR.THREAT_INTEL_C2": {},
-	"XDR.ANOMALY.EXEC_BURST": {}, "XDR.ANOMALY.CONNECTION_FANOUT": {},
+	// M2.2: kernel ransomware-freeze rule ids are objective evidence tokens and
+	// may authorise a tree kill in enforce mode.
+	"XDR.RANSOM_ENTROPY_BURST": {}, "XDR.RANSOM_RENAME_STORM": {},
+	// M2.4: the credential-guard DENY is kernel-proven evidence; it is alert-only
+	// and never authorises an active response.
+	"XDR.CREDENTIAL_READ_BLOCKED": {},
+	"XDR.ANOMALY.EXEC_BURST":      {}, "XDR.ANOMALY.CONNECTION_FANOUT": {},
 	"XDR.ANOMALY.REMOTE_DIVERSITY": {}, "XDR.ANOMALY.PORT_DIVERSITY": {},
 	"BASELINE.HASH_MISMATCH": {}, "BASELINE.NETWORK_DEVIATION": {}, "BASELINE.NETWORK_FORBIDDEN": {},
 	"BASELINE.PARENT_MISMATCH": {}, "BASELINE.UID_MISMATCH": {}, "L7.CORRELATED_REMOTE": {},

@@ -216,6 +216,10 @@ func expandL7DecodedLayers(value string, maxDepth, maxBytes, maxVisited int) ([]
 			}},
 			{".escaped", decodeL7TextEscapes},
 			{".compat", foldL7CompatibilityASCII},
+			// M4.1: SQL block comments are token separators, not content. The
+			// canonical layer is what makes `1/**/oR/**/1=1--` visible to the
+			// boolean-tautology rule.
+			{".sql", canonicalizeL7SQL},
 			{".base64", decodeTextBase64},
 			{".hex", decodeTextHex},
 		}

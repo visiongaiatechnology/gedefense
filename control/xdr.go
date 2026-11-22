@@ -64,11 +64,41 @@ type XDREngine struct {
 	styxBeacon *StyxBeaconEngine
 	styxPolicy *styxPolicySyncer
 	// styxFlowMu guards the kernel flow-health sample; the detector keeps its own
-	// mutexes and is never accessed through this one.
-	styxFlowMu            sync.Mutex
-	styxFlowHealth        CoreStyxFlowHealth
-	styxFlowHealthAt      time.Time
-	styxFlowHealthErr     string
+	// mutexes and is never accessed through this one. The previous sample, the last
+	// successful drain timestamp and the last reported telemetry state are kept
+	// here (M2) so drop ratio, drain lag and a "telemetry degraded" transition can
+	// be derived from real samples without blocking the core.
+	styxFlowMu             sync.Mutex
+	styxFlowHealth         CoreStyxFlowHealth
+	styxFlowHealthAt       time.Time
+	styxFlowHealthErr      string
+	styxFlowHealthPrev     CoreStyxFlowHealth
+	styxFlowHealthPrevAt   time.Time
+	styxFlowLastDrainAt    time.Time
+	styxFlowTelemetryState string
+	// M2.2: kernel ransomware sensor integration. ransomCore is the subset of the
+	// privileged client the freeze/escalation contract needs (interface so the
+	// synthetic-answer tests need no socket).
+	ransomCore            ransomCore
+	ransomMu              sync.Mutex
+	ransomStatus          CoreRansomStatus
+	ransomStatusAt        time.Time
+	ransomStatusErr       string
+	ransomCapabilityKnown bool
+	ransomSeen            map[string]time.Time
+	ransomArmedRequested  bool
+	ransomLastOverflow    time.Time
+	// M2.4: kernel credential guard integration (same interface pattern as the
+	// ransomware sensor, so the synthetic-answer tests need no socket).
+	credCore              credGuardCore
+	credMu                sync.Mutex
+	credStatus            CoreCredGuardStatus
+	credStatusAt          time.Time
+	credStatusErr         string
+	credCapabilityKnown   bool
+	credSeen              map[string]time.Time
+	credArmedRequested    bool
+	credLastOverflow      time.Time
 	styxLastPrune         time.Time
 	styxLastOverflowEvent time.Time
 	// POINT 1 / P1-T5: the Titan exec-gate policy syncer and the bounded kernel
@@ -358,6 +388,13 @@ func NewXDREngine(cfg Config, state *State, core *CoreClient, feeds *FeedManager
 		titanExecCapability: titanExecCapabilityUnknown,
 	}
 	e.recoveryGate <- struct{}{}
+	if core != nil {
+		// M2.2: the same privileged client implements the RANSOM_* family; the
+		// interface keeps the freeze/escalation contract testable without a socket.
+		e.ransomCore = core
+		// M2.4: the credential guard lives on the same authenticated channel.
+		e.credCore = core
+	}
 	if err := logger.Healthy(); err != nil {
 		e.markDegradedCause("incident_log", "incident log integrity failure: "+err.Error())
 	} else if err := e.restoreIncidentHistory(); err != nil {
@@ -809,6 +846,14 @@ func (e *XDREngine) Run(ctx context.Context) {
 	// malware ingestion.
 	var titanExecDrainRetryAfter time.Time
 	var titanExecHealthRetryAfter time.Time
+	// M2.2: independent cadence for the kernel ransomware sensor (1 s events,
+	// 10 s status) so a freeze record is never delayed behind other ingestion.
+	var ransomDrainRetryAfter time.Time
+	var ransomStatusRetryAfter time.Time
+	// M2.4: independent cadence for the kernel credential guard (1 s decisions,
+	// 10 s status).
+	var credGuardDrainRetryAfter time.Time
+	var credGuardStatusRetryAfter time.Time
 	for {
 		select {
 		case <-ctx.Done():
@@ -979,6 +1024,52 @@ func (e *XDREngine) Run(ctx context.Context) {
 					e.recordStyxFlowHealth(health, now)
 				}
 				styxHealthRetryAfter = now.Add(10 * time.Second)
+			}
+			// M2.2: kernel ransomware sensor. Status first (capability + arm
+			// state), then the freeze-record drain on the 100 ms execTick so a
+			// fast encryptor cannot finish the burst during a longer idle gap.
+			// Every record is either escalated with evidence or the freeze is
+			// released again - the Go side never leaves a group frozen silently.
+			if runtime.XDREnabled && e.ransomCore != nil && !now.Before(ransomStatusRetryAfter) {
+				status, statusErr := e.ransomCore.RansomStatus()
+				e.consumeRansomStatus(status, statusErr, now)
+				if statusErr == nil && !status.Armed && !e.ransomArmedRequested {
+					e.ransomArmedRequested = true
+					if err := e.ransomCore.RansomSet(true); err != nil {
+						e.ransomArmedRequested = false
+						e.ransomMu.Lock()
+						e.ransomStatusErr = boundedStyxText(err)
+						e.ransomMu.Unlock()
+					}
+				}
+				ransomStatusRetryAfter = now.Add(10 * time.Second)
+				e.state.SetXDRRansomSensor(e.RansomSensorReport())
+			}
+			if runtime.XDREnabled && e.ransomCore != nil && e.ransomCapabilityKnown && !now.Before(ransomDrainRetryAfter) {
+				events, dropped, ransomErr := e.ransomCore.RansomEvents()
+				ransomDrainRetryAfter = now.Add(e.consumeRansomEvents(events, dropped, ransomErr, now, e.ransomEscalationAllowed()))
+			}
+			// M2.4: kernel credential guard. Status first (capability + arm), then
+			// the DENY/AUDIT drain. Active is only claimed when the core reports the
+			// hook attached and at least one protected object watched.
+			if runtime.XDREnabled && e.credCore != nil && !now.Before(credGuardStatusRetryAfter) {
+				status, statusErr := e.credCore.CredGuardStatus()
+				e.consumeCredGuardStatus(status, statusErr, now)
+				if statusErr == nil && !status.Armed && !e.credArmedRequested {
+					e.credArmedRequested = true
+					if err := e.credCore.CredGuardSet(true); err != nil {
+						e.credArmedRequested = false
+						e.credMu.Lock()
+						e.credStatusErr = boundedStyxText(err)
+						e.credMu.Unlock()
+					}
+				}
+				credGuardStatusRetryAfter = now.Add(10 * time.Second)
+				e.state.SetXDRCredentialGuard(e.CredentialGuardReport())
+			}
+			if runtime.XDREnabled && e.credCore != nil && e.credCapabilityKnown && !now.Before(credGuardDrainRetryAfter) {
+				events, dropped, credErr := e.credCore.CredGuardEvents()
+				credGuardDrainRetryAfter = now.Add(e.consumeCredGuardEvents(events, dropped, credErr, now))
 			}
 			if now.Before(egressRetryAfter) {
 				continue
@@ -1596,6 +1687,19 @@ func (e *XDREngine) respond(i XDRIncident) (string, string) {
 		return actionName(quarantined, "stop"), fmt.Sprintf("process frozen through reversible response engine (TTL=%s)", respRec.ExpiresAt.Sub(respRec.StartedAt))
 	}
 	if i.Decision == "kill" && xdrMode == "enforce" {
+		// M2.3: an evidence-backed ransom kill must terminate the whole process
+		// tree (child workers otherwise keep encrypting). Every other kill keeps the
+		// historical single-pidfd path.
+		if strings.HasPrefix(rule, "XDR.RANSOM_") && e.core != nil {
+			killed, killErr := e.core.KillTree(i.PID, i.StartTicks, rule)
+			if killErr != nil {
+				if stopErr := e.core.Stop(i.PID, i.StartTicks, rule); stopErr != nil {
+					return actionName(quarantined, "kill-tree"), "tree kill rejected and containment failed: " + killErr.Error() + "; " + stopErr.Error()
+				}
+				return actionName(quarantined, "stop"), "tree kill rejected; process frozen for operator review: " + killErr.Error()
+			}
+			return actionName(quarantined, "kill-tree"), fmt.Sprintf("process tree terminated through authenticated tree-kill broker (%d process(es))", killed)
+		}
 		if err := e.core.Kill(i.PID, i.StartTicks, rule); err != nil {
 			if stopErr := e.core.Stop(i.PID, i.StartTicks, rule); stopErr != nil {
 				return actionName(quarantined, "kill"), "broker rejected kill and containment failed: " + err.Error() + "; " + stopErr.Error()

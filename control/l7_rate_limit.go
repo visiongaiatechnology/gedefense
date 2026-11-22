@@ -9,6 +9,10 @@ import (
 
 const l7LimiterShards = 64
 
+// l7RateLimitRetryAfterSeconds is the deterministic Retry-After value of a 429
+// answered for a pure rate-limit decision (M4.5).
+const l7RateLimitRetryAfterSeconds = 60
+
 type l7TokenBucket struct {
 	tokens float64
 	last   time.Time

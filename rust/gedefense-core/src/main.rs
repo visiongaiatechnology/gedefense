@@ -20,7 +20,15 @@ use gedefense_common::{
 };
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
+mod archive_deflate;
+mod archive_gzip;
+mod archive_scan;
+mod archive_tar;
+mod archive_zip;
+#[cfg(test)]
+mod archive_tests;
 mod btf_offsets;
+mod btf_validate;
 mod canary;
 mod lockdown;
 mod lockdown_brokers;
@@ -28,10 +36,24 @@ mod lockdown_hardening;
 mod lockdown_uevent;
 mod lockdown_usb;
 mod malware;
+mod on_write;
+mod on_write_policy;
+#[cfg(test)]
+mod on_write_tests;
 mod process_control;
+mod process_tree;
+#[cfg(test)]
+mod process_tree_tests;
 mod quarantine;
+mod credential_guard;
+#[cfg(test)]
+mod credential_guard_tests;
+mod ransom;
+#[cfg(test)]
+mod ransom_tests;
 mod styx_flow;
 mod titan_exec;
+mod titan_status;
 mod worker_guard;
 use canary::{collect_canary_roots, CanaryBroker};
 use malware::{handle_user_scan, MalwareScanner};
@@ -65,7 +87,13 @@ type HmacSha256 = Hmac<Sha256>;
 
 const PROTOCOL: &str = "VGT3";
 const MAX_REQUEST_BYTES: u64 = 4096;
-const MAX_RESPONSE_BYTES: usize = 2048;
+// Response ceiling for the authenticated IPC wire (busybox-sized multi-record
+// batches such as the 64-record StyX flow drain are the reason this is not
+// 2048 anymore). The bound is enforced before the base64 URL encoding, so the
+// control-plane reader limit (`maxCoreResponseBytes` in control/coreipc.go)
+// must cover base64url(MAX_RESPONSE_BYTES) plus the protocol line overhead;
+// the Go side is updated with the same StyX batch/payload limits.
+const MAX_RESPONSE_BYTES: usize = 24 * 1024;
 const CLOCK_WINDOW_SECS: u64 = 30;
 // A request timestamp may lead the local clock by at most this much.
 //
@@ -738,14 +766,64 @@ kernel.dmesg_restrict = 1\n\
 kernel.kptr_restrict = 2\n\
 kernel.randomize_va_space = 2\n\
 net.ipv4.conf.all.accept_redirects = 0\n\
+net.ipv4.conf.all.log_martians = 1\n\
+net.ipv4.conf.all.rp_filter = 1\n\
+net.ipv4.conf.all.send_redirects = 0\n\
+net.ipv4.conf.default.accept_redirects = 0\n\
+net.ipv4.conf.default.log_martians = 1\n\
+net.ipv4.conf.default.rp_filter = 1\n\
+net.ipv4.conf.default.send_redirects = 0\n\
+net.ipv4.icmp_echo_ignore_broadcasts = 1\n\
+net.ipv4.icmp_ignore_bogus_error_responses = 1\n\
+net.ipv4.tcp_syncookies = 1\n\
+net.ipv6.conf.all.accept_redirects = 0\n\
+net.ipv6.conf.default.accept_redirects = 0\n";
+
+const HARDENING_ASTRAEAOS: &str =
+    "# Managed atomically by VGT GeDefense. Manual edits are rejected.\n\
+fs.protected_fifos = 2\n\
+fs.protected_regular = 2\n\
+fs.suid_dumpable = 0\n\
+kernel.dmesg_restrict = 1\n\
+kernel.kptr_restrict = 2\n\
+kernel.randomize_va_space = 2\n\
+kernel.unprivileged_bpf_disabled = 1\n\
+kernel.yama.ptrace_scope = 2\n\
+net.ipv4.conf.all.accept_redirects = 0\n\
+net.ipv4.conf.all.log_martians = 1\n\
+net.ipv4.conf.all.rp_filter = 1\n\
+net.ipv4.conf.all.send_redirects = 0\n\
+net.ipv4.conf.default.accept_redirects = 0\n\
+net.ipv4.conf.default.log_martians = 1\n\
+net.ipv4.conf.default.rp_filter = 1\n\
+net.ipv4.conf.default.send_redirects = 0\n\
+net.ipv4.icmp_echo_ignore_broadcasts = 1\n\
+net.ipv4.icmp_ignore_bogus_error_responses = 1\n\
+net.ipv4.tcp_syncookies = 1\n\
+net.ipv6.conf.all.accept_redirects = 0\n\
+net.ipv6.conf.default.accept_redirects = 0\n\
+dev.tty.ldisc_autoload = 0\n\
+vm.swappiness = 10\n";
+
+// 6.1.x persisted-profile compatibility. Upgrades must keep recognizing the
+// file written by the previous release so the first 6.2.0 HARDENING_GET does
+// not fail closed; the next apply rewrites the canonical 6.2 content above.
+const LEGACY_HARDENING_SERVER: &str =
+    "# Managed atomically by VGT GeDefense. Manual edits are rejected.\n\
+fs.protected_fifos = 2\n\
+fs.protected_regular = 2\n\
+fs.suid_dumpable = 0\n\
+kernel.dmesg_restrict = 1\n\
+kernel.kptr_restrict = 2\n\
+kernel.randomize_va_space = 2\n\
+net.ipv4.conf.all.accept_redirects = 0\n\
 net.ipv4.conf.all.send_redirects = 0\n\
 net.ipv4.conf.default.accept_redirects = 0\n\
 net.ipv4.conf.default.send_redirects = 0\n\
 net.ipv4.tcp_syncookies = 1\n\
 net.ipv6.conf.all.accept_redirects = 0\n\
 net.ipv6.conf.default.accept_redirects = 0\n";
-
-const HARDENING_ASTRAEAOS: &str =
+const LEGACY_HARDENING_ASTRAEAOS: &str =
     "# Managed atomically by VGT GeDefense. Manual edits are rejected.\n\
 fs.protected_fifos = 2\n\
 fs.protected_regular = 2\n\
@@ -763,29 +841,68 @@ net.ipv4.tcp_syncookies = 1\n\
 net.ipv6.conf.all.accept_redirects = 0\n\
 net.ipv6.conf.default.accept_redirects = 0\n";
 
-const HARDENING_CUSTOM_MASK: u16 = 0x03ff;
+/// Complete CIS/Lynis Level-1 profile (M5.1, 6.2.0). It is intentionally
+/// opt-in and matches the control set of `astraeaos-cis-l1` in the Go
+/// `hardening_sysctl.go` catalogue, including the new CIS keys.
+const HARDENING_CIS_L1: &str =
+    "# Managed atomically by VGT GeDefense. Manual edits are rejected.\n\
+dev.tty.ldisc_autoload = 0\n\
+fs.protected_fifos = 2\n\
+fs.protected_hardlinks = 1\n\
+fs.protected_regular = 2\n\
+fs.protected_symlinks = 1\n\
+fs.suid_dumpable = 0\n\
+kernel.dmesg_restrict = 1\n\
+kernel.kptr_restrict = 2\n\
+kernel.perf_event_paranoid = 3\n\
+kernel.randomize_va_space = 2\n\
+kernel.sysrq = 0\n\
+kernel.unprivileged_bpf_disabled = 1\n\
+kernel.yama.ptrace_scope = 2\n\
+net.ipv4.conf.all.accept_redirects = 0\n\
+net.ipv4.conf.all.log_martians = 1\n\
+net.ipv4.conf.all.rp_filter = 1\n\
+net.ipv4.conf.all.send_redirects = 0\n\
+net.ipv4.conf.default.accept_redirects = 0\n\
+net.ipv4.conf.default.log_martians = 1\n\
+net.ipv4.conf.default.rp_filter = 1\n\
+net.ipv4.conf.default.send_redirects = 0\n\
+net.ipv4.icmp_echo_ignore_broadcasts = 1\n\
+net.ipv4.icmp_ignore_bogus_error_responses = 1\n\
+net.ipv4.tcp_syncookies = 1\n\
+net.ipv6.conf.all.accept_redirects = 0\n\
+net.ipv6.conf.default.accept_redirects = 0\n";
+
+/// M5.1 grows the custom identity space from 10 to 21 control bits. The Go
+/// catalogue uses the same maximum (`0x1f_ffff`); an unknown high bit must be
+/// rejected rather than silently ignored.
+const HARDENING_CUSTOM_MASK: u32 = 0x001f_ffff;
 
 fn hardening_content(profile: &str) -> Option<String> {
     match profile {
         "linux-server-balanced" => Some(HARDENING_SERVER.to_owned()),
         "astraeaos-workstation-strict" => Some(HARDENING_ASTRAEAOS.to_owned()),
+        "astraeaos-cis-l1" => Some(HARDENING_CIS_L1.to_owned()),
         _ => custom_hardening_content(profile),
     }
 }
 
 fn custom_hardening_content(profile: &str) -> Option<String> {
     let encoded = profile.strip_prefix("astraeaos-custom-")?;
-    if encoded.len() != 4 || !encoded.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+    // Go emits `%04x`, therefore a 21-bit mask has four to six hex digits
+    // (`0001` … `1fffff`). Anything shorter/longer is not a Go-produced
+    // profile and must not reach a persistent sysctl file.
+    if !(4..=6).contains(&encoded.len()) || !encoded.bytes().all(|byte| byte.is_ascii_hexdigit()) {
         return None;
     }
-    let mask = u16::from_str_radix(encoded, 16).ok()?;
+    let mask = u32::from_str_radix(encoded, 16).ok()?;
     if mask == 0 || mask & !HARDENING_CUSTOM_MASK != 0 {
         return None;
     }
     let mut content = format!(
         "# Managed atomically by VGT GeDefense. Manual edits are rejected.\n# Profile: {profile}\n"
     );
-    let controls: &[(u16, &[(&str, &str)])] = &[
+    let controls: &[(u32, &[(&str, &str)])] = &[
         (1 << 0, &[("kernel.randomize_va_space", "2")]),
         (1 << 1, &[("kernel.kptr_restrict", "2")]),
         (1 << 2, &[("kernel.dmesg_restrict", "1")]),
@@ -813,6 +930,41 @@ fn custom_hardening_content(profile: &str) -> Option<String> {
                 ("net.ipv6.conf.default.accept_redirects", "0"),
             ],
         ),
+        (1 << 10, &[("kernel.unprivileged_userns_clone", "0")]),
+        (
+            1 << 11,
+            &[
+                ("net.ipv4.conf.all.rp_filter", "1"),
+                ("net.ipv4.conf.default.rp_filter", "1"),
+            ],
+        ),
+        (
+            1 << 12,
+            &[
+                ("net.ipv4.conf.all.log_martians", "1"),
+                ("net.ipv4.conf.default.log_martians", "1"),
+            ],
+        ),
+        (
+            1 << 13,
+            &[
+                ("net.ipv4.icmp_echo_ignore_broadcasts", "1"),
+                ("net.ipv4.icmp_ignore_bogus_error_responses", "1"),
+            ],
+        ),
+        (1 << 14, &[("fs.protected_hardlinks", "1")]),
+        (1 << 15, &[("fs.protected_symlinks", "1")]),
+        (1 << 16, &[("kernel.sysrq", "0")]),
+        (1 << 17, &[("kernel.perf_event_paranoid", "3")]),
+        (1 << 18, &[("dev.tty.ldisc_autoload", "0")]),
+        (1 << 19, &[("vm.swappiness", "10")]),
+        (
+            1 << 20,
+            &[
+                ("net.ipv6.conf.all.disable_ipv6", "1"),
+                ("net.ipv6.conf.default.disable_ipv6", "1"),
+            ],
+        ),
     ];
     let mut values = Vec::new();
     for (bit, entries) in controls {
@@ -831,7 +983,19 @@ fn custom_hardening_content(profile: &str) -> Option<String> {
 }
 
 fn recognized_hardening_state(content: &str) -> Option<String> {
-    for profile in ["linux-server-balanced", "astraeaos-workstation-strict"] {
+    // 6.1.x files stay recognized for upgrade; the next apply writes the new
+    // canonical content and extends the persistent policy with M5.1 controls.
+    if content == LEGACY_HARDENING_SERVER {
+        return Some("linux-server-balanced".to_owned());
+    }
+    if content == LEGACY_HARDENING_ASTRAEAOS {
+        return Some("astraeaos-workstation-strict".to_owned());
+    }
+    for profile in [
+        "linux-server-balanced",
+        "astraeaos-workstation-strict",
+        "astraeaos-cis-l1",
+    ] {
         if hardening_content(profile).as_deref() == Some(content) {
             return Some(profile.to_owned());
         }
@@ -1330,6 +1494,61 @@ fn sysctl_spec(key: &str) -> Option<(&'static str, &'static [&'static str])> {
             "/proc/sys/net/ipv6/conf/default/accept_redirects",
             &["0", "1"],
         )),
+        // V6.2 CIS/Lynis M5.1 controls. The Go control plane ships these in its
+        // hardening catalogue only after this typed core allowlist accepts the
+        // exact key/path/value domain; an unlisted key must never reach a
+        // privileged `/proc/sys` write.
+        "net.ipv4.conf.all.rp_filter" => {
+            Some(("/proc/sys/net/ipv4/conf/all/rp_filter", &["0", "1", "2"]))
+        }
+        "net.ipv4.conf.default.rp_filter" => Some((
+            "/proc/sys/net/ipv4/conf/default/rp_filter",
+            &["0", "1", "2"],
+        )),
+        "net.ipv4.conf.all.log_martians" => {
+            Some(("/proc/sys/net/ipv4/conf/all/log_martians", &["0", "1"]))
+        }
+        "net.ipv4.conf.default.log_martians" => Some((
+            "/proc/sys/net/ipv4/conf/default/log_martians",
+            &["0", "1"],
+        )),
+        "net.ipv4.icmp_echo_ignore_broadcasts" => Some((
+            "/proc/sys/net/ipv4/icmp_echo_ignore_broadcasts",
+            &["0", "1"],
+        )),
+        "net.ipv4.icmp_ignore_bogus_error_responses" => Some((
+            "/proc/sys/net/ipv4/icmp_ignore_bogus_error_responses",
+            &["0", "1"],
+        )),
+        "fs.protected_hardlinks" => Some(("/proc/sys/fs/protected_hardlinks", &["0", "1"])),
+        "fs.protected_symlinks" => Some(("/proc/sys/fs/protected_symlinks", &["0", "1"])),
+        // sysrq is a bitmask, not a boolean. Keep the documented safe masks the
+        // provisioning profiles may compare-set and the distribution defaults
+        // that can be read back before the first apply.
+        "kernel.sysrq" => Some((
+            "/proc/sys/kernel/sysrq",
+            &["0", "1", "2", "4", "8", "16", "32", "64", "128", "176", "244", "438"],
+        )),
+        "kernel.perf_event_paranoid" => Some((
+            "/proc/sys/kernel/perf_event_paranoid",
+            // Debian/Ubuntu may expose the hardening value 4 in addition to
+            // the upstream -1..=3 range; the read-back must accept what the
+            // distribution actually reports before compare-set runs.
+            &["-1", "0", "1", "2", "3", "4"],
+        )),
+        "dev.tty.ldisc_autoload" => {
+            Some(("/proc/sys/dev/tty/ldisc_autoload", &["0", "1"]))
+        }
+        "vm.swappiness" => Some((
+            "/proc/sys/vm/swappiness",
+            &["0", "1", "10", "20", "30", "40", "50", "60", "70", "80", "90", "100"],
+        )),
+        "net.ipv6.conf.all.disable_ipv6" => {
+            Some(("/proc/sys/net/ipv6/conf/all/disable_ipv6", &["0", "1"]))
+        }
+        "net.ipv6.conf.default.disable_ipv6" => {
+            Some(("/proc/sys/net/ipv6/conf/default/disable_ipv6", &["0", "1"]))
+        }
         _ => None,
     }
 }
@@ -1457,6 +1676,13 @@ fn encode_titan_exec_offsets_table(
     table[btf_offsets::OFF_INODE_I_CTIME_SEC] = offsets.inode_i_ctime_sec_off;
     table[btf_offsets::OFF_INODE_I_CTIME_NSEC] = offsets.inode_i_ctime_nsec_off;
     table[btf_offsets::OFF_INODE_I_CTIME_NSEC_WIDTH] = offsets.inode_i_ctime_nsec_width;
+    // §4.1 ABI 2 (6.2.0): UNTRUSTED exec-mode facts.
+    table[btf_offsets::OFF_BPRM_FILENAME] = offsets.bprm_filename_off;
+    table[btf_offsets::OFF_INODE_I_UID] = offsets.inode_i_uid_off;
+    table[btf_offsets::OFF_FILE_F_PATH_DENTRY] = offsets.file_f_path_dentry_off;
+    table[btf_offsets::OFF_DENTRY_D_PARENT] = offsets.dentry_d_parent_off;
+    table[btf_offsets::OFF_DENTRY_D_INODE] = offsets.dentry_d_inode_off;
+    table[btf_offsets::OFF_DENTRY_SIZE] = offsets.dentry_size;
     table[btf_offsets::OFF_BPRM_NARGS] = offsets.bprm_nargs;
     table[btf_offsets::OFF_MMAP_NARGS] = offsets.mmap_nargs;
     table[btf_offsets::OFF_MMAP_FILE_ARG] = offsets.mmap_file_arg_idx;
@@ -1686,7 +1912,9 @@ impl TitanExecGate {
     fn scope_set(&mut self, cgroup: &str, mode: &str, flags: &str) -> Result<String, BoxError> {
         let cgroup =
             titan_exec::parse_scope_cgroup(cgroup).map_err(|message| -> BoxError { message.into() })?;
-        let mode = titan_exec::parse_mode(mode).map_err(|message| -> BoxError { message.into() })?;
+        // §4: the per-cgroup scope value has only two mode bits, so UNTRUSTED
+        // (4) stays a global mode and is rejected here instead of truncating.
+        let mode = titan_exec::parse_scope_mode(mode).map_err(|message| -> BoxError { message.into() })?;
         let flags = titan_exec::parse_scope_flags(flags).map_err(|message| -> BoxError { message.into() })?;
         if mode != TITAN_EXEC_MODE_OFF && !self.enforcement_available() {
             return Err(titan_exec::ENFORCEMENT_UNAVAILABLE.into());
@@ -1802,6 +2030,13 @@ struct KernelCore {
     // 6.1.0 Module B: worker crash-storm sensor (mandatory maps, optional
     // tracepoint attach reported honestly through WORKER_GUARD_STATUS).
     worker_guard: worker_guard::WorkerGuardCore,
+    // 6.2.0 M2.2: ransomware/rename-storm sensor (mandatory maps, optional
+    // kprobe attach reported through RANSOM_STATUS; the kernel only audits and
+    // the core freezes the resolved process group with SIGSTOP).
+    ransom: ransom::RansomCore,
+    // 6.2.0 M2.4: file_open LSM credential guard (mandatory maps, optional
+    // LSM attach reported through CRED_GUARD_STATUS; the kernel denies with -EACCES).
+    credential_guard: credential_guard::CredentialGuardCore,
 }
 
 impl KernelCore {
@@ -2206,6 +2441,12 @@ impl KernelCore {
         // tracepoint when the kernel permits it. An unavailable tracepoint is
         // reported as `attached=0`, never as enforcement.
         let worker_guard = worker_guard::WorkerGuardCore::load(&mut ebpf)?;
+        // M2.2: mandatory RANSOM_* maps, optional kprobe attach, armed state.
+        let ransom = ransom::RansomCore::load(&mut ebpf)?;
+        // M2.4: mandatory CRED_GUARD_* maps, protected-inode policy, optional
+        // file_open LSM attach (active=0 when BPF-LSM/BTF/policy are unavailable).
+        let credential_guard =
+            credential_guard::CredentialGuardCore::load(&mut ebpf, lsm_btf.as_ref(), bpf_lsm_active)?;
         Ok(Self {
             _ebpf: ebpf,
             exec_events,
@@ -2252,6 +2493,8 @@ impl KernelCore {
             titan_exec,
             lockdown,
             worker_guard,
+            ransom,
+            credential_guard,
         })
     }
 
@@ -2918,12 +3161,7 @@ fn load_auth_key(path: &str, control_gid: u32) -> Result<Vec<u8>, BoxError> {
 }
 
 fn parse_quarantine_identity(token: &str) -> Result<FileIdentity, BoxError> {
-    let fields: Vec<&str> = token
-        .strip_prefix("v1:")
-        .ok_or("quarantine identity version is invalid")?
-        .split(':')
-        .collect();
-    FileIdentity::parse(&fields)
+    FileIdentity::decode(token)
 }
 
 fn unix_seconds() -> Result<u64, BoxError> {
@@ -3248,6 +3486,14 @@ fn process_command(
         ["WORKER_GUARD_EVENTS"] => core.worker_guard.take_events(),
         ["WORKER_GUARD_STATUS"] => core.worker_guard.status(),
         ["MALWARE_EVENTS"] => scanner.take_events(),
+        // 6.2.0 M2.2: ransomware/rename-storm sensor (kernel audit -> core freeze).
+        ["RANSOM_EVENTS"] => core.ransom.take_events(),
+        ["RANSOM_STATUS"] => core.ransom.status(),
+        ["RANSOM_SET", state] => core.ransom.set_armed_token(state),
+        // 6.2.0 M2.4: file_open credential guard (kernel -EACCES, bounded evidence).
+        ["CRED_GUARD_EVENTS"] => core.credential_guard.take_events(),
+        ["CRED_GUARD_STATUS"] => core.credential_guard.status(),
+        ["CRED_GUARD_SET", state] => core.credential_guard.set_armed_token(state),
         ["CLEAR_BLOCKLIST"] => core.clear_blocklist().map(|_| "cleared".into()),
         ["VERIFY_EMPTY"] if core.blocked.is_empty() => Ok("empty".into()),
         ["VERIFY_EMPTY"] => Err("blocklist is not empty".into()),
@@ -3286,6 +3532,22 @@ fn process_command(
             let pid = pid.parse::<i32>()?;
             let start = start.parse::<u64>()?;
             pidfd_signal(pid, start, libc::SIGKILL, rule).map(|_| "killed".into())
+        }
+        // M2.3 (6.2.0 ABI v2): bounded process-tree/process-group response.
+        // Wire: XDR_KILL_TREE <pid> <start_ticks> <rule> -> "killed:<n>";
+        // XDR_GROUP_STOP|<pgid> <rule> -> "stopped"; XDR_GROUP_CONT -> "resumed".
+        ["XDR_KILL_TREE", args @ ..] => {
+            let (pid, start, rule) = process_tree::parse_kill_tree_request(args)?;
+            process_tree::signal_process_tree(pid, start, &rule)
+                .map(|count| format!("killed:{count}"))
+        }
+        ["XDR_GROUP_STOP", args @ ..] => {
+            let (pgid, rule) = process_tree::parse_group_request(args)?;
+            process_tree::stop_process_group(pgid, &rule).map(|_| "stopped".to_owned())
+        }
+        ["XDR_GROUP_CONT", args @ ..] => {
+            let (pgid, rule) = process_tree::parse_group_request(args)?;
+            process_tree::resume_process_group(pgid, &rule).map(|_| "resumed".to_owned())
         }
         ["CANARY_DEPLOY", path, canary_type, mode, content] => {
             canary.deploy_token(path, canary_type, mode, content)
@@ -3523,8 +3785,10 @@ fn main() -> Result<(), BoxError> {
     eprintln!("GeDefense core startup phase=quarantine-vault");
     let mut storage_key = load_secret_key(&storage_key_path, control_gid, "storage master key")
         .map_err(|error| std::io::Error::other(format!("storage key: {error}")))?;
-    let quarantine = QuarantineBroker::new(&quarantine_dir, &storage_key)
-        .map_err(|error| std::io::Error::other(format!("quarantine vault: {error}")))?;
+    let quarantine = Arc::new(
+        QuarantineBroker::new(&quarantine_dir, &storage_key)
+            .map_err(|error| std::io::Error::other(format!("quarantine vault: {error}")))?,
+    );
     storage_key.fill(0);
     eprintln!("GeDefense core startup phase=malware-on-access");
     let scanner = MalwareScanner::load(&malware_hashes)
@@ -3532,6 +3796,16 @@ fn main() -> Result<(), BoxError> {
     scanner
         .start_on_access(&[Path::new("/home").to_path_buf()])
         .map_err(|error| std::io::Error::other(format!("on-access guard: {error}")))?;
+    // M1.1 (6.2.0): the asynchronous FAN_CLOSE_WRITE sensor for the writable
+    // drop roots. It never registers a permission event, so it cannot slow down
+    // or block a writer; the roots default to the four drop paths the systemd
+    // unit keeps writable and can be overridden with repeated
+    // `--on-write-watch-root=` flags (each value is a comma-separated list).
+    eprintln!("GeDefense core startup phase=malware-on-write");
+    let on_write_roots = on_write::resolve_roots(&multi_arg("on-write-watch-root"))
+        .map_err(|error| std::io::Error::other(format!("on-write watch roots: {error}")))?;
+    on_write::OnWriteSensor::start(scanner.clone(), Arc::clone(&quarantine), &on_write_roots)
+        .map_err(|error| std::io::Error::other(format!("on-write sensor: {error}")))?;
     eprintln!("GeDefense core startup phase=canary-broker");
     // The unprivileged control plane cannot create decoys outside its sandbox
     // (ProtectSystem=strict, PrivateTmp) and cannot observe host file accesses.
@@ -3880,6 +4154,18 @@ mod tests {
     }
 
     #[test]
+    fn legacy_hardening_profiles_are_recognized_for_upgrade() {
+        assert_eq!(
+            recognized_hardening_state(LEGACY_HARDENING_SERVER).as_deref(),
+            Some("linux-server-balanced")
+        );
+        assert_eq!(
+            recognized_hardening_state(LEGACY_HARDENING_ASTRAEAOS).as_deref(),
+            Some("astraeaos-workstation-strict")
+        );
+    }
+
+    #[test]
     fn custom_hardening_profiles_are_deterministic_and_bounded() {
         let profile = hardening_content("astraeaos-custom-0083").expect("valid custom profile");
         assert!(profile.contains("# Profile: astraeaos-custom-0083\n"));
@@ -3892,13 +4178,25 @@ mod tests {
         );
         for invalid in [
             "astraeaos-custom-0000",
-            "astraeaos-custom-0400",
-            "astraeaos-custom-ffff",
+            "astraeaos-custom-200000", // above the 21-bit catalogue ceiling
+            "astraeaos-custom-400000", // above the 21-bit catalogue ceiling
             "astraeaos-custom-xyz1",
-            "astraeaos-custom-001",
+            "astraeaos-custom-001", // shorter than Go's %04x form
         ] {
             assert!(hardening_content(invalid).is_none(), "accepted {invalid}");
         }
+        // The M5.1 high control bit (1 << 20) and the complete CIS profile are
+        // now part of the same closed vocabulary the Go catalogue can emit.
+        let high = hardening_content("astraeaos-custom-100000").expect("high custom mask");
+        assert!(high.contains("net.ipv6.conf.all.disable_ipv6 = 1\n"));
+        let cis = hardening_content("astraeaos-cis-l1").expect("CIS profile");
+        assert!(cis.contains("net.ipv4.conf.all.rp_filter = 1\n"));
+        assert!(cis.contains("fs.protected_hardlinks = 1\n"));
+        assert!(cis.contains("kernel.perf_event_paranoid = 3\n"));
+        assert_eq!(
+            recognized_hardening_state(&cis).as_deref(),
+            Some("astraeaos-cis-l1")
+        );
     }
 
     fn test_hardening_directory(label: &str) -> std::path::PathBuf {
@@ -4600,6 +4898,16 @@ mod tests {
 
     #[test]
     fn styx_flow_batch_is_bounded_and_reports_drops() {
+        // 6.2.0 flow-telemetry contract: the eBPF ring grew to 16 MiB, the core
+        // drains 64 records per poll and the response ceiling covers the whole
+        // base64url-encoded batch. Pinning the numbers here makes an accidental
+        // rollback to the 8-record/2048-byte StyX limits fail loudly.
+        assert_eq!(styx_flow::MAX_STYX_FLOW_EVENTS_PER_RESPONSE, 64);
+        assert_eq!(styx_flow::MAX_STYX_FLOW_PAYLOAD_BYTES, 16 * 1024);
+        assert_eq!(MAX_RESPONSE_BYTES, 24 * 1024);
+        // base64url(16 KiB) plus the "VGT3R <nonce> <status> <payload> <mac>"
+        // line must fit the control-plane reader after the Go-side update.
+        assert!(styx_flow::MAX_STYX_FLOW_PAYLOAD_BYTES.div_ceil(3) * 4 + 128 < MAX_RESPONSE_BYTES);
         assert_eq!(styx_flow_batch_response(&[], 0), "empty");
         assert_eq!(styx_flow_batch_response(&[], 7), "7|");
         assert_eq!(
@@ -4843,6 +5151,13 @@ mod tests {
         let i_nlink = fixture.name("i_nlink");
         let alternate = fixture.name("__i_nlink");
         let anonymous_union = fixture.record("", true, false, 4, &[(i_nlink, u32t, 0), (alternate, u32t, 0)]);
+        let i_uid = fixture.name("i_uid");
+        let d_parent = fixture.name("d_parent");
+        let d_inode = fixture.name("d_inode");
+        let path_mnt = fixture.name("mnt");
+        let path_dentry = fixture.name("dentry");
+        let f_path = fixture.name("f_path");
+        let bprm_filename = fixture.name("filename");
         let i_mode = fixture.name("i_mode");
         let i_opflags = fixture.name("i_opflags");
         let i_ino = fixture.name("i_ino");
@@ -4859,6 +5174,7 @@ mod tests {
         let mut inode_members = vec![
             (i_mode, u16t, 0),
             (i_opflags, u16t, 16 | (4 << 24)),
+            (i_uid, u32t, 8 * 8),
             (i_sb, pointer, 40 * 8),
             (0, anonymous_union, 72 * 8),
             (i_generation, u32t, 124 * 8),
@@ -4877,14 +5193,37 @@ mod tests {
             fixture.record("inode", false, false, spec.inode_size, &[(i_mode, u16t, 0)]);
         }
         let f_inode = fixture.name("f_inode");
-        fixture.record("file", false, false, spec.file_size, &[(f_inode, pointer, 32 * 8)]);
+        // §4.1 ABI 2: the bounded `file -> f_path.dentry -> d_parent` chain for
+        // the UNTRUSTED world-writable ancestor check. The dentry walk below
+        // reads the inode mode of each ancestor directory.
+        let _dentry = fixture.record(
+            "dentry",
+            false,
+            false,
+            256,
+            &[(d_parent, pointer, 16 * 8), (d_inode, pointer, 24 * 8)],
+        );
+        let path = fixture.record(
+            "path",
+            false,
+            false,
+            16,
+            &[(path_mnt, pointer, 0), (path_dentry, pointer, 8 * 8)],
+        );
+        fixture.record(
+            "file",
+            false,
+            false,
+            spec.file_size,
+            &[(f_inode, pointer, 32 * 8), (f_path, path, 96 * 8)],
+        );
         let bprm_file = fixture.name("file");
         fixture.record(
             "linux_binprm",
             false,
             false,
             spec.bprm_size,
-            &[(bprm_file, pointer, 64 * 8)],
+            &[(bprm_file, pointer, 64 * 8), (bprm_filename, pointer, 8 * 8)],
         );
         if !spec.drop_super {
             let s_dev = fixture.name("s_dev");
@@ -4944,6 +5283,13 @@ mod tests {
                 (offsets.inode_i_ctime_sec_off, 128),
                 (offsets.inode_i_ctime_nsec_off, 136),
                 (offsets.inode_i_ctime_nsec_width, 8),
+                // §4.1 ABI 2: UNTRUSTED exec-mode facts of the golden layout.
+                (offsets.bprm_filename_off, 8),
+                (offsets.inode_i_uid_off, 8),
+                (offsets.file_f_path_dentry_off, 104),
+                (offsets.dentry_d_parent_off, 16),
+                (offsets.dentry_d_inode_off, 24),
+                (offsets.dentry_size, 256),
                 (offsets.bprm_nargs, 1),
                 (offsets.mmap_nargs, 4),
                 (offsets.mmap_file_arg_idx, 0),
@@ -4976,7 +5322,18 @@ mod tests {
             assert_eq!(table[btf_offsets::OFF_INODE_I_CTIME_SEC], 128);
             assert_eq!(table[btf_offsets::OFF_INODE_I_CTIME_NSEC], 136);
             assert_eq!(table[btf_offsets::OFF_INODE_I_CTIME_NSEC_WIDTH], 8);
-            assert!(table[29..].iter().all(|value| *value == 0), "{label}");
+            assert_eq!(table[btf_offsets::OFF_BPRM_FILENAME], 8);
+            assert_eq!(table[btf_offsets::OFF_INODE_I_UID], 8);
+            assert_eq!(table[btf_offsets::OFF_FILE_F_PATH_DENTRY], 104);
+            assert_eq!(table[btf_offsets::OFF_DENTRY_D_PARENT], 16);
+            assert_eq!(table[btf_offsets::OFF_DENTRY_D_INODE], 24);
+            assert_eq!(table[btf_offsets::OFF_DENTRY_SIZE], 256);
+            assert!(
+                table[btf_offsets::OFF_RESERVED_FIRST..]
+                    .iter()
+                    .all(|value| *value == 0),
+                "{label}"
+            );
         }
     }
 
@@ -5059,6 +5416,13 @@ mod tests {
             offsets.inode_i_ctime_nsec_off + offsets.inode_i_ctime_nsec_width
                 <= offsets.inode_size
         );
+        // §4.1 ABI 2 (UNTRUSTED): every new field must fit its real struct.
+        assert!(offsets.inode_i_uid_off + 4 <= offsets.inode_size);
+        assert!(offsets.bprm_filename_off + 8 <= offsets.bprm_size);
+        assert!(offsets.file_f_path_dentry_off + 8 <= offsets.file_size);
+        assert!(offsets.dentry_d_parent_off + 8 <= offsets.dentry_size);
+        assert!(offsets.dentry_d_inode_off + 8 <= offsets.dentry_size);
+        assert!(offsets.dentry_size > 0);
         let table = encode_titan_exec_offsets_table(&offsets);
         assert_eq!(
             table[btf_offsets::OFF_INODE_I_CTIME_NSEC_WIDTH],
@@ -5180,9 +5544,16 @@ mod tests {
     fn titan_exec_arguments_are_strict() {
         assert_eq!(titan_exec::parse_mode("0").unwrap(), 0);
         assert_eq!(titan_exec::parse_mode("3").unwrap(), 3);
-        for token in ["4", "-1", "+1", " 1", "1 ", "", "0x1", "1.0"] {
+        // §4.2 ABI 2: UNTRUSTED (4) is a valid global mode ...
+        assert_eq!(titan_exec::parse_mode("4").unwrap(), 4);
+        for token in ["5", "-1", "+1", " 1", "1 ", "", "0x1", "1.0"] {
             assert!(titan_exec::parse_mode(token).is_err(), "{token:?}");
         }
+        // ... but it is not representable in a per-cgroup scope value.
+        assert_eq!(titan_exec::parse_scope_mode("3").unwrap(), 3);
+        assert!(titan_exec::parse_scope_mode("4").is_err());
+        assert_eq!(titan_exec::mode_name(4), "untrusted");
+        assert_eq!(titan_exec::mode_name(3), "strict");
         assert_eq!(titan_exec::parse_global_flags("0").unwrap(), 0);
         assert_eq!(titan_exec::parse_global_flags("1").unwrap(), 1);
         for token in ["2", "255"] {

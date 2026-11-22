@@ -527,6 +527,21 @@ func (s *State) SetXDRStatus(x XDRStatus) {
 	s.mu.Unlock()
 }
 
+// SetXDRRansomSensor projects the M2.2 kernel ransomware sensor without replacing
+// the rest of the XDR status (other sensor refreshes only own their own fields).
+func (s *State) SetXDRRansomSensor(status RansomSensorStatus) {
+	s.mu.Lock()
+	s.xdr.RansomSensor = status
+	s.mu.Unlock()
+}
+
+// SetXDRCredentialGuard projects the M2.4 kernel credential guard.
+func (s *State) SetXDRCredentialGuard(status CredentialGuardStatus) {
+	s.mu.Lock()
+	s.xdr.CredentialGuard = status
+	s.mu.Unlock()
+}
+
 func (s *State) UpdateXDRScan(processes, connections int, at time.Time, degraded bool, reason string, protected int) {
 	s.mu.Lock()
 	s.xdr.Enabled = true

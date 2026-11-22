@@ -44,12 +44,15 @@ type L7RuleOverride struct {
 // signature, never invent one.
 var supportedL7RuleOverrides = map[string]struct{}{
 	"L7.SQLI.UNION_SELECT": {}, "L7.SQLI.BOOLEAN_TAUTOLOGY": {}, "L7.SQLI.TIME_DELAY": {}, "L7.SQLI.STACKED_QUERY": {},
+	"L7.SQLI.SCHEMA_PROBE": {}, "L7.SQLI.COMMENT_OBFUSCATION": {},
 	"L7.XSS.SCRIPT_TAG": {}, "L7.XSS.EVENT_HANDLER": {}, "L7.XSS.ACTIVE_URI": {}, "L7.XSS.IFRAME_SRCDOC": {},
 	"L7.CMD.SHELL_CHAIN": {}, "L7.CMD.SUBSTITUTION": {}, "L7.CMD.WINDOWS_CHAIN": {},
 	"L7.PATH.TRAVERSAL": {}, "L7.FILE.STREAM_WRAPPER": {}, "L7.SSTI.TEMPLATE_EXPR": {},
 	"L7.XXE.DECLARATION": {}, "L7.XXE.EXTERNAL_SYSTEM": {},
 	"L7.DESERIALIZE.PHP": {}, "L7.DESERIALIZE.JAVA": {},
-	"L7.SCANNER.PROBE": {}, "L7.CRLF.HEADER_SPLIT": {}, "L7.CODE.PHP_TAG": {}, "L7.JNDI.LOOKUP": {},
+	"L7.SCANNER.PROBE": {}, "L7.SCANNER.RECON": {}, "L7.SCANNER.USER_AGENT": {},
+	"L7.MALWARE.EICAR":     {},
+	"L7.CRLF.HEADER_SPLIT": {}, "L7.CODE.PHP_TAG": {}, "L7.JNDI.LOOKUP": {},
 	"L7.SSRF.DANGEROUS_SCHEME": {}, "L7.SSRF.INTERNAL_TARGET": {},
 	"L7.HTTP.DUPLICATE_CONTENT_LENGTH": {}, "L7.HTTP.INVALID_CONTENT_LENGTH": {}, "L7.HTTP.CL_TE_AMBIGUITY": {},
 	"L7.HTTP.INVALID_TRANSFER_ENCODING": {}, "L7.HTTP.TRACE_METHOD": {},
@@ -76,6 +79,11 @@ var l7DetectorRuleMetadata = map[string]l7RuleView{
 		Category: "php-upload-progress",
 		Summary:  "PHP session upload-progress field detected",
 		Score:    110, Confidence: 96, Enabled: true,
+	},
+	"L7.MALWARE.EICAR": {
+		Category: "malware",
+		Summary:  "Well-known antivirus test/malware marker detected in the request body",
+		Score:    110, Confidence: 99, Enabled: true,
 	},
 }
 

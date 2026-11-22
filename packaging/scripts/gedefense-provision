@@ -14,6 +14,15 @@
 # Usage:
 #   gedefense-provision            # create missing material (root required)
 #   gedefense-provision --check    # validate only, change nothing
+#   gedefense-provision --cis-baseline
+#                                  # additionally apply the OPT-IN CIS Level-1
+#                                  # userland baseline (SSHD drop-in, UMASK, legal
+#                                  # banner, module blacklist, audit rules); the
+#                                  # script never reloads a service and never
+#                                  # edits PAM
+#   gedefense-provision --remove-cis-baseline
+#                                  # remove exactly the managed baseline
+#                                  # files/blocks (unmanaged files are refused)
 #
 # Test support (used by packaging/tests/install-smoke.sh):
 #   GEDEFENSE_PROVISION_ROOT=/tmp/stage   prefix every absolute path
@@ -54,11 +63,47 @@ readonly ACCESS_GROUP="${GEDEFENSE_ACCESS_GROUP:-gedefense-access}"
 
 SKIP_OWNER="${GEDEFENSE_SKIP_OWNER:-0}"
 check_only=0
-if [[ "${1:-}" == "--check" ]]; then
-  check_only=1
-elif [[ $# -gt 0 ]]; then
-  printf '%s: unsupported argument %q\n' "$PROGRAM" "$1" >&2
-  exit 2
+cis_mode=""
+while (( $# > 0 )); do
+  case "$1" in
+    --check) check_only=1 ;;
+    # M5.1 opt-in CIS/Lynis Level-1 userland baseline. Nothing is applied unless
+    # the operator passes one of these flags; --remove-cis-baseline removes only
+    # files/blocks carrying the managed marker and restores commented UMASK lines.
+    --cis-baseline) cis_mode="apply" ;;
+    --remove-cis-baseline) cis_mode="remove" ;;
+    --help|-h)
+      printf '%s: usage: %s [--check] [--cis-baseline | --remove-cis-baseline]\n' "$PROGRAM" "$PROGRAM"
+      printf '  --check                  validate only, change nothing\n'
+      printf '  --cis-baseline           apply the opt-in CIS Level-1 userland baseline (SSHD drop-in, UMASK, banner, module blacklist, audit rules)\n'
+      printf '  --remove-cis-baseline    remove exactly the managed baseline files/blocks\n'
+      exit 0
+      ;;
+    *)
+      printf '%s: unsupported argument %q\n' "$PROGRAM" "$1" >&2
+      exit 2
+      ;;
+  esac
+  shift
+done
+
+# M5.1: the CIS/Lynis Level-1 userland baseline lives in its own helper so it is
+# genuinely opt-in and separately reversible. The flag is a pass-through only;
+# material provisioning below still runs afterwards.
+if [[ -n "$cis_mode" ]]; then
+  cis_script="${BASH_SOURCE[0]%/*}/gedefense-cis-baseline"
+  if [[ ! -x "$cis_script" ]]; then
+    printf '%s: CIS baseline helper is not installed: %s\n' "$PROGRAM" "$cis_script" >&2
+    exit 1
+  fi
+  cis_args=(--apply)
+  if [[ "$cis_mode" == "remove" ]]; then
+    cis_args=(--remove)
+  fi
+  if (( check_only )); then
+    cis_args+=(--check)
+  fi
+  "$cis_script" "${cis_args[@]}"
 fi
 
 problems=()

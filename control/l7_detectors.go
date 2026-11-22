@@ -47,24 +47,44 @@ type l7PatternDefinition struct {
 // never administrable.
 var l7PatternDefinitions = []l7PatternDefinition{
 	{"L7.SQLI.UNION_SELECT", "sqli", "SQL UNION-based injection syntax detected", "high", `(?i)(?:\bunion\s+(?:all\s+)?select\b|\bselect\b.{0,160}\bfrom\b.{0,160}(?:--|#|/\*))`, 90, 92},
-	{"L7.SQLI.BOOLEAN_TAUTOLOGY", "sqli", "SQL boolean-tautology injection syntax detected", "high", `(?i)(?:['\"]\s*(?:or|and)\s+(?:['\"]?\w+['\"]?\s*=\s*['\"]?\w+['\"]?|\d+\s*=\s*\d+)|\b(?:or|and)\s+1\s*=\s*1\b)`, 75, 82},
+	{"L7.SQLI.BOOLEAN_TAUTOLOGY", "sqli", "SQL boolean-tautology injection syntax detected", "high", `(?i)(?:['\"]\s*(?:or|and)\s+(?:['\"]?\w+['\"]?\s*=\s*['\"]?\w+['\"]?|\d+\s*=\s*\d+)|\b(?:or|and)\s+1\s*=\s*1\b|\b\d+\s+(?:or|and)\s+\d+\s*=\s*\d+\b)`, 75, 82},
 	{"L7.SQLI.TIME_DELAY", "sqli", "SQL time-delay primitive detected", "high", `(?i)\b(?:sleep\s*\(|benchmark\s*\(|pg_sleep\s*\(|waitfor\s+delay\b)`, 85, 90},
 	{"L7.SQLI.STACKED_QUERY", "sqli", "Stacked SQL statement syntax detected", "high", `(?i);\s*(?:select|insert|update|delete|drop|alter|create|exec(?:ute)?)\b`, 85, 88},
+	// M4.1: a block comment placed *inside* a token (1/**\/OR/**\/1=1) is a pure
+	// token-splitting evasion; it raises the score of the SQLi it hides without
+	// matching legitimate prose or source code on its own.
+	{"L7.SQLI.COMMENT_OBFUSCATION", "sqli-evasion", "SQL comment/whitespace token-splitting evasion detected", "medium", `\w\s*/\*|\*/\s*\w`, 60, 80},
+	// M4.1: schema/function probing is what a sub-select based injection uses
+	// instead of a trailing comment, so it must score on its own.
+	{"L7.SQLI.SCHEMA_PROBE", "sqli", "SQL schema or file-access function probe detected", "high", `(?i)\b(?:information_schema\s*\.\s*(?:tables|columns|schemata|routines)|group_concat\s*\(|pg_catalog\s*\.|extractvalue\s*\(|updatexml\s*\(|load_file\s*\(|into\s+(?:out|dump)file\b|union\s+select\s+null\b)`, 90, 90},
 	{"L7.XSS.SCRIPT_TAG", "xss", "Executable script element detected", "high", `(?i)<\s*script\b`, 90, 96},
 	{"L7.XSS.EVENT_HANDLER", "xss", "Inline browser event handler detected", "high", `(?i)\bon(?:error|load|click|mouseover|focus|animationstart|pointerenter)\s*=`, 80, 88},
 	{"L7.XSS.ACTIVE_URI", "xss", "Active browser URI scheme detected", "high", `(?i)(?:javascript|vbscript|data\s*:\s*text/html)\s*:`, 85, 90},
 	{"L7.XSS.IFRAME_SRCDOC", "xss", "Executable iframe srcdoc payload detected", "high", `(?is)<\s*iframe\b[^>]{0,512}\bsrcdoc\s*=`, 90, 94},
-	{"L7.CMD.SHELL_CHAIN", "command-injection", "Shell command chaining syntax detected", "high", `(?i)(?:;|&&|\|\||\|)\s*(?:/bin/)?(?:ba|da|z|k)?sh\b|(?:;|&&|\|\||\|)\s*(?:curl|wget|nc|ncat|socat|python\d*|perl|php|ruby)\b`, 95, 92},
+	// M4.3: the benign-word utilities are the observable payload of a
+	// semicolon-chained OS command (`?cmd=;cat /etc/passwd#`). The lookahead
+	// requires an argument-shaped continuation (path, option, quote, variable), so
+	// English prose such as "cats; cat food" does not match.
+	{"L7.CMD.SHELL_CHAIN", "command-injection", "Shell command chaining syntax detected", "high", `(?i)(?:;|&&|\|\||\|)\s*(?:/bin/)?(?:ba|da|z|k)?sh\b|(?:;|&&|\|\||\|)\s*(?:curl|wget|nc|ncat|socat|python\d*|perl|php|ruby)\b|(?:;|&&|\|\||\|)\s*(?:/usr)?(?:/bin/)?(?:cat|id|whoami|uname|hostname|ls|ifconfig|ip|ps|env|base64|sed|awk|grep|find|chmod|chown|rm|mv|cp|echo|printf|tee|tr|nslookup|dig|ping)\b\s+(?:[/'"$\\-]|\.\.?/|\$\()`, 95, 92},
 	{"L7.CMD.SUBSTITUTION", "command-injection", "Shell command substitution syntax detected", "high", `(?i)(?:\$\([^\r\n]{1,512}\)|` + "`" + `[^\r\n]{1,512}` + "`" + `)`, 75, 78},
 	{"L7.CMD.WINDOWS_CHAIN", "command-injection", "Windows command-execution chain detected", "high", `(?i)(?:;|&&|\|\||\|)\s*(?:powershell(?:\.exe)?|pwsh(?:\.exe)?|cmd(?:\.exe)?\s*/c|certutil(?:\.exe)?|bitsadmin(?:\.exe)?)\b`, 90, 90},
 	{"L7.PATH.TRAVERSAL", "path-traversal", "Filesystem traversal sequence detected", "high", `(?i)(?:^|[\\/])\.\.(?:[\\/]|$)|(?:/etc/(?:passwd|shadow|hosts)|/proc/(?:self|[0-9]+)/(?:environ|cmdline))`, 85, 92},
 	{"L7.FILE.STREAM_WRAPPER", "file-inclusion", "Server-side stream-wrapper reference detected", "high", `(?i)\b(?:php|phar|zip|expect|data)://`, 90, 91},
-	{"L7.SSTI.TEMPLATE_EXPR", "ssti", "Server-side template expression syntax detected", "high", `(?s)(?:\{\{.{0,512}\}\}|\{%[^%]{0,512}%\}|\$\{[^}]{1,512}\}|#\{[^}]{1,512}\}|<%=.{0,512}%>)`, 75, 78},
+	{"L7.SSTI.TEMPLATE_EXPR", "ssti", "Server-side template expression syntax detected", "high", `(?s)(?:\{\{.{0,512}\}\}|\{%[^%]{0,512}%\}|\$\{[^}]{1,512}\}|#\{[^}]{1,512}\}|<%=.{0,512}%>|<#\s*(?:assign|list|include|if)\b|#set\s*\()`, 75, 78},
 	{"L7.XXE.DECLARATION", "xxe", "XML external-entity declaration detected", "critical", `(?i)<!\s*(?:DOCTYPE|ENTITY)\b`, 105, 96},
 	{"L7.XXE.EXTERNAL_SYSTEM", "xxe", "XML external SYSTEM/PUBLIC entity detected", "critical", `(?i)\b(?:SYSTEM|PUBLIC)\s+[\"'][^\"']{1,1000}[\"']`, 105, 94},
 	{"L7.DESERIALIZE.PHP", "deserialization", "PHP serialized object payload detected", "high", `(?s)(?:^|[^A-Za-z0-9])(?:O|C):[0-9]{1,8}:\"[^\"]{1,512}\"`, 80, 88},
 	{"L7.DESERIALIZE.JAVA", "deserialization", "Java serialized-object marker detected", "high", `(?:rO0AB|\xac\xed\x00\x05)`, 80, 86},
-	{"L7.SCANNER.PROBE", "scanner", "Common vulnerability-scanner probe detected", "medium", `(?i)(?:/\.git/(?:HEAD|config)|/\.env(?:$|[?&])|/wp-config\.php(?:\.bak)?|/phpinfo\.php|/server-status|/actuator/(?:env|heapdump)|/vendor/phpunit/)`, 55, 86},
+	// M4.2: a probe for a secret-bearing deployment file (`/.env`, `/.git/config`,
+	// cloud credentials) is unambiguous configuration theft, not generic recon, and
+	// therefore blocks on its own (>= the default BlockScore of 90). Generic recon
+	// paths stay a low-score signal in L7.SCANNER.RECON.
+	{"L7.SCANNER.PROBE", "scanner", "Secret/configuration file probe detected", "high", `(?i)(?:^|[/?&=])(?:\.env(?:\.[A-Za-z0-9_.-]{1,32})?|\.git/(?:HEAD|config)|\.aws/credentials|\.docker/config\.json|\.svn/entries|\.hg/hgrc|wp-config\.php(?:\.(?:bak|old|save|swp|txt|dist))?|\.htpasswd)(?:$|[/?&#;])`, 95, 94},
+	{"L7.SCANNER.RECON", "scanner", "Common vulnerability-scanner recon path detected", "medium", `(?i)(?:/phpinfo\.php|/server-status|/server-info|/actuator/(?:env|heapdump|health)|/vendor/phpunit/|/\.dockerignore|/\.well-known/security\.txt\.bak)`, 55, 86},
+	// M4.2: scanner user agents are a separate, low-confidence family; combined
+	// with a recon finding they raise the score without blocking plain automation
+	// traffic on the UA string alone.
+	{"L7.SCANNER.USER_AGENT", "scanner", "Known vulnerability-scanner user agent detected", "medium", `(?i)\b(?:sqlmap|nikto|nuclei|wpscan|gobuster|dirbuster|wfuzz|zgrab|masscan|nmap(?:\s+scripting)?|acunetix|netsparker|burp(?:suite|p)?|owasp[\s-]?zap|hydra|ffuf|feroxbuster)\b`, 55, 86},
 	{"L7.CRLF.HEADER_SPLIT", "header-injection", "CRLF response-header injection syntax detected", "high", `(?i)\r?\n(?:set-cookie|location|content-length|transfer-encoding|x-[a-z0-9-]{1,64})\s*:`, 90, 92},
 	{"L7.CODE.PHP_TAG", "code-injection", "Server-side PHP execution marker detected", "high", `(?i)<\?(?:php|=)`, 95, 94},
 	{"L7.JNDI.LOOKUP", "injection", "JNDI lookup payload detected", "critical", `(?i)\$\{\s*jndi\s*:\s*(?:ldap|ldaps|rmi|dns|iiop)\s*:`, 110, 98},
@@ -96,6 +116,11 @@ func (d *l7PatternDetector) Detect(ctx context.Context, req l7NormalizedRequest,
 		}
 		for _, rule := range d.rules {
 			if _, exists := seen[rule.id]; exists {
+				continue
+			}
+			// M4.1 false-positive guard: an English sentence that merely contains
+			// SQL keywords has no SQL operators and never matches a SQLi rule.
+			if !l7SQLRuleGuarded(rule.category, candidate.Value) {
 				continue
 			}
 			if !rule.re.MatchString(candidate.Value) {

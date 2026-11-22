@@ -20,8 +20,26 @@ func (n *L7Normalizer) addQueryCandidates(cfg L7Config, out *l7NormalizedRequest
 		return fmt.Errorf("%w: query entry budget exceeded", ErrL7ResourceLimit)
 	}
 	values, err := url.ParseQuery(raw)
+	tolerant := false
 	if err != nil {
-		return fmt.Errorf("%w: malformed query encoding", ErrL7InvalidRequest)
+		// M4.3: Go rejects `;` as a separator (Hardened by the net/url change since
+		// Go 1.17). An exploit chain such as `?cmd=;cat /etc/passwd#` must still be
+		// inspected per parameter/value boundary instead of becoming an unscanned
+		// 400. Only the separator handling is relaxed: malformed percent-encoding
+		// and NUL bytes stay invalid requests.
+		values, err = parseL7TolerantQuery(raw, cfg.MaxFormFields)
+		if err != nil {
+			return err
+		}
+		tolerant = true
+	}
+	if tolerant {
+		// The whole semicolon-chained query is one attacker-controlled string; keep
+		// it as its own candidate so shell-chain rules see the separator together
+		// with the decoded command.
+		if decoded, decodeErr := url.QueryUnescape(raw); decodeErr == nil {
+			n.addCandidate(cfg, out, "query.chain", decoded)
+		}
 	}
 	if len(values) > cfg.MaxFormFields {
 		return fmt.Errorf("%w: query field budget exceeded", ErrL7ResourceLimit)
@@ -45,6 +63,52 @@ func (n *L7Normalizer) addQueryCandidates(cfg L7Config, out *l7NormalizedRequest
 		}
 	}
 	return nil
+}
+
+// parseL7TolerantQuery splits a raw key/value string on both `&` and `;` and
+// decodes each side with the standard form decoding. It is only used when the
+// strict parser fails; its purpose is to keep `;`-chained parameters visible to
+// the detectors without weakening the encoding validation.
+func parseL7TolerantQuery(raw string, limit int) (url.Values, error) {
+	if limit < 1 {
+		return nil, fmt.Errorf("%w: query field budget exceeded", ErrL7ResourceLimit)
+	}
+	values := make(url.Values)
+	entries := 0
+	for len(raw) > 0 && entries <= limit {
+		end := strings.IndexAny(raw, "&;")
+		segment := raw
+		if end >= 0 {
+			segment = raw[:end]
+			raw = raw[end+1:]
+		} else {
+			raw = ""
+		}
+		if segment == "" {
+			continue
+		}
+		entries++
+		if entries > limit {
+			return nil, fmt.Errorf("%w: query entry budget exceeded", ErrL7ResourceLimit)
+		}
+		keyText, valueText := segment, ""
+		if split := strings.IndexByte(segment, '='); split >= 0 {
+			keyText, valueText = segment[:split], segment[split+1:]
+		}
+		key, err := url.QueryUnescape(keyText)
+		if err != nil {
+			return nil, fmt.Errorf("%w: malformed query encoding", ErrL7InvalidRequest)
+		}
+		value, err := url.QueryUnescape(valueText)
+		if err != nil {
+			return nil, fmt.Errorf("%w: malformed query encoding", ErrL7InvalidRequest)
+		}
+		if strings.ContainsRune(key, '\x00') || strings.ContainsRune(value, '\x00') {
+			return nil, fmt.Errorf("%w: rejected NUL in query encoding", ErrL7InvalidRequest)
+		}
+		values[key] = append(values[key], value)
+	}
+	return values, nil
 }
 
 func (n *L7Normalizer) addBodyCandidates(cfg L7Config, out *l7NormalizedRequest) error {
@@ -163,7 +227,13 @@ func (n *L7Normalizer) addFormCandidates(cfg L7Config, out *l7NormalizedRequest)
 	}
 	values, err := url.ParseQuery(string(out.Body))
 	if err != nil {
-		return fmt.Errorf("%w: malformed form body", ErrL7InvalidRequest)
+		// Same tolerant separator handling as the query string (M4.3): a
+		// semicolon-chained form body is still inspected, while malformed
+		// percent-encoding remains an invalid request.
+		values, err = parseL7TolerantQuery(string(out.Body), cfg.MaxFormFields)
+		if err != nil {
+			return err
+		}
 	}
 	if len(values) > cfg.MaxFormFields {
 		return fmt.Errorf("%w: form field budget exceeded", ErrL7ResourceLimit)
@@ -254,7 +324,23 @@ func isL7XMLMediaType(contentType string) bool {
 func (n *L7Normalizer) addTextChunks(cfg L7Config, out *l7NormalizedRequest, location string, body []byte) {
 	const chunkSize = 16 << 10
 	const overlap = 256
-	for start := 0; start < len(body); {
+	// M4.4: bound how many text chunks one request may inspect. The head chunks
+	// are inspected in order and the final chunk is always included, so a payload
+	// at either end is still seen while the middle of a multi-megabyte body cannot
+	// exhaust the inspection budget. Direct payloads anywhere in a large body are
+	// additionally covered by the raw fast pass.
+	const chunkBudget = 4
+	for index, start := 0, 0; start < len(body); index++ {
+		if index >= chunkBudget {
+			tailStart := len(body) - chunkSize
+			if tailStart < 0 {
+				tailStart = 0
+			}
+			if tailStart > start {
+				n.addCandidate(cfg, out, location, strings.ToValidUTF8(string(body[tailStart:]), " "))
+			}
+			return
+		}
 		end := start + chunkSize
 		if end > len(body) {
 			end = len(body)
@@ -342,6 +428,17 @@ func (n *L7Normalizer) addCandidateChunk(cfg L7Config, out *l7NormalizedRequest,
 	if !n.appendCandidate(cfg, out, location, canonical, 0) {
 		return
 	}
+	// M4.4: bound the expensive recursive expansion per request. A large body is
+	// inspected completely in its raw/canonical form, and the tail chunks still
+	// receive one shallow decode layer (single base64/hex/URL pass) so an encoded
+	// payload at the end of a long parameter is not lost; only the deep BFS is
+	// limited. That keeps a 780 KB request well inside the inspection timeout
+	// instead of ending in a 503.
+	if out.ExpandedChunks >= l7ExpandedChunkBudget {
+		n.appendL7ShallowDecodedLayers(cfg, out, location, canonical)
+		return
+	}
+	out.ExpandedChunks++
 	// Decode recursion to a fixpoint/budget: every decoded layer is added as a
 	// candidate and fed back into the pipeline, so double-base64 and deep URL
 	// chains cannot exceed the old single-layer budget (F-10 / CHAIN-008).
@@ -356,6 +453,43 @@ func (n *L7Normalizer) addCandidateChunk(cfg L7Config, out *l7NormalizedRequest,
 	}
 	for _, layer := range layers {
 		if !n.appendCandidate(cfg, out, location+layer.Label, layer.Value, layer.Depth) {
+			return
+		}
+	}
+}
+
+// appendL7ShallowDecodedLayers applies one decode layer per transform without
+// re-feeding the result into the queue. It bounds the cost of the tail of a very
+// large value while still exposing single-layer encoded payloads.
+func (n *L7Normalizer) appendL7ShallowDecodedLayers(cfg L7Config, out *l7NormalizedRequest, location, canonical string) {
+	if canonical == "" {
+		return
+	}
+	transforms := []struct {
+		label string
+		apply func(string, int) (string, bool)
+	}{
+		{".url", func(v string, max int) (string, bool) {
+			decoded, err := url.PathUnescape(v)
+			if err != nil || decoded == v {
+				return "", false
+			}
+			return decoded, true
+		}},
+		{".sql", canonicalizeL7SQL},
+		{".base64", decodeTextBase64},
+		{".hex", decodeTextHex},
+	}
+	for _, transform := range transforms {
+		decoded, ok := transform.apply(canonical, cfg.MaxValueBytes)
+		if !ok || decoded == canonical {
+			continue
+		}
+		decoded = truncateUTF8(decoded, cfg.MaxValueBytes)
+		if len(decoded) < 4 || !utf8.ValidString(decoded) || !isMostlyText([]byte(decoded)) {
+			continue
+		}
+		if !n.appendCandidate(cfg, out, location+transform.label, decoded, 1) {
 			return
 		}
 	}

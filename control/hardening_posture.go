@@ -148,6 +148,16 @@ func (c *HardeningCollector) Collect(snapshot Snapshot, boot BootTrustReport) Ha
 		statePostureCheck("integrity.fim", "integrity", "File Integrity Monitoring", 8, snapshot.FIM.Enabled, fimIntegrityVerified(snapshot.FIM.Health), snapshot.FIM.Health, "Create and continuously verify the encrypted FIM baseline."),
 		statePostureCheck("integrity.evidence", "integrity", "Signed Evidence Ledger", 8, snapshot.Evidence.Enabled, snapshot.Evidence.Healthy, evidenceHealth(snapshot.Evidence), "Restore the encrypted and signed evidence ledger before mutations."),
 	}
+	// M5.1: extended CIS/Lynis Level-1 catalogue and the userland baseline checks
+	// for the opt-in provisioning profile (read-only measurements).
+	checks = append(checks, c.cisSysctlChecks()...)
+	checks = append(checks,
+		c.sshdBaselineCheck(),
+		c.umaskCheck(),
+		c.bannerCheck(),
+		c.auditdBaselineCheck(),
+		c.modprobeBlacklistCheck(),
+	)
 	return summarizeHardening(c.now(), checks, defaultHardeningThresholds())
 }
 

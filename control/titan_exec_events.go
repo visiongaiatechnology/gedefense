@@ -74,7 +74,7 @@ const (
 	titanExecReasonStateNotRdy   uint8 = 8
 	titanExecReasonCtimeMismatch uint8 = 9
 	titanExecReasonFSHard        uint8 = 10
-	titanExecReasonMax           uint8 = 10
+	titanExecReasonMax           uint8 = 13
 
 	// PROT_EXEC from <linux/mman.h>; an anonymous executable mmap without the JIT
 	// scope exception is the only null-identity mmap the producer can emit (§3.2).

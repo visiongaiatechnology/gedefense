@@ -64,8 +64,8 @@ func TestParseCoreStyxFlowEventsRejectsHostileInput(t *testing.T) {
 		fields[index] = value
 		return strings.Join(fields, ":")
 	}
-	nineRecords := strings.Repeat(styxValidIPv4Record+",", 9)
-	nineRecords = strings.TrimSuffix(nineRecords, ",")
+	tooManyRecords := strings.Repeat(styxValidIPv4Record+",", maxStyxFlowEventsPerResponse+1)
+	tooManyRecords = strings.TrimSuffix(tooManyRecords, ",")
 	cases := map[string]string{
 		"field-count":           replace(styxValidIPv4Record, 1, "1") + ":extra",
 		"short-cgroup-hex":      replace(styxValidIPv4Record, 0, "000000000000123"),
@@ -91,7 +91,7 @@ func TestParseCoreStyxFlowEventsRejectsHostileInput(t *testing.T) {
 		"trailing-newline":      styxValidIPv4Record + "\n",
 		"missing-drop-prefix":   styxValidIPv4Record,
 		"non-numeric-dropped":   "x|" + styxValidIPv4Record,
-		"too-many-records":      "0|" + nineRecords,
+		"too-many-records":      "0|" + tooManyRecords,
 		"oversized-payload":     "0|" + styxValidIPv4Record + strings.Repeat("0", maxStyxFlowPayloadBytes),
 	}
 	if len(cases) < 8 {
@@ -359,6 +359,34 @@ func TestStyxFlowHealthRoundTrip(t *testing.T) {
 	if health.Emitted != 1 || health.RingDrops != 2 || health.AggInsertFailures != 3 ||
 		health.ParseErrors != 4 || health.DropsTotal != 5 || health.PolicyDrops != 6 {
 		t.Fatalf("unexpected health: %#v", health)
+	}
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestStyxFlowEvents64RecordWireRoundTripExceeds2048Bytes(t *testing.T) {
+	records := make([]string, maxStyxFlowEventsPerResponse)
+	for i := range records {
+		records[i] = styxValidIPv4Record
+	}
+	wire := "0|" + strings.Join(records, ",")
+	if len(wire) <= 2048 || len(wire) > maxStyxFlowPayloadBytes {
+		t.Fatalf("unexpected 64-record wire length: %d", len(wire))
+	}
+	client, socketPath := newStyxFakeClient(t)
+	done := startStyxFakeCore(t, client, socketPath, func(fields []string) (string, string) {
+		if fields[3] != "STYX_FLOW_EVENTS" {
+			return "ERR", "unexpected command"
+		}
+		return "OK", wire
+	})
+	events, dropped, err := client.StyxFlowEvents()
+	if err != nil {
+		t.Fatalf("64-record STYX_FLOW_EVENTS wire round trip failed: %v", err)
+	}
+	if dropped != 0 || len(events) != maxStyxFlowEventsPerResponse {
+		t.Fatalf("unexpected count=%d dropped=%d", len(events), dropped)
 	}
 	if err := <-done; err != nil {
 		t.Fatal(err)

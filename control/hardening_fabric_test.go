@@ -224,13 +224,17 @@ func TestHardeningSysctlDefaultsMatchTheBuiltInProfiles(t *testing.T) {
 	if len(derived) != len(builtIn) {
 		t.Fatalf("profile count changed: derived=%d built-in=%d", len(derived), len(builtIn))
 	}
-	// The compiled-in profiles are a documented shape: 13 kernel keys for the
-	// balanced server profile and 15 for the strict workstation profile.
-	if got := len(derived["linux-server-balanced"].Values); got != 13 {
-		t.Fatalf("balanced profile key count=%d want=13", got)
+	// The compiled-in profiles are a documented shape: 23 kernel keys for the
+	// balanced server profile (M5.1 CIS baseline), 27 for the strict workstation
+	// profile and 26 for the explicit CIS Level-1 profile.
+	if got := len(derived["linux-server-balanced"].Values); got != 23 {
+		t.Fatalf("balanced profile key count=%d want=23", got)
 	}
-	if got := len(derived["astraeaos-workstation-strict"].Values); got != 15 {
-		t.Fatalf("strict profile key count=%d want=15", got)
+	if got := len(derived["astraeaos-workstation-strict"].Values); got != 27 {
+		t.Fatalf("strict profile key count=%d want=27", got)
+	}
+	if got := len(derived["astraeaos-cis-l1"].Values); got != 26 {
+		t.Fatalf("cis-l1 profile key count=%d want=26", got)
 	}
 	for name, profile := range builtIn {
 		other, ok := derived[name]

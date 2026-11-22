@@ -51,15 +51,24 @@ function renderStatus(status, beaconPayload) {
   const sync = asObject(status.sync);
   const beacon = asObject(beaconPayload.beacon || status.beacon);
   const kernel = asObject(beaconPayload.kernel_health || status.kernel_health);
+  const flow = asObject(beaconPayload.flow || status.flow);
   const state = String(status.state || sync.state || '');
   const sensor = String(status.sensor_state || beacon.sensor_state || '');
   const capability = String(status.capability || sync.capability || '');
+  const telemetry = String(status.telemetry_state || flow.telemetry_state || '');
+  const enforcementActive = status.enforcement_active === true;
 
   setTone('styxPill', stateLabel(state), stateTone(state));
   setText('styxStateKpi', stateLabel(state));
   setText('styxCapabilityKpi', capability || t('v61.v6.common.unknown'));
   setText('styxModeKpi', sync.mode || sensor || '—');
   setText('styxEpochKpi', sync.epoch || '—');
+  // Enforcement and telemetry are two separate facts. A drop-driven telemetry
+  // degradation must never turn the enforcement claim off (and vice versa).
+  setText('styxEnforcementKpi', enforcementActive
+    ? t('v61.v6.styx.kpi.enforcementActive')
+    : t('v61.v6.styx.kpi.enforcementInactive'));
+  setTone('styxTelemetryKpi', telemetryLabel(telemetry), telemetryTone(telemetry));
   setText('styxTrackedKpi', formatCount(beacon.tracked_flows));
   setText('styxEventsKpi', formatCount(beacon.events_total));
   setText('styxIncidentsKpi', formatCount(beacon.incident_total));
@@ -75,6 +84,10 @@ function renderStatus(status, beaconPayload) {
   setText('styxKernelParse', kernelSample(kernel, ['ParseErrors', 'parse_errors']));
   setText('styxKernelDrops', kernelSample(kernel, ['DropsTotal', 'drops_total']));
   setText('styxKernelPolicyDrops', kernelSample(kernel, ['PolicyDrops', 'policy_drops']));
+  setText('styxKernelDropRatio', ratioSample(flow.drop_ratio));
+  setText('styxKernelRingDelta', deltaSample(flow.ring_drops_delta));
+  setText('styxKernelEmittedDelta', deltaSample(flow.emitted_delta));
+  setText('styxKernelDrainLag', secondsSample(flow.drain_lag_seconds));
   setText('styxKernelUpdated', beaconPayload.kernel_health_at || status.kernel_health_at
     ? formatStamp(beaconPayload.kernel_health_at || status.kernel_health_at)
     : t('v61.v6.common.unknown'));
@@ -83,10 +96,68 @@ function renderStatus(status, beaconPayload) {
     String(status.kernel_health_error || beaconPayload.kernel_health_error || '').trim(),
     String(sync.last_error || '').trim()
   ].filter(Boolean);
+  const telemetryDegraded = telemetry === 'degraded' || telemetry === 'stale' || status.telemetry_degraded === true;
   if (errors.length) setNotice('styxReason', errors.join(' · '), 'warn');
-  else setNotice('styxReason', String(status.reason || '').trim(), state === 'applied' ? 'good' : 'warn');
+  else if (telemetryDegraded) {
+    const reason = String(flow.reason || status.reason || '').trim();
+    setNotice('styxReason', t('v61.v6.styx.telemetry.warning') + (reason ? ': ' + reason : ''), 'warn');
+  } else setNotice('styxReason', String(status.reason || '').trim(), state === 'applied' ? 'good' : 'warn');
 
   renderTop(asArray(beacon.top).map(asObject));
+}
+
+function telemetryLabel(value) {
+  switch (String(value || '').toLowerCase()) {
+    case 'healthy':
+      return t('v61.v6.styx.telemetry.healthy');
+    case 'degraded':
+      return t('v61.v6.styx.telemetry.degraded');
+    case 'stale':
+      return t('v61.v6.styx.telemetry.stale');
+    case 'disabled':
+    case 'off':
+      return t('v61.v6.styx.telemetry.disabled');
+    case 'unavailable':
+      return t('v61.v6.styx.telemetry.unavailable');
+    default:
+      return t('v61.v6.common.unknown');
+  }
+}
+
+function telemetryTone(value) {
+  switch (String(value || '').toLowerCase()) {
+    case 'healthy':
+      return 'good';
+    case 'degraded':
+    case 'stale':
+      return 'warn';
+    case 'unavailable':
+      return 'danger';
+    default:
+      return 'muted';
+  }
+}
+
+function ratioSample(value) {
+  const number = Number(value);
+  if (value === null || value === undefined || !Number.isFinite(number)) {
+    return t('v61.v6.common.unknown');
+  }
+  return `${(number * 100).toFixed(2)} %`;
+}
+
+function deltaSample(value) {
+  return value === null || value === undefined
+    ? t('v61.v6.common.unknown')
+    : formatCount(value);
+}
+
+function secondsSample(value) {
+  const number = Number(value);
+  if (value === null || value === undefined || !Number.isFinite(number)) {
+    return t('v61.v6.common.unknown');
+  }
+  return `${number.toFixed(1)} s`;
 }
 
 function kernelSample(kernel, names) {
@@ -106,8 +177,9 @@ function stateLabel(state) {
       return t('v61.v6.common.unavailable');
     case 'capability-missing':
       return t('v61.v6.state.capabilityMissing');
-    case 'error':
     case 'degraded':
+      return t('v61.v6.state.degraded');
+    case 'error':
       return t('v61.v6.state.error');
     default:
       return t('v61.v6.common.unknown');
@@ -119,13 +191,14 @@ function stateTone(state) {
     case 'applied':
     case 'synced':
       return 'good';
+    case 'degraded':
+      return 'warn';
     case 'pending':
     case 'syncing':
       return 'warn';
     case 'unavailable':
     case 'capability-missing':
     case 'error':
-    case 'degraded':
       return 'danger';
     default:
       return 'muted';

@@ -477,6 +477,11 @@ func (e *LPEGuardEngine) applyStyxProfile(plan lpePlan) (string, error) {
 	switch sync.State {
 	case StyxSyncStateApplied:
 		return "applied", nil
+	case StyxSyncStateDegraded:
+		// The web-ingress profile was persisted but the kernel could not re-resolve
+		// every path-backed identity. Report the honest partial state instead of
+		// claiming the profile is in force.
+		return "degraded", errors.New("styX profile persisted, but the cgroup identity of at least one cell is degraded: " + sync.DegradedReason)
 	case StyxSyncStateCapabilityMissing:
 		return "engine_unavailable", nil
 	default:

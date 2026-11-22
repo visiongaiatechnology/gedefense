@@ -41,6 +41,7 @@ type L7EdgeService struct {
 
 	requests                 atomic.Uint64
 	blocked                  atomic.Uint64
+	rateLimited              atomic.Uint64
 	findings                 atomic.Uint64
 	upstreamErrors           atomic.Uint64
 	responsesInspected       atomic.Uint64
@@ -257,11 +258,21 @@ func (s *L7EdgeService) handle(w http.ResponseWriter, r *http.Request) {
 	if len(response.Findings) > 0 {
 		s.findings.Add(uint64(len(response.Findings)))
 	}
-	if response.Enforced && response.Decision == "block" {
-		s.blocked.Add(1)
-		s.publishStatus(true)
-		writeL7EdgeJSON(w, http.StatusForbidden, "request rejected")
-		return
+	if response.Enforced {
+		if response.RateLimit {
+			// M4.5: a pure rate-limit decision is answered deterministically with
+			// 429 + Retry-After; it never mixes into the security 403 path.
+			s.rateLimited.Add(1)
+			s.publishStatus(true)
+			writeL7EdgeRateLimitJSON(w)
+			return
+		}
+		if response.Decision == "block" {
+			s.blocked.Add(1)
+			s.publishStatus(true)
+			writeL7EdgeJSON(w, http.StatusForbidden, "request rejected")
+			return
+		}
 	}
 
 	r.Body = io.NopCloser(bytes.NewReader(rawBody))
@@ -479,6 +490,18 @@ func writeL7EdgeJSON(w http.ResponseWriter, status int, message string) {
 	_, _ = io.WriteString(w, `{"error":"`+message+`"}`+"\n")
 }
 
+// writeL7EdgeRateLimitJSON answers a deterministic rate-limit decision: HTTP 429,
+// a Retry-After header and the same JSON envelope as every other edge refusal.
+func writeL7EdgeRateLimitJSON(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("X-Frame-Options", "DENY")
+	w.Header().Set("Retry-After", fmt.Sprintf("%d", l7RateLimitRetryAfterSeconds))
+	w.WriteHeader(http.StatusTooManyRequests)
+	_, _ = io.WriteString(w, fmt.Sprintf("{\"error\":\"rate limit exceeded\",\"retry_after\":%d}\n", l7RateLimitRetryAfterSeconds))
+}
+
 func l7PeerProcessName(pid int32) string {
 	if pid <= 0 {
 		return ""
@@ -576,6 +599,7 @@ func (s *L7EdgeService) publishStatus(healthy bool) {
 		// Subtract them before adding the new values so aggregation is idempotent.
 		previousInlineRequests := status.InlineRequestsTotal
 		previousInlineBlocked := status.InlineBlockedTotal
+		previousInlineRateLimited := status.InlineRateLimitedTotal
 		previousInlineFindings := status.InlineFindingsTotal
 		previousResponseFindings := status.ResponseFindingsTotal
 
@@ -587,6 +611,10 @@ func (s *L7EdgeService) publishStatus(healthy bool) {
 		if socketBlocked >= previousInlineBlocked {
 			socketBlocked -= previousInlineBlocked
 		}
+		socketRateLimited := status.RateLimitedTotal
+		if socketRateLimited >= previousInlineRateLimited {
+			socketRateLimited -= previousInlineRateLimited
+		}
 		socketFindings := status.FindingsTotal
 		inlineFindings := previousInlineFindings + previousResponseFindings
 		if socketFindings >= inlineFindings {
@@ -595,6 +623,7 @@ func (s *L7EdgeService) publishStatus(healthy bool) {
 
 		inlineRequests := s.requests.Load()
 		inlineBlocked := s.blocked.Load()
+		inlineRateLimited := s.rateLimited.Load()
 		inlineFindingsNow := s.findings.Load()
 		responseFindingsNow := s.responseFindings.Load()
 
@@ -603,6 +632,7 @@ func (s *L7EdgeService) publishStatus(healthy bool) {
 		status.InlineSocket = s.cfg.InlineSocket
 		status.InlineRequestsTotal = inlineRequests
 		status.InlineBlockedTotal = inlineBlocked
+		status.InlineRateLimitedTotal = inlineRateLimited
 		status.InlineFindingsTotal = inlineFindingsNow
 		status.InlineUpstreamErrorsTotal = s.upstreamErrors.Load()
 		status.InlineLastError = s.lastError()
@@ -617,6 +647,7 @@ func (s *L7EdgeService) publishStatus(healthy bool) {
 		}
 		status.RequestsTotal = socketRequests + inlineRequests
 		status.BlockedTotal = socketBlocked + inlineBlocked
+		status.RateLimitedTotal = socketRateLimited + inlineRateLimited
 		status.FindingsTotal = socketFindings + inlineFindingsNow + responseFindingsNow
 		status.applyAttachmentSemantics()
 		if status.ProducerAttached && status.LastInspection != nil {

@@ -1,5 +1,28 @@
 # Release Notes
 
+## 6.2.0 — 2026-11-21 — Defense Maximization & Telemetry Resilience
+
+**6.2.0 is the HardRed-driven hardening release on top of 6.1.2.** It closes the confirmed malware, endpoint-containment, StyX cold-start drift and flow-telemetry gaps without weakening the strict `0.0 %` protection-FPR gate. Full details: `docs/V6.2.0-RELEASE.md`.
+
+### Highlights
+- **Malware:** asynchronous `FAN_CLOSE_WRITE` watcher on `/tmp`, `/var/tmp`, `/dev/shm`, `/var/www`; bounded recursive ZIP/GZIP/TAR inspection; automatic encrypted quarantine; `PrivateTmp=false` with strict per-path grants; raw `POST`/`PUT` malware inspection in the inline WAF.
+- **Endpoint:** TITAN Exec global `untrusted` mode 4 (non-root/world-writable drop paths); bounded process-tree/PGID kill with pidfd identity checks; eBPF ransomware sensor with immediate reversible `SIGSTOP`; `file_open` BPF-LSM credential guard for `/etc/shadow`, `/etc/gshadow` and bound secrets.
+- **StyX:** symbolic `cgroup_path` identities and dynamic cgroup2 inode re-resolution with drift/degraded reporting; `FLOW_EVENTS` 16 MiB / 64-record drain / 16 KiB payload; emitted/drop-ratio, drain-lag and separate telemetry-vs-enforcement status in API/dashboard.
+- **WAF:** SQL comment/whitespace canonicalization, secret-config scanner, semicolon chains, bounded 780 KB–1.5 MB fast-pass, deterministic `429` + `Retry-After`, raw-body EICAR/webshell blocking.
+- **Hardening/context:** expanded CIS/Lynis sysctl + opt-in provisioning baseline; Kinetic→XDR attack stories. Distributed canaries remain out of scope (the existing privileged canary root is unchanged).
+- **Artifacts:** `VGT_GeDefense_V6_6.2.0_*`, `GeDefense-6.2.0-*`.
+
+### Audit follow-up (2026-11-22)
+- On-write malware scanning is now UID-independent (www-data/uid-1000 drops are no longer ignored); the non-executable probe covers archives up to 16 MiB.
+- `HARDENING_SET` accepts `astraeaos-cis-l1`, 21-bit custom masks and the new CIS keys; the balanced/strict profiles were extended and old 6.1 persisted profiles are still recognized for upgrade. The core systemd unit has exact grants for the new `/proc/sys` controls.
+- The ransomware sensor arms at core load when a kprobe attached and drains on the 100 ms control tick instead of a one-second idle gap.
+- The credential guard allowlist now includes local TTY login, cron and account/group tooling (`login`, `useradd`, `usermod`, `groupadd`, `gpasswd`, `chage`, `vipw`, `pwck`, `grpck`, …), preventing package maintainer scripts and local logins from receiving `EACCES` on `/etc/shadow`.
+
+### Verification
+- WSL Ubuntu-24.04 toolchains: Go 1.27.1, Rust stable 1.97.1, nightly `2026-07-16`, Node 24.13.0.
+- Rust: `cargo +1.97.1 test --locked -p gedefense-common -p gedefense-core` → exit 0, common 52 + core 164 passed, 0 failed; eBPF nightly `bpfel-unknown-none` release build → exit 0.
+- Go/control + gateway tests, the static security audit and the rebuilt `dist/` binaries (control `6.2.0`, gateway `6.2.0-access`, core `6.2.0`, new eBPF object) are listed in `docs/V6.2.0-RELEASE.md`; kernel verifier/live BPF-LSM attach remains a release-gate item on the target host.
+
 ## 6.1.2 — 2026-11-20 — Installer Preconditions & Feed-Signing Hotfix
 
 **6.1.2 is a targeted installer and reliability hotfix on top of 6.1.1.** It closes four fresh-install `systemd` unit preconditions in the OneClick installer and fixes a 1-in-256 binary key-parsing edge case in `control/feed_signing.go`. Full release note: `docs/V6.1.2-HOTFIX.md`.

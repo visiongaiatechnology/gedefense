@@ -341,6 +341,10 @@ func (s *APIServer) handleKineticDecisions(events []KineticEvent) {
 			continue
 		}
 		s.state.AddEvent(Event{Time: event.Time, Severity: "high", Kind: "kinetic.block_applied", Source: "kinetic_response_engine", Message: fmt.Sprintf("%s applied for %s", event.RuleID, entry.Target), Target: entry.Target})
+		// M5.2: correlate the applied block into XDR with the resolved local
+		// service, a MITRE technique and an attack-story node (lineage). This is an
+		// observation path; the kernel block above is not changed by it.
+		s.recordKineticBlockContext(event, entry, event.Time)
 	}
 }
 

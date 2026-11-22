@@ -58,6 +58,14 @@ type L7InspectionResponse struct {
 	Reason     string      `json:"reason"`
 	BodySHA256 string      `json:"body_sha256,omitempty"`
 	Findings   []L7Finding `json:"findings"`
+	// RetryAfterSeconds is set only for a pure rate-limit decision, so an inline
+	// consumer can serve HTTP 429 with a deterministic Retry-After value instead
+	// of mixing rate limiting into the security block (403) path. RateLimit also
+	// flags the class without changing the historical "block" decision string,
+	// because third-party socket producers only know the block vocabulary and a
+	// new decision value would be a fail-open change for them.
+	RetryAfterSeconds int  `json:"retry_after_seconds,omitempty"`
+	RateLimit         bool `json:"rate_limit,omitempty"`
 }
 
 type L7TLSClientHelloRequest struct {
@@ -102,6 +110,7 @@ type L7Status struct {
 	InlineSocket              string     `json:"inline_socket,omitempty"`
 	InlineRequestsTotal       uint64     `json:"inline_requests_total"`
 	InlineBlockedTotal        uint64     `json:"inline_blocked_total"`
+	InlineRateLimitedTotal    uint64     `json:"inline_rate_limited_total"`
 	InlineUpstreamErrorsTotal uint64     `json:"inline_upstream_errors_total"`
 	InlineLastError           string     `json:"inline_last_error,omitempty"`
 	// InlineFindingsTotal and InlineLastRequestAt make the inline edge a
@@ -308,6 +317,10 @@ type l7NormalizedRequest struct {
 	Candidates              []l7Candidate
 	CandidateBytes          int
 	CandidateBudgetExceeded bool
-	ServerPID               int
-	ServerProcess           string
+	// ExpandedChunks counts how many candidate chunks already consumed the full
+	// recursive decode expansion. It bounds the decode cost of a large body
+	// (M4.4) without dropping the request.
+	ExpandedChunks int
+	ServerPID      int
+	ServerProcess  string
 }

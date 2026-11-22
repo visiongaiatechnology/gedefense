@@ -24,8 +24,15 @@ import (
 )
 
 const (
-	coreProtocol                          = "VGT3"
-	maxCoreResponseBytes                  = 4096
+	coreProtocol = "VGT3"
+	// maxCoreResponseBytes bounds one authenticated VGT3 response line. V6.2
+	// raises the StyX flow batch to 64 records / 16 KiB payload, so the old 4 KiB
+	// line bound would truncate and reject every full burst batch. The value stays
+	// a hard, bounded ceiling for every command family.
+	maxCoreResponseBytes                  = 64 << 10
+	// maxCoreResponsePayloadBytes mirrors MAX_RESPONSE_BYTES (24 KiB) in
+	// rust/gedefense-core/src/main.rs before base64url encoding.
+	maxCoreResponsePayloadBytes           = 24 << 10
 	maxCoreIngressEventsPerResponse       = 12
 	cellLSMDenyNonUnixSocket        uint8 = 1
 )
@@ -254,7 +261,7 @@ func parseCoreResponse(response, nonce string, key []byte) (string, error) {
 		return "", errors.New("core response authentication failed")
 	}
 	payload, err := base64.RawURLEncoding.DecodeString(encoded)
-	if err != nil || len(payload) > 2048 {
+	if err != nil || len(payload) > maxCoreResponsePayloadBytes {
 		return "", errors.New("invalid core response payload")
 	}
 	message := string(payload)
@@ -753,15 +760,25 @@ func (c *CoreClient) SysctlCompareSet(key, expected, desired string) error {
 
 func validHardeningState(value string) bool {
 	switch value {
-	case "absent", "linux-server-balanced", "astraeaos-workstation-strict":
+	case "absent", "linux-server-balanced", "astraeaos-workstation-strict", "astraeaos-cis-l1":
 		return true
 	}
 	const prefix = "astraeaos-custom-"
-	if len(value) != len(prefix)+4 || !strings.HasPrefix(value, prefix) {
+	if !strings.HasPrefix(value, prefix) {
 		return false
 	}
-	decoded, err := strconv.ParseUint(strings.TrimPrefix(value, prefix), 16, 16)
-	return err == nil && decoded > 0 && decoded&^uint64(0x03ff) == 0
+	suffix := strings.TrimPrefix(value, prefix)
+	// M5.1 grew the closed control catalogue from 10 to 21 bits, so a custom mask
+	// needs up to 6 hex characters now. The value still has to be a non-zero subset
+	// of the shipped catalogue ceiling.
+	if len(suffix) < 4 || len(suffix) > 8 {
+		return false
+	}
+	decoded, err := strconv.ParseUint(suffix, 16, 32)
+	if err != nil || decoded == 0 {
+		return false
+	}
+	return decoded&^uint64(sysctlControlMaskCeiling()) == 0
 }
 
 func (c *CoreClient) HardeningProfileState() (string, error) {
@@ -1306,12 +1323,18 @@ func parseCanaryBrokerStatus(response string) (CanaryBrokerStatus, error) {
 // as capability-missing instead of treating an old core as an XDR outage.
 
 const (
-	// maxStyxFlowEventsPerResponse mirrors the core's own batch ceiling. The
-	// control plane enforces it independently: a buggy or hostile core must not
-	// be able to force unbounded parsing work per poll.
-	maxStyxFlowEventsPerResponse = 8
-	// maxStyxFlowPayloadBytes bounds the text-wire payload before it is split.
-	maxStyxFlowPayloadBytes = 2048
+	// maxStyxFlowEventsPerResponse mirrors the core's own batch ceiling (V6.2:
+	// MAX_STYX_FLOW_EVENTS_PER_RESPONSE = 64, raised from 8 so one drain can clear
+	// a burst). The control plane enforces the raised ceiling independently and
+	// defensively: a buggy or hostile core must not be able to force unbounded
+	// parsing work per poll.
+	maxStyxFlowEventsPerResponse = 64
+	// maxStyxFlowPayloadBytes bounds the text-wire payload before it is split
+	// (V6.2: MAX_STYX_FLOW_PAYLOAD_BYTES = 16 KiB, raised from 2 KiB).
+	maxStyxFlowPayloadBytes = 16 << 10
+	// maxStyxFlowRecordBytes bounds one record before it is split into fields; the
+	// fixed wire record is far below this, so an oversized record is corruption.
+	maxStyxFlowRecordBytes = 512
 )
 
 // ErrStyxUnavailable marks the backwards-compatible answer of a core that does
@@ -1656,6 +1679,9 @@ func parseCoreStyxFlowEvents(response string) ([]CoreStyxFlowEvent, uint64, erro
 	}
 	events := make([]CoreStyxFlowEvent, 0, len(records))
 	for _, record := range records {
+		if len(record) == 0 || len(record) > maxStyxFlowRecordBytes {
+			return nil, 0, errors.New("core returned an oversized or empty styx flow record")
+		}
 		event, err := parseCoreStyxFlowEvent(record)
 		if err != nil {
 			return nil, 0, err
@@ -1953,11 +1979,13 @@ func (c *CoreClient) TitanExecStatus() (TitanExecCoreStatus, error) {
 	return parseTitanExecCoreStatus(response)
 }
 
-// TitanExecSetGlobal applies the host-wide mode (0..3) and the REQUIRE_CTIME flag.
+// TitanExecSetGlobal applies the host-wide mode and the REQUIRE_CTIME flag. The
+// global mode range is 0..4: V6.2 adds TITAN_EXEC_MODE_UNTRUSTED (4) as a global
+// default-deny mode for untrusted exec paths. Per-scope overrides stay 0..3.
 // The core answers with Err "enforcement-unavailable" when mode>0 and the BPF-LSM
 // hook is not attached; the caller reports that as inactive, never as applied.
 func (c *CoreClient) TitanExecSetGlobal(mode, flags uint8) error {
-	if mode > 3 {
+	if mode > 4 {
 		return errors.New("titan exec global mode is out of range")
 	}
 	if flags&^uint8(titanExecGlobalFlagRequireCtime) != 0 {
@@ -2159,7 +2187,7 @@ func parseTitanExecCoreStatus(payload string) (TitanExecCoreStatus, error) {
 		return TitanExecCoreStatus{}, errors.New("core returned an unknown titan exec status state")
 	}
 	mode, err := titanExecParseUint(values["mode"], 8)
-	if err != nil || mode > 3 {
+	if err != nil || mode > 4 {
 		return TitanExecCoreStatus{}, errors.New("core returned an invalid titan exec status mode")
 	}
 	flags, err := titanExecParseUint(values["flags"], 8)

@@ -1,5 +1,49 @@
 # Changelog
 
+## 6.2.0 — 2026-11-21 — Defense Maximization & Telemetry Resilience
+
+Major hardening release on top of `6.1.2`, driven by the VGT HardRed 6.1.2 evidence review. It closes the malware, endpoint-containment, StyX reboot-drift and flow-telemetry findings without weakening the `0.0 %` protection-FPR gate. Release note: `docs/V6.2.0-RELEASE.md`.
+
+### Malware & artifacts
+- **On-write malware sensor (M1.1):** an asynchronous fanotify `FAN_CLOSE_WRITE` watcher now covers the host drop paths `/tmp`, `/var/tmp`, `/dev/shm` and `/var/www` (configurable with repeated `--on-write-watch-root=`). It never registers a blocking `FAN_*_PERM` class, stays bounded (`sync_channel(256)`, file ≤64 MiB, signature probe ≤1 MiB), re-checks the SHA-256 under the quarantine broker lock and moves only confirmed-malicious files into the encrypted quarantine; XDR events `on-write-quarantined/-failed/-unavailable` and `on-write-scan-error` are emitted.
+- **Bounded recursive archive inspection (M1.2):** ZIP (stored + deflate), GZIP (multi-member) and TAR (ustar/GNU, checksum, PAX/GNU long names) are inspected recursively with hard limits: depth 8, entry ≤16 MiB, total expanded ≤64 MiB, ≤10 000 entries, ratio 200:1; zip-slip/absolute/backslash/Windows paths are rejected fail-closed, malformed/unsupported members never silently pass. EICAR/signature hits inside members are reported as malicious.
+- **Tmp visibility (M1.3):** `gedefense-core.service` runs with `PrivateTmp=false` and explicit read/write grants for exactly `/tmp`, `/var/tmp`, `/dev/shm`, `/var/www`; `/home` and `/opt` stay read-only and every quarantine operation remains fd-anchored (`openat2`/`O_NOFOLLOW`).
+- **HTTP raw-body malware inspection (M1.3):** `POST`/`PUT` bodies with `application/octet-stream` or unknown content types now pass the Airlock byte/signature path (EICAR/webshell markers, score 110 → HTTP 403), not only multipart uploads; size/fast-pass bounds avoid the previous 503 timeout.
+
+### Endpoint, ransomware containment & TITAN
+- **TITAN Exec `untrusted` mode (M2.1):** global mode 4 blocks non-root-owned or world-writable untrusted exec paths; per-scope modes remain 0..3. eBPF ABI-2 adds inode-owner, dentry-parent and filename offsets; `TITAN_EXEC_REASON_UNTRUSTED_PATH`/`NON_ROOT_OWNER`/`WORLD_WRITABLE_PATH` (11–13) are parsed by the control plane. No allowlisted system binary and no system package tree is affected.
+- **Process-tree/PGID kill (M2.3):** `XDR_KILL_TREE <pid> <start_ticks> <rule>`, `XDR_GROUP_STOP` and `XDR_GROUP_CONT` are implemented in the core. The bounded `/proc` snapshot (≤4096 processes, depth 64, ≤1024 signals) walks PPID descendants plus the process group, verifies every target with a before/after start-time check and `pidfd_send_signal(SIGKILL)`; PID 1–4, systemd/sshd/gedefense tasks and kernel threads are hard-protected. `XDR.RANSOM_*` rules are accepted as objective evidence.
+- **eBPF ransomware sensor (M2.2):** `vfs_write`, `vfs_rename` and `vfs_unlink` kprobes feed a per-TGID tracker with integer-only entropy (distinct-byte SWAR popcount) and rename/unlink windows. Signal A (≥15 distinct high-entropy inodes/500 ms) and Signal B (≥25 rename+unlink/250 ms) emit bounded `RANSOM_ENTROPY_BURST`/`RANSOM_RENAME_STORM` events; the core resolves the real PGID and freezes the whole group immediately with reversible `SIGSTOP`, skipping trusted package/compiler comms to protect `apt`, `dpkg`, `tar`, `cargo` and builds. Control can later escalate with `KILL_TREE` or release with `GROUP_CONT`.
+- **Credential-access guard (M2.4):** a `file_open` BPF-LSM program protects the inodes of `/etc/shadow`, `/etc/gshadow` and the bound secret files in `/etc/vgt/gedefense/secrets/`; only allowlisted auth/system comms (`unix_chkpwd`, `sshd`, `sudo`, `su`, `passwd`, `chpasswd`, `systemd*`, `gedefense*`) may read them, otherwise `-EACCES` + `CRED_GUARD` event. Fail-safe: an unarmed/unattached guard never blocks PAM/login paths, and the status reports `active=0` instead of a false claim.
+
+### StyX & flow telemetry
+- **Symbolic cgroup identities (M3.1/M3.2):** StyX cell modes and allow rules accept `cgroup_path` (and retain legacy numeric IDs); the control plane resolves the current cgroup2 inode from `/sys/fs/cgroup` on every sync, detects service-restart/reboot drift, atomically re-applies mode/allow rules and marks unresolved paths `degraded` instead of silently failing open. Legacy numeric IDs remain supported and are marked as such.
+- **Flow-ring resilience:** `FLOW_EVENTS` grows from 4 MiB to 16 MiB; the core drains 64 records per poll (was 8) with a 16 KiB payload ceiling and the control plane raises its independent parser limit to 64/16 KiB/64 KiB response. This removes the observed `FLOW_RING_DROPS` starvation without touching the egress enforcement path.
+- **Honest telemetry status:** `STYX_FLOW_HEALTH` is surfaced as emitted/dropped deltas, drop ratio, drain lag and a `telemetry_state` (`healthy/degraded/stale/unavailable/disabled`), explicitly separated from `enforcement_active`. The dashboard/overview shows “telemetry degraded” instead of an unqualified “active” when ring drops persist; degraded/recovered XDR events are emitted.
+
+### WAF & inline edge
+- SQL comment/whitespace normalization catches `1/**/oR/**/1=1--` and equivalent operator obfuscation; semicolon-chained query/form values are parsed as individual segments instead of a generic 400.
+- New `L7.SQLI.SCHEMA_PROBE`, `L7.SQLI.COMMENT_OBFUSCATION`, `L7.SCANNER.RECON`/`USER_AGENT` and `L7.MALWARE.EICAR` rules; `L7.SCANNER.PROBE` (score 95) blocks secret-config probes such as `/.env`, `.git/config` and `wp-config.php.bak`.
+- Large bodies (780 KB–1.5 MB) use a bounded shallow fast-pass (16 head/tail text chunks, at most 8 decode chunks) so benign large requests no longer hit the 503 timeout; deep mid-body encoded payloads beyond the bound are a documented trade-off.
+- Pure rate-limit decisions now return deterministic `429` with `Retry-After` and consistent JSON; security blocks remain `403` with the socket verdict `block` (no fail-open).
+
+### Hardening, context & packaging
+- **CIS/Lynis hardening (M5.1):** the sysctl control catalog/preview/rollback covers `rp_filter`, `log_martians`, `icmp_echo_ignore_broadcasts`, `protected_hardlinks/symlinks`, `sysrq`, `perf_event_paranoid`, `tty.ldisc_autoload`, `tcp_syncookies`, `dmesg_restrict`, `kptr_restrict`, `yama.ptrace_scope` and `vm.swappiness`; `gedefense-provision` gains an opt-in, reversible CIS-L1 baseline for SSHD (`99-gedefense.conf`), `login.defs` UMASK, legal banners, module blacklist (`dccp`, `sctp`, `rds`, `tipc`, `cramfs`, `usb-storage`) and base auditd rules. Live SSHD/PAM changes are opt-in and never silently forced.
+- **Kinetic→XDR attack stories (M5.2):** on `kinetic.block_applied` events (`PORT_SCAN`, `SYN_FLOOD`, `LOW_SLOW_SCAN`, `IP_RATE`) the control plane resolves the local service port from `/proc/net/tcp*`, attaches the MITRE technique and emits an `AttackStoryNode` with `has_lineage_or_chain=true`, closing the previously incomplete `NET-*` context.
+- **Canary decoys:** the existing privileged canary root/broker remains the only deployment path; automatic distribution into `/home/*`, `/var/www`, `/srv` or `/tmp` is not enabled in 6.2.0. It requires a separate fd-anchored core deployer plus per-root write grants and is documented as a follow-up rather than silently widening the canary boundary.
+
+### Audit follow-up fixes (2026-11-22)
+- **On-write sensor no longer ignores non-root writers:** `classify_write()` no longer returns `None` for `owner_uid != 0`. Webserver (www-data), benchmark-user and attacker drops under `/tmp`, `/var/tmp`, `/dev/shm` and `/var/www` are now scanned and quarantined independent of the writer's UID. The non-executable signature/archive probe budget rises from 1 MiB to 16 MiB; the root boundary remains the watch root plus fd-anchored quarantine checks.
+- **Persistent hardening state accepts the M5.1 vocabulary:** `HARDENING_SET` now recognizes `astraeaos-cis-l1`, a 21-bit custom mask (`astraeaos-custom-xxxxxx`) and all new CIS keys. The three shipped profiles were extended to the Go catalogue content (balanced/strict migrated from the 6.1 legacy content, which is still recognized on upgrade). `gedefense-core.service` gets exact `ReadWritePaths` grants for the new `/proc/sys` controls; `ProtectKernelTunables=true` remains.
+- **Ransomware freeze is armed at core load and drained on the 100 ms tick:** `RansomCore` arms as soon as at least one kprobe attached; the control-plane drain cadence changed from 1 s to 100 ms so the core's `SIGSTOP` is not delayed by an idle IPC gap.
+- **Credential guard allowlist covers local login and account tooling:** `login`, `cron`, `useradd`, `usermod`, `userdel`, `groupadd`, `groupmod`, `groupdel`, `gpasswd`, `chage`, `newgrp`, `vipw`, `pwck` and `grpck` were added; `apt`/`dpkg` maintainer scripts and local TTY/PAM logins no longer receive `EACCES` on `/etc/shadow`.
+
+### Version and artifacts
+- Product version **6.2.0** across `VERSION`, Control (`6.2.0`), Gateway (`6.2.0-access`), Rust workspace/`Cargo.lock`, AstraeaOS contract, Arch `PKGBUILD`, OneClick installer headers and README release links/badges. Artifact names are `VGT_GeDefense_V6_6.2.0_*`, `GeDefense-6.2.0-*`.
+
+### Verification
+- See `docs/V6.2.0-RELEASE.md` for the exact test ledger, WSL toolchain versions and the live-load items that remain release gates.
+
 ## 6.1.2 — 2026-11-20 — Installer Preconditions & Feed-Signing Hotfix
 
 Targeted hotfix on top of `6.1.1`. Fixes four missing fresh-install `systemd` unit preconditions in the OneClick installer so all six service units start cleanly without requiring an intervening reboot, hardens post-upgrade status polling against non-JSON payloads, and fixes a 1-in-256 Ed25519 feed-signing key parser flake when a raw key ends in `0x0d`. Release note: `docs/V6.1.2-HOTFIX.md`.

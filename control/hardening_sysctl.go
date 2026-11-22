@@ -25,7 +25,10 @@ type SysctlTransactionApplier struct {
 }
 
 type sysctlControlDefinition struct {
-	Mask   uint16
+	// Mask is the deterministic identity bit of one control inside a custom
+	// profile name. It was uint16 while the catalogue had 11 entries; M5.1 grows
+	// the catalogue to 21 controls, so the identity space is uint32 now.
+	Mask   uint32
 	Values map[string]string
 }
 
@@ -73,6 +76,57 @@ var sysctlControlDefinitions = map[string]sysctlControlDefinition{
 		"net.ipv6.conf.all.accept_redirects":     "0",
 		"net.ipv6.conf.default.accept_redirects": "0",
 	}},
+	// ---------------------------------------------------------------- M5.1
+	// CIS/Lynis Level-1 sysctl catalogue. Every value below is a documented,
+	// distribution-neutral default; nothing here is a hidden behaviour switch.
+	// Controls are opt-in through a profile or an explicit ad-hoc selection, and
+	// the transaction engine keeps preview/apply/verify/reverse semantics.
+	"network.rp-filter": {Mask: 1 << 11, Values: map[string]string{
+		"net.ipv4.conf.all.rp_filter": "1", "net.ipv4.conf.default.rp_filter": "1",
+	}},
+	"network.log-martians": {Mask: 1 << 12, Values: map[string]string{
+		"net.ipv4.conf.all.log_martians": "1", "net.ipv4.conf.default.log_martians": "1",
+	}},
+	"network.icmp-hardening": {Mask: 1 << 13, Values: map[string]string{
+		"net.ipv4.icmp_echo_ignore_broadcasts":       "1",
+		"net.ipv4.icmp_ignore_bogus_error_responses": "1",
+	}},
+	"filesystem.protected-hardlinks": {Mask: 1 << 14, Values: map[string]string{
+		"fs.protected_hardlinks": "1",
+	}},
+	"filesystem.protected-symlinks": {Mask: 1 << 15, Values: map[string]string{
+		"fs.protected_symlinks": "1",
+	}},
+	"kernel.sysrq": {Mask: 1 << 16, Values: map[string]string{
+		"kernel.sysrq": "0",
+	}},
+	"kernel.perf-event": {Mask: 1 << 17, Values: map[string]string{
+		"kernel.perf_event_paranoid": "3",
+	}},
+	"kernel.tty-ldisc": {Mask: 1 << 18, Values: map[string]string{
+		"dev.tty.ldisc_autoload": "0",
+	}},
+	"memory.swappiness": {Mask: 1 << 19, Values: map[string]string{
+		"vm.swappiness": "10",
+	}},
+	// Context-dependent and deliberately NOT part of any shipped default profile:
+	// disabling IPv6 breaks hosts that actually use it. An operator may select it
+	// explicitly (ad-hoc control selection or a custom profile) after checking the
+	// host's networking; the posture check below states the result either way.
+	"network.ipv6-disable": {Mask: 1 << 20, Values: map[string]string{
+		"net.ipv6.conf.all.disable_ipv6": "1", "net.ipv6.conf.default.disable_ipv6": "1",
+	}},
+}
+
+// sysctlControlMaskCeiling is the OR of every control identity bit. The
+// persistent hardening state may only carry a custom mask built from this
+// closed catalogue, so the validator follows the catalogue automatically.
+func sysctlControlMaskCeiling() uint32 {
+	var ceiling uint32
+	for _, definition := range sysctlControlDefinitions {
+		ceiling |= definition.Mask
+	}
+	return ceiling
 }
 
 type SysctlCore interface {
@@ -187,7 +241,7 @@ func decodeSysctlProfileRequest(payload json.RawMessage, profiles map[string]Sys
 	controls := append([]string(nil), request.Controls...)
 	sort.Strings(controls)
 	values := make(map[string]string)
-	var mask uint16
+	var mask uint32
 	for index, controlID := range controls {
 		if index > 0 && controls[index-1] == controlID {
 			return SysctlProfile{}, errors.New("hardening control selection contains duplicates")
@@ -342,8 +396,13 @@ func (a *SysctlTransactionApplier) Reverse(
 	}
 	if len(bytes.TrimSpace(afterRaw)) == 0 {
 		profiles, _, _ := a.profileSet()
-		profile, exists := profiles[beforeProfile]
-		if !exists {
+		var expectedValues map[string]string
+		if profile, exists := profiles[beforeProfile]; exists {
+			expectedValues = profile.Values
+		} else {
+			expectedValues = recoveryExpectedValuesFromCatalogue(before)
+		}
+		if len(expectedValues) == 0 {
 			return errors.New("hardening recovery profile is unavailable")
 		}
 		currentPersistent, persistentErr := a.core.HardeningProfileState()
@@ -355,7 +414,7 @@ func (a *SysctlTransactionApplier) Reverse(
 				return err
 			}
 		}
-		return a.restore(profile.Values, before)
+		return a.restore(expectedValues, before)
 	}
 	afterProfile, after, afterPersistent, err := decodeSysctlState(afterRaw)
 	if err != nil || afterProfile != beforeProfile {
@@ -405,4 +464,22 @@ func (a *SysctlTransactionApplier) restore(
 		}
 	}
 	return result
+}
+
+func recoveryExpectedValuesFromCatalogue(before map[string]string) map[string]string {
+	if len(before) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(before))
+	for _, def := range sysctlControlDefinitions {
+		for key, value := range def.Values {
+			if _, present := before[key]; present {
+				out[key] = value
+			}
+		}
+	}
+	if len(out) != len(before) {
+		return nil
+	}
+	return out
 }

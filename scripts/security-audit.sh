@@ -321,8 +321,8 @@ for component, anchors in required.items():
     missing.extend(f'{component}: {anchor}' for anchor in anchors if anchor not in texts[component])
 if missing:
     raise SystemExit('verified fail-safe/configurable-rule anchors missing:\n'+'\n'.join(missing))
-if re.search(r'(?m)^\s*maxCoreResponseBytes\s*=\s*4096\s*$', core_client) is None:
-    raise SystemExit('authenticated core response limit is not exactly 4096 bytes')
+if re.search(r'(?m)^\s*maxCoreResponseBytes\s*=\s*64\s*<<\s*10\s*$', core_client) is None:
+    raise SystemExit('authenticated core response limit is not the V6.2 64 KiB bound')
 if '_ = r.reconcileLocked("observe")' in release or '_ = r.policy.Persist' in release:
     raise SystemExit('release fail-safe still discards reconciliation or policy errors')
 PY
@@ -849,7 +849,7 @@ need('go-ipc', ipc, '"STYX_MODE_SET"')
 need('go-ipc', ipc, '"STYX_FLOW_EVENTS"')
 need('go-ipc', ipc, 'ErrStyxUnavailable')
 need_match('go-ipc', ipc, 'batch and payload limits pinned on the control-plane side',
-           r'maxStyxFlowEventsPerResponse = 8.*?maxStyxFlowPayloadBytes = 2048')
+           r'maxStyxFlowEventsPerResponse = 64.*?maxStyxFlowPayloadBytes = 16 << 10')
 need('go-beacon', beacon, 'type StyxBeaconEngine struct {')
 need('go-beacon', beacon, 'CausalEdge: EdgeEgressAttempted')
 need_match('go-beacon', beacon, 'signal 3 can never fire without a DNS capability (no fake)',

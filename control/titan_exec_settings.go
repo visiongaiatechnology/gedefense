@@ -23,11 +23,15 @@ import (
 
 const (
 	// TitanExecModeOff/Observe/Contain/Strict are the administrable global modes
-	// (§3.1 modes 0..3, §7.1). The kernel value is derived, never stored as text.
-	TitanExecModeOff     = "off"
-	TitanExecModeObserve = "observe"
-	TitanExecModeContain = "contain"
-	TitanExecModeStrict  = "strict"
+	// (§3.1 modes 0..3, §7.1). V6.2 adds TitanExecModeUntrusted (global mode 4):
+	// deny executables from untrusted paths (non-root owner / world-writable
+	// location) while allowlisted system binaries keep working. It is a GLOBAL
+	// mode only; per-cgroup scope overrides stay 0..3.
+	TitanExecModeOff       = "off"
+	TitanExecModeObserve   = "observe"
+	TitanExecModeContain   = "contain"
+	TitanExecModeStrict    = "strict"
+	TitanExecModeUntrusted = "untrusted"
 
 	// titanExecSupportedVersion is the only TitanExec ABI version this control
 	// plane speaks (§5 TITAN_EXEC_VERSION).
@@ -151,8 +155,11 @@ func titanExecModeValue(mode string) (uint8, error) {
 		return 2, nil
 	case TitanExecModeStrict:
 		return 3, nil
+	case TitanExecModeUntrusted:
+		// Global-only V6.2 mode (TITAN_EXEC_MODE_UNTRUSTED).
+		return 4, nil
 	default:
-		return 0, fmt.Errorf("titan exec mode %q must be off, observe, contain or strict", mode)
+		return 0, fmt.Errorf("titan exec mode %q must be off, observe, contain, strict or untrusted", mode)
 	}
 }
 
@@ -164,6 +171,8 @@ func titanExecModeName(mode uint8) string {
 		return TitanExecModeContain
 	case 3:
 		return TitanExecModeStrict
+	case 4:
+		return TitanExecModeUntrusted
 	default:
 		return TitanExecModeOff
 	}

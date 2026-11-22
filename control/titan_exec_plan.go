@@ -181,6 +181,13 @@ func titanExecCompileScopes(settings TitanExecFabricSettings, globalMode uint8) 
 		mode, pinned := modes[cgroupID]
 		if !pinned {
 			mode = globalMode
+			// V6.2: TITAN_EXEC_MODE_UNTRUSTED (4) is a global-only mode; the scope
+			// ABI keeps 0..3. A JIT scope that inherits the global mode is pinned to
+			// STRICT here (the most restrictive scope mode) and keeps its JIT flag,
+			// so the new global mode can never send an out-of-range scope mode.
+			if mode > 3 {
+				mode = 3
+			}
 		}
 		out = append(out, titanExecPlanScope{CgroupID: cgroupID, Mode: mode, Flags: flags[cgroupID]})
 	}

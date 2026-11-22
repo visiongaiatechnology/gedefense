@@ -107,8 +107,14 @@ type APIServer struct {
 	kineticRules     *KineticRuleRegistry
 	kineticRuntimeMu sync.Mutex
 	kineticCancel    context.CancelFunc
-	geo              *GeoResolver
-	l7               *L7Engine
+	// kineticContextSeen bounds the M5.2 XDR correlation of applied kinetic
+	// blocks (one incident/story per rule+target per window). It is independent of
+	// the XDR dedupe settings, so a zero-value runtime settings document cannot
+	// turn the correlation into an incident flood.
+	kineticContextMu   sync.Mutex
+	kineticContextSeen map[string]time.Time
+	geo                *GeoResolver
+	l7                 *L7Engine
 	// restartHook is invoked immediately before an internal restart exits the process.
 	// It exists so a test can observe the restart without ending the test process.
 	restartHook func()
@@ -1322,24 +1328,24 @@ var webAssetAllowlist = map[string]bool{
 	// GeDefense 6.1.0 dashboard (docs/V6.1.0-BLUEPRINT.md §5). The exact list the
 	// UI agent delivers; the exhaustive contract test keeps this map and the
 	// embedded tree in agreement in both directions.
-	"v61/base.css":       true,
-	"v61/exposure.js":    true,
-	"v61/exposure.css":   true,
-	"v61/workers.js":     true,
-	"v61/workers.css":    true,
-	"v61/tls.js":         true,
-	"v61/tls.css":        true,
-	"v61/lpe.js":         true,
-	"v61/lpe.css":        true,
-	"v61/edge.js":        true,
-	"v61/edge.css":       true,
-	"v61/v6.js":          true,
-	"v61/v6.css":         true,
-	"v61/v6-styx.js":     true,
-	"v61/v6-titan.js":    true,
-	"v61/v6-cells.js":       true,
-	"v61/v6-lockdown.js":    true,
-	"v61/v6-witness.js":     true,
+	"v61/base.css":             true,
+	"v61/exposure.js":          true,
+	"v61/exposure.css":         true,
+	"v61/workers.js":           true,
+	"v61/workers.css":          true,
+	"v61/tls.js":               true,
+	"v61/tls.css":              true,
+	"v61/lpe.js":               true,
+	"v61/lpe.css":              true,
+	"v61/edge.js":              true,
+	"v61/edge.css":             true,
+	"v61/v6.js":                true,
+	"v61/v6.css":               true,
+	"v61/v6-styx.js":           true,
+	"v61/v6-titan.js":          true,
+	"v61/v6-cells.js":          true,
+	"v61/v6-lockdown.js":       true,
+	"v61/v6-witness.js":        true,
 	"overview-connections.js":  true,
 	"overview-connections.css": true,
 	"setup-wizard.js":          true,
@@ -3321,8 +3327,10 @@ func (s *APIServer) addStyxRule(w http.ResponseWriter, r *http.Request) {
 func (s *APIServer) styxStatusView() StyxStatusView {
 	view := StyxStatusView{
 		State: StyxSyncStateUnavailable, SensorState: "unavailable", Capability: styxCapabilityUnknown,
-		Sync:   StyxSyncStatus{State: StyxSyncStateUnavailable, Capability: styxCapabilityUnknown},
-		Beacon: StyxBeaconView{Top: []StyxBeaconFlowSnapshot{}},
+		TelemetryState: styxTelemetryUnavailable,
+		Sync:           StyxSyncStatus{State: StyxSyncStateUnavailable, Capability: styxCapabilityUnknown},
+		Flow:           StyxFlowMetrics{TelemetryState: styxTelemetryUnavailable},
+		Beacon:         StyxBeaconView{Top: []StyxBeaconFlowSnapshot{}},
 	}
 	if s.xdr == nil {
 		return view
@@ -3330,10 +3338,15 @@ func (s *APIServer) styxStatusView() StyxStatusView {
 	sync := s.xdr.StyxPolicyStatus()
 	beacon := s.xdr.StyxBeaconSnapshot()
 	health, at, healthErr := s.xdr.StyxFlowHealthStatus()
+	flow := s.xdr.StyxFlowMetrics()
 	view.State = sync.State
 	view.SensorState = beacon.SensorState
 	view.Capability = sync.Capability
+	view.EnforcementActive = styxEnforcementActive(sync)
+	view.TelemetryState = flow.TelemetryState
+	view.TelemetryDegraded = flow.TelemetryDegraded
 	view.Sync = sync
+	view.Flow = flow
 	view.KernelHealth = health
 	if !at.IsZero() {
 		healthAt := at
@@ -3363,8 +3376,10 @@ func (s *APIServer) styxBeacons(w http.ResponseWriter, _ *http.Request) {
 	view := s.styxStatusView()
 	writeJSON(w, http.StatusOK, StyxBeaconsView{
 		State: view.Sync.State, SensorState: view.SensorState, Capability: view.Capability,
-		SyncState: view.Sync.State, Epoch: view.Sync.Epoch,
-		Beacon: view.Beacon, KernelHealth: view.KernelHealth,
+		EnforcementActive: view.EnforcementActive, TelemetryState: view.TelemetryState,
+		TelemetryDegraded: view.TelemetryDegraded,
+		SyncState:         view.Sync.State, Epoch: view.Sync.Epoch,
+		Beacon: view.Beacon, Flow: view.Flow, KernelHealth: view.KernelHealth,
 		KernelHealthAt: view.KernelHealthAt, KernelHealthError: view.KernelHealthError,
 	})
 }

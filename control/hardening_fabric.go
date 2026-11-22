@@ -146,8 +146,39 @@ func defaultHardeningFabricSettings(cfg Config, storageDir string) HardeningFabr
 		},
 		Sysctl: HardeningSysctlSettings{
 			Profiles: []SysctlProfileSettings{
-				{Name: "linux-server-balanced", Controls: []string{"filesystem.protected-links", "filesystem.suid-dumps", "kernel.aslr", "kernel.dmesg", "kernel.kptr", "network.ipv4-redirects", "network.ipv6-redirects", "network.syn-cookies"}},
-				{Name: "astraeaos-workstation-strict", Controls: []string{"filesystem.protected-links", "filesystem.suid-dumps", "kernel.aslr", "kernel.bpf", "kernel.dmesg", "kernel.kptr", "kernel.ptrace", "network.ipv4-redirects", "network.ipv6-redirects", "network.syn-cookies"}},
+				// M5.1: the balanced profile now carries the full distribution-neutral
+				// CIS/Lynis Level-1 sysctl baseline (rp_filter, martian logging, ICMP
+				// broadcast hardening, protected hardlinks/symlinks, sysrq, perf_event
+				// and the pre-existing controls). vm.swappiness and tty-ldisc stay out
+				// of the server profile on purpose; disabling IPv6 is never applied
+				// implicitly (network.ipv6-disable is opt-in only).
+				{Name: "linux-server-balanced", Controls: []string{
+					"filesystem.protected-hardlinks", "filesystem.protected-links",
+					"filesystem.protected-symlinks", "filesystem.suid-dumps",
+					"kernel.aslr", "kernel.dmesg", "kernel.kptr", "kernel.perf-event", "kernel.sysrq",
+					"network.icmp-hardening", "network.ipv4-redirects", "network.ipv6-redirects",
+					"network.log-martians", "network.rp-filter", "network.syn-cookies",
+				}},
+				{Name: "astraeaos-workstation-strict", Controls: []string{
+					"filesystem.protected-hardlinks", "filesystem.protected-links",
+					"filesystem.protected-symlinks", "filesystem.suid-dumps",
+					"kernel.aslr", "kernel.bpf", "kernel.dmesg", "kernel.kptr",
+					"kernel.perf-event", "kernel.ptrace", "kernel.sysrq", "kernel.tty-ldisc",
+					"memory.swappiness",
+					"network.icmp-hardening", "network.ipv4-redirects", "network.ipv6-redirects",
+					"network.log-martians", "network.rp-filter", "network.syn-cookies",
+				}},
+				// Explicit CIS Level-1 profile for hosts that want the complete managed
+				// baseline in one revision. It stays opt-in (the default remains
+				// linux-server-balanced) and still never disables IPv6 implicitly.
+				{Name: "astraeaos-cis-l1", Controls: []string{
+					"filesystem.protected-hardlinks", "filesystem.protected-links",
+					"filesystem.protected-symlinks", "filesystem.suid-dumps",
+					"kernel.aslr", "kernel.bpf", "kernel.dmesg", "kernel.kptr",
+					"kernel.perf-event", "kernel.ptrace", "kernel.sysrq", "kernel.tty-ldisc",
+					"network.icmp-hardening", "network.ipv4-redirects", "network.ipv6-redirects",
+					"network.log-martians", "network.rp-filter", "network.syn-cookies",
+				}},
 			},
 			DefaultProfile:     "linux-server-balanced",
 			AllowAdHocControls: true,

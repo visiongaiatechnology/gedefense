@@ -26,8 +26,11 @@ type L7Engine struct {
 	responseDetector *l7ResponseDetector
 	tls              *TLSSecurityEngine
 	cms              *CMSEngine
-	admissionSlots   chan struct{}
-	inspectionSlots  chan struct{}
+	// airlock is the shared malware inspector. It is also used by the multipart
+	// upload detector; M1.3 adds the raw-body detector for opaque POST/PUT bodies.
+	airlock         *AirlockInspector
+	admissionSlots  chan struct{}
+	inspectionSlots chan struct{}
 }
 
 func NewL7Engine(cfg L7Config, xdr *XDREngine, release *ReleaseController) (*L7Engine, error) {
@@ -53,11 +56,12 @@ func NewL7Engine(cfg L7Config, xdr *XDREngine, release *ReleaseController) (*L7E
 	live := newL7Runtime(defaultL7FabricSettings(cfg), 0)
 	engine := &L7Engine{
 		live: live, normalizer: newL7NormalizerWithRuntime(cfg, live), limiter: newL7RateLimiterWithRuntime(cfg),
-		xdr: xdr, release: release, responseDetector: responseDetector,
+		xdr: xdr, release: release, responseDetector: responseDetector, airlock: airlock,
 		admissionSlots:  make(chan struct{}, cfg.MaxConcurrent),
 		inspectionSlots: make(chan struct{}, cfg.MaxConcurrent),
 		detectors:       []l7Detector{patternDetector, ssrfDetector, l7ProtocolDetector{}, l7EncodingDepthDetector{}, l7UploadDetector{live: live, airlock: airlock}},
 	}
+	engine.detectors = append(engine.detectors, l7RawBodyAirlockDetector{engine: engine})
 	if cfg.TLSEnabled {
 		engine.tls = NewTLSSecurityEngine(cfg.TLSAllowedDomains, cfg.TLSFloodThreshold, cfg.TLSSNIStrikeThreshold, cfg.TLSAntiSpoof, cfg.MaxTrackedClients)
 		if cfg.TLSJA3File != "" {
@@ -172,6 +176,15 @@ func (e *L7Engine) inspect(ctx context.Context, req L7InspectionRequest, body []
 	case <-ctx.Done():
 		return L7InspectionResponse{}, l7NormalizedRequest{}, ctx.Err()
 	}
+	// M4.4: a large raw body clearly carrying a signature-level payload is decided
+	// on the raw bytes in bounded windows, before the recursive decode expansion.
+	// This is what turns the historical inspection timeout (503) into a defined
+	// 403/429 for an oversize exploit body.
+	if raw && len(body) >= l7FastPassMinBodyBytes {
+		if fast, handled := e.l7LargeBodyFastPath(req, body, snapshot); handled {
+			return fast, l7NormalizedRequest{}, nil
+		}
+	}
 	var normalized l7NormalizedRequest
 	var err error
 	if raw {
@@ -228,6 +241,14 @@ func (e *L7Engine) inspect(ctx context.Context, req L7InspectionRequest, body []
 			break
 		}
 	}
+	// M4.4: a well-known malware marker in the inspected body is evidence on its
+	// own, independent of body size and content type.
+	if len(normalized.Body) > 0 && len(findings) < 64 {
+		findings = append(findings, l7BodyMarkerFindings(normalized.Body)...)
+		if len(findings) > 64 {
+			findings = findings[:64]
+		}
+	}
 	if trustedEditor && len(findings) > 0 {
 		// Suppress only the XSS false-positive family on exact VGT editor
 		// actions. SQLi, LFI, PHP-tag and all other pattern families remain
@@ -275,6 +296,15 @@ func (e *L7Engine) inspect(ctx context.Context, req L7InspectionRequest, body []
 			response.Decision = "block"
 			response.Enforced = true
 			response.Reason = "request blocked by L7 policy"
+			if l7OnlyRateLimitFindings(blockableScoped) {
+				// M4.5: a pure rate-limit decision is classified separately for the
+				// inline consumer (HTTP 429 + Retry-After). The decision string stays
+				// "block" so socket producers that only know the block vocabulary
+				// cannot fail open on an unknown verdict.
+				response.RateLimit = true
+				response.Reason = "request rate limit exceeded"
+				response.RetryAfterSeconds = l7RateLimitRetryAfterSeconds
+			}
 		} else {
 			response.Decision = "observe"
 			response.Reason = "block threshold reached; release gate keeps L7 in observe"

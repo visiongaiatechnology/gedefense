@@ -647,6 +647,11 @@ func (s *APIServer) fabricModuleApplyState(settings RuntimeSettings, module stri
 		switch sync.State {
 		case StyxSyncStateApplied:
 			return "applied"
+		case StyxSyncStateDegraded:
+			// M3: the resolvable part of the policy is in force, but at least one
+			// path-backed cell identity could not be re-resolved. Claiming "applied"
+			// would hide that; "reload_pending" would suggest a reload fixes it.
+			return "degraded"
 		case StyxSyncStateCapabilityMissing:
 			// Persisted, but the running core cannot apply it. The status endpoint
 			// names the capability; claiming "applied" here would be a lie.
@@ -904,6 +909,10 @@ func (s *APIServer) fabricModuleDetails(module string) map[string]any {
 			if deception := s.xdr.Deception(); deception != nil {
 				details["canaries"] = deception.ListCanaries()
 			}
+			// M2.4: the kernel credential guard is a read-only runtime projection
+			// (no admin toggle yet); showing it here keeps the settings surface
+			// honest about whether credential-read protection is really active.
+			details["credential_guard"] = s.xdr.CredentialGuardReport()
 		}
 		return details
 	}

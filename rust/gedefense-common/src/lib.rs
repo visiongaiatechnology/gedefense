@@ -17,7 +17,15 @@ mod styx_flow;
 pub use styx_flow::*;
 
 mod titan_exec;
+#[cfg(test)]
+mod titan_exec_tests;
 pub use titan_exec::*;
+
+mod ransom;
+pub use ransom::*;
+
+mod credential_guard;
+pub use credential_guard::*;
 
 mod lockdown;
 pub use lockdown::*;

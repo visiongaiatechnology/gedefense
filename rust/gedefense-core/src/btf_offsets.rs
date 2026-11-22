@@ -47,6 +47,20 @@ pub const OFF_FILE_SIZE: usize = 26;
 pub const OFF_BPRM_SIZE: usize = 27;
 /// §4.1 (ctime-Layout-Vertrag): byte width of `inode.i_ctime_nsec` (4|8).
 pub const OFF_INODE_I_CTIME_NSEC_WIDTH: usize = 28;
+// §4.1 ABI 2 (6.2.0): the UNTRUSTED execution-mode facts. `file.f_path.dentry`
+// is the resolved absolute pointer offset inside `struct file` (nested member),
+// the dentry walk is bounded by the eBPF program, and `dentry_size` bounds both
+// pointer reads against the real structure size.
+pub const OFF_BPRM_FILENAME: usize = 29;
+pub const OFF_INODE_I_UID: usize = 30;
+pub const OFF_FILE_F_PATH_DENTRY: usize = 31;
+pub const OFF_DENTRY_D_PARENT: usize = 32;
+pub const OFF_DENTRY_D_INODE: usize = 33;
+pub const OFF_DENTRY_SIZE: usize = 34;
+/// First reserved index after the ABI-2 offset set; asserted by the golden
+/// layout tests so a future index cannot silently reuse a reserved slot.
+#[allow(dead_code)]
+pub const OFF_RESERVED_FIRST: usize = 35;
 
 // §4.1 filesystem magic values (linux/magic.h UAPI, stable numbers).
 pub const TMPFS_MAGIC: u32 = 0x0102_1994;
@@ -91,6 +105,12 @@ pub struct TitanExecOffsets {
     pub inode_i_ctime_sec_off: u32,
     pub inode_i_ctime_nsec_off: u32,
     pub inode_i_ctime_nsec_width: u32,
+    pub bprm_filename_off: u32,
+    pub inode_i_uid_off: u32,
+    pub file_f_path_dentry_off: u32,
+    pub dentry_d_parent_off: u32,
+    pub dentry_d_inode_off: u32,
+    pub dentry_size: u32,
     pub bprm_nargs: u32,
     pub mmap_nargs: u32,
     pub mmap_file_arg_idx: u32,
@@ -388,6 +408,9 @@ impl VmlinuxBtf {
         let file = self.struct_by_name("file")?;
         let bprm = self.struct_by_name("linux_binprm")?;
         let super_block = self.struct_by_name("super_block")?;
+        // §4.1 ABI 2: struct dentry carries the bounded ancestor walk used by
+        // the UNTRUSTED exec mode (world-writable drop path detection).
+        let dentry = self.struct_by_name("dentry")?;
         let byte = |root: u32, path: &[&str]| -> Result<u32, String> {
             Ok(self.field_ref(root, path)?.0)
         };
@@ -431,6 +454,12 @@ impl VmlinuxBtf {
             inode_i_ctime_sec_off: sec_off,
             inode_i_ctime_nsec_off: nsec_off,
             inode_i_ctime_nsec_width: nsec_width,
+            bprm_filename_off: byte(bprm, &["filename"])?,
+            inode_i_uid_off: byte(inode, &["i_uid"])?,
+            file_f_path_dentry_off: byte(file, &["f_path", "dentry"])?,
+            dentry_d_parent_off: byte(dentry, &["d_parent"])?,
+            dentry_d_inode_off: byte(dentry, &["d_inode"])?,
+            dentry_size: self.type_size(dentry)?,
             bprm_nargs,
             mmap_nargs,
             mmap_file_arg_idx: 0,
@@ -443,7 +472,7 @@ impl VmlinuxBtf {
             bprm_size: self.type_size(bprm)?,
             super_size: self.type_size(super_block)?,
         };
-        validate_offsets(&offsets)?;
+        crate::btf_validate::validate_offsets(&offsets)?;
         Ok(offsets)
     }
 }
@@ -451,58 +480,4 @@ impl VmlinuxBtf {
 /// Reads `/sys/kernel/btf/vmlinux` and resolves the validated §4.1 offsets.
 pub fn resolve_vmlinux_offsets() -> Result<TitanExecOffsets, String> {
     VmlinuxBtf::from_path(VMLINUX_BTF_PATH)?.resolve_titan_exec()
-}
-
-/// §4.1 plausibility gate: every offset must lie inside its real struct, the
-/// hook arities must be the documented LSM ABI ones and the ctime pair must be
-/// ordered. A violation is an `Err` (gate `unavailable`, no attach).
-fn validate_offsets(offsets: &TitanExecOffsets) -> Result<(), String> {
-    let fields = [
-        ("linux_binprm.file", offsets.bprm_file_off, 8, offsets.bprm_size),
-        ("file.f_inode", offsets.file_f_inode_off, 8, offsets.file_size),
-        ("inode.i_ino", offsets.inode_i_ino_off, 8, offsets.inode_size),
-        ("inode.i_sb", offsets.inode_i_sb_off, 8, offsets.inode_size),
-        ("inode.i_nlink", offsets.inode_i_nlink_off, 4, offsets.inode_size),
-        ("inode.i_mode", offsets.inode_i_mode_off, 2, offsets.inode_size),
-        ("inode.i_generation", offsets.inode_i_generation_off, 4, offsets.inode_size),
-        ("super_block.s_dev", offsets.super_s_dev_off, 4, offsets.super_size),
-        ("super_block.s_magic", offsets.super_s_magic_off, 8, offsets.super_size),
-        ("inode.i_ctime_sec", offsets.inode_i_ctime_sec_off, 8, offsets.inode_size),
-    ];
-    for (label, offset, width, size) in fields {
-        let end = offset.checked_add(width).ok_or_else(|| format!("{label}: offset overflows"))?;
-        if end > size {
-            return Err(format!("{label}: {offset}+{width} exceeds size {size}"));
-        }
-    }
-    if offsets.inode_i_ctime_nsec_off <= offsets.inode_i_ctime_sec_off {
-        return Err("inode.i_ctime: nsec does not follow sec".to_owned());
-    }
-    let nsec_end = offsets.inode_i_ctime_nsec_off + offsets.inode_i_ctime_nsec_width;
-    if !matches!(offsets.inode_i_ctime_nsec_width, 4 | 8) || nsec_end > offsets.inode_size {
-        return Err("inode.i_ctime: nsec width or offset range is implausible".to_owned());
-    }
-    // §4.1: bprm_check_security carries the binprm only, mmap_file has 3..=5
-    // (6.18/7.0: 4) arguments; retval slot and indices follow from the arity.
-    if offsets.bprm_nargs != 1 {
-        return Err(format!("bpf_lsm_bprm_check_security has {} args, expected 1", offsets.bprm_nargs));
-    }
-    if !(3..=5).contains(&offsets.mmap_nargs) {
-        return Err(format!("bpf_lsm_mmap_file has {} args, expected 3..=5", offsets.mmap_nargs));
-    }
-    if offsets.mmap_file_arg_idx != 0
-        || offsets.mmap_prot_arg_idx + 2 != offsets.mmap_nargs
-        || offsets.mmap_flags_arg_idx + 1 != offsets.mmap_nargs
-        || offsets.bprm_retval_slot != offsets.bprm_nargs
-        || offsets.mmap_retval_slot != offsets.mmap_nargs
-    {
-        return Err("Titan exec hook argument indices are inconsistent".to_owned());
-    }
-    if [offsets.inode_size, offsets.file_size, offsets.bprm_size, offsets.super_size]
-        .iter()
-        .any(|size| *size == 0)
-    {
-        return Err("Titan exec struct size is zero".to_owned());
-    }
-    Ok(())
 }

@@ -6,7 +6,8 @@ use aya_ebpf::{
     helpers::{
         bpf_get_current_ancestor_cgroup_id, bpf_get_current_cgroup_id, bpf_get_current_comm,
         bpf_get_current_pid_tgid, bpf_get_current_uid_gid, bpf_get_socket_uid, bpf_ktime_get_ns,
-        bpf_probe_read_kernel, bpf_skb_ancestor_cgroup_id, bpf_skb_cgroup_id,
+        bpf_probe_read_kernel, bpf_probe_read_kernel_str_bytes, bpf_skb_ancestor_cgroup_id,
+        bpf_skb_cgroup_id,
     },
     macros::{cgroup_skb, classifier, lsm, map, tracepoint, xdp},
     maps::{lpm_trie::Key, Array, HashMap, LpmTrie, LruHashMap, LruPerCpuHashMap, PerCpuArray, RingBuf},
@@ -15,7 +16,8 @@ use aya_ebpf::{
 };
 use core::mem;
 use gedefense_common::{
-    cell_lsm_socket_create_denied, parse_network_header, CellLsmDenyEvent, EgressDropEvent,
+    cell_lsm_socket_create_denied, kernel_s_dev_to_stat_u32, parse_network_header,
+    strip_ctime_queried_flag, CellLsmDenyEvent, EgressDropEvent,
     ExecEvent, FlowEvent, IngressEvent, NetworkHeader, TitanExecEvent, ACTION_DROP,
     CELL_LSM_DENY_NON_UNIX_SOCKET, EXEC_COMM_BYTES, L2_PREFIX_BYTES,
     LOCKDOWN_FLAG_ALLOW_LOOPBACK,
@@ -30,16 +32,25 @@ use gedefense_common::{
     STYX_VERDICT_AUDIT_DROP, STYX_VERDICT_DEFAULT_DENY, STYX_VERDICT_DNS_PIN, STYX_VERDICT_DROP,
     STYX_VERDICT_METADATA_VETO, TITAN_EXEC_ACTION_AUDIT, TITAN_EXEC_ACTION_DENY,
     TITAN_EXEC_EVENT_WIRE_BYTES, TITAN_EXEC_HOOK_BPRM, TITAN_EXEC_HOOK_MMAP,
-    TITAN_EXEC_MODE_OFF, TITAN_EXEC_MODE_OBSERVE, TITAN_EXEC_MODE_STRICT, TITAN_EXEC_OFFSETS_ABI,
+    TITAN_EXEC_MODE_OFF, TITAN_EXEC_MODE_OBSERVE, TITAN_EXEC_MODE_STRICT,
+    TITAN_EXEC_MODE_UNTRUSTED, TITAN_EXEC_OFFSETS_ABI,
     TITAN_EXEC_OFFSETS_MAGIC, TITAN_EXEC_REASON_ANON_NO_JIT, TITAN_EXEC_REASON_CTIME_MISMATCH,
-    TITAN_EXEC_REASON_FS_HARD, TITAN_EXEC_REASON_MEMFD, TITAN_EXEC_REASON_NOT_ALLOWLISTED,
-    TITAN_EXEC_REASON_READ_FAILURE, TITAN_EXEC_REASON_TMPFS, TITAN_EXEC_REASON_UNLINKED,
-    TITAN_EXEC_REASON_WX, TITAN_EXEC_SCOPE_FLAG_JIT_ALLOW, TITAN_EXEC_STATE_ABI,
+    TITAN_EXEC_REASON_FS_HARD, TITAN_EXEC_REASON_MEMFD, TITAN_EXEC_REASON_NON_ROOT_OWNER,
+    TITAN_EXEC_REASON_NOT_ALLOWLISTED, TITAN_EXEC_REASON_READ_FAILURE,
+    TITAN_EXEC_REASON_TMPFS, TITAN_EXEC_REASON_UNLINKED, TITAN_EXEC_REASON_UNTRUSTED_PATH,
+    TITAN_EXEC_REASON_WORLD_WRITABLE_PATH, TITAN_EXEC_REASON_WX,
+    TITAN_EXEC_SCOPE_FLAG_JIT_ALLOW, TITAN_EXEC_STATE_ABI,
     TITAN_EXEC_STATE_MAGIC,
 };
 
 /// 6.1.0 Module B: independent worker crash sensor (own maps/program).
 mod worker_guard;
+
+/// 6.2.0 M2.2: ransomware / rename-storm sensor (own maps/kprobes).
+mod ransom;
+
+/// 6.2.0 M2.4: file_open LSM credential guard (own map set/program).
+mod credential_guard;
 
 const MAX_ALLOWLIST_ENTRIES: u32 = 65_536;
 const EXEC_EVENT_RING_BYTES: u32 = 1 << 20;
@@ -137,6 +148,23 @@ const PROT_EXEC: u32 = 0x4;
 /// Defensive upper bound for the core-provided structure sizes (§4.1 indexes
 /// 25..27); a value above it can only come from a partial/stale offsets map.
 const TITAN_EXEC_MAX_STRUCT_SIZE: u32 = 65_536;
+/// UNTRUSTED mode (§4.2 ABI 2): first 15 path bytes are enough to recognise the
+/// three drop-root prefixes (`/tmp/`, `/var/tmp/`, `/dev/shm/`); the read is a
+/// bounded kernel string helper, never a pointer dereference.
+const TITAN_UNTRUSTED_PATH_BYTES: usize = 16;
+/// Bounded `dentry -> d_parent` ancestor walk of the UNTRUSTED mode. Four levels
+/// cover the documented drop layouts (`/tmp/dir/file`, `/var/www/uploads/x`)
+/// without an unbounded loop; deeper nesting is caught by the drop-root prefix
+/// check and the non-root-owner rule.
+const TITAN_UNTRUSTED_ANCESTOR_LEVELS: u8 = 4;
+/// `S_IWOTH`: a world-writable executable or any world-writable directory among
+/// the first four ancestors is exactly the shared drop-path pattern (/tmp,
+/// /var/tmp, /dev/shm, a 0777 upload directory); the sticky bit is irrelevant
+/// for the refusal because both variants are untrusted for execution.
+const TITAN_S_IWOTH: u16 = 0o002;
+const UNTRUSTED_ROOT_TMP: &[u8] = b"/tmp/";
+const UNTRUSTED_ROOT_VAR_TMP: &[u8] = b"/var/tmp/";
+const UNTRUSTED_ROOT_DEV_SHM: &[u8] = b"/dev/shm/";
 
 /// `TITAN_EXEC_OFFSETS` index enum (§4.1): the core resolves these from vmlinux
 /// BTF and validates them; eBPF re-checks everything it dereferences.
@@ -170,6 +198,15 @@ const TITAN_OFF_BPRM_SIZE: u32 = 27;
 /// `i_ctime_nsec` (4 B); older kernels keep the `timespec64` pair (8 B each).
 /// The core reports the nsec half's width in this §4.1 entry (4 or 8).
 const TITAN_OFF_INODE_CTIME_NSEC_WIDTH: u32 = 28;
+/// §4.1 ABI 2 (6.2.0): UNTRUSTED-mode facts — `linux_binprm.filename`,
+/// `inode.i_uid`, `file.f_path.dentry`, `dentry.d_parent`, `dentry.d_inode` and
+/// the `struct dentry` size.
+const TITAN_OFF_BPRM_FILENAME: u32 = 29;
+const TITAN_OFF_INODE_I_UID: u32 = 30;
+const TITAN_OFF_FILE_F_PATH_DENTRY: u32 = 31;
+const TITAN_OFF_DENTRY_D_PARENT: u32 = 32;
+const TITAN_OFF_DENTRY_D_INODE: u32 = 33;
+const TITAN_OFF_DENTRY_SIZE: u32 = 34;
 const TITAN_CTIME_NSEC_WIDTH_32: u32 = 4;
 const TITAN_CTIME_NSEC_WIDTH_64: u32 = 8;
 /// LSM ctx slots of the two hooks: compile-time kernel ABI, validated against
@@ -208,7 +245,22 @@ const MAX_STYX_BLOCK_ENTRIES: u32 = 4_096;
 const MAX_STYX_RESOLVER_ENTRIES: u32 = 256;
 const MAX_STYX_RESOLVED_ENTRIES: u32 = 16_384;
 const MAX_FLOW_AGG_ENTRIES: u32 = 4_096;
-const MAX_STYX_FLOW_EVENT_BYTES: u32 = 4 << 20;
+// Flow-telemetry ring (`FLOW_EVENTS`) size: 16 MiB = 131072 queued 104-byte
+// `FlowEvent` records per ring buffer. The previous 4 MiB (32768 records) filled
+// up under many-short-flow web/PHP/NTP workloads and the kernel dropped samples
+// (`FLOW_RING_DROPS`) before the userspace core could drain them; enforcement
+// was unaffected, but the StyX beacon telemetry became incomplete. 16 MiB keeps
+// every 12-core burst of the observed profile inside the ring.
+//
+// This is a compile-time map definition: a ring-buffer map's size is fixed when
+// the eBPF object is loaded by `gedefense-core` and cannot be changed at
+// runtime. It is therefore *not* a hot setting; an operator changes the size by
+// rebuilding this object (Cargo feature/env override would need a build script,
+// which the locked offline toolchain intentionally does not have) and doing a
+// controlled core restart. The userspace drain batch is bounded separately in
+// `gedefense-core` (`MAX_STYX_FLOW_EVENTS_PER_RESPONSE`) and is the only part
+// that follows the core binary, not this map.
+const MAX_STYX_FLOW_EVENT_BYTES: u32 = 16 << 20;
 /// Bounded parser limit for IPv6 extension headers before the L4 header (§6.8).
 const IPV6_EXT_HEADER_HOPS: u8 = 4;
 const IPV6_PROTOCOL_ICMPV6: u8 = 58;
@@ -577,6 +629,20 @@ struct TitanFile {
     generation: u32,
     inode: u64,
     sb: u64,
+    /// `struct file *` itself: needed for `f_path.dentry` in UNTRUSTED mode.
+    file_ptr: u64,
+}
+
+/// §4.2 ABI 2 UNTRUSTED-mode facts of one executable. All three are lifted by a
+/// configured `TITAN_EXEC_POLICY` allow entry, exactly like the CONTAIN rules.
+#[derive(Clone, Copy, Default)]
+struct TitanUntrusted {
+    /// `bprm->filename` starts with `/tmp/`, `/var/tmp/` or `/dev/shm/`.
+    path_denied: bool,
+    /// `inode.i_uid != 0` (the file itself is not root-owned).
+    non_root_owner: bool,
+    /// The file or one of its first four ancestor directories is world-writable.
+    world_writable_path: bool,
 }
 
 /// CONTAIN rules need the link count and the super-block magic; STRICT does not.
@@ -596,15 +662,15 @@ struct TitanPolicy {
 
 /// Runtime offset table re-read from `TITAN_EXEC_OFFSETS` (§4.1).
 #[derive(Clone, Copy)]
-struct TitanOffsets {
-    bprm_file: u32,
-    file_inode: u32,
-    inode_ino: u32,
-    inode_sb: u32,
+pub(crate) struct TitanOffsets {
+    pub(crate) bprm_file: u32,
+    pub(crate) file_inode: u32,
+    pub(crate) inode_ino: u32,
+    pub(crate) inode_sb: u32,
     inode_nlink: u32,
-    inode_mode: u32,
+    pub(crate) inode_mode: u32,
     inode_gen: u32,
-    sb_dev: u32,
+    pub(crate) sb_dev: u32,
     sb_magic: u32,
     ctime_sec: u32,
     ctime_nsec: u32,
@@ -614,6 +680,13 @@ struct TitanOffsets {
     devtmpfs_magic: u32,
     proc_magic: u32,
     sysfs_magic: u32,
+    /// §4.1 ABI 2 (UNTRUSTED mode) offsets.
+    bprm_filename: u32,
+    inode_uid: u32,
+    file_f_path_dentry: u32,
+    dentry_parent: u32,
+    dentry_inode: u32,
+    dentry_size: u32,
 }
 
 /// Reads one `TITAN_EXEC_OFFSETS` entry; an absent array slot is a read failure.
@@ -626,7 +699,7 @@ fn titan_offset(index: u32) -> Option<u32> {
 /// partial/stale/inconsistent table, so callers fail open with a READ_FAILURE
 /// event instead of reading a kernel structure at a guessed offset.
 #[inline(always)]
-fn titan_offsets() -> Option<TitanOffsets> {
+pub(crate) fn titan_offsets() -> Option<TitanOffsets> {
     if titan_offset(TITAN_OFF_MAGIC)? != TITAN_EXEC_OFFSETS_MAGIC {
         return None;
     }
@@ -661,6 +734,12 @@ fn titan_offsets() -> Option<TitanOffsets> {
         devtmpfs_magic: titan_offset(TITAN_OFF_DEVTMPFS_MAGIC)?,
         proc_magic: titan_offset(TITAN_OFF_PROC_MAGIC)?,
         sysfs_magic: titan_offset(TITAN_OFF_SYSFS_MAGIC)?,
+        bprm_filename: titan_offset(TITAN_OFF_BPRM_FILENAME)?,
+        inode_uid: titan_offset(TITAN_OFF_INODE_I_UID)?,
+        file_f_path_dentry: titan_offset(TITAN_OFF_FILE_F_PATH_DENTRY)?,
+        dentry_parent: titan_offset(TITAN_OFF_DENTRY_D_PARENT)?,
+        dentry_inode: titan_offset(TITAN_OFF_DENTRY_D_INODE)?,
+        dentry_size: titan_offset(TITAN_OFF_DENTRY_SIZE)?,
     };
     // Every runtime offset must place the complete field inside the structure
     // size the core resolved from BTF; a zero/garbage size is invalid as well.
@@ -680,6 +759,15 @@ fn titan_offsets() -> Option<TitanOffsets> {
             u64::from(offsets.ctime_nsec_width),
             inode_size,
         )
+        // §4.1 ABI 2 (UNTRUSTED mode): the six new entries must fit the real
+        // structure sizes and the dentry size must be a plausible struct.
+        || !titan_field_fits(offsets.bprm_filename, 8, bprm_size)
+        || !titan_field_fits(offsets.inode_uid, 4, inode_size)
+        || !titan_field_fits(offsets.file_f_path_dentry, 8, file_size)
+        || offsets.dentry_size == 0
+        || offsets.dentry_size > TITAN_EXEC_MAX_STRUCT_SIZE
+        || !titan_field_fits(offsets.dentry_parent, 8, offsets.dentry_size)
+        || !titan_field_fits(offsets.dentry_inode, 8, offsets.dentry_size)
         // §4.1 has no super_block size entry; bound the two fields defensively.
         || offsets.sb_dev > TITAN_EXEC_MAX_STRUCT_SIZE
         || offsets.sb_magic > TITAN_EXEC_MAX_STRUCT_SIZE
@@ -723,7 +811,7 @@ fn titan_global() -> Option<TitanGlobal> {
     let mode = ((word >> TITAN_EXEC_STATE_MODE_SHIFT) & TITAN_EXEC_STATE_BYTE_MASK) as u8;
     let flags = ((word >> TITAN_EXEC_STATE_FLAGS_SHIFT) & TITAN_EXEC_STATE_BYTE_MASK) as u8;
     if magic != TITAN_EXEC_STATE_MAGIC || abi != TITAN_EXEC_STATE_ABI
-        || mode > TITAN_EXEC_MODE_STRICT
+        || mode > TITAN_EXEC_MODE_UNTRUSTED
     {
         return None;
     }
@@ -764,7 +852,7 @@ fn titan_scope(global_mode: u8) -> TitanScope {
 /// the computed address into a real kernel access — that is the verifier-safe
 /// pattern for runtime offsets (§4.1).
 #[inline(always)]
-fn titan_probe<T>(base: u64, offset: u32) -> Option<T> {
+pub(crate) fn titan_probe<T>(base: u64, offset: u32) -> Option<T> {
     let address = base.wrapping_add(u64::from(offset)) as *const T;
     unsafe { bpf_probe_read_kernel(address).ok() }
 }
@@ -793,8 +881,8 @@ fn titan_read_file(file: u64, offsets: &TitanOffsets) -> Option<TitanFile> {
     let ino = titan_probe::<u64>(inode, offsets.inode_ino)?;
     let inode_mode = titan_probe::<u16>(inode, offsets.inode_mode)? as u32;
     let generation = titan_probe::<u32>(inode, offsets.inode_gen)?;
-    let dev = titan_probe::<u32>(sb, offsets.sb_dev)?;
-    Some(TitanFile { dev, inode_mode, ino, generation, inode, sb })
+    let dev = kernel_s_dev_to_stat_u32(titan_probe::<u32>(sb, offsets.sb_dev)?);
+    Some(TitanFile { dev, inode_mode, ino, generation, inode, sb, file_ptr: file })
 }
 
 #[inline(always)]
@@ -845,7 +933,7 @@ fn titan_ctime_mismatch(
 ) -> Option<bool> {
     let sec: u64 = titan_probe(file.inode, offsets.ctime_sec)?;
     let nsec: u64 = if offsets.ctime_nsec_width == TITAN_CTIME_NSEC_WIDTH_32 {
-        u64::from(titan_probe::<u32>(file.inode, offsets.ctime_nsec)?)
+        u64::from(strip_ctime_queried_flag(titan_probe::<u32>(file.inode, offsets.ctime_nsec)?))
     } else {
         titan_probe::<u64>(file.inode, offsets.ctime_nsec)?
     };
@@ -866,9 +954,52 @@ fn titan_ctime_mismatch(
     Some(actual_ns != expected_ns)
 }
 
+/// §4.2 ABI 2: lifts the three UNTRUSTED-mode facts with bounded reads only.
+/// `None` is a read failure and keeps the §4.2 fail-safe contract (allow + a
+/// READ_FAILURE audit event that the control plane counts and alarms on).
+#[inline(always)]
+fn titan_untrusted(bprm: u64, file: &TitanFile, offsets: &TitanOffsets) -> Option<TitanUntrusted> {
+    let mut facts = TitanUntrusted::default();
+    let filename: u64 = titan_probe(bprm, offsets.bprm_filename)?;
+    if filename == 0 {
+        return None;
+    }
+    let mut path = [0u8; TITAN_UNTRUSTED_PATH_BYTES];
+    let path = unsafe { bpf_probe_read_kernel_str_bytes(filename as *const u8, &mut path).ok()? };
+    facts.path_denied = path.starts_with(UNTRUSTED_ROOT_TMP)
+        || path.starts_with(UNTRUSTED_ROOT_VAR_TMP)
+        || path.starts_with(UNTRUSTED_ROOT_DEV_SHM);
+    let owner: u32 = titan_probe(file.inode, offsets.inode_uid)?;
+    facts.non_root_owner = owner != 0;
+    // World-writable file or a bounded ancestor-directory walk. `/` is 0755 and
+    // the loop is capped, so the cost is at most four pointer + mode reads.
+    if file.inode_mode as u16 & TITAN_S_IWOTH != 0 {
+        facts.world_writable_path = true;
+    }
+    let mut dentry: u64 = titan_probe(file.file_ptr, offsets.file_f_path_dentry)?;
+    let mut level = 0u8;
+    while level < TITAN_UNTRUSTED_ANCESTOR_LEVELS && !facts.world_writable_path {
+        if dentry == 0 {
+            break;
+        }
+        let inode: u64 = titan_probe(dentry, offsets.dentry_inode)?;
+        if inode != 0 {
+            let mode: u16 = titan_probe(inode, offsets.inode_mode)?;
+            if mode & TITAN_S_IWOTH != 0 {
+                facts.world_writable_path = true;
+            }
+        }
+        dentry = titan_probe(dentry, offsets.dentry_parent)?;
+        level += 1;
+    }
+    Some(facts)
+}
+
 /// §4.2 verdict: `Some(reason)` means the gate acts on this ground (audit in
 /// OBSERVE, deny in CONTAIN/STRICT); `None` means allow silently. Modes OFF and
-/// scope-OFF never reach this function.
+/// scope-OFF never reach this function. UNTRUSTED (mode 4, ABI 2) applies the
+/// three drop-root/owner gates on top of the CONTAIN containment rules; the
+/// configured inode allowlist lifts them exactly like the CONTAIN rules.
 #[inline(always)]
 fn titan_decide(
     mode: u8,
@@ -877,6 +1008,7 @@ fn titan_decide(
     prot: u32,
     anon: bool,
     containment: TitanContainment,
+    untrusted: TitanUntrusted,
     offsets: &TitanOffsets,
     policy_allow: bool,
     ctime_mismatch: bool,
@@ -907,6 +1039,21 @@ fn titan_decide(
         } else {
             Some(TITAN_EXEC_REASON_NOT_ALLOWLISTED)
         };
+    }
+    // §4.2 UNTRUSTED (ABI 2): the CONTAIN rules plus the drop-path gates. A
+    // configured TITAN_EXEC_POLICY allow entry lifts all three, so legitimate
+    // operator-approved binaries keep working. This runs before the shared
+    // containment block below so the event names the most specific ground.
+    if mode == TITAN_EXEC_MODE_UNTRUSTED && !policy_allow {
+        if untrusted.path_denied {
+            return Some(TITAN_EXEC_REASON_UNTRUSTED_PATH);
+        }
+        if untrusted.non_root_owner {
+            return Some(TITAN_EXEC_REASON_NON_ROOT_OWNER);
+        }
+        if untrusted.world_writable_path {
+            return Some(TITAN_EXEC_REASON_WORLD_WRITABLE_PATH);
+        }
     }
     // OBSERVE and CONTAIN share the containment rules. An inode-policy ALLOW
     // only lifts the file-system/unlinked-inode rules (§4.2 documented exception).
@@ -1099,6 +1246,16 @@ fn try_titan_exec_bprm(ctx: LsmContext) -> i32 {
         }
     };
     let policy = titan_policy(&file, &global);
+    // §4.2 ABI 2: UNTRUSTED-mode path/owner/world-writable facts. Unavailable
+    // facts are a READ_FAILURE (visible audit + counter), never a silent allow.
+    let untrusted = if scope.mode == TITAN_EXEC_MODE_UNTRUSTED {
+        match titan_untrusted(bprm, &file, &offsets) {
+            Some(untrusted) => untrusted,
+            None => return titan_read_failure(TITAN_EXEC_HOOK_BPRM, 0),
+        }
+    } else {
+        TitanUntrusted::default()
+    };
     let mut ctime_mismatch = false;
     if policy.require_ctime {
         match titan_ctime_mismatch(&file, &offsets, policy.ctime_ns) {
@@ -1118,6 +1275,7 @@ fn try_titan_exec_bprm(ctx: LsmContext) -> i32 {
         0,
         false,
         containment,
+        untrusted,
         &offsets,
         policy.allow && !ctime_mismatch,
         ctime_mismatch,
@@ -1187,6 +1345,7 @@ fn try_titan_exec_mmap(ctx: LsmContext) -> i32 {
             prot,
             true,
             TitanContainment { nlink: 1, fs_magic: 0 },
+            TitanUntrusted::default(),
             &offsets,
             false,
             false,
@@ -1218,6 +1377,9 @@ fn try_titan_exec_mmap(ctx: LsmContext) -> i32 {
             None => return titan_read_failure(TITAN_EXEC_HOOK_MMAP, prot),
         }
     }
+    // UNTRUSTED path facts are an execve (bprm) gate; an mmap of a file that
+    // cannot be execve'd is covered by the containment rules and never grants a
+    // new capability, so the mmap hook passes the neutral fact set.
     let reason = titan_decide(
         scope.mode,
         scope.jit_allow,
@@ -1225,6 +1387,7 @@ fn try_titan_exec_mmap(ctx: LsmContext) -> i32 {
         prot,
         false,
         containment,
+        TitanUntrusted::default(),
         &offsets,
         policy.allow && !ctime_mismatch,
         ctime_mismatch,

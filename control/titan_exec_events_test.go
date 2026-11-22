@@ -6,6 +6,7 @@ package main
 // contract and the kernel-decision -> evidence -> incident path of §7.4.
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -211,7 +212,7 @@ func TestParseCoreTitanExecEventsRejectsHostileBatches(t *testing.T) {
 		{"out-of-range dev", titanExecRecordWith(func(fields []string) { fields[2] = "4294967296" })},
 		{"invalid hook", titanExecRecordWith(func(fields []string) { fields[12] = "3" })},
 		{"invalid action", titanExecRecordWith(func(fields []string) { fields[13] = "3" })},
-		{"reason out of range", titanExecRecordWith(func(fields []string) { fields[14] = "11" })},
+		{"reason out of range", titanExecRecordWith(func(fields []string) { fields[14] = fmt.Sprintf("%d", titanExecReasonMax+1) })},
 		{"zero pid", titanExecRecordWith(func(fields []string) { fields[6] = "0" })},
 		{"zero timestamp", titanExecRecordWith(func(fields []string) { fields[1] = "0" })},
 		{"mmap without protection", "0|" + titanExecJoin(func() []string {

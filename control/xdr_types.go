@@ -68,6 +68,12 @@ type XDRStatus struct {
 	EvaluationsTotal uint64          `json:"evaluations_total"`
 	AnomaliesTotal   uint64          `json:"anomalies_total"`
 	Behavior         BehaviorSummary `json:"behavior"`
+	// M2.2: the kernel ransomware sensor is projected separately from the process
+	// sensor so "armed but LSM hook not attached" can never read as "active".
+	RansomSensor RansomSensorStatus `json:"ransom_sensor"`
+	// M2.4: kernel credential-file guard state. Active is only claimed when the
+	// hook is armed, attached and actually watches protected objects.
+	CredentialGuard CredentialGuardStatus `json:"credential_guard"`
 }
 
 type ProcessSample struct {

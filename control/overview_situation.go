@@ -51,6 +51,23 @@ type OverviewSituationMetrics struct {
 	ProtectionPhase string `json:"protection_phase"`
 	FIMNew          int    `json:"fim_new,omitempty"`
 	FIMTampered     int    `json:"fim_tampered,omitempty"`
+
+	// M2: StyX enforcement and StyX telemetry are separate facts. A drop-driven
+	// telemetry degradation is reported here as exactly that, never as "StyX off".
+	StyxEnforcementActive bool    `json:"styx_enforcement_active"`
+	StyxTelemetryState    string  `json:"styx_telemetry_state"`
+	StyxTelemetryDegraded bool    `json:"styx_telemetry_degraded"`
+	StyxDropRatio         float64 `json:"styx_drop_ratio"`
+	StyxRingDropsDelta    uint64  `json:"styx_ring_drops_delta"`
+	StyxEmittedDelta      uint64  `json:"styx_emitted_delta"`
+	StyxDrainLagSeconds   float64 `json:"styx_drain_lag_seconds"`
+
+	// M2.4: credential-guard visibility in the cockpit. Active is only claimed by
+	// the guard report itself (armed+attached+files>0).
+	CredentialGuardState  string `json:"credential_guard_state"`
+	CredentialGuardActive bool   `json:"credential_guard_active"`
+	CredentialGuardDenied uint64 `json:"credential_guard_denied"`
+	CredentialGuardDrops  uint64 `json:"credential_guard_drops"`
 }
 
 // OverviewSituationResponse backs GET /api/v1/overview/situation.
@@ -92,6 +109,9 @@ type situationInput struct {
 	StyxFlows           int
 	StyxFlagged         int
 	StyxState           string
+	StyxMode            string
+	StyxTelemetry       StyxFlowMetrics
+	CredentialGuard     CredentialGuardStatus
 	TitanDenies         uint64
 	TitanState          string
 	ExposureServers     int
@@ -154,6 +174,9 @@ func (s *APIServer) overviewSituation(w http.ResponseWriter, _ *http.Request) {
 		sb := s.xdr.StyxBeaconSnapshot()
 		in.StyxFlows = sb.Flows
 		in.StyxState = sb.SensorState
+		in.StyxMode = s.xdr.StyxPolicyStatus().Mode
+		in.StyxTelemetry = s.xdr.StyxFlowMetrics()
+		in.CredentialGuard = s.xdr.CredentialGuardReport()
 		for _, f := range sb.Top {
 			if f.Score >= 50 || len(f.Signals) > 0 {
 				in.StyxFlagged++
@@ -191,6 +214,18 @@ func buildOverviewSituation(in situationInput) OverviewSituationResponse {
 		EdgeRunning:     in.EdgeRunning,
 		FullProtection:  snap.Protection.Effective,
 	}
+	styxEnforcement := strings.EqualFold(in.StyxMode, StyxModeMonitor) || strings.EqualFold(in.StyxMode, StyxModeEnforce)
+	m.StyxEnforcementActive = styxEnforcement
+	m.StyxTelemetryState = in.StyxTelemetry.TelemetryState
+	m.StyxTelemetryDegraded = in.StyxTelemetry.TelemetryDegraded
+	m.StyxDropRatio = in.StyxTelemetry.DropRatio
+	m.StyxRingDropsDelta = in.StyxTelemetry.RingDropsDelta
+	m.StyxEmittedDelta = in.StyxTelemetry.EmittedDelta
+	m.StyxDrainLagSeconds = in.StyxTelemetry.DrainLagSeconds
+	m.CredentialGuardState = in.CredentialGuard.State
+	m.CredentialGuardActive = in.CredentialGuard.State == "active"
+	m.CredentialGuardDenied = in.CredentialGuard.Denied
+	m.CredentialGuardDrops = in.CredentialGuard.Drops
 	if in.TLSStormActive {
 		m.TLSStorms = 1
 	}
@@ -318,18 +353,32 @@ func buildOverviewSituation(in situationInput) OverviewSituationResponse {
 	}
 	layers = append(layers, OverviewSituationLayer{ID: "xdr", Label: "XDR & Titan", State: xdrState, Metric: xdrMetric})
 
-	// 5. StyX Egress
+	// 5. StyX Egress. Enforcement and telemetry are shown as two separate facts:
+	// an applied enforcement revision stays "active" even while the flow telemetry
+	// is degraded - the layer then reports "Telemetrie degraded" instead of
+	// pretending StyX is down or pretending the sensor is healthy.
 	styxState := "off"
 	styxMetric := "off"
-	if in.StyxState == "active" || in.StyxFlows > 0 {
-		if in.StyxFlagged > 0 {
-			styxState = "warn"
-			styxMetric = strconv.Itoa(in.StyxFlagged) + " flagged"
-		} else {
-			styxState = "active"
-			styxMetric = strconv.Itoa(in.StyxFlows) + " flows"
-			activeLayers++
-		}
+	// An applied enforcement revision or an actively reporting detector counts as
+	// the StyX layer being up; telemetry degradation is still reported separately
+	// and overrides "active" with the honest "warn".
+	styxLayerActive := styxEnforcement || (in.StyxState == "active" && in.StyxFlows > 0)
+	switch {
+	case !styxLayerActive && in.StyxState == "off":
+		styxState, styxMetric = "off", "off"
+	case in.StyxTelemetry.TelemetryDegraded:
+		styxState = "warn"
+		styxMetric = "Telemetrie degraded"
+	case styxLayerActive && in.StyxFlagged > 0:
+		styxState = "warn"
+		styxMetric = strconv.Itoa(in.StyxFlagged) + " flagged"
+	case styxLayerActive:
+		styxState = "active"
+		styxMetric = strconv.Itoa(in.StyxFlows) + " flows"
+		activeLayers++
+	default:
+		styxState = "observe"
+		styxMetric = strconv.Itoa(in.StyxFlows) + " flows"
 	}
 	layers = append(layers, OverviewSituationLayer{ID: "styx", Label: "StyX Egress", State: styxState, Metric: styxMetric})
 
@@ -422,9 +471,30 @@ func buildOverviewSituation(in situationInput) OverviewSituationResponse {
 			level = "yellow"
 			addReason("warn", "styx_egress", strconv.Itoa(in.StyxFlagged)+" outbound egress flow(s) flagged by StyX.")
 		}
+		if in.StyxTelemetry.TelemetryDegraded { // A telemetry drop is not an enforcement failure. It is reported as its
+			// own warning so the cockpit never says "active" while the flow sensor
+			// is silently losing events.
+			level = "yellow"
+			if statusCode == "calm_protected" {
+				statusCode = "styx_telemetry_degraded"
+			}
+			reason := "StyX flow telemetry is degraded (" + in.StyxTelemetry.TelemetryState + "); enforcement itself is unchanged: "
+			if in.StyxTelemetry.Reason != "" {
+				reason += in.StyxTelemetry.Reason
+			} else {
+				reason += "kernel ring drops or drain lag exceed the documented bounds"
+			}
+			addReason("warn", "styx_telemetry_degraded", reason)
+		}
 		if in.ExposureCVEs > 0 {
 			level = "yellow"
 			addReason("warn", "exposure_cve", strconv.Itoa(in.ExposureCVEs)+" reachable web exposure advisory match(es).")
+		}
+		if in.CredentialGuard.State == "degraded" && in.CredentialGuard.Capability == "available" {
+			// A configured-but-inactive credential guard is an operator warning; a
+			// core without the capability stays a silent capability fact.
+			level = "yellow"
+			addReason("warn", "credential_guard_degraded", "Kernel credential guard is degraded: "+in.CredentialGuard.Reason)
 		}
 	}
 

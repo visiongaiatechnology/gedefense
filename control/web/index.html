@@ -1454,8 +1454,11 @@
                 <div class="telemetry-row"><dt data-i18n="v61.v6.styx.kpi.capability">Fähigkeit</dt><dd id="styxCapabilityKpi">—</dd></div>
                 <div class="telemetry-row"><dt data-i18n="v61.v6.styx.kpi.mode">Modus</dt><dd id="styxModeKpi">—</dd></div>
                 <div class="telemetry-row"><dt data-i18n="v61.v6.styx.kpi.epoch">Epoch</dt><dd id="styxEpochKpi" class="font-mono fs-xs">—</dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.v6.styx.kpi.enforcement">Enforcement</dt><dd id="styxEnforcementKpi">—</dd></div>
+                <div class="telemetry-row"><dt data-i18n="v61.v6.styx.kpi.telemetry">Telemetrie</dt><dd><span id="styxTelemetryKpi" class="status-pill muted">—</span></dd></div>
               </dl>
               <p class="telemetry-note" data-i18n="v61.v6.styx.note.sync">Der Epoch benennt die zuletzt angewendete Policy-Revision.</p>
+              <p class="telemetry-note" data-i18n="v61.v6.styx.note.telemetry">Enforcement und Telemetrie sind getrennte Zustände: Ring-Drops oder Drain-Lag reduzieren die Sichtbarkeit, nicht die Enforcement-Entscheidung.</p>
             </div>
             <div class="telemetry-group">
               <h3 class="telemetry-title" data-i18n="v61.v6.styx.group.beacon">BEACON</h3>
@@ -1491,6 +1494,10 @@
               <div class="v61-kv"><dt data-i18n="v61.v6.styx.kernel.parse">Parse-Fehler</dt><dd id="styxKernelParse" class="v61-mono">—</dd></div>
               <div class="v61-kv"><dt data-i18n="v61.v6.styx.kernel.drops">Drops gesamt</dt><dd id="styxKernelDrops" class="v61-mono">—</dd></div>
               <div class="v61-kv"><dt data-i18n="v61.v6.styx.kernel.policyDrops">Policy-Drops</dt><dd id="styxKernelPolicyDrops" class="v61-mono">—</dd></div>
+              <div class="v61-kv"><dt data-i18n="v61.v6.styx.kernel.dropRatio">Drop-Ratio</dt><dd id="styxKernelDropRatio" class="v61-mono">—</dd></div>
+              <div class="v61-kv"><dt data-i18n="v61.v6.styx.kernel.ringDelta">Ring-Drops Δ</dt><dd id="styxKernelRingDelta" class="v61-mono">—</dd></div>
+              <div class="v61-kv"><dt data-i18n="v61.v6.styx.kernel.emittedDelta">Emitted Δ</dt><dd id="styxKernelEmittedDelta" class="v61-mono">—</dd></div>
+              <div class="v61-kv"><dt data-i18n="v61.v6.styx.kernel.drainLag">Drain-Lag</dt><dd id="styxKernelDrainLag" class="v61-mono">—</dd></div>
               <div class="v61-kv"><dt data-i18n="v61.v6.styx.kernel.sampledAt">Stichprobe</dt><dd id="styxKernelUpdated" class="v61-mono">—</dd></div>
             </dl>
           </article>

@@ -55,12 +55,18 @@ const (
 )
 
 // Sync state vocabulary (§9 fail-closed matrix). It is reported verbatim.
+//
+// StyxSyncStateDegraded (M3) is used when the resolvable part of the policy is
+// applied but at least one path-backed cell identity could not be re-resolved.
+// It is explicitly *not* an enforcement claim and *not* a generic StyX outage:
+// the sync still applied everything it could prove.
 const (
 	StyxSyncStateApplied           = "applied"
 	StyxSyncStatePending           = "pending"
 	StyxSyncStateFailed            = "failed"
 	StyxSyncStateCapabilityMissing = "capability-missing"
 	StyxSyncStateUnavailable       = "unavailable"
+	StyxSyncStateDegraded          = "degraded"
 )
 
 const (
@@ -72,8 +78,15 @@ const (
 
 // StyxCellMode is one per-cell default-deny/monitor entry. The flags mirror the
 // §3.1 per-cgroup bits the operator can set.
+//
+// CgroupPath (M3.1) is the durable identity: a logical path below the cgroup v2
+// root, e.g. "/system.slice/php8.3-fpm.service". When it is set the numeric
+// CgroupID is re-resolved on every sync and the stored id is never written to the
+// kernel. CgroupID stays accepted for backward compatibility (legacy documents
+// keep working exactly as before) but cannot survive a reboot or unit restart.
 type StyxCellMode struct {
 	CgroupID           uint64 `json:"cgroup_id"`
+	CgroupPath         string `json:"cgroup_path,omitempty"`
 	Mode               string `json:"mode"`
 	DnsResolver        bool   `json:"dns_resolver"`
 	AllowHostAllowlist bool   `json:"allow_host_allowlist"`
@@ -83,11 +96,12 @@ type StyxCellMode struct {
 // mean "all ports"; an exact port requires a host CIDR and the core's documented
 // LPM encoding (§4/§5). Proto is "any" (default), "tcp", "udp" or "tcp+udp".
 type StyxAllowRule struct {
-	CgroupID uint64 `json:"cgroup_id"`
-	CIDR     string `json:"cidr"`
-	PortLo   uint16 `json:"port_lo"`
-	PortHi   uint16 `json:"port_hi"`
-	Proto    string `json:"proto"`
+	CgroupID   uint64 `json:"cgroup_id"`
+	CgroupPath string `json:"cgroup_path,omitempty"`
+	CIDR       string `json:"cidr"`
+	PortLo     uint16 `json:"port_lo"`
+	PortHi     uint16 `json:"port_hi"`
+	Proto      string `json:"proto"`
 }
 
 // StyxFabricSettings is the operator-facing StyX namespace. The default is

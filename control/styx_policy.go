@@ -154,6 +154,7 @@ func (e *XDREngine) recordStyxFlowBatch(events []CoreStyxFlowEvent, dropped uint
 	if beacon == nil {
 		return
 	}
+	e.recordStyxFlowDrain(now)
 	sensorBefore := beacon.SensorState()
 	beacon.RecordFlowPoll(dropped)
 	if len(events) > 0 {
@@ -193,15 +194,22 @@ func (e *XDREngine) recordStyxFlowBatch(events []CoreStyxFlowEvent, dropped uint
 }
 
 // recordStyxFlowHealth stores the kernel flow counters for the operator status.
+// The previous sample is kept so the status can expose a real window delta (and
+// not just cumulative counters that never show a rate).
 func (e *XDREngine) recordStyxFlowHealth(health CoreStyxFlowHealth, now time.Time) {
 	if e == nil {
 		return
 	}
 	e.styxFlowMu.Lock()
+	if !e.styxFlowHealthAt.IsZero() {
+		e.styxFlowHealthPrev = e.styxFlowHealth
+		e.styxFlowHealthPrevAt = e.styxFlowHealthAt
+	}
 	e.styxFlowHealth = health
 	e.styxFlowHealthAt = now
 	e.styxFlowHealthErr = ""
 	e.styxFlowMu.Unlock()
+	e.noteStyxTelemetryState(now)
 }
 
 func (e *XDREngine) recordStyxFlowHealthFailure(err error) {
@@ -211,6 +219,7 @@ func (e *XDREngine) recordStyxFlowHealthFailure(err error) {
 	e.styxFlowMu.Lock()
 	e.styxFlowHealthErr = boundedStyxText(err)
 	e.styxFlowMu.Unlock()
+	e.noteStyxTelemetryState(time.Now().UTC())
 }
 
 // styxFlowPollEnabled reports whether the detector is armed for flow ingestion. It
@@ -276,6 +285,8 @@ func styxBeaconView(snapshot StyxBeaconSnapshot) StyxBeaconView {
 }
 
 // StyxStatus is the small, bounded StyX projection on GET /api/v1/status.
+// Enforcement (enabled/mode/sync) and telemetry health are separate fields: a
+// drop-driven telemetry degradation must never read as "StyX is not active".
 type StyxStatus struct {
 	Enabled       bool   `json:"enabled"`
 	Mode          string `json:"mode"`
@@ -289,6 +300,14 @@ type StyxStatus struct {
 	Suppressed    uint64 `json:"suppressed_total"`
 	OverflowTotal uint64 `json:"overflow_total"`
 	Degraded      bool   `json:"degraded"`
+
+	EnforcementActive   bool    `json:"enforcement_active"`
+	TelemetryState      string  `json:"telemetry_state"`
+	TelemetryDegraded   bool    `json:"telemetry_degraded"`
+	FlowDropRatio       float64 `json:"flow_drop_ratio"`
+	FlowRingDropsDelta  uint64  `json:"flow_ring_drops_delta"`
+	FlowEmittedDelta    uint64  `json:"flow_emitted_delta"`
+	FlowDrainLagSeconds float64 `json:"flow_drain_lag_seconds"`
 }
 
 // StyxStatusSnapshot builds the bounded status field for /api/v1/status. It is nil
@@ -300,12 +319,31 @@ func (e *XDREngine) StyxStatusSnapshot() *StyxStatus {
 	}
 	sync := e.StyxPolicyStatus()
 	beacon := e.StyxBeaconSnapshot()
+	flow := e.StyxFlowMetrics()
 	return &StyxStatus{
 		Enabled: sync.Enabled, Mode: sync.Mode, SensorState: beacon.SensorState,
 		Capability: sync.Capability, SyncState: sync.State, Epoch: sync.Epoch,
 		TrackedFlows: beacon.Flows, EventsTotal: beacon.Events, IncidentTotal: beacon.Incidents,
 		Suppressed: beacon.Suppressed, OverflowTotal: beacon.Overflows,
-		Degraded: beacon.SensorState == "degraded",
+		Degraded:          beacon.SensorState == "degraded" || flow.TelemetryDegraded,
+		EnforcementActive: styxEnforcementActive(sync),
+		TelemetryState:    flow.TelemetryState, TelemetryDegraded: flow.TelemetryDegraded,
+		FlowDropRatio: flow.DropRatio, FlowRingDropsDelta: flow.RingDropsDelta,
+		FlowEmittedDelta: flow.EmittedDelta, FlowDrainLagSeconds: flow.DrainLagSeconds,
+	}
+}
+
+// styxEnforcementActive reports only what the kernel sync actually applied: an
+// applied (or partially applied/degraded) revision with a non-off global mode.
+func styxEnforcementActive(sync StyxSyncStatus) bool {
+	if !sync.Enabled || sync.Mode == StyxModeOff || sync.Mode == "" {
+		return false
+	}
+	switch sync.State {
+	case StyxSyncStateApplied, StyxSyncStateDegraded:
+		return true
+	default:
+		return false
 	}
 }
 
@@ -333,7 +371,11 @@ type StyxStatusView struct {
 	State             string             `json:"state"`
 	SensorState       string             `json:"sensor_state"`
 	Capability        string             `json:"capability"`
+	EnforcementActive bool               `json:"enforcement_active"`
+	TelemetryState    string             `json:"telemetry_state"`
+	TelemetryDegraded bool               `json:"telemetry_degraded"`
 	Sync              StyxSyncStatus     `json:"sync"`
+	Flow              StyxFlowMetrics    `json:"flow"`
 	KernelHealth      CoreStyxFlowHealth `json:"kernel_health"`
 	KernelHealthAt    *time.Time         `json:"kernel_health_at,omitempty"`
 	KernelHealthError string             `json:"kernel_health_error,omitempty"`
@@ -349,9 +391,13 @@ type StyxBeaconsView struct {
 	State             string             `json:"state"`
 	SensorState       string             `json:"sensor_state"`
 	Capability        string             `json:"capability"`
+	EnforcementActive bool               `json:"enforcement_active"`
+	TelemetryState    string             `json:"telemetry_state"`
+	TelemetryDegraded bool               `json:"telemetry_degraded"`
 	SyncState         string             `json:"sync_state"`
 	Epoch             string             `json:"epoch,omitempty"`
 	Beacon            StyxBeaconView     `json:"beacon"`
+	Flow              StyxFlowMetrics    `json:"flow"`
 	KernelHealth      CoreStyxFlowHealth `json:"kernel_health"`
 	KernelHealthAt    *time.Time         `json:"kernel_health_at,omitempty"`
 	KernelHealthError string             `json:"kernel_health_error,omitempty"`

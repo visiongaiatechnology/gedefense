@@ -1,0 +1,314 @@
+#!/usr/bin/env bash
+# STATUS: DIAMANT VGT SUPREME
+#
+# Opt-in CIS/Lynis Level-1 userland baseline for GeDefense Linux (M5.1).
+#
+# This helper is deliberately separate from gedefense-provision: the baseline is
+# an explicit operator decision, never an implicit side effect of first-boot
+# provisioning. It applies:
+#   * /etc/ssh/sshd_config.d/99-gedefense.conf   SSHD hardening drop-in
+#   * managed UMASK 027 block in /etc/login.defs (existing UMASK lines are
+#     commented with a restore marker, never deleted)
+#   * legal login banner in /etc/issue and /etc/issue.net
+#   * /etc/modprobe.d/gedefense-blacklist.conf
+#   * /etc/audit/rules.d/gedefense.rules
+#
+# It never starts, enables or reloads a service and never edits PAM. The
+# operator reviews the diff and reloads explicitly:
+#   sshd -t && systemctl reload sshd
+#   augenrules --load   (or: systemctl reload auditd)
+#
+# Usage:
+#   gedefense-cis-baseline            # apply the baseline (root required)
+#   gedefense-cis-baseline --check    # verify only, change nothing
+#   gedefense-cis-baseline --remove   # remove exactly the managed artifacts
+#                                      # or managed blocks; unmanaged files are refused
+#
+# Test support: GEDEFENSE_PROVISION_ROOT=<dir> also prefixes every absolute path
+# in this script (same contract as gedefense-provision).
+
+set -Eeuo pipefail
+umask 0077
+
+readonly PROGRAM=gedefense-cis-baseline
+readonly ROOT="${GEDEFENSE_PROVISION_ROOT:-}"
+readonly MARKER="Managed by gedefense-provision (CIS-L1)"
+readonly LOGIN_BEGIN="# BEGIN GEDEFENSE CIS-L1 (managed)"
+readonly LOGIN_END="# END GEDEFENSE CIS-L1 (managed)"
+readonly LOGIN_DISABLED="# GEDEFENSE-DISABLED-UMASK: "
+readonly SSHD_DROPIN="${ROOT}/etc/ssh/sshd_config.d/99-gedefense.conf"
+readonly LOGIN_DEFS="${ROOT}/etc/login.defs"
+readonly MODPROBE="${ROOT}/etc/modprobe.d/gedefense-blacklist.conf"
+readonly AUDIT_RULES="${ROOT}/etc/audit/rules.d/gedefense.rules"
+
+check_only=0
+mode="apply"
+while (( $# > 0 )); do
+  case "$1" in
+    --check) check_only=1 ;;
+    --apply) mode="apply" ;;
+    --remove) mode="remove" ;;
+    --help|-h)
+      printf '%s: usage: %s [--check] [--apply | --remove]\n' "$PROGRAM" "$PROGRAM"
+      exit 0
+      ;;
+    *)
+      printf '%s: unsupported argument %q\n' "$PROGRAM" "$1" >&2
+      exit 2
+      ;;
+  esac
+  shift
+done
+
+problems=()
+changes=0
+problem() { problems+=("$1"); }
+note() { printf '%s: %s\n' "$PROGRAM" "$1"; }
+fail() {
+  printf '%s: %s\n' "$PROGRAM" "$1" >&2
+  exit 1
+}
+ensure_dir() {
+  local path="$1" path_mode="$2"
+  if [[ -d "$path" ]]; then
+    return 0
+  fi
+  if (( check_only )); then
+    problem "missing directory ${path#${ROOT}}"
+    return 0
+  fi
+  mkdir -p "$path"
+  chmod "$path_mode" "$path"
+  changes=$((changes + 1))
+  note "created directory ${path#${ROOT}}"
+}
+
+content_for() {
+  case "$1" in
+    sshd)
+      cat <<EOF
+# ${MARKER}
+# Remove with: gedefense-cis-baseline --remove
+# Review and reload explicitly: sshd -t && systemctl reload sshd
+MaxAuthTries 3
+AllowTcpForwarding no
+X11Forwarding no
+ClientAliveCountMax 2
+LogLevel VERBOSE
+EOF
+      ;;
+    modprobe)
+      cat <<EOF
+# ${MARKER}
+# Remove with: gedefense-cis-baseline --remove
+install dccp /bin/true
+install sctp /bin/true
+install rds /bin/true
+install tipc /bin/true
+install cramfs /bin/true
+install usb-storage /bin/true
+blacklist dccp
+blacklist sctp
+blacklist rds
+blacklist tipc
+blacklist cramfs
+blacklist usb-storage
+EOF
+      ;;
+    audit)
+      cat <<EOF
+# ${MARKER}
+# Remove with: gedefense-cis-baseline --remove
+# Reload explicitly after review: augenrules --load
+-a always,exit -F arch=b64 -S execve -F euid=0 -k gedefense-exec-root
+-w /etc/sudoers -p wa -k gedefense-sudoers
+-w /etc/ssh/sshd_config -p wa -k gedefense-sshd
+-w /etc/login.defs -p wa -k gedefense-login-defs
+-e 1
+EOF
+      ;;
+    banner)
+      cat <<EOF
+# ${MARKER}
+Authorized access only. All activity on this system is monitored and logged.
+Unauthorized use is prohibited and may be subject to legal action.
+EOF
+      ;;
+    *)
+      fail "unknown managed content kind"
+      ;;
+  esac
+}
+
+write_managed_file() {
+  local path="$1" kind="$2" content
+  content="$(content_for "$kind")"
+  if [[ -e "$path" ]]; then
+    if ! grep -qF "$MARKER" "$path" 2>/dev/null; then
+      fail "refusing to overwrite unmanaged ${path#${ROOT}}"
+    fi
+    if [[ "$(cat "$path")" == "$content" ]]; then
+      return 0
+    fi
+    if (( check_only )); then
+      problem "managed ${path#${ROOT}} differs from the baseline"
+      return 0
+    fi
+    printf '%s\n' "$content" >"$path"
+    changes=$((changes + 1))
+    note "updated managed ${path#${ROOT}}"
+    return 0
+  fi
+  if (( check_only )); then
+    problem "missing managed ${path#${ROOT}}"
+    return 0
+  fi
+  mkdir -p "$(dirname "$path")"
+  printf '%s\n' "$content" >"$path"
+  changes=$((changes + 1))
+  note "wrote managed ${path#${ROOT}}"
+}
+
+remove_managed_file() {
+  local path="$1"
+  [[ -f "$path" ]] || return 0
+  if ! grep -qF "$MARKER" "$path" 2>/dev/null; then
+    fail "refusing to remove unmanaged ${path#${ROOT}}"
+  fi
+  if (( check_only )); then
+    problem "managed artifact still present: ${path#${ROOT}}"
+    return 0
+  fi
+  rm -f "$path"
+  changes=$((changes + 1))
+  note "removed managed ${path#${ROOT}}"
+}
+
+apply_login_defs() {
+  local path="$LOGIN_DEFS"
+  if [[ ! -f "$path" ]]; then
+    if (( check_only )); then
+      problem "missing /etc/login.defs (CIS UMASK block)"
+      return 0
+    fi
+    mkdir -p "$(dirname "$path")"
+    : >"$path"
+  fi
+  if grep -qxF "$LOGIN_BEGIN" "$path" 2>/dev/null; then
+    return 0
+  fi
+  if (( check_only )); then
+    problem "missing managed UMASK 027 block in /etc/login.defs"
+    return 0
+  fi
+  local tmp="${path}.cis-$$"
+  awk -v disabled="$LOGIN_DISABLED" '
+    /^[[:space:]]*UMASK[[:space:]]/ { print disabled $0; next }
+    { print }
+  ' "$path" >"$tmp"
+  {
+    printf '%s\n' "$LOGIN_BEGIN"
+    printf 'UMASK 027\n'
+    printf 'PASS_MAX_DAYS 365\n'
+    printf '%s\n' "$LOGIN_END"
+  } >>"$tmp"
+  cat "$tmp" >"$path"
+  rm -f "$tmp"
+  changes=$((changes + 1))
+  note "wrote managed UMASK 027 block in /etc/login.defs"
+}
+
+remove_login_defs() {
+  local path="$LOGIN_DEFS"
+  [[ -f "$path" ]] || return 0
+  if ! grep -qxF "$LOGIN_BEGIN" "$path" 2>/dev/null; then
+    return 0
+  fi
+  if (( check_only )); then
+    problem "managed UMASK block still present in /etc/login.defs"
+    return 0
+  fi
+  local tmp="${path}.cis-$$"
+  awk -v begin="$LOGIN_BEGIN" -v end="$LOGIN_END" -v disabled="$LOGIN_DISABLED" '
+    $0 == begin { skip = 1; next }
+    $0 == end { skip = 0; next }
+    skip { next }
+    index($0, disabled) == 1 { print substr($0, length(disabled) + 1); next }
+    { print }
+  ' "$path" >"$tmp"
+  cat "$tmp" >"$path"
+  rm -f "$tmp"
+  changes=$((changes + 1))
+  note "removed managed UMASK block from /etc/login.defs"
+}
+
+apply_banner() {
+  local file content
+  for file in "${ROOT}/etc/issue" "${ROOT}/etc/issue.net"; do
+    if [[ -f "$file" ]] && grep -qF "$MARKER" "$file" 2>/dev/null; then
+      continue
+    fi
+    if [[ -e "$file" ]] && [[ -n "$(head -c 8192 "$file" 2>/dev/null)" ]]; then
+      content="$(content_for banner)"
+      if (( check_only )); then
+        problem "existing banner ${file#${ROOT}} carries no managed legal block"
+        continue
+      fi
+      printf '\n%s\n' "$content" >>"$file"
+      changes=$((changes + 1))
+      note "appended managed legal block to ${file#${ROOT}}"
+      continue
+    fi
+    write_managed_file "$file" banner
+  done
+}
+
+remove_banner() {
+  local file tmp
+  for file in "${ROOT}/etc/issue" "${ROOT}/etc/issue.net"; do
+    [[ -f "$file" ]] || continue
+    grep -qF "$MARKER" "$file" 2>/dev/null || continue
+    if (( check_only )); then
+      problem "managed legal banner still present in ${file#${ROOT}}"
+      continue
+    fi
+    tmp="${file}.cis-$$"
+    grep -vF "$MARKER" "$file" | grep -vF "Authorized access only." | grep -vF "Unauthorized use is prohibited" >"$tmp" || true
+    cat "$tmp" >"$file"
+    rm -f "$tmp"
+    changes=$((changes + 1))
+    note "removed managed legal block from ${file#${ROOT}}"
+  done
+}
+
+if [[ "$mode" == "remove" ]]; then
+  remove_managed_file "$SSHD_DROPIN"
+  remove_managed_file "$MODPROBE"
+  remove_managed_file "$AUDIT_RULES"
+  remove_login_defs
+  remove_banner
+else
+  ensure_dir "${ROOT}/etc/ssh/sshd_config.d" 0755
+  ensure_dir "${ROOT}/etc/modprobe.d" 0755
+  ensure_dir "${ROOT}/etc/audit/rules.d" 0755
+  write_managed_file "$SSHD_DROPIN" sshd
+  write_managed_file "$MODPROBE" modprobe
+  write_managed_file "$AUDIT_RULES" audit
+  apply_login_defs
+  apply_banner
+  if ! (( check_only )); then
+    note "baseline staged; review the diff, then reload sshd and auditd explicitly"
+  fi
+fi
+
+if (( check_only )); then
+  if (( ${#problems[@]} > 0 )); then
+    printf '%s: CHECK FAILED (%d problem(s))\n' "$PROGRAM" "${#problems[@]}" >&2
+    printf '  - %s\n' "${problems[@]}" >&2
+    exit 1
+  fi
+  printf '%s: check passed (no changes made)\n' "$PROGRAM"
+  exit 0
+fi
+
+printf '%s: CIS L1 baseline complete (%d change(s))\n' "$PROGRAM" "$changes"

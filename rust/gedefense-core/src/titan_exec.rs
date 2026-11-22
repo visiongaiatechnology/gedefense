@@ -11,7 +11,8 @@
 use base64::engine::general_purpose::{STANDARD, STANDARD_NO_PAD, URL_SAFE, URL_SAFE_NO_PAD};
 use base64::Engine as _;
 use gedefense_common::{
-    TitanExecEvent, TITAN_EXEC_MODE_OFF, TITAN_EXEC_MODE_STRICT, TITAN_EXEC_SCOPE_FLAG_JIT_ALLOW,
+    TitanExecEvent, TITAN_EXEC_MODE_OFF, TITAN_EXEC_MODE_UNTRUSTED, TITAN_EXEC_SCOPE_FLAG_JIT_ALLOW,
+    TITAN_EXEC_SCOPE_MODE_MAX,
 };
 use std::collections::HashMap;
 use std::fs::OpenOptions;
@@ -79,11 +80,23 @@ pub fn parse_u8(token: &str) -> Result<u8, String> {
     u8::try_from(decimal(token)?).map_err(|_| "titan-exec argument is out of range".to_owned())
 }
 
-/// §5 mode `0..3` (OFF/OBSERVE/CONTAIN/STRICT).
+/// §5 mode `0..=4` (OFF/OBSERVE/CONTAIN/STRICT/UNTRUSTED). UNTRUSTED is a
+/// global-only mode and extends CONTAIN with the drop-root/owner gates; a
+/// per-cgroup scope cannot carry it (the scope value has two mode bits), so
+/// [`parse_scope_mode`] rejects it there instead of silently truncating it.
 pub fn parse_mode(token: &str) -> Result<u8, String> {
     let mode = parse_u8(token)?;
-    if mode > TITAN_EXEC_MODE_STRICT {
-        return Err("titan-exec mode is not 0..3".to_owned());
+    if mode > TITAN_EXEC_MODE_UNTRUSTED {
+        return Err("titan-exec mode is not 0..4".to_owned());
+    }
+    Ok(mode)
+}
+
+/// §5 `SCOPE_SET` mode `0..=3` (the scope value packs the mode into bits 2..=3).
+pub fn parse_scope_mode(token: &str) -> Result<u8, String> {
+    let mode = parse_mode(token)?;
+    if mode > TITAN_EXEC_SCOPE_MODE_MAX {
+        return Err("titan-exec scope mode is not 0..3".to_owned());
     }
     Ok(mode)
 }
@@ -136,6 +149,7 @@ pub fn mode_name(mode: u8) -> &'static str {
         TITAN_EXEC_MODE_OFF => "off",
         1 => "observe",
         2 => "contain",
+        TITAN_EXEC_MODE_UNTRUSTED => "untrusted",
         _ => "strict",
     }
 }
@@ -433,67 +447,8 @@ pub fn encode_exec_health(counters: &[u64; 6]) -> String {
     )
 }
 
-/// §5 status state values; `pending`/`failed` are control-plane states and are
-/// never claimed by the core (`#[allow(dead_code)]` keeps the ABI complete).
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[allow(dead_code)]
-pub enum ExecState {
-    Applied,
-    Pending,
-    Failed,
-    Inactive,
-    Unavailable,
-}
-
-impl ExecState {
-    pub fn text(self) -> &'static str {
-        match self {
-            ExecState::Applied => "applied",
-            ExecState::Pending => "pending",
-            ExecState::Failed => "failed",
-            ExecState::Inactive => "inactive",
-            ExecState::Unavailable => "unavailable",
-        }
-    }
-}
-
-/// §5 `TITAN_EXEC_STATUS`: active LSM + valid offsets + attached hooks is the
-/// only combination that may be called `applied`.
-pub fn exec_state(enforcement_available: bool, lsm_active: bool, offsets_valid: bool) -> ExecState {
-    if !lsm_active {
-        ExecState::Inactive
-    } else if !offsets_valid || !enforcement_available {
-        ExecState::Unavailable
-    } else {
-        ExecState::Applied
-    }
-}
-
-/// §5 status payload inputs.
-pub struct StatusView<'a> {
-    pub state: ExecState,
-    pub mode: u8,
-    pub flags: u8,
-    pub path_bpf_lsm: bool,
-    pub lsm_active: bool,
-    pub offsets_valid: bool,
-    pub entries: usize,
-    pub scopes: usize,
-    pub epoch: &'a str,
-}
-
-/// §5 status payload: fixed order, no duplicate keys, bounded numbers.
-pub fn encode_exec_status(view: &StatusView<'_>) -> String {
-    format!(
-        "status={};mode={};flags={};path={};lsm={};offsets={};entries={};scopes={};epoch={}",
-        view.state.text(),
-        view.mode,
-        view.flags,
-        if view.path_bpf_lsm { "bpf-lsm" } else { "none" },
-        if view.lsm_active { "active" } else { "inactive" },
-        if view.offsets_valid { "valid" } else { "invalid" },
-        view.entries,
-        view.scopes,
-        view.epoch
-    )
-}
+// Status/state rendering lives in its own module (module size cap); re-exported
+// here so the 	itan_exec:: call surface in main.rs is unchanged.
+pub(crate) use crate::titan_status::{encode_exec_status, exec_state, StatusView};
+#[cfg(test)]
+pub(crate) use crate::titan_status::ExecState;

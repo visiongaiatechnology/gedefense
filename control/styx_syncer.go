@@ -33,21 +33,33 @@ type styxPolicyCore interface {
 // StyxSyncStatus is the structured sync state of §8.3. It never contains a
 // secret, a credential or a raw core payload: only state, counters and error text
 // that was produced by this control plane (bounded to styxStatusErrorMaxBytes).
+//
+// M3: the identity fields make cgroup-id drift visible. A path-backed cell whose
+// id was re-resolved after a reboot/unit restart is counted in CgroupDriftTotal;
+// an unresolvable path degrades the identity layer (Degraded) while the resolvable
+// part of the policy keeps being applied.
 type StyxSyncStatus struct {
-	State          string     `json:"state"`
-	Capability     string     `json:"capability"`
-	Version        string     `json:"version,omitempty"`
-	Epoch          string     `json:"epoch,omitempty"`
-	Enabled        bool       `json:"enabled"`
-	Mode           string     `json:"mode"`
-	LogFlows       bool       `json:"log_flows"`
-	Cells          int        `json:"cells"`
-	AllowRules     int        `json:"allow_rules"`
-	Resolvers      int        `json:"dns_resolvers"`
-	LastError      string     `json:"last_error,omitempty"`
-	LastAttemptAt  *time.Time `json:"last_attempt_at,omitempty"`
-	LastAppliedAt  *time.Time `json:"last_applied_at,omitempty"`
-	RetryInSeconds int        `json:"retry_in_seconds,omitempty"`
+	State            string              `json:"state"`
+	Capability       string              `json:"capability"`
+	Version          string              `json:"version,omitempty"`
+	Epoch            string              `json:"epoch,omitempty"`
+	Enabled          bool                `json:"enabled"`
+	Mode             string              `json:"mode"`
+	LogFlows         bool                `json:"log_flows"`
+	Cells            int                 `json:"cells"`
+	AllowRules       int                 `json:"allow_rules"`
+	Resolvers        int                 `json:"dns_resolvers"`
+	PathsResolved    int                 `json:"paths_resolved"`
+	PathsUnresolved  int                 `json:"paths_unresolved"`
+	LegacyIDs        int                 `json:"legacy_ids"`
+	CgroupDriftTotal uint64              `json:"cgroup_drift_total"`
+	Degraded         bool                `json:"degraded"`
+	DegradedReason   string              `json:"degraded_reason,omitempty"`
+	Identities       []StyxIdentityState `json:"identities,omitempty"`
+	LastError        string              `json:"last_error,omitempty"`
+	LastAttemptAt    *time.Time          `json:"last_attempt_at,omitempty"`
+	LastAppliedAt    *time.Time          `json:"last_applied_at,omitempty"`
+	RetryInSeconds   int                 `json:"retry_in_seconds,omitempty"`
 }
 
 type styxAppliedPolicy struct {
@@ -62,6 +74,10 @@ type styxAppliedPolicy struct {
 
 type styxPolicySyncer struct {
 	core styxPolicyCore
+	// resolver re-resolves every path-backed cell on each sync (M3.2). It is an
+	// interface so the drift/degraded contract is testable without a privileged
+	// host; the default reads /sys/fs/cgroup.
+	resolver styxCgroupResolver
 	// state is optional (tests may run the syncer without an engine); when present
 	// every transition is reported as an event, never as a silent edit.
 	state         *State
@@ -79,6 +95,14 @@ type styxPolicySyncer struct {
 	dirty        bool
 	nextAttempt  time.Time
 	lastFailure  string
+
+	// identity bookkeeping (guarded by mu): the ids resolved during the last
+	// successful sync and the drift/degradation state that was already reported.
+	resolvedPaths      map[string]uint64
+	reportedDrift      map[string]struct{}
+	identityDegraded   bool
+	cgroupDriftTotal   uint64
+	lastIdentityReport styxIdentityReport
 }
 
 // NewStyxPolicySyncer constructs the syncer in the honest initial state: nothing
@@ -93,7 +117,7 @@ func NewStyxPolicySyncer(core styxPolicyCore, state *State, settings RuntimeSett
 		LogFlows:   styxEffectiveLogFlows(desired),
 	}
 	return &styxPolicySyncer{
-		core: core, state: state,
+		core: core, state: state, resolver: newStyxSystemCgroupResolver(),
 		now:           func() time.Time { return time.Now().UTC() },
 		retryInterval: styxPolicySyncRetryInterval,
 		desired:       desired,
@@ -203,7 +227,32 @@ func (s *styxPolicySyncer) Sync(ctx context.Context) StyxSyncStatus {
 	previousState := s.status.State
 	s.mu.Unlock()
 
-	plan, err := buildStyxPolicyPlan(desired)
+	// M3.2: re-resolve every path-backed identity before the plan is built. The
+	// persisted numeric id is deliberately NOT used for path entries: a stale id
+	// must never be written to the kernel after a reboot or unit restart.
+	//
+	// An inactive namespace (enabled=false or global mode=off) performs no
+	// resolution at all: nothing is enforced, so claiming a "degraded identity"
+	// there would be noise. A draft stays exactly as honest as before.
+	resolved := cloneStyxFabricSettings(desired)
+	var identity styxIdentityReport
+	if styxNamespaceActive(desired) {
+		s.mu.Lock()
+		previousPaths := make(map[string]uint64, len(s.resolvedPaths))
+		for cgroupPath, cgroupID := range s.resolvedPaths {
+			previousPaths[cgroupPath] = cgroupID
+		}
+		s.mu.Unlock()
+		resolved, identity = resolveStyxIdentities(desired, s.resolver, previousPaths)
+		// Identity facts (drift/unresolved) are reported before the kernel push:
+		// they were measured against the live host, so they are true even if the
+		// push fails. The reconciler also emits the bounded operator events.
+		s.reconcileIdentity(identity)
+	} else {
+		s.clearIdentityStatus()
+	}
+
+	plan, err := buildStyxPolicyPlan(resolved)
 	if err != nil {
 		// Defensive: the settings store validates before persisting, so this only
 		// happens for a document edited out-of-band. It must never reach the map.
@@ -242,10 +291,13 @@ func (s *styxPolicySyncer) Sync(ctx context.Context) StyxSyncStatus {
 	samePlan := s.fingerprint != "" && s.fingerprint == plan.fingerprint()
 	s.mu.Unlock()
 
-	if previousState == StyxSyncStateApplied && samePlan && !epochChanged && applied.Initialized {
-		// Steady state: the epoch poll found an unchanged core and an unchanged
-		// plan. Re-writing 1000+ map entries every 10 s would be pure churn.
-		return s.finishUnchanged(epoch, version)
+	// Steady state: the epoch poll found an unchanged core and an unchanged plan.
+	// Re-writing 1000+ map entries every 10 s would be pure churn. The degraded
+	// identity state is refreshed here too, so a persistent path failure keeps
+	// being reported and a recovery is named without a kernel write.
+	if (previousState == StyxSyncStateApplied || previousState == StyxSyncStateDegraded) &&
+		samePlan && !epochChanged && applied.Initialized {
+		return s.finishUnchanged(epoch, version, identity)
 	}
 	if err := s.applyPlan(ctx, plan, epoch, applied, !applied.Initialized || epochChanged); err != nil {
 		return s.finishFailure(err)
@@ -260,7 +312,7 @@ func (s *styxPolicySyncer) Sync(ctx context.Context) StyxSyncStatus {
 		s.applied.Cells[cell.cgroupID()] = cell
 	}
 	s.mu.Unlock()
-	return s.finishApplied(plan, epoch, version, previousState)
+	return s.finishApplied(plan, epoch, version, previousState, identity)
 }
 
 // applyPlan is the ordered, fail-safe projection of one plan (§8.3):
@@ -327,7 +379,7 @@ func (s *styxPolicySyncer) applyPlan(ctx context.Context, plan styxPolicyPlan, e
 	}
 	for _, cell := range plan.Cells {
 		if !fullResync {
-			if previous, exists := applied.Cells[cell.CgroupID]; exists && previous == cell {
+			if previous, exists := applied.Cells[cell.CgroupID]; exists && previous.equalKernel(cell) {
 				continue
 			}
 		}

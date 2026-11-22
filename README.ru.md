@@ -9,8 +9,8 @@
 <sub>*(Примечание: «Entenprise» — это не опечатка, а умышленная игра слов от нем. «Ente» — «утка» и отсылка к Sir Quacksec 🦆)*</sub>
 
 [![License](https://img.shields.io/badge/License-AGPL--3.0--only-blue?style=for-the-badge)](https://www.gnu.org/licenses/agpl-3.0)
-[![Version](https://img.shields.io/badge/Version-6.1.2-orange?style=for-the-badge)](#)
-[![Status](https://img.shields.io/badge/Status-Release_V6_(6.1.2)-brightgreen?style=for-the-badge)](#)
+[![Version](https://img.shields.io/badge/Version-6.2.0-orange?style=for-the-badge)](#)
+[![Status](https://img.shields.io/badge/Status-Release_V6_(6.2.0)-brightgreen?style=for-the-badge)](#)
 [![Installer](https://img.shields.io/badge/Installer-Universal_Linux-green?style=for-the-badge)](#-быстрый-старт)
 [![Platform](https://img.shields.io/badge/Platform-Linux_x86__64-lightgrey?style=for-the-badge&logo=linux)](#)
 [![Data Plane](https://img.shields.io/badge/Data_Plane-Rust_eBPF%2FXDP-red?style=for-the-badge&logo=rust)](#-архитектура)
@@ -32,56 +32,77 @@
 
 <br />
 
-⬇️ **Прямые ссылки на установщики (v6.1.2 / V6):**  
-[**OneClick-установщик (`.run`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.1.2/VGT_GeDefense_V6_6.1.2_OneClick.run) · [`.sha256`](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.1.2/VGT_GeDefense_V6_6.1.2_OneClick.run.sha256) · [**Desktop Tray (`.run`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.1.2/GeDefense-6.1.2-Desktop-OneClick.run) · [`.sha256`](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.1.2/GeDefense-6.1.2-Desktop-OneClick.run.sha256) · [**Исходный код (`.zip`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.1.2/VGT_GeDefense_V6_6.1.2_Source.zip) · [**Релиз v6.1.2**](https://github.com/visiongaiatechnology/gedefense/releases/tag/v6.1.2) · [Быстрый старт](#-быстрый-старт)
+⬇️ **Прямые ссылки на установщики (v6.2.0 / V6):**
+[**OneClick-установщик (`.run`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.2.0/VGT_GeDefense_V6_6.2.0_OneClick.run) · [`.sha256`](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.2.0/VGT_GeDefense_V6_6.2.0_OneClick.run.sha256) · [**Desktop Tray (`.run`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.2.0/GeDefense-6.2.0-Desktop-OneClick.run) · [`.sha256`](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.2.0/GeDefense-6.2.0-Desktop-OneClick.run.sha256) · [**Исходный код (`.zip`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.2.0/VGT_GeDefense_V6_6.2.0_Source.zip) · [**Релиз v6.2.0**](https://github.com/visiongaiatechnology/gedefense/releases/tag/v6.2.0) · [Быстрый старт](#-быстрый-старт)
 
 </div>
 
-## 📋 Журнал изменений — GeDefense V6.1 (`6.1.2`, 20.11.2026)
+---
 
-### 🔥 Хотфикс 6.1.2 (20.11.2026)
-- **Предварительные условия для чистой установки (`scripts/oneclick-installer-header.sh`):** добавлена системная группа `gedefense-desktop` (`systemd-sysusers` и `groupadd` fallback), а также предварительное создание `/run/gedefense-scan` (`0750 root:gedefense`), `/run/gedefense` (`2750 gedefense:gedefense-desktop`) и `/sys/fs/cgroup/vgt-cells` (`0775 gedefense:gedefense`) до запуска `gedefense-cell-helper`, `gedefense-core` и `gedefense-control` без необходимости перезагрузки; также добавлена защита JSON-парсинга в `reconcile_post_upgrade_posture()`.
-- **Загрузка ключа подписи фидов (`control/feed_signing.go`):** исправлена обрезка валидного 32-/64-байтового бинарного ключа Ed25519, оканчивающегося на `0x0d` + `\n`.
-- **Версия/артефакты:** 6.1.2 в Control (`6.1.2`), Gateway (`6.1.2-access`), Rust/`Cargo.lock`, контракте AstraeaOS, Arch-`PKGBUILD`, OneClick-установщике и README (`VGT_GeDefense_V6_6.1.2_*`, `GeDefense-6.1.2-*`).
+## 🧭 Быстрая навигация
 
-### 🔥 Хотфикс 6.1.1 (19.11.2026)
-- **Безопасность:** исправлены подтверждённые findings аудитов `VGT-AUDIT-20261118-GD61` (включая R2/R3 `FIND-008`/`FIND-009`) и `VGT-AUDIT-2026-11-19` (`FIND-001`–`FIND-005`). Привилегированный захват `AF_PACKET`/`CN_PROC` теперь работает в изолированном `gedefense-capture-helper.service`; `gedefense-control.service` остаётся без capabilities.
-- **Kernel 7.3:** парсер Titan BTF принимает расширенные заголовки BTF v1 (`24 <= hdr_len <= data.len()`, 32-байтовый заголовок) и остаётся fail-closed для усечённых/выходящих за образ заголовков.
-- **Авто-охлаждение светофора:** коррелированные штормы падений воркеров и инциденты автоматически снижают уровень (`0–15 мин` красный → `15–60 мин` жёлтый → `> 60 мин` зелёный) после стабилизации.
-- **Версия/артефакты:** 6.1.1 в Control (`6.1.1`), Gateway (`6.1.1-access`), Rust/`Cargo.lock`, контракте AstraeaOS, Arch-`PKGBUILD`, OneClick-установщике и README (`VGT_GeDefense_V6_6.1.1_*`).
-
-### ✨ Что нового в V6.1
-- **Модули A–E (новое в 6.1.0):**
-  - **Модуль A — Web Exposure & Posture Engine:** обнаруживает веб-демоны через `/proc`, читает ELF `.rodata` в `/proc/<pid>/exe` только для чтения (без `os/exec` и shell), анализирует конфиги nginx/Apache, выполняет ограниченный loopback-ALPN-зонд и сопоставляет CVE (включая CVE-2026-123007 / 123633 / 121810) только при реальной достижимости.
-  - **Модуль B — Worker Integrity Guard:** отслеживает фатальные сигналы `SIGSEGV`/`SIGBUS`/`SIGILL`/`SIGABRT` у зарегистрированных веб-воркеров через tracepoint `signal:signal_deliver` (с fallback на `CN_PROC`), поднимает ≥ 3 падений за 60 с до `XDR.WORKER_CRASH_STORM` и классифицирует cgroup воркеров (`JIT_ALLOW = 0`), исключая master/control-юниты.
-  - **Модуль C — TLS/ALPN-сенсор и бюджет h2 control-storm:** пассивный захват `AF_PACKET` (ClientHello ≤ 1536 Б на TCP 443/8443 + QUIC UDP/443) через изолированный helper `gedefense-capture-helper.service` (чтобы `gedefense-control.service` оставался без capabilities), счётчики сокетов ядра `INET_DIAG` и поэтапная реакция (alert → throttle → TTL-бан).
-  - **Модуль D — LPE Kill-Chain Blocker:** eBPF-LSM-хук `socket_create` запрещает `AF_PACKET`, `AF_TIPC`, `AF_VSOCK`, `SCTP`, `DCCP`, `RDS` для cgroup веб-воркеров; плюс профиль StyX `web-ingress-only`, `kernel.randomize_va_space = 2` и чёрный список модулей `sctp`/`dccp`/`rds`.
-  - **Модуль E — Memory-Safe Edge Terminator:** опциональный TLS/h2-терминатор на Go перед NGINX/Apache со строгими лимитами RFC-9113, структурным WAF и HTTP/1.1 upstream (по умолчанию выключен, только loopback, требует сертификат).
-- **10 панелей V6 в панели управления и Settings v18:** отдельные вкладки статуса, действий и настроек для **Web Exposure**, **Worker Guard**, **TLS Sensor**, **LPE Guard**, **Edge Proxy**, **StyX**, **Titan Exec**, **Parser Cells**, **Emergency Lockdown** и **Witness**.
-- **Мастер первоначальной настройки (`Setup Wizard` / `Einrichtungsassistent`) и `AGENTS.md`:** пошаговый мастер (`00`–`08`) прямо в Web UI (см. ниже).
-- **Безопасная авто-активация при `enforce` и честная телеметрия:** в `observe`/`canary` модули V6 выключены; при переходе в `enforce` включаются `styx=monitor`, `titan_exec=contain`, `parser_cells=enabled` (Lockdown и Witness остаются opt-in). Отсутствующие возможности ядра (`bpf` LSM, tracepoint, `AF_PACKET`, сертификат) всегда отображаются как `inactive`/`error`.
-
-### 🛡️ Исправления безопасности в V6.1.1 (общий список)
-- **Исправления аудита безопасности от 19.11.2026 (`FIND-001` – `FIND-005`, `docs/V6.1.0-AUDIT-REMEDIATION-20261119.md`):**
-  - `FIND-001` **Обход seccomp через x32 ABI в ячейках парсинга:** добавлена проверка `JMP|JSET|K` бита `__X32_SYSCALL_BIT` (`0x40000000` → `EPERM`) в `gedefense-cell-helper` перед всеми правилами deny и `AF_UNIX`.
-  - `FIND-002` **Ограниченные карты TLS-сенсора:** значения ALPN очищаются и дедуплицируются (≤ 32 Б, ≤ 8 на Hello), карта счётчиков ограничена 32 ключами + `(other)`, множество пиров — 4096 записями.
-  - `FIND-003` **Рассинхронизация auto-network-drop в Lockdown:** добавлен общий флаг владения `AtomicBool`, чтобы `auto_network_drop()` объединял `DROP_ALL|ALLOW_LOOPBACK` с флагами фаз и переживал обновления `LOCKDOWN_PHASE` и `startup_rearm()`.
-  - `FIND-004` **Обход классификации составных USB-устройств:** для HID/Hub/Power-only требуется непустой список интерфейсов и равенство `bNumInterfaces == interfaces.len()`; uevent-события добавления USB-интерфейса деавторизуют родительское устройство (`authorized=0`).
-  - `FIND-005` **Инъекция заголовка `Connection` в Gateway:** `stripHopByHopHeaders()` удаляет hop-by-hop заголовки RFC 7230 и все заголовки, перечисленные клиентом в `Connection`, до установки `Authorization` и `X-Gedefense-Gateway-Session`.
-- **Исправления аудита V6.1 от 18.11.2026 (`VGT-AUDIT-20261118-GD61`, `docs/V6.1.0-AUDIT-REMEDIATION.md`):**
-  - Захват `AF_PACKET`/`CN_PROC` вынесен в `gedefense-capture-helper.service` (`gedefense-control.service` без capabilities); блокировка RDS переведена на `family == AF_RDS`; `INET_DIAG` и cBPF-префильтр расширены на IPv4+IPv6; устранено ложное состояние `active` без подключённого tracepoint и исключены общие cgroup nginx master; Edge Proxy очищает входящий `X-Forwarded-For`; ASLR применяется через core sysctl; исправлены статусы 503/409 LPE и устранён `innerHTML`/mojibake в UI V6.1.
-- **База 5.2.0 / 6.0.x:** включает все 36 исправлений `VGT-AUDIT-20261114-GD51` (предпроверка Ed25519 в OneClick, шлюз Argon2id, строгий AEAD/HistoryMAC, plain-text Qt-трей, атомарный карантин Rust, точный учёт eBPF) и нормализацию уровней серьёзности инцидентов (`6.0.3`).
-
-### 🧭 Мастер настройки (`Setup Wizard`) и сценарий `AGENTS.md`
-В GeDefense 6.1.1 встроен интерактивный **Мастер настройки** (`control/web/setup-wizard.js`) для безопасного ввода хоста в режим `enforce`:
-- **Шаг `00` — Шаблон `AGENTS.md` (без удалённого AI API):** GeDefense намеренно не открывает входящий AI-канал управления. Мастер предоставляет готовый `AGENTS.md` для запуска локального CLI-агента (Codex, Antigravity, Claude Code) по SSH в режиме **сначала только чтение (read-only)** с безопасным применением настроек через `POST /api/v1/settings/{module}/preview` → `PUT /api/v1/settings/{module}`.
-- **Шаги `01`–`08`:** `01` Allowlist администратора и сервисы → `02` L7 Traffic Guard (`observe` → `enforce`) → `03` Web Exposure и TLS-сенсор (`gedefense-capture-helper`) → `04` LPE Guard и Edge Proxy (проверка портов `:8443`/`:8080`) → `05` Kinetic XDP и фиды → `06` XDR, StyX и Titan Exec-Gate (`skipped_cgroups`) → `07` Parser Cells и эталон FIM (`POST /api/v1/fim/baseline`) → `08` Witness, Emergency Lockdown и проверка `/gateway/livez`.
-
-
-<img width="1536" height="1024" alt="GeDefense_ Real Security, Many Feathers" src="https://github.com/user-attachments/assets/dc56735e-b2b2-45c9-a363-97554a92ae0a" />
-
+| Раздел | Описание | Переход |
+|---|---|---|
+| 📊 **Тест VGT HardRed** | `86.16 / 100 · PASS` против Baseline, Wazuh и CrowdSec | [Результаты](#-бенчмарк-vgt-hardred--оценка-v620) |
+| ⚙️ **Воспроизведение и настройки** | Точный профиль `Max-Hardness` и оговорки по среде | [Настройки](#-воспроизведение-профиля-max-hardness) |
+| 🔍 **Что такое VGT GeDefense?** | Стек V6.2, модули A–E, Titan, Setup Wizard и ПК vs. Сервер | [Обзор](#-что-такое-vgt-gedefense) |
+| 🧪 **Verify Yourself** | Тесты Go/Rust и 19 шлюзов статического аудита | [Самопроверка](#-verify-yourself--полный-набор-тестов-и-руководство-по-независимому-аудиту) |
+| 🏛️ **Архитектура и защита** | Домены доверия, eBPF/XDP, Host XDR, StyX и криптография | [Архитектура](#-архитектура) |
+| 🚀 **Быстрый старт и гейты** | OneClick-установка, гейты релизов и ограничения | [Быстрый старт](#-быстрый-старт) |
+| 📋 **Журнал изменений (Changelog)** | Полная история релизов (`v6.2.0` → `v1.0.0-beta.5`) | [Changelog](#-журнал-изменений-changelog) |
+| 📄 **Лицензия и атрибуция** | `AGPL-3.0-only`, GeoIP/ASN и лицензии третьих сторон | [Лицензия](#-лицензия) |
 
 ---
+
+## 📊 Бенчмарк VGT HardRed — оценка V6.2.0
+
+Измерено с помощью открытого мультидоменного бенчмарка безопасности Linux **[VGT HardRed (`RedHard`)](https://github.com/visiongaiatechnology/redhard)** на изолированном от снэпшота целевом хосте **Ubuntu 24.04 (Linux HWE 7.0, NGINX + PHP 8.3-FPM)** (`eth0` out-of-band управляющий канал, `eth1` боевой канал атак без allowlist; 4-осевая модель: эффективность 45 % · устойчивость к ложным срабатываниям 20 % · задержка/сдерживание 20 % · накладные расходы 15 %):
+
+| Место | Система безопасности | Итог (0–100) | Ось 1: Эффективность | Ось 2: FP-устойчивость | Ось 3: Латентность и сдерживание | Ось 4: Нагрузка | Гейт |
+|---:|---|---:|---:|---:|---:|---:|---|
+| 1 | **GeDefense Linux 6.2.0 (`Max-Hardness`)** | **86.16** | **80.49** | **100.00** | **78.07** | **95.53** | **`PASS`** |
+| 2 | **Wazuh (`Max Rules + FIM + Auditd + Active Response`)** | **46.29** | 31.74 | 69.23 | 22.14 | 91.53 | `CONDITIONAL` |
+| Ref | **Baseline (`Clean Ubuntu HWE 7.0 WebStack`)** | **45.82** | 16.94 | 100.00 | 15.97 | 100.00 | `CONDITIONAL` |
+| 3 | **CrowdSec (`Max Collections + Bouncers + AppSec WAF`)** | **35.83** | 42.89 | 0.00 | 28.38 | 72.37 | `FAIL` |
+
+### Детализация GeDefense 6.2.0 по доменам и нагрузке
+
+| Домен | Detection TPR | Prevention TPR | Det / Prot FPR | Контекст (0–3) | Медиана TTFA | Оценка домена | Ключевая метрика |
+|---|---:|---:|---:|---:|---:|---:|---|
+| `hardred-waf` | 100.0% | 100.0% | 0.0% / 0.0% | 3.00 | 250.0 мс | **100.0** | 0/8 ложных срабатываний; HTTP `403` на inline-edge |
+| `hardred-netids` | 100.0% | 100.0% | 0.0% / 0.0% | 2.50 | 175.9 мс | **98.3** | XDP/Kinetic отсекает HTTP-флуд, SSH-брут и портскан |
+| `hardred-compliance` | 100.0% | 86.0% | 0.0% / 0.0% | 3.00 | — | **86.0** | Lynis Hardening Index `71` (Baseline `63`); 8 активных LSM вкл. `bpf` |
+| `hardred-malware` | 100.0% | 33.3% | 0.0% / 0.0% | 1.67 | 250.0 мс | **65.6** | HTTP EICAR `403` + хостовый `FAN_CLOSE_WRITE` и запрет запуска |
+| `hardred-endpoint` | 53.3% | 53.3% | 0.0% / 0.0% | 2.11 | 250.0 мс | **59.0** | **Ущерб `18.1%`** (Baseline `100.0%`): заморозка ransomware и блок `memfd`/`/tmp` |
+
+- **Измеренная системная нагрузка (`03d-gedefense-6.2.0-max-bench` против чистого Baseline):** `730.7` HTTP RPS (`8.74 мс` p50 · **`17.99 мс` p95** против `21.23 мс` в Baseline) · `90,420.3` Sysbench EPS · `245.2` FIO IOPS · **`83.3 MiB`** Security RSS · **`4.3%`** Security CPU.
+
+### ⚙️ Воспроизведение профиля `Max-Hardness`
+
+Чтобы воспроизвести этот профиль защиты на Linux-хосте (по умолчанию после установки система запускается консервативно в режиме `observe` без принудительных блокировок):
+
+1. **Параметр ядра LSM:** Убедитесь, что `bpf` активен в `/sys/kernel/security/lsm` (параметр загрузки `lsm=...,bpf` + перезагрузка), чтобы **Titan Exec Gate**, **LPE `socket_create`** и **Credential Guard `file_open`** подключились в ядре.
+2. **Переход в `enforce`:** Переведите фазу `observe` → `canary` → **`enforce`** (`POST /api/v1/release/transition`: `PROMOTE:CANARY`, затем `PROMOTE:ENFORCE`) и зафиксируйте эталон FIM (`POST /api/v1/fim/baseline`, `"scope": "release"`).
+3. **Настройки базовых модулей (`PUT /api/v1/settings/{module}`):**
+   - `kinetic`: `enabled=true`, `enforcement_mode="block"`, `ip_threshold=20`, `velocity_limit=10`, `range_threshold=35`, `portscan_threshold=3`, `syn_threshold=15`, `syn_ack_ratio=3`, `auto_contain_single_ip=true`, `auto_contain_ipv4_subnet=true`, `auto_contain_ipv6_subnet=true`.
+   - `l7`: `enabled=true`, `mode="block"`, `inline_enabled=true` (подключён NGINX `auth_request` / edge-сокет), `alert_score=30`, `block_score=70`, `sensitive_rate_per_minute=20`, `sensitive_rate_burst=5`, `client_rate_per_minute=180`, `client_rate_burst=40`, `tls_enabled=true`, `tls_anti_spoof=true`.
+   - `xdr`: `enabled=true`, `network_sensor_enabled=true`, `behavior_enabled=true`, `alert_score=30`, `contain_score=60`, `kill_score=90`, `enabled_rule_modules=["baseline","command","lineage","masquerading","origin","threat-intel"]`, `advanced.malware_correlation=true`.
+   - `titan` (FIM / Contraband): `mode="STRICT"`, `armed=true`, `auto_contain=true` (`POST /api/v1/titan/policy`).
+   - `titan_exec` (6.2.0 ABI-2): `enabled=true`, **`mode="untrusted"`** (глобальный режим `4` — блокирует запуск из не-root / world-writable путей без вмешательства в системные пакеты), `require_ctime=true`.
+4. **Настройки V6 и модулей A–E:**
+   - `worker_guard`: `enabled=true`, `strict_exec=true`, `strict_mmap=true`, `auto_apply_strict=true`, `correlate_peers=true`, `storm_threshold=3`.
+   - `tls_sensor`: `enabled=true`, целевые интерфейсы + `"lo"`, `ports=[443,8443,9843]`, `alert_only=false`.
+   - `lpe_guard`: `enabled=true`, запрет `AF_PACKET`/`AF_TIPC`/`AF_VSOCK`/`SCTP`/`DCCP`/`RDS`, `styx_profile=true`, `enforce_aslr=true`, `block_lpe_modules=true` (`POST /api/v1/lpe-guard/apply`).
+   - `styx`: `enabled=true`, глобально `mode="monitor"`, `log_flows=true`, плюс **`per_cell` `mode="enforce"`** на cgroup веб-воркеров (например `php8.3-fpm.service` по символическому `cgroup_path`) для блокировки несанкционированного исходящего C2-трафика.
+   - `parser_cells`: `enabled=true`, `burn_on_incident=true`, `incident_score=60`; `lockdown`: `enabled=true`, `auto_arm=true`, `allow_loopback=true`, `drop_loopback=false`, `network_lockdown=true`, `freeze_processes=true`, `freeze_brokers=true` (`POST /api/v1/lockdown/arm`, `mode="locked"`); `threat_intel`: `enabled=true`, `auto_sync=true`.
+5. **Профиль усиления CIS / Lynis:** Примените транзакционный sysctl-профиль **`astraeaos-cis-l1`** (`/api/v1/transactions/preview` → `/apply`, `type: "hardening.sysctl-profile"`) и при необходимости opt-in скрипт `gedefense-cis-baseline --apply` (SSHD drop-in, `UMASK 027`, баннеры, чёрный список модулей и правила auditd).
+
+> [!NOTE]
+> **Зависимость от среды и инженерная прозрачность:** Показатели бенчмарка зависят от версии ядра Linux и параметров LSM (`lsm=...,bpf`), производительности CPU/диска, топологии сети, списков исключений рабочих нагрузок и версий тестовых инструментов. Первые прогоны 6.1.2/6.2.0 также выявили реальные ошибки и узкие места — в том числе фильтр UID в on-write сканере (пропускавший файлы не-root пользователей), секундную задержку дренирования ransomware-событий (сниженную до 100 мс), нехватку утилит входа/учётных записей в allowlist Credential Guard, отсутствие словаря `astraeaos-cis-l1` в Rust-ядре и дрейф cgroup в StyX после перезагрузки — и все они были исправлены в GeDefense 6.2.0 для реального повышения защиты независимо от бенчмарка.
+
+---
+
+<img width="1536" height="1024" alt="GeDefense_ Real Security, Many Feathers" src="https://github.com/user-attachments/assets/dc56735e-b2b2-45c9-a363-97554a92ae0a" />
 
 ## 🌐 Вселенная GeDefense
 
@@ -94,56 +115,6 @@ GeDefense — единая локальная security-fabric для Linux, Wind
 | [![Windows](https://img.shields.io/badge/Windows-8B5CF6?style=flat-square&logo=windows&logoColor=ffffff)](https://github.com/visiongaiatechnology/gedefensewin) **GeDefense Windows** | Локальная суверенная консоль безопасности Windows 11: Defender/ASR/WFP/App Control, усиление, MHX EDR/XDR, локальный threat intelligence и HMAC-цепочка доказательств. |
 | [![Android](https://img.shields.io/badge/Android-22D3EE?style=flat-square&logo=android&logoColor=0B1220)](https://github.com/visiongaiatechnology/gedefenseandroid) **GeDefense Android** | Нативная платформа безопасности Android: локальное VPN-принуждение, телеметрия конечных точек, корреляция XDR/EDR, threat intelligence, анализ рисков приложений и зашифрованные доказательства. |
 | [![WordPress](https://img.shields.io/badge/WordPress-1F8FFF?style=flat-square&logo=wordpress&logoColor=ffffff)](https://github.com/visiongaiatechnology/gedefensewp) **GeDefense WordPress** | Open-core набор AGPL-3.0 для WordPress: ZEUS WAF, глубокая проверка пакетов AEGIS, TRINITY XDR, блокировка ThroneGuard и маскировка админки HADES. |
-
-## 🚀 GeDefense V6 (`6.1.0`) — Что нового, ПК vs. Сервер и взаимодействие модулей
-
-> [!NOTE]
-> **Собственные панели V6 и модульные интерфейсы — авто-активация при `enforce`:**  
-> Все пять подсистем V6 (**StyX**, **Titan Exec Gate**, **Parser Cells**, **Emergency Lockdown**, **Witness**) получили в 6.1.0 собственные панели с живым статусом, действиями и вкладкой настроек; REST API (`/api/v1/styx/...`, `/api/v1/titan/exec/...`, `/api/v1/parser-cells/...`, `/api/v1/lockdown/...`, `/api/v1/witness/...`) остаётся без изменений. Дополнительно добавлены панели **Web Exposure**, **Worker Guard**, **TLS Sensor**, **LPE Guard** и **Edge Proxy** для модулей A–E. В режимах `observe` и `canary` подсистемы V6 выключены. **Как только GeDefense переводится в `enforce` (или запускается в `enforce`), Go Control автоматически включает безопасный профиль:** `styx=monitor` (+ flow-телеметрия), `titan_exec=contain` и `parser_cells=enabled`, а **Emergency Lockdown** и **Witness** остаются явным opt-in (для предотвращения непреднамеренной блокировки удалённых серверов; Witness требует внешний сервер и pinning). Ручные настройки через API и UI сохраняются после перезапуска.
-
-### 🆕 Что нового в V6 (`6.1.0`)
-
-1. **Пункт 1 — Titan + eBPF-LSM Exec/Library Gate (`docs/POINT1-TITAN-EXEC-GATE.md`):**
-   Контроль `bprm_check_security` и `mmap_file` (`PROT_EXEC`) на уровне eBPF LSM с живыми BTF-смещениями ядра (включая split-`ctime` в Kernel 7.0) и синхронизацией политик через VGT3. Блокирует/аудирует `memfd_create`, unlinked-бинарники, исполнение из `tmpfs` и `W^X`. Без активного `bpf` в LSM честно сообщает `inactive`.
-2. **Пункт 2 — Эфемерные ячейки парсинга (`docs/POINT2-PARSER-CELLS.md`):**
-   Изолированные одноразовые песочницы (Qubes-light) через выделенный root-helper `gedefense-cell-helper.service` и HMAC-сокет `VGTGC2`: пространства имён user/mount/pid/net/ipc/uts, приватный `tmpfs` + `pivot_root`, seccomp (`AF_UNIX`-only), запрет X11, фильтрация `LD_*`, лимиты `cgroup v2`, sealed-`memfd` и авто-уничтожение.
-3. **Пункт 3 — StyX Egress и обнаружение C2/Beacon (`docs/POINT3-EGRESS-BEACON.md`):**
-   Egress-движок в `cgroup_skb/egress` с LPM-списками, защитой от обхода через IPv4-mapped IPv6, DNS-pinning, кольцевым буфером `styx_flow`, анализом периодичности (Welford CV) и учётом эксфильтрации (нулевой оверхед при `mode=off`).
-4. **Пункт 4 — Внешний Witness-клиент (`docs/POINT4-WITNESS.md`):**
-   Подписанные Ed25519 контрольные точки журнала (`ledger_epoch` против ложных тревог ротации), защищённый HTTPS-клиент на порт 443 (блокировка SSRF/DNS-rebinding, SPKI + Ed25519 receipt pinning, опционально mTLS, шифрованный outbox) и офлайн-экспорт `vgtw1`.
-5. **Пункт 5 — Emergency Lockdown (`docs/POINT5-LOCKDOWN.md`):**
-   Мгновенная блокировка XDP/TC egress (`LOCKDOWN_STATE` с сохранением loopback-доступа), строгая фильтрация BadUSB (отклонение составных `HID+Storage`/`HID+CDC`), заморозка секрет-брокеров (`SIGSTOP`, с учётом 15-байтового усечения `/proc/*/comm`) и снятие только оператором.
-6. **Усиленная база 5.2.0:**
-   Включает все 36 исправлений аудита **VGT-AUDIT-20261114-GD51** (предпроверка Ed25519 в OneClick, Argon2id-миграция, строгий AEAD/HistoryMAC, plain-text Qt-трей, атомарный коммит карантина Rust и точный учёт пакетов eBPF).
-
-### 💻 Настольный ПК / Рабочая станция vs. 🖥️ Linux-сервер
-
-| Среда | Ключевые угрозы | Что делает V6 при `enforce` |
-| --- | --- | --- |
-| **Linux ПК / Рабочая станция** | Zero-click уязвимости в парсерах документов/медиа, BadUSB-импланты, дамп ключей брокеров, беcфайловая нагрузка в памяти (`memfd`/`PROT_EXEC`), скрытые C2-маяки | **Parser Cells** изолируют опасный парсинг; **Lockdown** блокирует составные BadUSB и замораживает брокеры ключей; **StyX (`monitor`)** выявляет периодические C2-маяки; **Titan Exec (`contain`)** контролирует unlinked/`memfd` (при активном `bpf` LSM) |
-| **Linux-сервер (Web / API / Compute)** | Пост-RCE закрепление в памяти, исходящий C2 и утечка данных из скомпрометированных cgroup, запуск вне пакетных путей, подмена логов | **Titan Exec (`contain`/`strict` через `StrictCgroups`)** ограничивает рабочие cgroup; **StyX** отслеживает egress/маяки по cgroup без замедления L7-ingress; **Lockdown** моментально перекрывает XDP/TC egress при срабатывании Morpheus/Canary; **Witness** фиксирует доказательства вовне |
-
-### 🔗 Взаимодействие с текущими модулями GeDefense
-
-- **XDP / TC Data Plane (`gedefense-ebpf` & `gedefense-core`):** Общий бинарный контракт и карты eBPF с **StyX** (`cgroup_skb/egress`) и **Lockdown** (`LOCKDOWN_STATE`).
-- **Host XDR & Titan FIM:** События `TitanExecEvent`, корреляции `styx_flow`, burn-события Parser Cells и тревоги Witness поступают в единый конвейер верификации XDR.
-- **Kinetic / TransactionEngine / CellGuard:** Изоляция и заморозка cgroup остаются обратимыми, доказательными и подчинёнными `ReleaseController`.
-- **EvidenceLedger:** Все события V6 фиксируются в цепочке AES-256-GCM/Ed25519 с защитой `ledger_epoch` при ротации.
-- **L7 WAF / Threat Intel / Hardening Guard:** Продолжают защищать HTTP/CMS и sysctl, пока V6 закрывает исполнение кода, парсинг, исходящий трафик и физический периметр.
-
----
-
-> [!WARNING]
-> **ПУБЛИЧНАЯ БЕТА — НЕ ДЛЯ ПРОИЗВОДСТВА (Версия 6.0.1 / V6).**  
-> GeDefense Titan и Linux Security Fabric находятся в активной разработке.
-> Бета предназначена только для тестовых и квалификационных хостов.
-> Архитектура проверяется автоматическими release-gates, но публичная
-> CA-аутентичность релиза, RFC3161-метки, отзыв, внешне закреплённый
-> anti-rollback и ключи подписи feeds пока отсутствуют. Не использовать как
-> производственный защитный механизм; сначала изучите
-> `SECURITY.md` и `CHANGELOG.md`.
-
----
 
 ---
 
@@ -256,6 +227,36 @@ VGT GeDefense:
 ```
 
 Ни одно единичное срабатывание сигнатуры, фида или поведенческой эвристики **не может авторизовать завершение процесса**. Применение мер (Enforce) требует как минимум двух независимых категорий подтверждения, объективных доказательств и стабильного состояния системы.
+
+### 🛡️ Полный стек возможностей V6.2.0 и модули A–E
+
+Все подсистемы используют разделённые домены доверия, единый REST API и панели управления. В `observe`/`canary` блокировки V6 выключены; при переходе в `enforce` автоматически включается безопасный базовый профиль (`styx=monitor`, `titan_exec=contain`, `parser_cells=enabled`), а более строгие режимы (**Emergency Lockdown**, **Witness**, `titan_exec=untrusted`, `per_cell` StyX `enforce` и CIS userland-база) включаются администратором явно:
+
+- **Модули A–E (веб- и периметровая защита):**
+  - **Модуль A — Web Exposure & Posture:** Обнаруживает веб-демоны через `/proc/<pid>/exe` ELF `.rodata` в режиме read-only (без `os/exec`), разбирает конфиги NGINX/Apache, выполняет ограниченный loopback-ALPN-зонд и показывает CVE только при реальной достижимости.
+  - **Модуль B — Worker Integrity Guard:** Следит за падениями веб-воркеров (`SIGSEGV`/`SIGBUS`/`SIGILL`/`SIGABRT`, tracepoint `signal:signal_deliver` + fallback на `CN_PROC`), поднимает шторм ≥ 3 за 60 с до `XDR.WORKER_CRASH_STORM` и изолирует cgroup воркеров (`JIT_ALLOW = 0`) с исключением master/control-юнитов.
+  - **Модуль C — TLS/ALPN-сенсор и бюджет h2 control-storm:** Пассивный захват `AF_PACKET` через отдельный `gedefense-capture-helper.service` + счётчики сокетов ядра `INET_DIAG`, отличающий HTTP/2-штормы от легитимных крупных загрузок.
+  - **Модуль D — LPE Kill-Chain Blocker:** BPF-LSM хук `socket_create` запрещает `AF_PACKET`, `AF_TIPC`, `AF_VSOCK`, `SCTP`, `DCCP` и `RDS` для cgroup веб-воркеров вкупе с ASLR и блокировкой модулей ядра.
+  - **Модуль E — Memory-Safe Edge Terminator:** Опциональный Go `crypto/tls` + `net/http` терминатор с жёсткими лимитами RFC-9113, структурным WAF (SQL-нормализация, сканер секретных конфигов, проверка raw-body `POST`/`PUT`, быстрый проход `780 KB–1.5 MB`, детерминированный `429 + Retry-After`) и HTTP/1.1 upstream.
+- **Ядро и хостовый XDR (пункты 1–5 + V6.2):**
+  - **Titan Exec Gate (ABI-2) и защита от подмены файлов GeDefense Titan:** Контроль `bprm_check_security` / `mmap_file(PROT_EXEC)` в режимах `contain` и глобальном `untrusted` (`4`) для не-root и world-writable путей (`memfd_create`, `/tmp`, `/dev/shm`); модуль Titan контролирует неавторизованное размещение/подмену файлов через bounded inotify, FIM-базы и владение пакетами `dpkg`/`pacman` (`AUTHORIZED`/`TOLERATED`/`UNEXPECTED`/`COMPROMISED`) без атрибуции лиц и с обратимым шифрованным карантином AES-256-GCM.
+  - **eBPF-сенсор ransomware и уничтожение дерева процессов:** Kprobes `vfs_write`/`vfs_rename`/`vfs_unlink` отслеживают всплески энтропии и rename-штормы; ядро Rust на `100 мс`-тике замораживает PGID обратимым `SIGSTOP` (с исключением `apt`, `dpkg`, `tar`, `cargo`), после чего Control выполняет `pidfd`-проверенный `XDR_KILL_TREE` или отпускает по `GROUP_CONT`.
+  - **Асинхронный on-write сканер вредоносного ПО и архивов:** `FAN_CLOSE_WRITE`-наблюдатель на `/tmp`, `/var/tmp`, `/dev/shm` и `/var/www` (`PrivateTmp=false`, ограниченный рекурсивный разбор ZIP/GZIP/TAR до глубины 8 / `16 MiB` проба) с карантином под fd-блокировкой SHA-256.
+  - **BPF-LSM Credential Guard:** Хук `file_open` защищает `/etc/shadow`, `/etc/gshadow` и файлы секретов (разрешённый список для `sshd`, `sudo`, `su`, `login`, `cron`, `passwd`, `useradd`/`usermod`/`groupadd`), никогда не блокируя вход при неактивном состоянии.
+  - **StyX Egress, обнаружение C2-маяков и 16 MiB Flow-телеметрия:** Символические пути `cgroup_path` с перерасчётом cgroup2-inode после перезапуска (`degraded` при дрейфе вместо тихого fail-open), буфер `FLOW_EVENTS` 16 MiB и раздельная индикация `enforcement_active` vs. `telemetry_state`.
+  - **Эфемерные Parser Cells (`gedefense-cell-helper.service`), Witness и Emergency Lockdown:** Одноразовые песочницы пространств имён/seccomp (`VGTGC2`), внешние Ed25519-чеки, мгновенный XDP/TC drop-latch и блокировка составных BadUSB-устройств (`HID+Storage`/`HID+CDC`).
+- **Мастер настройки (`00`–`08`) и офлайн-шаблон `AGENTS.md`:** Пошаговый мастер в Web UI и read-only-first `AGENTS.md` для локальных CLI-агентов по SSH (`POST /api/v1/settings/{module}/preview` → `PUT`) — без входящего AI-API.
+
+### 💻 Настольный ПК / Рабочая станция vs. 🖥️ Linux-сервер — что защищает V6.2
+
+| Среда | Ключевые угрозы | Активные механизмы при `enforce` |
+|---|---|---|
+| **Linux ПК / Рабочая станция** | Zero-click уязвимости парсеров, составные BadUSB-импланты, дамп ключей брокеров, беcфайловая нагрузка (`memfd`/`PROT_EXEC`), тихие C2-маяки | **Parser Cells** изолируют парсинг; **Lockdown** блокирует BadUSB и замораживает брокеры; **StyX (`monitor`)** выявляет маяки; **Titan Exec (`contain`/`untrusted`)** контролирует опасные пути запуска |
+| **Linux-сервер (Web / API / Compute)** | L7 SQLi/RCE/веб-шеллы, исходящие C2/утечки из веб-cgroup, дропы в `/tmp`/`/var/www`, шифровальщики, чтение `/etc/shadow` | **L7 Edge/WAF + Kinetic XDP** отбивают сетевой/HTTP-флуд и инъекции; **StyX (`per_cell enforce`)** обрывает egress воркеров; **Titan Exec + Ransomware + On-Write + Credential Guard** пресекают пост-эксплуатацию; **Witness** фиксирует контрольные точки вовне |
+
+> [!WARNING]
+> **СТАТУС РЕЛИЗА И КВАЛИФИКАЦИИ (Версия 6.2.0 / V6).**  
+> GeDefense V6 активно развивается для тестовых и квалификационных сред. Автоматизированные гейты проверяют воспроизводимость сборки, подписи Ed25519, тесты Go/Rust и статические инварианты безопасности; внешние якоря доверия (публичный CA, RFC3161, CRL/OCSP, инфраструктура подписи фидов) и проверка eBPF-верификатора/NIC XDP остаются обязательным этапом квалификации на целевом хосте. Перед включением `enforce` в продакшене изучите [SECURITY.md](SECURITY.md), [RELEASE-NOTES.md](RELEASE-NOTES.md) и [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
@@ -548,17 +549,17 @@ Observe ──→ Canary ──→ Enforce
 
 ```bash
 # Загрузить инсталлятор
-wget https://github.com/visiongaiatechnology/gedefense/releases/download/v6.1.2/VGT_GeDefense_V6_6.1.2_OneClick.run
+wget https://github.com/visiongaiatechnology/gedefense/releases/download/v6.2.0/VGT_GeDefense_V6_6.2.0_OneClick.run
 
 # Проверить SHA-256
-sha256sum --check VGT_GeDefense_V6_6.1.2_OneClick.run.sha256
+sha256sum --check VGT_GeDefense_V6_6.2.0_OneClick.run.sha256
 
 # Установить (требуются права root)
-chmod 700 VGT_GeDefense_V6_6.1.2_OneClick.run
-sudo ./VGT_GeDefense_V6_6.1.2_OneClick.run
+chmod 700 VGT_GeDefense_V6_6.2.0_OneClick.run
+sudo ./VGT_GeDefense_V6_6.2.0_OneClick.run
 ```
 
-> **Доступность инсталлятора:** Официальные автономные установочные ассеты v6.1.2 (`VGT_GeDefense_V6_6.1.2_OneClick.run`) публикуются вместе с подписанным GitHub Release.
+> **Доступность инсталлятора:** Официальные автономные установочные ассеты v6.2.0 (`VGT_GeDefense_V6_6.2.0_OneClick.run`) публикуются вместе с подписанным GitHub Release.
 
 > Инсталлятор и контрольные суммы публикуются только после успешного прохождения всех этапов GitHub CI и квалификационных проверок целевого хоста. Никогда не запускайте непроверенные файлы RUN.
 
@@ -592,7 +593,7 @@ sudo ./VGT_GeDefense_V6_6.1.2_OneClick.run
 
 ---
 
-## 🚧 Известные ограничения (6.1.0 / V6)
+## 🚧 Известные ограничения (6.2.0 / V6)
 
 - Отсутствие поддержки Swarm / Mesh
 - Отсутствие разгрузки QUIC
@@ -614,6 +615,29 @@ sudo ./VGT_GeDefense_V6_6.1.2_OneClick.run
 ---
 
 ## 📋 Журнал изменений (Changelog)
+
+### v6.2.0 — Максимизация защиты и устойчивость телеметрии *(Текущий релиз — 22.11.2026)*
+
+- **Вредоносное ПО и архивы (`M1.1`–`M1.3`):** Асинхронный `FAN_CLOSE_WRITE`-наблюдатель для `/tmp`, `/var/tmp`, `/dev/shm`, `/var/www` (сканирование независимо от UID с пробой до `16 MiB` / полным сканом до `64 MiB`), ограниченный рекурсивный разбор ZIP/GZIP/TAR (глубина 8, fail-closed при zip-slip), `PrivateTmp=false` с узкими правами, fd-карантин и проверка raw-body в HTTP `POST`/`PUT`.
+- **Сдерживание на хосте и модули ядра (`M2.1`–`M2.4`):** Глобальный режим TITAN Exec `untrusted` (`4`) через ABI-2; `XDR_KILL_TREE` / `GROUP_STOP` / `GROUP_CONT` с проверкой `pidfd`; eBPF-сенсор ransomware (`vfs_write`/`vfs_rename`/`vfs_unlink`), вооружаемый при attach с тиком дренирования `100 мс` и обратимым `SIGSTOP`; BPF-LSM Credential Guard (`file_open`) для `/etc/shadow`, `/etc/gshadow` и секретов (расширенный allowlist для TTY `login`, `cron`, `useradd`, `dpkg`).
+- **StyX и устойчивая потоковая телеметрия (`M3.1`–`M3.2`):** Символические `cgroup_path`-идентичности с динамическим резолвером cgroup2-inode (статус `degraded` при дрейфе вместо тихого fail-open), кольцо `FLOW_EVENTS` 16 MiB / батчи по 64 события и раздельное отображение `enforcement_active` и `telemetry_state`.
+- **WAF, харденинг и контекст (`M4.1`–`M4.5`, `M5.1`–`M5.2`):** Нормализация SQL-комментариев/пробелов, сканер секретных конфигов (`/.env`, `.git/config`, резервные копии), разбор `;`-цепочек, fast-pass `780 KB–1.5 MB`, детерминированные `429 + Retry-After`, профиль `astraeaos-cis-l1` (21-битный каталог Go/Rust) + opt-in `gedefense-cis-baseline` и корреляция Kinetic→XDR.
+- **Верификация в бенчмарке:** Подтверждено **`86.16 / 100 (PASS)`** в VGT HardRed (`0.0%` Det/Prot FPR) после закрытия всех пост-аудитных замечаний (`docs/V6.2.0-RELEASE.md`).
+
+### v6.1.2 — Предварительные условия инсталлятора и фикс подписи фидов *(20.11.2026)*
+
+- **Предварительные условия для чистой установки (`scripts/oneclick-installer-header.sh`):** Создание системной группы `gedefense-desktop` и каталогов `/run/gedefense-scan`, `/run/gedefense`, `/sys/fs/cgroup/vgt-cells` до старта юнитов без перезагрузки, привязка `CERT_FILE` к `${TLS_DIR}/access.crt` и защита JSON-парсинга в `reconcile_post_upgrade_posture()`.
+- **Парсер ключей подписи фидов (`control/feed_signing.go`):** Устранено обрезание 32/64-байтовых ключей Ed25519, оканчивающихся на `0x0d` + `
+`.
+
+### v6.1.1 — Хотфикс безопасности и совместимости с ядром *(19.11.2026)*
+
+- **Исправления аудитов (`VGT-AUDIT-20261118-GD61` R2/R3 и `VGT-AUDIT-2026-11-19` `FIND-001`–`FIND-005`):** Захват `AF_PACKET`/`CN_PROC` вынесен в `gedefense-capture-helper.service` (`gedefense-control.service` остаётся без capabilities); добавлен фильтр seccomp `__X32_SYSCALL_BIT` (`FIND-001`), ограничены карты TLS-сенсора (`FIND-002`), синхронизирован ownership `auto_network_drop` в Lockdown (`FIND-003`), усилена проверка составных USB по `bNumInterfaces` и uevent (`FIND-004`), а также очистка заголовков `Connection` в Gateway (`FIND-005`).
+- **Kernel 7.3 BTF и авто-охлаждение Cockpit:** Приём 32-байтового заголовка BTF v1 (`24 <= hdr_len <= data.len()`) и двухступенчатое охлаждение светофора (`0–15 мин` красный → `15–60 мин` жёлтый → `> 60 мин` зелёный).
+
+### v6.1.0 — Web Exposure, Worker Integrity, TLS Sensor, LPE Guard и Edge Terminator *(18.11.2026)*
+
+- **Модули A–E:** Мониторинг веб-экспозиции (`/proc` + ELF `.rodata` + loopback ALPN), страж целостности воркеров (`signal:signal_deliver` + `XDR.WORKER_CRASH_STORM`), TLS/ALPN-сенсор с бюджетом h2 control-storm (`INET_DIAG`), LPE-блокировщик (`socket_create` + ASLR/модули) и опциональный Go Edge Terminator с 10 панелями V6 и Settings v18.
 
 ### v6.0.3 — Нормализация критичности кейсов и аудит-гейт *(Текущий релиз — 17.11.2026)*
 
@@ -897,6 +921,6 @@ sudo python3 scripts/update-geoip-db.py /var/lib/vgt/gedefense/geoip.csv
 
 [![VGT](https://img.shields.io/badge/VisionGaia-Technology-cyan?style=for-the-badge)](https://visiongaiatechnology.de)
 
-*VGT GeDefense 6.1.2 (V6) — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
+*VGT GeDefense 6.2.0 (V6) — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
 
 </div>

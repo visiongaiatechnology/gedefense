@@ -12,9 +12,15 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 /// Version advertised and negotiated through `STYX_VERSION` (§5).
 pub const STYX_WIRE_VERSION: &str = "styx-v1";
-/// §3.3 batch ceiling; deliberately below the Go-side limit of 12 (§8.1).
-pub const MAX_STYX_FLOW_EVENTS_PER_RESPONSE: usize = 8;
-pub const MAX_STYX_FLOW_PAYLOAD_BYTES: usize = 2048;
+/// §3.3 batch ceiling: 64 records per poll (was 8). The previous 8-record drain
+/// could not keep the 16 MiB eBPF `FLOW_EVENTS` ring empty under burst load
+/// (`FLOW_RING_DROPS`); the Go parser must be raised to the same values.
+pub const MAX_STYX_FLOW_EVENTS_PER_RESPONSE: usize = 64;
+/// §3.3 response payload ceiling: worst-case record is 203 bytes (16 hex cgroup
+/// id, three 20-digit counters, 32 hex IPv6 bytes, 30 hex comm, separators), so
+/// 64 records plus the `<dropped>|` prefix stay below 14 KiB; 16 KiB is the hard
+/// bound and keeps room for the bounded status prefix.
+pub const MAX_STYX_FLOW_PAYLOAD_BYTES: usize = 16 * 1024;
 /// Backwards-compatible rejection for unknown or malformed command shapes (§5).
 pub const UNKNOWN_COMMAND: &str = "unknown command";
 
@@ -86,9 +92,7 @@ pub fn parse_cgroup_id(token: &str) -> Result<u64, String> {
         0 => Err("styx cgroup id must be non-zero".to_owned()),
         id => Ok(id),
     }
-}
-
-pub fn parse_u16(token: &str) -> Result<u16, String> {
+}pub fn parse_u16(token: &str) -> Result<u16, String> {
     u16::try_from(decimal(token)?).map_err(|_| "styx argument is out of range".to_owned())
 }
 
@@ -97,19 +101,17 @@ pub fn parse_u8(token: &str) -> Result<u8, String> {
 }
 
 pub fn parse_mode(token: &str) -> Result<u8, String> {
-    let mode = parse_u8(token)?;
-    if mode > STYX_MODE_ENFORCE {
-        return Err("styx mode must be 0, 1 or 2".to_owned());
+    match parse_u8(token)? {
+        mode @ 0..=STYX_MODE_ENFORCE => Ok(mode),
+        _ => Err("styx mode must be 0, 1 or 2".to_owned()),
     }
-    Ok(mode)
 }
 
 pub fn parse_mode_flags(token: &str) -> Result<u8, String> {
-    let flags = parse_u8(token)?;
-    if flags & !STYX_MODE_FLAGS_KNOWN != 0 {
-        return Err("styx mode flags contain unknown bits".to_owned());
+    match parse_u8(token)? {
+        flags if flags & !STYX_MODE_FLAGS_KNOWN == 0 => Ok(flags),
+        _ => Err("styx mode flags contain unknown bits".to_owned()),
     }
-    Ok(flags)
 }
 
 pub fn parse_global_flags(token: &str) -> Result<u8, String> {
@@ -222,7 +224,6 @@ pub fn parse_global_request(args: &[&str]) -> Result<StyxGlobalRequest, String> 
         flags: parse_global_flags(flags)?,
     })
 }
-
 /// Validated `STYX_MODE_SET` request: `(cgroup_id, mode, flags)`.
 pub fn parse_mode_set_request(args: &[&str]) -> Result<(u64, u8, u8), String> {
     let [cgroup_id, mode, flags] = args else {
@@ -280,7 +281,6 @@ pub fn parse_allow_request(args: &[&str]) -> Result<StyxAllowRequest, String> {
         proto_mask,
     })
 }
-
 /// Block and resolver commands share one shape: `family`, `cidr`.
 pub fn parse_prefix_request(args: &[&str]) -> Result<StyxCidr, String> {
     let [family, cidr] = args else {
@@ -436,7 +436,6 @@ impl StyxAllowRequest {
         }
     }
 }
-
 /// §4 `STYX_GLOBAL` word: `epoch (low 32) | flags << 32 | mode << 40`.
 pub fn encode_styx_global(epoch: u32, mode: u8, flags: u8) -> u64 {
     debug_assert!(mode <= STYX_MODE_ENFORCE);
@@ -493,7 +492,6 @@ pub fn encode_styx_flow_event_text(event: &FlowEvent) -> Option<String> {
         comm_hex
     ))
 }
-
 /// §5 `STYX_FLOW_HEALTH`: six decimal fields in fixed order.
 pub fn encode_styx_flow_health(c: &[u64; 6]) -> String {
     format!("{}:{}:{}:{}:{}:{}", c[0], c[1], c[2], c[3], c[4], c[5])

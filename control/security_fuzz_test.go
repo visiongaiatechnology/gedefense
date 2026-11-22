@@ -18,7 +18,7 @@ func FuzzCoreResponseParser(f *testing.F) {
 	f.Add(strings.Repeat("A", maxCoreResponseBytes+1))
 	f.Fuzz(func(t *testing.T, response string) {
 		message, err := parseCoreResponse(response, nonce, key)
-		if err == nil && len(message) > 2048 {
+		if err == nil && len(message) > maxCoreResponsePayloadBytes {
 			t.Fatalf("accepted oversized authenticated payload: %d", len(message))
 		}
 	})

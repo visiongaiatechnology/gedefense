@@ -1,3 +1,35 @@
+//! Privileged process response primitives of the Rust core.
+//!
+//! 6.1.x: single-PID response via `pidfd_send_signal` with a double-checked
+//! `/proc/<pid>/stat` start-time identity (`XDR_STOP`, `XDR_CONT`/`XDR_RESUME`,
+//! `XDR_KILL`).
+//!
+//! 6.2.0 ABI (M2.3, endpoint P1): the kill family is extended by a *bounded
+//! process-tree/process-group* response (implementation in [`crate::process_tree`]).
+//! Wire commands (exactly):
+//!
+//! ```text
+//! XDR_KILL_TREE <pid> <start_ticks> <rule>     -> "killed:<n>"
+//! XDR_GROUP_STOP <pgid> <rule>                 -> "stopped"
+//! XDR_GROUP_CONT <pgid> <rule>                 -> "resumed"
+//! ```
+//!
+//! `pid`/`start_ticks`/`pgid` are strict decimal tokens, `rule` uses the
+//! pre-existing `valid_rule_token` alphabet, `n` is the number of processes
+//! that received `SIGKILL` (root included). The tree response is bounded
+//! (`MAX_TREE_SIGNALS` members, `MAX_TREE_DEPTH` levels, `MAX_TREE_PROCESSES`
+//! snapshot); exceeding a budget is an error (fail-closed), never a partially
+//! silent partial kill. Every target is re-verified by start ticks before and
+//! after `pidfd_open`, so PID reuse can only lose a kill, never hit an
+//! unrelated process. `XDR_GROUP_STOP`/`XDR_GROUP_CONT` are the reversible
+//! immediate-freeze pair of the M2.2 ransomware broker; the own process group
+//! is always refused.
+//!
+//! Hard protection allowlist (compiled in, the root is an error instead of a
+//! silent skip): PID 1..4, the core itself, `systemd`/`systemd-*`, `sshd`,
+//! every `gedefense-*` task, kernel threads (unreadable `/proc/<pid>/exe`) and
+//! processes running the protected system executables.
+
 use crate::BoxError;
 use std::{
     ffi::CString,
@@ -13,21 +45,10 @@ pub(super) fn valid_rule_token(rule: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
 }
 
-fn proc_start_ticks(pid: i32) -> Result<u64, BoxError> {
-    let stat = fs::read_to_string(format!("/proc/{pid}/stat"))?;
-    let close = stat.rfind(')').ok_or("malformed proc stat")?;
-    let fields: Vec<&str> = stat
-        .get(close + 2..)
-        .ok_or("malformed proc stat")?
-        .split_whitespace()
-        .collect();
-    if fields.len() <= 19 {
-        return Err("short proc stat".into());
-    }
-    Ok(fields[19].parse::<u64>()?)
-}
-
-fn objective_kill_evidence(pid: i32, rule: &str) -> bool {
+/// Objective evidence contract for `SIGKILL` (unchanged from 6.1.x; the tree
+/// broker re-validates it for the tree root): the rule name decides which
+/// `/proc` fact must be verifiable before a kill.
+pub(crate) fn objective_kill_evidence_for_root(pid: i32, rule: &str) -> bool {
     let exe = fs::read_link(format!("/proc/{pid}/exe"))
         .ok()
         .map(|path| path.to_string_lossy().into_owned())
@@ -37,6 +58,11 @@ fn objective_kill_evidence(pid: i32, rule: &str) -> bool {
         "XDR.EXE_DELETED" => exe.ends_with(" (deleted)"),
         "XDR.TEMP_EXEC" => {
             exe.starts_with("/tmp/") || exe.starts_with("/var/tmp/") || exe.starts_with("/dev/shm/")
+        }
+        "XDR.RANSOM_ENTROPY_BURST" | "XDR.RANSOM_RENAME_STORM" => {
+            // The ransomware broker already correlated the kernel sample; the
+            // kill evidence is the live root identity that was checked above.
+            !exe.is_empty() || fs::metadata(format!("/proc/{pid}/stat")).is_ok()
         }
         "KD.LINUX.DESTRUCTIVE" => {
             let command = fs::read(format!("/proc/{pid}/cmdline"))
@@ -66,7 +92,7 @@ pub(super) fn pidfd_signal(
     if signal != libc::SIGSTOP && signal != libc::SIGKILL && signal != libc::SIGCONT {
         return Err("unsupported signal".into());
     }
-    if proc_start_ticks(pid)? != expected_start {
+    if crate::process_tree::proc_start_ticks(pid)? != expected_start {
         return Err("PID identity mismatch before pidfd_open".into());
     }
     // SAFETY: pidfd_open is called with a validated positive PID and flags=0.
@@ -75,10 +101,10 @@ pub(super) fn pidfd_signal(
         return Err(std::io::Error::last_os_error().into());
     }
     let result = (|| {
-        if proc_start_ticks(pid)? != expected_start {
+        if crate::process_tree::proc_start_ticks(pid)? != expected_start {
             return Err("PID identity mismatch after pidfd_open".into());
         }
-        if signal == libc::SIGKILL && !objective_kill_evidence(pid, rule) {
+        if signal == libc::SIGKILL && !objective_kill_evidence_for_root(pid, rule) {
             return Err("kill rejected: objective evidence missing".into());
         }
         // SAFETY: pidfd is identity-checked, signal is caller-restricted to

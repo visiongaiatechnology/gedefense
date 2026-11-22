@@ -142,6 +142,12 @@ const (
 	airlockScanBudgetBytes    = 64 << 20
 )
 
+// M1.3: raw HTTP request bodies (POST/PUT, octet-stream or unknown content type)
+// are inspected with the same streaming scan as uploaded objects. The marker set
+// covers the industry-standard AV test signature plus the generic webshell
+// idiom (a superglobal passed straight into an interpreter primitive).
+var airlockMalwareMarkerPattern = regexp.MustCompile(`(?i)(?:EICAR-STANDARD-ANTIVIRUS-TEST-FILE|\b(?:eval|assert|system|passthru|exec|shell_exec|popen|proc_open)\s*\(\s*\$_(?:GET|POST|REQUEST|COOKIE))`)
+
 // airlockContentSignals accumulates the independent content classes while the
 // bytes are streamed. The evaluation order that assigns the reported threat
 // type stays in evaluateInspection; this type only records what was seen.
@@ -151,6 +157,7 @@ type airlockContentSignals struct {
 	svgActiveContent  bool
 	svgDataURI        bool
 	polyglotIndex     int
+	malwareMarker     bool
 }
 
 func newAirlockContentSignals() airlockContentSignals {
@@ -161,7 +168,7 @@ func newAirlockContentSignals() airlockContentSignals {
 // the remaining bytes only need to be read (for the digest) and no longer
 // matched.
 func (s *airlockContentSignals) complete() bool {
-	return s.htmlActiveContent && s.svgXXE && s.svgActiveContent && s.svgDataURI && s.polyglotIndex >= 0
+	return s.htmlActiveContent && s.svgXXE && s.svgActiveContent && s.svgDataURI && s.malwareMarker && s.polyglotIndex >= 0
 }
 
 func (s *airlockContentSignals) consume(window []byte) {
@@ -170,6 +177,9 @@ func (s *airlockContentSignals) consume(window []byte) {
 	}
 	if !s.htmlActiveContent && htmlActiveContentPattern.Match(window) {
 		s.htmlActiveContent = true
+	}
+	if !s.malwareMarker && airlockMalwareMarkerPattern.Match(window) {
+		s.malwareMarker = true
 	}
 	if !s.svgXXE && svgXXEEntity.Match(window) {
 		s.svgXXE = true

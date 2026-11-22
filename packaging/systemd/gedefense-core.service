@@ -22,7 +22,24 @@ LimitMEMLOCK=infinity
 NoNewPrivileges=true
 CapabilityBoundingSet=CAP_BPF CAP_NET_ADMIN CAP_PERFMON CAP_SYS_ADMIN CAP_SYS_RESOURCE CAP_KILL
 AmbientCapabilities=CAP_BPF CAP_NET_ADMIN CAP_PERFMON CAP_SYS_ADMIN CAP_SYS_RESOURCE CAP_KILL
-PrivateTmp=true
+# M1.3 (6.2.0) tmp visibility decision:
+# The core's fanotify sensors must see the *host* drop paths. `PrivateTmp=true`
+# gives the service a private tmpfs at /tmp and /var/tmp, so every payload that
+# the system, a web stack or an operator drops into the real /tmp, /var/tmp or
+# /dev/shm was invisible to the on-access/on-write scanners (and the 6.1.2
+# HardRed run showed exactly that blind spot). `PrivateTmp=false` therefore is a
+# deliberate functional requirement, not an oversight: the core runs as root
+# with CAP_BPF/CAP_SYS_ADMIN and could reach those paths anyway, and every
+# quarantine operation stays fd-anchored (openat2/O_NOFOLLOW, no path-based
+# writes). The remaining sandbox is unchanged and still strict:
+# `ProtectSystem=strict` keeps the whole hierarchy read-only except the exact
+# grants below, so /tmp, /var/tmp, /dev/shm and /var/www are writable only
+# because the quarantine broker needs to move a detected payload out of them
+# (a read-only mount would make FIND-035's copy fallback refuse the capture).
+# /home and /opt stay read-only: their exec protection remains
+# `FAN_OPEN_EXEC_PERM`, they are not on-write roots, and no secret/state path
+# gains write access. CapabilityBoundingSet/AmbientCapabilities are unchanged.
+PrivateTmp=false
 PrivateDevices=true
 ProtectSystem=strict
 ProtectHome=read-only
@@ -43,11 +60,27 @@ SystemCallFilter=@system-service bpf perf_event_open pidfd_open pidfd_send_signa
 SystemCallErrorNumber=EPERM
 ReadOnlyPaths=/opt/vgt/gedefense/current /etc/vgt/gedefense/secrets /etc/vgt/gedefense/malware-hashes.sha256 /home -/sys/kernel/tracing -/sys/kernel/debug/tracing
 ReadWritePaths=/run/vgt-gedefense /run/gedefense-scan /sys/fs/bpf /var/lib/vgt/gedefense/quarantine /var/lib/vgt/gedefense/canaries
+# M1.1/M1.3 (6.2.0): the four on-write drop roots. They are the exact default
+# `--on-write-watch-root` set of the core; write access is required so the
+# quarantine broker can rename the detected file out of the drop path. The
+# leading "-" keeps hosts without /var/www (or a tmpfs /dev/shm) starting.
+ReadWritePaths=-/tmp -/var/tmp -/dev/shm -/var/www
 ReadWritePaths=/etc/sysctl.d
 ReadWritePaths=-/proc/sys/kernel/kptr_restrict -/proc/sys/kernel/dmesg_restrict -/proc/sys/kernel/randomize_va_space -/proc/sys/kernel/yama/ptrace_scope -/proc/sys/kernel/unprivileged_bpf_disabled -/proc/sys/kernel/unprivileged_userns_clone
 ReadWritePaths=-/proc/sys/fs/protected_fifos -/proc/sys/fs/protected_regular -/proc/sys/fs/suid_dumpable
 ReadWritePaths=-/proc/sys/net/ipv4/tcp_syncookies -/proc/sys/net/ipv4/conf/all/accept_redirects -/proc/sys/net/ipv4/conf/default/accept_redirects -/proc/sys/net/ipv4/conf/all/send_redirects -/proc/sys/net/ipv4/conf/default/send_redirects
 ReadWritePaths=-/proc/sys/net/ipv6/conf/all/accept_redirects -/proc/sys/net/ipv6/conf/default/accept_redirects
+# M5.1 (6.2.0): additional CIS/Lynis controls need an exact write grant even
+# though ProtectKernelTunables=true makes /proc/sys read-only by default. The
+# leading "-" keeps hosts where a key is absent (e.g. old kernels) startable;
+# the core's typed allowlist still rejects every value outside its domain.
+ReadWritePaths=-/proc/sys/net/ipv4/conf/all/rp_filter -/proc/sys/net/ipv4/conf/default/rp_filter
+ReadWritePaths=-/proc/sys/net/ipv4/conf/all/log_martians -/proc/sys/net/ipv4/conf/default/log_martians
+ReadWritePaths=-/proc/sys/net/ipv4/icmp_echo_ignore_broadcasts -/proc/sys/net/ipv4/icmp_ignore_bogus_error_responses
+ReadWritePaths=-/proc/sys/fs/protected_hardlinks -/proc/sys/fs/protected_symlinks
+ReadWritePaths=-/proc/sys/kernel/perf_event_paranoid -/proc/sys/dev/tty/ldisc_autoload
+ReadWritePaths=-/proc/sys/vm/swappiness
+ReadWritePaths=-/proc/sys/net/ipv6/conf/all/disable_ipv6 -/proc/sys/net/ipv6/conf/default/disable_ipv6
 # CVE-2026-98432 (net.mptcp.enabled) is mitigated by the core's allowlisted
 # compare-set sysctl path; the mitigation guard reads and asserts it through the
 # privileged core. ProtectKernelTunables=true keeps /proc/sys read-only, so this

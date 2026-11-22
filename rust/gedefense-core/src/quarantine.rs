@@ -10,7 +10,7 @@ use std::{
     error::Error,
     ffi::{CStr, CString, OsStr},
     fs::{self, File, OpenOptions},
-    io::{Read, Write},
+    io::{Read, Seek, SeekFrom, Write},
     os::{
         fd::{AsRawFd, FromRawFd, OwnedFd, RawFd},
         unix::{
@@ -96,6 +96,19 @@ impl FileIdentity {
             return Err("quarantine identity exceeds typed bounds".into());
         }
         Ok(identity)
+    }
+
+    /// Decodes the `v1:`-prefixed identity returned by [`QuarantineBroker`].
+    /// Used by the M1.1 on-write sensor to compare the scanned SHA-256 with the
+    /// identity the broker will capture; the version prefix is mandatory so a
+    /// bare field list is never silently accepted as an identity.
+    pub fn decode(encoded: &str) -> Result<Self, BoxError> {
+        let fields: Vec<&str> = encoded
+            .strip_prefix("v1:")
+            .ok_or("quarantine identity version is invalid")?
+            .split(':')
+            .collect();
+        Self::parse(&fields)
     }
 
     fn content_matches(&self, other: &Self) -> bool {
@@ -185,6 +198,68 @@ impl QuarantineBroker {
                 Err(error.into())
             }
         }
+    }
+
+    /// M1.1 on-write capture using the kernel-opened fanotify descriptor so
+    /// non-world-readable files (e.g. `0600`/`0660` under CIS `UMASK 027`) in
+    /// traversable drop roots like `/tmp` are quarantined without regaining
+    /// `CAP_DAC_OVERRIDE` or `CAP_DAC_READ_SEARCH`.
+    pub fn quarantine_open_file(
+        &self,
+        encoded_path: &str,
+        source: &mut File,
+        object_id: &str,
+        expected_sha256: [u8; 32],
+        expected_size: u64,
+    ) -> Result<String, BoxError> {
+        validate_object_id(object_id)?;
+        let fd_meta = source.metadata()?;
+        if !fd_meta.is_file() || fd_meta.len() > MAX_FILE_BYTES || fd_meta.len() != expected_size {
+            return Err("quarantine source identity changed before capture".into());
+        }
+        let expected = file_identity_from_metadata(&fd_meta, expected_sha256)?;
+        let path = decode_path(encoded_path)?;
+        let (parent, basename) = open_parent_and_name(&path)?;
+        let Some(before) = stat_at(parent.as_raw_fd(), &basename)? else {
+            return Err(std::io::Error::from_raw_os_error(libc::ENOENT).into());
+        };
+        if !stat_matches_identity(&before, &expected) {
+            return Err("quarantine source identity changed before capture".into());
+        }
+        let staging_name = staging_name(object_id)?;
+        rename_noreplace(
+            parent.as_raw_fd(),
+            &basename,
+            parent.as_raw_fd(),
+            &staging_name,
+        )?;
+        sync_fd(parent.as_raw_fd())?;
+
+        let mut object_committed = false;
+        let result = (|| {
+            let Some(staged) = stat_at(parent.as_raw_fd(), &staging_name)? else {
+                return Err("quarantine staged file disappeared".into());
+            };
+            if !stat_matches_identity(&staged, &expected) {
+                return Err("quarantine source identity changed after atomic capture".into());
+            }
+            self.encrypt_open_source(source, object_id, &expected)?;
+            object_committed = true;
+            unlink_at(parent.as_raw_fd(), &staging_name)?;
+            sync_fd(parent.as_raw_fd())?;
+            Ok(expected.encode())
+        })();
+
+        if result.is_err() {
+            if object_committed {
+                let _ = self.remove_object(object_id);
+            }
+            if matches!(stat_at(parent.as_raw_fd(), &staging_name), Ok(Some(_))) {
+                let _ = rename_noreplace(parent.as_raw_fd(), &staging_name, parent.as_raw_fd(), &basename);
+                let _ = sync_fd(parent.as_raw_fd());
+            }
+        }
+        result
     }
 
     fn finish_staged_quarantine(
@@ -389,6 +464,16 @@ impl QuarantineBroker {
     ) -> Result<(), BoxError> {
         let source_fd = open_regular_at(parent_fd, staging_name)?;
         let mut source = File::from(source_fd);
+        self.encrypt_open_source(&mut source, object_id, expected)
+    }
+
+    fn encrypt_open_source(
+        &self,
+        source: &mut File,
+        object_id: &str,
+        expected: &FileIdentity,
+    ) -> Result<(), BoxError> {
+        source.seek(SeekFrom::Start(0))?;
         let temporary_path = self.object_dir.join(format!(".{object_id}.tmp"));
         let mut output = OpenOptions::new()
             .create_new(true)
@@ -715,23 +800,35 @@ fn inspect_at(parent_fd: RawFd, name: &CStr) -> Result<FileIdentity, BoxError> {
     let bytes = digest.finalize();
     let mut sha256 = [0u8; 32];
     sha256.copy_from_slice(&bytes);
+    file_identity_from_metadata(&after, sha256)
+}
+
+fn file_identity_from_metadata(meta: &fs::Metadata, sha256: [u8; 32]) -> Result<FileIdentity, BoxError> {
     Ok(FileIdentity {
-        size: after.len(),
-        mode: after.mode() & 0o7777,
-        uid: after.uid(),
-        gid: after.gid(),
-        device: after.dev(),
-        inode: after.ino(),
-        modified_nanos: after
+        size: meta.len(),
+        mode: meta.mode() & 0o7777,
+        uid: meta.uid(),
+        gid: meta.gid(),
+        device: meta.dev(),
+        inode: meta.ino(),
+        modified_nanos: meta
             .mtime()
             .checked_mul(1_000_000_000)
-            .and_then(|seconds| seconds.checked_add(after.mtime_nsec()))
+            .and_then(|seconds| seconds.checked_add(meta.mtime_nsec()))
             .ok_or("quarantine modification time overflow")?,
         sha256,
     })
 }
 
-fn path_exists_at(parent_fd: RawFd, name: &CStr) -> Result<bool, BoxError> {
+fn stat_matches_identity(stat: &libc::stat, expected: &FileIdentity) -> bool {
+    (stat.st_mode & libc::S_IFMT) == libc::S_IFREG
+        && stat.st_size >= 0
+        && stat.st_dev as u64 == expected.device
+        && stat.st_ino as u64 == expected.inode
+        && stat.st_size as u64 == expected.size
+}
+
+fn stat_at(parent_fd: RawFd, name: &CStr) -> Result<Option<libc::stat>, BoxError> {
     let mut stat = std::mem::MaybeUninit::<libc::stat>::uninit();
     let result = unsafe {
         libc::fstatat(
@@ -742,13 +839,18 @@ fn path_exists_at(parent_fd: RawFd, name: &CStr) -> Result<bool, BoxError> {
         )
     };
     if result == 0 {
-        return Ok(true);
+        // SAFETY: `fstatat` initialized `stat` on return 0.
+        return Ok(Some(unsafe { stat.assume_init() }));
     }
     let error = std::io::Error::last_os_error();
     if error.raw_os_error() == Some(libc::ENOENT) {
-        return Ok(false);
+        return Ok(None);
     }
     Err(error.into())
+}
+
+fn path_exists_at(parent_fd: RawFd, name: &CStr) -> Result<bool, BoxError> {
+    Ok(stat_at(parent_fd, name)?.is_some())
 }
 
 fn rename_noreplace(
@@ -1414,6 +1516,42 @@ mod tests {
         assert!(leftovers.is_empty(), "vault leftovers: {leftovers:?}");
         fs::set_permissions(&source_dir, fs::Permissions::from_mode(0o755))
             .expect("restore directory mode");
+        fs::remove_dir_all(&root).expect("test cleanup");
+    }
+
+    #[test]
+    fn quarantine_open_file_captures_already_open_descriptor_without_reopen() {
+        let root = test_root("open-fd-quarantine");
+        let source_dir = root.join("source");
+        let object_dir = root.join("vault");
+        fs::create_dir_all(&source_dir).expect("source directory");
+        let source_path = source_dir.join("secret_payload.txt");
+        let payload = b"open-fd-quarantine-payload";
+        fs::write(&source_path, payload).expect("write source");
+        let mut handle = File::open(&source_path).expect("open source");
+        // Tighten permissions before capture; open_regular_at would require read
+        // bits (or DAC bypass) when reopening by path, whereas the kernel-held
+        // fanotify descriptor captures via the open fd + fstatat.
+        fs::set_permissions(&source_path, fs::Permissions::from_mode(0o000))
+            .expect("strip read bits");
+        let digest: [u8; 32] = Sha256::digest(payload).into();
+        let broker =
+            QuarantineBroker::new(object_dir.to_str().expect("object directory"), &[0x77; 32])
+                .expect("broker");
+        let encoded_path = path_token(&source_path);
+        let object_id = "QV-abcdef0123456789";
+        let encoded_identity = broker
+            .quarantine_open_file(&encoded_path, &mut handle, object_id, digest, payload.len() as u64)
+            .expect("open-fd quarantine succeeds");
+        let identity = FileIdentity::decode(&encoded_identity).expect("decode identity");
+        assert_eq!(identity.sha256, digest);
+        assert!(!source_path.exists(), "source must be unlinked after capture");
+        assert_eq!(
+            broker
+                .verify_object(object_id, &identity)
+                .expect("verify vault object"),
+            "verified"
+        );
         fs::remove_dir_all(&root).expect("test cleanup");
     }
 }
