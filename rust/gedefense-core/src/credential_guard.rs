@@ -34,6 +34,7 @@ use std::{
     fs,
     os::unix::fs::MetadataExt,
     path::Path,
+    sync::{Arc, Mutex},
 };
 
 type BoxError = Box<dyn Error + Send + Sync + 'static>;
@@ -47,12 +48,42 @@ const CREDENTIAL_GUARD_HOOK: &str = "file_open";
 /// Startup bound for the secrets-directory scan (matches the map capacity).
 const MAX_SECRET_FILES: usize = 128;
 
+/// Shared handle allowing the on-write scanner to lock a malicious `(dev, ino)`
+/// directly inside the eBPF `MALWARE_DENIED_INODES` map when a non-root `0755`
+/// drop directory refuses unlinking without `CAP_DAC_OVERRIDE`.
+pub(crate) type SharedMalwareInodeLock =
+    Arc<Mutex<Option<Arc<Mutex<AyaHashMap<MapData, [u8; 16], u8>>>>>>;
+
+pub(crate) fn deny_malware_inode(
+    slot: &SharedMalwareInodeLock,
+    dev: u64,
+    ino: u64,
+) -> Result<(), BoxError> {
+    let dev = u32::try_from(dev).map_err(|_| "malware inode lock: device id out of range")?;
+    if dev == 0 || ino == 0 {
+        return Err("malware inode lock: invalid identity".into());
+    }
+    let map_arc = {
+        let guard = slot.lock().map_err(|_| "malware inode lock poisoned")?;
+        guard
+            .as_ref()
+            .cloned()
+            .ok_or("malware inode lock map not yet initialized")?
+    };
+    let mut map = map_arc
+        .lock()
+        .map_err(|_| "malware inode map lock poisoned")?;
+    map.insert(credential_identity_key(dev, ino), 1u8, 0)?;
+    Ok(())
+}
+
 /// Credential guard state owned by the core.
 pub(crate) struct CredentialGuardCore {
     events: RingBuf<MapData>,
     state: AyaArray<MapData, u64>,
     files: AyaHashMap<MapData, [u8; 16], u8>,
     dirs: AyaHashMap<MapData, [u8; 16], u8>,
+    malware_denied_inodes: Arc<Mutex<AyaHashMap<MapData, [u8; 16], u8>>>,
     emitted: PerCpuArray<MapData, u64>,
     ring_drops: PerCpuArray<MapData, u64>,
     read_failures: PerCpuArray<MapData, u64>,
@@ -92,6 +123,10 @@ impl CredentialGuardCore {
             ebpf.take_map("CRED_GUARD_DIRS")
                 .ok_or("CRED_GUARD_DIRS missing")?,
         )?;
+        let malware_denied_inodes = Arc::new(Mutex::new(AyaHashMap::try_from(
+            ebpf.take_map("MALWARE_DENIED_INODES")
+                .ok_or("MALWARE_DENIED_INODES missing")?,
+        )?));
         let emitted = PerCpuArray::try_from(
             ebpf.take_map("CRED_GUARD_EVENTS_EMITTED")
                 .ok_or("CRED_GUARD_EVENTS_EMITTED missing")?,
@@ -113,6 +148,7 @@ impl CredentialGuardCore {
             state,
             files,
             dirs,
+            malware_denied_inodes,
             emitted,
             ring_drops,
             read_failures,
@@ -244,6 +280,12 @@ impl CredentialGuardCore {
             Ok(()) => self.attached = true,
             Err(error) => eprintln!("credential guard attach failed ({error}); inactive"),
         }
+    }
+
+    pub(crate) fn malware_inode_lock_handle(
+        &self,
+    ) -> Arc<Mutex<AyaHashMap<MapData, [u8; 16], u8>>> {
+        Arc::clone(&self.malware_denied_inodes)
     }
 
     /// Truthful enforcement state: hook attached AND at least one protected

@@ -30,7 +30,8 @@ use gedefense_common::{
     STYX_FLOW_EVENT_WIRE_BYTES, STYX_MODE_ENFORCE, STYX_MODE_MASK, STYX_MODE_MONITOR,
     STYX_MODE_OFF, STYX_PROTO_TCP, STYX_PROTO_UNKNOWN, STYX_PROTO_UDP, STYX_VERDICT_ALLOW,
     STYX_VERDICT_AUDIT_DROP, STYX_VERDICT_DEFAULT_DENY, STYX_VERDICT_DNS_PIN, STYX_VERDICT_DROP,
-    STYX_VERDICT_METADATA_VETO, TITAN_EXEC_ACTION_AUDIT, TITAN_EXEC_ACTION_DENY,
+    STYX_VERDICT_METADATA_VETO, KERNEL_PROBE_ACTION_DENY, KERNEL_PROBE_KIND_PROTOCOL,
+    TITAN_EXEC_ACTION_AUDIT, TITAN_EXEC_ACTION_DENY,
     TITAN_EXEC_EVENT_WIRE_BYTES, TITAN_EXEC_HOOK_BPRM, TITAN_EXEC_HOOK_MMAP,
     TITAN_EXEC_MODE_OFF, TITAN_EXEC_MODE_OBSERVE, TITAN_EXEC_MODE_STRICT,
     TITAN_EXEC_MODE_UNTRUSTED, TITAN_EXEC_OFFSETS_ABI,
@@ -51,6 +52,9 @@ mod ransom;
 
 /// 6.2.0 M2.4: file_open LSM credential guard (own map set/program).
 mod credential_guard;
+
+/// Kernel XDR behavioral tracepoints & probe emitters.
+mod xdr_kernel;
 
 const MAX_ALLOWLIST_ENTRIES: u32 = 65_536;
 const EXEC_EVENT_RING_BYTES: u32 = 1 << 20;
@@ -80,6 +84,11 @@ const MAX_CELL_LSM_POLICIES: u32 = 4096;
 // are a documented residual limitation of the bounded eBPF loop.
 const MAX_CGROUP_ANCESTOR_LEVELS: i32 = 64;
 const AF_UNIX: i32 = 1;
+const AF_INET: i32 = 2;
+const AF_INET6: i32 = 10;
+const IPPROTO_RDS: i32 = 21;
+const IPPROTO_DCCP: i32 = 33;
+const IPPROTO_SCTP: i32 = 132;
 const EPERM: i32 = 1;
 
 /// 6.1.0 Module D: the per-cgroup socket-deny bits beyond the pre-existing
@@ -546,6 +555,24 @@ fn try_cell_socket_create(ctx: LsmContext) -> Result<i32, i32> {
     // event drain. The matching userspace boundary is fixed in the core crate
     // (rust/gedefense-core/src/main.rs); this is the kernel-side half.
     if family <= 0 || family > i32::from(u8::MAX) {
+        return Ok(-EPERM);
+    }
+    if (family == AF_INET || family == AF_INET6)
+        && (protocol == IPPROTO_SCTP || protocol == IPPROTO_DCCP || protocol == IPPROTO_RDS)
+    {
+        xdr_kernel::emit_kernel_probe(
+            KERNEL_PROBE_KIND_PROTOCOL,
+            KERNEL_PROBE_ACTION_DENY,
+            0,
+            protocol as u32,
+            if protocol == IPPROTO_SCTP {
+                b"SCTP"
+            } else if protocol == IPPROTO_DCCP {
+                b"DCCP"
+            } else {
+                b"RDS"
+            },
+        );
         return Ok(-EPERM);
     }
     // Walk the complete cgroup-v2 ancestry from the root (level 0) down to the
@@ -1420,6 +1447,7 @@ pub fn gedefense_exec(_ctx: TracePointContext) -> u32 {
         comm,
     };
     let _ = EXEC_EVENTS.output::<ExecEvent>(&event, 0);
+    xdr_kernel::flush_pending_exec_argv(pid_tgid as u32, comm);
     0
 }
 

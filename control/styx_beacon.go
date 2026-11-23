@@ -174,6 +174,9 @@ func (b *StyxBeaconEngine) observeLocked(event CoreStyxFlowEvent, now time.Time)
 		b.dropped++
 		return XDRIncident{}, false
 	}
+	if isIgnoredNonExternalFlow(event, address) {
+		return XDRIncident{}, false
+	}
 	key := beaconFlowKey{cgroupID: event.CgroupID, pid: event.PID, uid: event.UID,
 		family: event.Family, proto: event.Proto, dstIP: address, dstPort: event.DstPort}
 	element, exists := b.flows[key]
@@ -489,6 +492,19 @@ func (b *StyxBeaconEngine) Snapshot() StyxBeaconSnapshot {
 	snapshot.Top = top
 	return snapshot
 }
+// isIgnoredNonExternalFlow suppresses local IPC (loopback), link-local/multicast,
+// and unattributable kernel softirq/timer retransmits (`pid=0` / `swapper/*` / port 0)
+// that otherwise aggregate unrelated timer packets into false BEACON_PERIODICITY hits.
+func isIgnoredNonExternalFlow(event CoreStyxFlowEvent, address netip.Addr) bool {
+	if address.IsLoopback() || address.IsLinkLocalUnicast() || address.IsLinkLocalMulticast() || address.IsMulticast() {
+		return true
+	}
+	if event.PID == 0 || event.Proto == 0 || event.DstPort == 0 {
+		return true
+	}
+	return strings.HasPrefix(sanitizeBeaconComm(event.Comm), "swapper/")
+}
+
 func sanitizeBeaconComm(comm string) string {
 	if comm == "" || len(comm) > 16 || strings.IndexFunc(comm, func(character rune) bool {
 		return character < 0x20 || character == 0x7f || character == ' '

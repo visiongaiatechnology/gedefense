@@ -17,7 +17,7 @@ import (
 	"time"
 )
 
-const version = "6.2.0"
+const version = "6.2.1"
 
 func detectInterface(requested string) (string, error) {
 	if requested != "" && requested != "auto" {

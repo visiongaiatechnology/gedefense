@@ -15,7 +15,11 @@ use crate::{
         perf_attach::{PerfLinkIdInner, PerfLinkInner, perf_attach},
         utils::find_tracefs_path,
     },
-    sys::{SyscallError, perf_event_open_trace_point},
+    sys::{
+        PerfEventIoctlRequest, SyscallError, perf_event_ioctl, perf_event_open_trace_point,
+        perf_event_open_trace_point_cpu,
+    },
+    util::online_cpus,
 };
 
 /// The type returned when attaching a [`TracePoint`] fails.
@@ -86,6 +90,20 @@ impl TracePoint {
         })?;
 
         let link = perf_attach(prog_fd, perf_fd, None /* cookie */)?;
+        // Populate `this_cpu_ptr(tp_event->perf_events)` across all online CPUs so
+        // `perf_syscall_enter` (`trace_syscalls.c`) never skips non-zero CPUs while
+        // keeping a single BPF program entry in `tp_event->prog_array`.
+        if let Ok(cpus) = online_cpus() {
+            for cpu in cpus {
+                if cpu == 0 {
+                    continue;
+                }
+                if let Ok(aux_fd) = perf_event_open_trace_point_cpu(id, cpu) {
+                    let _ = perf_event_ioctl(aux_fd.as_fd(), PerfEventIoctlRequest::Enable);
+                    self.data.aux_perf_fds.push(aux_fd);
+                }
+            }
+        }
         self.data.links.insert(TracePointLink::new(link))
     }
 }

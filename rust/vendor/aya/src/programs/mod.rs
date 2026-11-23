@@ -562,6 +562,7 @@ pub(crate) struct ProgramData<T: Link> {
     pub(crate) verifier_log_level: VerifierLogLevel,
     pub(crate) path: Option<PathBuf>,
     pub(crate) flags: u32,
+    pub(crate) aux_perf_fds: Vec<crate::MockableFd>,
 }
 
 impl<T: Link> ProgramData<T> {
@@ -583,6 +584,7 @@ impl<T: Link> ProgramData<T> {
             verifier_log_level,
             path: None,
             flags: 0,
+            aux_perf_fds: Vec::new(),
         }
     }
 
@@ -610,6 +612,7 @@ impl<T: Link> ProgramData<T> {
             verifier_log_level,
             path: Some(path.to_path_buf()),
             flags: 0,
+            aux_perf_fds: Vec::new(),
         })
     }
 
@@ -722,6 +725,7 @@ fn load_program<T: Link>(
         verifier_log_level,
         path: _,
         flags,
+        aux_perf_fds: _,
     } = data;
     if fd.is_some() {
         return Err(ProgramError::AlreadyLoaded);

@@ -1,0 +1,1292 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "VGT-HardRed::crowdsec",
+          "semanticVersion": "1.0.0",
+          "rules": [
+            {
+              "id": "WAF-BENIGN-01",
+              "name": "Benign HTTP Control",
+              "shortDescription": {
+                "text": "Benign Health Probe"
+              },
+              "properties": {
+                "domain": "hardred-waf",
+                "mitre_technique": "NONE",
+                "polarity": "benign"
+              }
+            },
+            {
+              "id": "WAF-BENIGN-02",
+              "name": "Benign HTTP Control",
+              "shortDescription": {
+                "text": "Benign App Index"
+              },
+              "properties": {
+                "domain": "hardred-waf",
+                "mitre_technique": "NONE",
+                "polarity": "benign"
+              }
+            },
+            {
+              "id": "WAF-BENIGN-03",
+              "name": "Benign HTTP Control",
+              "shortDescription": {
+                "text": "Benign UTF-8 Search"
+              },
+              "properties": {
+                "domain": "hardred-waf",
+                "mitre_technique": "NONE",
+                "polarity": "benign"
+              }
+            },
+            {
+              "id": "WAF-BENIGN-04",
+              "name": "Benign HTTP Control",
+              "shortDescription": {
+                "text": "Benign English SQL Words"
+              },
+              "properties": {
+                "domain": "hardred-waf",
+                "mitre_technique": "NONE",
+                "polarity": "benign"
+              }
+            },
+            {
+              "id": "WAF-BENIGN-05",
+              "name": "Benign HTTP Control",
+              "shortDescription": {
+                "text": "Benign JSON Payload"
+              },
+              "properties": {
+                "domain": "hardred-waf",
+                "mitre_technique": "NONE",
+                "polarity": "benign"
+              }
+            },
+            {
+              "id": "WAF-BENIGN-06",
+              "name": "Benign HTTP Control",
+              "shortDescription": {
+                "text": "Benign Math Query"
+              },
+              "properties": {
+                "domain": "hardred-waf",
+                "mitre_technique": "NONE",
+                "polarity": "benign"
+              }
+            },
+            {
+              "id": "WAF-BENIGN-07",
+              "name": "Benign HTTP Control",
+              "shortDescription": {
+                "text": "Benign File Name Param"
+              },
+              "properties": {
+                "domain": "hardred-waf",
+                "mitre_technique": "NONE",
+                "polarity": "benign"
+              }
+            },
+            {
+              "id": "WAF-BENIGN-08",
+              "name": "Benign HTTP Control",
+              "shortDescription": {
+                "text": "Benign Contact Form"
+              },
+              "properties": {
+                "domain": "hardred-waf",
+                "mitre_technique": "NONE",
+                "polarity": "benign"
+              }
+            },
+            {
+              "id": "NET-BENIGN-01",
+              "name": "Benign Paced Web Traffic",
+              "shortDescription": {
+                "text": "Legitimate paced HTTP traffic (6 req @ 250ms)"
+              },
+              "properties": {
+                "domain": "hardred-netids",
+                "mitre_technique": "NONE",
+                "polarity": "benign"
+              }
+            },
+            {
+              "id": "NET-BENIGN-02",
+              "name": "Benign TLS Connections",
+              "shortDescription": {
+                "text": "Normal TLS 1.3 HTTPS requests (4 handshakes)"
+              },
+              "properties": {
+                "domain": "hardred-netids",
+                "mitre_technique": "NONE",
+                "polarity": "benign"
+              }
+            },
+            {
+              "id": "MAL-BENIGN-01",
+              "name": "Benign Binary & Script Control",
+              "shortDescription": {
+                "text": "Clean signed JSON / minified JS asset in sandbox"
+              },
+              "properties": {
+                "domain": "hardred-malware",
+                "mitre_technique": "NONE",
+                "polarity": "benign"
+              }
+            },
+            {
+              "id": "MAL-EICAR-DISK-01",
+              "name": "Standard AV/YARA EICAR Disk Drop",
+              "shortDescription": {
+                "text": "Write EICAR signature file to sandbox and check quarantine/alert"
+              },
+              "properties": {
+                "domain": "hardred-malware",
+                "mitre_technique": "T1027",
+                "polarity": "attack"
+              }
+            },
+            {
+              "id": "MAL-EICAR-HTTP-01",
+              "name": "Inline L7 EICAR/Malware Upload",
+              "shortDescription": {
+                "text": "POST EICAR payload over HTTP edge proxy/WAF"
+              },
+              "properties": {
+                "domain": "hardred-malware",
+                "mitre_technique": "T1105",
+                "polarity": "attack"
+              }
+            },
+            {
+              "id": "MAL-NESTED-ARCHIVE-01",
+              "name": "Nested Archive & ClamAV Corpus Inspection",
+              "shortDescription": {
+                "text": "8-layer nested ZIP wrapper + clamav-testfiles archive inspection"
+              },
+              "properties": {
+                "domain": "hardred-malware",
+                "mitre_technique": "T1027.002",
+                "polarity": "attack"
+              }
+            },
+            {
+              "id": "EP-BENIGN-01",
+              "name": "Benign Admin Workload",
+              "shortDescription": {
+                "text": "Trusted dpkg-query, tar backup, os-release read, SHA-256 hash"
+              },
+              "properties": {
+                "domain": "hardred-endpoint",
+                "mitre_technique": "NONE",
+                "polarity": "benign"
+              }
+            },
+            {
+              "id": "EP-BENIGN-02",
+              "name": "Benign Admin Process Tree",
+              "shortDescription": {
+                "text": "Normal bash+python3 pipeline listing /etc/nginx configuration"
+              },
+              "properties": {
+                "domain": "hardred-endpoint",
+                "mitre_technique": "NONE",
+                "polarity": "benign"
+              }
+            },
+            {
+              "id": "EP-FILELESS-MEMFD-01",
+              "name": "Fileless Execution (memfd_create)",
+              "shortDescription": {
+                "text": "In-memory ELF/script execution via memfd_create (/proc/self/fd)"
+              },
+              "properties": {
+                "domain": "hardred-endpoint",
+                "mitre_technique": "T1620",
+                "polarity": "attack"
+              }
+            },
+            {
+              "id": "EP-SHM-EXEC-01",
+              "name": "/dev/shm Dropper Execution",
+              "shortDescription": {
+                "text": "Executable script staged & executed from /dev/shm/hardred-sandbox"
+              },
+              "properties": {
+                "domain": "hardred-endpoint",
+                "mitre_technique": "T1059.004",
+                "polarity": "attack"
+              }
+            },
+            {
+              "id": "EP-TMP-ELF-01",
+              "name": "Untrusted Binary Execution (/tmp)",
+              "shortDescription": {
+                "text": "Unverified ELF binary copied to /tmp and executed (TITAN-Exec gate)"
+              },
+              "properties": {
+                "domain": "hardred-endpoint",
+                "mitre_technique": "T1204.002",
+                "polarity": "attack"
+              }
+            },
+            {
+              "id": "EP-LPE-KERNEL-01",
+              "name": "Kernel LPE & Protocol Attack Surface",
+              "shortDescription": {
+                "text": "Blacklisted SCTP/DCCP socket + AF_PACKET + ptrace + /etc/shadow probe"
+              },
+              "properties": {
+                "domain": "hardred-endpoint",
+                "mitre_technique": "T1068",
+                "polarity": "attack"
+              }
+            },
+            {
+              "id": "EP-RANSOM-AES-01",
+              "name": "Ransomware AES-256 Encryption Burst",
+              "shortDescription": {
+                "text": "In-place AES-256-GCM encryption of 120 realistic files (TTFA + pre-kill damage)"
+              },
+              "properties": {
+                "domain": "hardred-endpoint",
+                "mitre_technique": "T1486",
+                "polarity": "attack"
+              }
+            },
+            {
+              "id": "EP-RANSOM-STORM-01",
+              "name": "Ransomware Rename/Wiper Storm",
+              "shortDescription": {
+                "text": "600-file / 50-batch rapid rename+wipe storm (TTFA + pre-kill damage)"
+              },
+              "properties": {
+                "domain": "hardred-endpoint",
+                "mitre_technique": "T1485",
+                "polarity": "attack"
+              }
+            },
+            {
+              "id": "EP-LINEAGE-CHILD-01",
+              "name": "Process Lineage / Child-Kill Resilience",
+              "shortDescription": {
+                "text": "Parent spawns child conducting AES-256 burst (child vs tree kill check)"
+              },
+              "properties": {
+                "domain": "hardred-endpoint",
+                "mitre_technique": "T1059",
+                "polarity": "attack"
+              }
+            },
+            {
+              "id": "EP-C2-EGRESS-01",
+              "name": "Unauthorized C2 Egress (Web Worker Cell)",
+              "shortDescription": {
+                "text": "Outbound HTTP egress to 1.1.1.1 from inside php8.3-fpm.service cgroup"
+              },
+              "properties": {
+                "domain": "hardred-endpoint",
+                "mitre_technique": "T1071.001",
+                "polarity": "attack"
+              }
+            },
+            {
+              "id": "EP-FALCO-01",
+              "name": "Kernel Syscall Behavior (Falco)",
+              "shortDescription": {
+                "text": "Read /etc/shadow by untrusted program"
+              },
+              "properties": {
+                "domain": "hardred-endpoint",
+                "mitre_technique": "T1003.008",
+                "polarity": "attack"
+              }
+            },
+            {
+              "id": "EP-FALCO-02",
+              "name": "Kernel Syscall Behavior (Falco)",
+              "shortDescription": {
+                "text": "Symlink over sensitive /etc target"
+              },
+              "properties": {
+                "domain": "hardred-endpoint",
+                "mitre_technique": "T1036",
+                "polarity": "attack"
+              }
+            },
+            {
+              "id": "EP-FALCO-03",
+              "name": "Kernel Syscall Behavior (Falco)",
+              "shortDescription": {
+                "text": "Ptrace process memory / anti-debug syscall"
+              },
+              "properties": {
+                "domain": "hardred-endpoint",
+                "mitre_technique": "T1055.008",
+                "polarity": "attack"
+              }
+            },
+            {
+              "id": "EP-ART-T1087",
+              "name": "Atomic Red Team Linux TTP",
+              "shortDescription": {
+                "text": "Local Account Enumeration (/etc/passwd, id, lastlog) [yaml=True]"
+              },
+              "properties": {
+                "domain": "hardred-endpoint",
+                "mitre_technique": "T1087.001",
+                "polarity": "attack"
+              }
+            },
+            {
+              "id": "EP-ART-T1059",
+              "name": "Atomic Red Team Linux TTP",
+              "shortDescription": {
+                "text": "Base64 Obfuscated Shell Execution [yaml=True]"
+              },
+              "properties": {
+                "domain": "hardred-endpoint",
+                "mitre_technique": "T1059.004",
+                "polarity": "attack"
+              }
+            },
+            {
+              "id": "EP-ART-T1053",
+              "name": "Atomic Red Team Linux TTP",
+              "shortDescription": {
+                "text": "Cron Persistence Staging & Cleanup [yaml=True]"
+              },
+              "properties": {
+                "domain": "hardred-endpoint",
+                "mitre_technique": "T1053.003",
+                "polarity": "attack"
+              }
+            },
+            {
+              "id": "EP-ART-T1548",
+              "name": "Atomic Red Team Linux TTP",
+              "shortDescription": {
+                "text": "SUID/Capabilities Enumeration [yaml=True]"
+              },
+              "properties": {
+                "domain": "hardred-endpoint",
+                "mitre_technique": "T1548.001",
+                "polarity": "attack"
+              }
+            },
+            {
+              "id": "WAF-SQLI-01",
+              "name": "SQL Injection",
+              "shortDescription": {
+                "text": "SQL Injection (WAF-SQLI-01)"
+              },
+              "properties": {
+                "domain": "hardred-waf",
+                "mitre_technique": "T1190",
+                "polarity": "attack"
+              }
+            },
+            {
+              "id": "WAF-SQLI-02",
+              "name": "SQL Injection",
+              "shortDescription": {
+                "text": "SQL Injection (WAF-SQLI-02)"
+              },
+              "properties": {
+                "domain": "hardred-waf",
+                "mitre_technique": "T1190",
+                "polarity": "attack"
+              }
+            },
+            {
+              "id": "WAF-SQLI-03",
+              "name": "SQL Injection",
+              "shortDescription": {
+                "text": "SQL Injection (WAF-SQLI-03)"
+              },
+              "properties": {
+                "domain": "hardred-waf",
+                "mitre_technique": "T1190",
+                "polarity": "attack"
+              }
+            },
+            {
+              "id": "WAF-XSS-01",
+              "name": "Cross-Site Scripting",
+              "shortDescription": {
+                "text": "Cross-Site Scripting (WAF-XSS-01)"
+              },
+              "properties": {
+                "domain": "hardred-waf",
+                "mitre_technique": "T1059.007",
+                "polarity": "attack"
+              }
+            },
+            {
+              "id": "WAF-XSS-02",
+              "name": "Cross-Site Scripting",
+              "shortDescription": {
+                "text": "Cross-Site Scripting (WAF-XSS-02)"
+              },
+              "properties": {
+                "domain": "hardred-waf",
+                "mitre_technique": "T1059.007",
+                "polarity": "attack"
+              }
+            },
+            {
+              "id": "WAF-LFI-01",
+              "name": "Path Traversal / LFI",
+              "shortDescription": {
+                "text": "Path Traversal / LFI (WAF-LFI-01)"
+              },
+              "properties": {
+                "domain": "hardred-waf",
+                "mitre_technique": "T1083",
+                "polarity": "attack"
+              }
+            },
+            {
+              "id": "WAF-LFI-02",
+              "name": "Double-Encoded Traversal",
+              "shortDescription": {
+                "text": "Double-Encoded Traversal (WAF-LFI-02)"
+              },
+              "properties": {
+                "domain": "hardred-waf",
+                "mitre_technique": "T1083",
+                "polarity": "attack"
+              }
+            },
+            {
+              "id": "WAF-RCE-01",
+              "name": "OS Command Injection",
+              "shortDescription": {
+                "text": "OS Command Injection (WAF-RCE-01)"
+              },
+              "properties": {
+                "domain": "hardred-waf",
+                "mitre_technique": "T1059.004",
+                "polarity": "attack"
+              }
+            },
+            {
+              "id": "WAF-RCE-02",
+              "name": "PHP Webshell Payload",
+              "shortDescription": {
+                "text": "PHP Webshell Payload (WAF-RCE-02)"
+              },
+              "properties": {
+                "domain": "hardred-waf",
+                "mitre_technique": "T1505.003",
+                "polarity": "attack"
+              }
+            },
+            {
+              "id": "WAF-SSTI-01",
+              "name": "Server-Side Template Injection",
+              "shortDescription": {
+                "text": "Server-Side Template Injection (WAF-SSTI-01)"
+              },
+              "properties": {
+                "domain": "hardred-waf",
+                "mitre_technique": "T1190",
+                "polarity": "attack"
+              }
+            },
+            {
+              "id": "WAF-XXE-01",
+              "name": "XML External Entity",
+              "shortDescription": {
+                "text": "XML External Entity (WAF-XXE-01)"
+              },
+              "properties": {
+                "domain": "hardred-waf",
+                "mitre_technique": "T1190",
+                "polarity": "attack"
+              }
+            },
+            {
+              "id": "WAF-SSRF-01",
+              "name": "Cloud Metadata SSRF",
+              "shortDescription": {
+                "text": "Cloud Metadata SSRF (WAF-SSRF-01)"
+              },
+              "properties": {
+                "domain": "hardred-waf",
+                "mitre_technique": "T1552.005",
+                "polarity": "attack"
+              }
+            },
+            {
+              "id": "WAF-SCAN-01",
+              "name": "Exploit Scanner UA / Sensitive File",
+              "shortDescription": {
+                "text": "Exploit Scanner UA / Sensitive File (WAF-SCAN-01)"
+              },
+              "properties": {
+                "domain": "hardred-waf",
+                "mitre_technique": "T1595.002",
+                "polarity": "attack"
+              }
+            },
+            {
+              "id": "WAF-FAILOPEN-01",
+              "name": "Oversized Body Inspection Check",
+              "shortDescription": {
+                "text": "Oversized Body Inspection Check (WAF-FAILOPEN-01)"
+              },
+              "properties": {
+                "domain": "hardred-waf",
+                "mitre_technique": "T1190",
+                "polarity": "attack"
+              }
+            },
+            {
+              "id": "NET-BRUTE-HTTP-01",
+              "name": "HTTP Auth Brute-Force",
+              "shortDescription": {
+                "text": "Rapid HTTP credential spraying (/wp-login.php 25x)"
+              },
+              "properties": {
+                "domain": "hardred-netids",
+                "mitre_technique": "T1110.001",
+                "polarity": "attack"
+              }
+            },
+            {
+              "id": "NET-BRUTE-SSH-01",
+              "name": "SSH Credential Brute-Force",
+              "shortDescription": {
+                "text": "SSH failed login burst (18 attempts -> IP ban test)"
+              },
+              "properties": {
+                "domain": "hardred-netids",
+                "mitre_technique": "T1110.001",
+                "polarity": "attack"
+              }
+            },
+            {
+              "id": "NET-VELOCITY-01",
+              "name": "HTTP/L4 Velocity Burst",
+              "shortDescription": {
+                "text": "High-concurrency connection & request flood (240 req @ 28 threads)"
+              },
+              "properties": {
+                "domain": "hardred-netids",
+                "mitre_technique": "T1499.002",
+                "polarity": "attack"
+              }
+            },
+            {
+              "id": "NET-PORTSCAN-01",
+              "name": "Multi-Port Reconnaissance",
+              "shortDescription": {
+                "text": "16-port TCP connect scan -> Kinetic XDP / Firewall Ban verification"
+              },
+              "properties": {
+                "domain": "hardred-netids",
+                "mitre_technique": "T1046",
+                "polarity": "attack"
+              }
+            }
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "WAF-BENIGN-01",
+          "level": "none",
+          "message": {
+            "text": "[BENIGN_PASS] Benign Health Probe"
+          },
+          "properties": {
+            "detected": false,
+            "prevented": false,
+            "context_maturity": 0,
+            "ttfa_ms": null,
+            "pre_kill_damage": null
+          }
+        },
+        {
+          "ruleId": "WAF-BENIGN-02",
+          "level": "none",
+          "message": {
+            "text": "[BENIGN_PASS] Benign App Index"
+          },
+          "properties": {
+            "detected": false,
+            "prevented": false,
+            "context_maturity": 0,
+            "ttfa_ms": null,
+            "pre_kill_damage": null
+          }
+        },
+        {
+          "ruleId": "WAF-BENIGN-03",
+          "level": "none",
+          "message": {
+            "text": "[BENIGN_PASS] Benign UTF-8 Search"
+          },
+          "properties": {
+            "detected": false,
+            "prevented": false,
+            "context_maturity": 0,
+            "ttfa_ms": null,
+            "pre_kill_damage": null
+          }
+        },
+        {
+          "ruleId": "WAF-BENIGN-04",
+          "level": "none",
+          "message": {
+            "text": "[BENIGN_PASS] Benign English SQL Words"
+          },
+          "properties": {
+            "detected": false,
+            "prevented": false,
+            "context_maturity": 0,
+            "ttfa_ms": null,
+            "pre_kill_damage": null
+          }
+        },
+        {
+          "ruleId": "WAF-BENIGN-05",
+          "level": "none",
+          "message": {
+            "text": "[BENIGN_PASS] Benign JSON Payload"
+          },
+          "properties": {
+            "detected": false,
+            "prevented": false,
+            "context_maturity": 0,
+            "ttfa_ms": null,
+            "pre_kill_damage": null
+          }
+        },
+        {
+          "ruleId": "WAF-BENIGN-06",
+          "level": "error",
+          "message": {
+            "text": "[FALSE_POSITIVE det=True prev=True] Benign Math Query"
+          },
+          "properties": {
+            "detected": true,
+            "prevented": true,
+            "context_maturity": 2,
+            "ttfa_ms": 460.0,
+            "pre_kill_damage": null
+          }
+        },
+        {
+          "ruleId": "WAF-BENIGN-07",
+          "level": "none",
+          "message": {
+            "text": "[BENIGN_PASS] Benign File Name Param"
+          },
+          "properties": {
+            "detected": false,
+            "prevented": false,
+            "context_maturity": 0,
+            "ttfa_ms": null,
+            "pre_kill_damage": null
+          }
+        },
+        {
+          "ruleId": "WAF-BENIGN-08",
+          "level": "none",
+          "message": {
+            "text": "[BENIGN_PASS] Benign Contact Form"
+          },
+          "properties": {
+            "detected": false,
+            "prevented": false,
+            "context_maturity": 0,
+            "ttfa_ms": null,
+            "pre_kill_damage": null
+          }
+        },
+        {
+          "ruleId": "NET-BENIGN-01",
+          "level": "error",
+          "message": {
+            "text": "[FALSE_POSITIVE det=True prev=False] Legitimate paced HTTP traffic (6 req @ 250ms)"
+          },
+          "properties": {
+            "detected": true,
+            "prevented": false,
+            "context_maturity": 2,
+            "ttfa_ms": 1921.47,
+            "pre_kill_damage": null
+          }
+        },
+        {
+          "ruleId": "NET-BENIGN-02",
+          "level": "error",
+          "message": {
+            "text": "[FALSE_POSITIVE det=False prev=True] Normal TLS 1.3 HTTPS requests (4 handshakes)"
+          },
+          "properties": {
+            "detected": false,
+            "prevented": true,
+            "context_maturity": 0,
+            "ttfa_ms": null,
+            "pre_kill_damage": null
+          }
+        },
+        {
+          "ruleId": "MAL-BENIGN-01",
+          "level": "none",
+          "message": {
+            "text": "[BENIGN_PASS] Clean signed JSON / minified JS asset in sandbox"
+          },
+          "properties": {
+            "detected": false,
+            "prevented": false,
+            "context_maturity": 0,
+            "ttfa_ms": null,
+            "pre_kill_damage": null
+          }
+        },
+        {
+          "ruleId": "MAL-EICAR-DISK-01",
+          "level": "error",
+          "message": {
+            "text": "[MISSED] Write EICAR signature file to sandbox and check quarantine/alert (expected defense failed)"
+          },
+          "properties": {
+            "detected": false,
+            "prevented": false,
+            "context_maturity": 0,
+            "ttfa_ms": null,
+            "pre_kill_damage": null
+          }
+        },
+        {
+          "ruleId": "MAL-EICAR-HTTP-01",
+          "level": "warning",
+          "message": {
+            "text": "[PARTIAL det=False prev=True] POST EICAR payload over HTTP edge proxy/WAF (http=None; none)"
+          },
+          "properties": {
+            "detected": false,
+            "prevented": true,
+            "context_maturity": 0,
+            "ttfa_ms": null,
+            "pre_kill_damage": null
+          }
+        },
+        {
+          "ruleId": "MAL-NESTED-ARCHIVE-01",
+          "level": "error",
+          "message": {
+            "text": "[MISSED] 8-layer nested ZIP wrapper + clamav-testfiles archive inspection (expected defense failed)"
+          },
+          "properties": {
+            "detected": false,
+            "prevented": false,
+            "context_maturity": 0,
+            "ttfa_ms": null,
+            "pre_kill_damage": null
+          }
+        },
+        {
+          "ruleId": "EP-BENIGN-01",
+          "level": "none",
+          "message": {
+            "text": "[BENIGN_PASS] Trusted dpkg-query, tar backup, os-release read, SHA-256 hash"
+          },
+          "properties": {
+            "detected": false,
+            "prevented": false,
+            "context_maturity": 0,
+            "ttfa_ms": null,
+            "pre_kill_damage": null
+          }
+        },
+        {
+          "ruleId": "EP-BENIGN-02",
+          "level": "none",
+          "message": {
+            "text": "[BENIGN_PASS] Normal bash+python3 pipeline listing /etc/nginx configuration"
+          },
+          "properties": {
+            "detected": false,
+            "prevented": false,
+            "context_maturity": 0,
+            "ttfa_ms": null,
+            "pre_kill_damage": null
+          }
+        },
+        {
+          "ruleId": "EP-FILELESS-MEMFD-01",
+          "level": "error",
+          "message": {
+            "text": "[MISSED] In-memory ELF/script execution via memfd_create (/proc/self/fd) (expected defense failed)"
+          },
+          "properties": {
+            "detected": false,
+            "prevented": false,
+            "context_maturity": 0,
+            "ttfa_ms": null,
+            "pre_kill_damage": null
+          }
+        },
+        {
+          "ruleId": "EP-SHM-EXEC-01",
+          "level": "error",
+          "message": {
+            "text": "[MISSED] Executable script staged & executed from /dev/shm/hardred-sandbox (expected defense failed)"
+          },
+          "properties": {
+            "detected": false,
+            "prevented": false,
+            "context_maturity": 0,
+            "ttfa_ms": null,
+            "pre_kill_damage": null
+          }
+        },
+        {
+          "ruleId": "EP-TMP-ELF-01",
+          "level": "error",
+          "message": {
+            "text": "[MISSED] Unverified ELF binary copied to /tmp and executed (TITAN-Exec gate) (expected defense failed)"
+          },
+          "properties": {
+            "detected": false,
+            "prevented": false,
+            "context_maturity": 0,
+            "ttfa_ms": null,
+            "pre_kill_damage": null
+          }
+        },
+        {
+          "ruleId": "EP-LPE-KERNEL-01",
+          "level": "warning",
+          "message": {
+            "text": "[PARTIAL det=False prev=True] Blacklisted SCTP/DCCP socket + AF_PACKET + ptrace + /etc/shadow probe (rc=0, out={\"probe\": \"lpe-probe\", \"sctp_socket\": {\"attempted\": true, \"ok\": true, \"detail\": \"IPPROTO_SCTP\", \"elapsed_ms\": 91.801}, \"dccp_socket\": {\"atte; none)"
+          },
+          "properties": {
+            "detected": false,
+            "prevented": true,
+            "context_maturity": 1,
+            "ttfa_ms": 457.75,
+            "pre_kill_damage": null
+          }
+        },
+        {
+          "ruleId": "EP-RANSOM-AES-01",
+          "level": "error",
+          "message": {
+            "text": "[MISSED] In-place AES-256-GCM encryption of 120 realistic files (TTFA + pre-kill damage) (expected defense failed)"
+          },
+          "properties": {
+            "detected": false,
+            "prevented": false,
+            "context_maturity": 0,
+            "ttfa_ms": null,
+            "pre_kill_damage": 120
+          }
+        },
+        {
+          "ruleId": "EP-RANSOM-STORM-01",
+          "level": "error",
+          "message": {
+            "text": "[MISSED] 600-file / 50-batch rapid rename+wipe storm (TTFA + pre-kill damage) (expected defense failed)"
+          },
+          "properties": {
+            "detected": false,
+            "prevented": false,
+            "context_maturity": 0,
+            "ttfa_ms": null,
+            "pre_kill_damage": 600
+          }
+        },
+        {
+          "ruleId": "EP-LINEAGE-CHILD-01",
+          "level": "error",
+          "message": {
+            "text": "[MISSED] Parent spawns child conducting AES-256 burst (child vs tree kill check) (expected defense failed)"
+          },
+          "properties": {
+            "detected": false,
+            "prevented": false,
+            "context_maturity": 0,
+            "ttfa_ms": null,
+            "pre_kill_damage": 60
+          }
+        },
+        {
+          "ruleId": "EP-C2-EGRESS-01",
+          "level": "error",
+          "message": {
+            "text": "[MISSED] Outbound HTTP egress to 1.1.1.1 from inside php8.3-fpm.service cgroup (expected defense failed)"
+          },
+          "properties": {
+            "detected": false,
+            "prevented": false,
+            "context_maturity": 0,
+            "ttfa_ms": null,
+            "pre_kill_damage": null
+          }
+        },
+        {
+          "ruleId": "EP-FALCO-01",
+          "level": "error",
+          "message": {
+            "text": "[MISSED] Read /etc/shadow by untrusted program (expected defense failed)"
+          },
+          "properties": {
+            "detected": false,
+            "prevented": false,
+            "context_maturity": 0,
+            "ttfa_ms": null,
+            "pre_kill_damage": null
+          }
+        },
+        {
+          "ruleId": "EP-FALCO-02",
+          "level": "error",
+          "message": {
+            "text": "[MISSED] Symlink over sensitive /etc target (expected defense failed)"
+          },
+          "properties": {
+            "detected": false,
+            "prevented": false,
+            "context_maturity": 0,
+            "ttfa_ms": null,
+            "pre_kill_damage": null
+          }
+        },
+        {
+          "ruleId": "EP-FALCO-03",
+          "level": "error",
+          "message": {
+            "text": "[MISSED] Ptrace process memory / anti-debug syscall (expected defense failed)"
+          },
+          "properties": {
+            "detected": false,
+            "prevented": false,
+            "context_maturity": 0,
+            "ttfa_ms": null,
+            "pre_kill_damage": null
+          }
+        },
+        {
+          "ruleId": "EP-ART-T1087",
+          "level": "error",
+          "message": {
+            "text": "[MISSED] Local Account Enumeration (/etc/passwd, id, lastlog) [yaml=True] (expected defense failed)"
+          },
+          "properties": {
+            "detected": false,
+            "prevented": false,
+            "context_maturity": 0,
+            "ttfa_ms": null,
+            "pre_kill_damage": null
+          }
+        },
+        {
+          "ruleId": "EP-ART-T1059",
+          "level": "error",
+          "message": {
+            "text": "[MISSED] Base64 Obfuscated Shell Execution [yaml=True] (expected defense failed)"
+          },
+          "properties": {
+            "detected": false,
+            "prevented": false,
+            "context_maturity": 0,
+            "ttfa_ms": null,
+            "pre_kill_damage": null
+          }
+        },
+        {
+          "ruleId": "EP-ART-T1053",
+          "level": "error",
+          "message": {
+            "text": "[MISSED] Cron Persistence Staging & Cleanup [yaml=True] (expected defense failed)"
+          },
+          "properties": {
+            "detected": false,
+            "prevented": false,
+            "context_maturity": 0,
+            "ttfa_ms": null,
+            "pre_kill_damage": null
+          }
+        },
+        {
+          "ruleId": "EP-ART-T1548",
+          "level": "error",
+          "message": {
+            "text": "[MISSED] SUID/Capabilities Enumeration [yaml=True] (expected defense failed)"
+          },
+          "properties": {
+            "detected": false,
+            "prevented": false,
+            "context_maturity": 0,
+            "ttfa_ms": null,
+            "pre_kill_damage": null
+          }
+        },
+        {
+          "ruleId": "WAF-SQLI-01",
+          "level": "note",
+          "message": {
+            "text": "[BLOCKED+DETECTED] SQL Injection (WAF-SQLI-01) (http=403; anomaly score block: sql_injection: 50, anomaly: 53, )"
+          },
+          "properties": {
+            "detected": true,
+            "prevented": true,
+            "context_maturity": 2,
+            "ttfa_ms": 3369.3,
+            "pre_kill_damage": null
+          }
+        },
+        {
+          "ruleId": "WAF-SQLI-02",
+          "level": "note",
+          "message": {
+            "text": "[BLOCKED+DETECTED] SQL Injection (WAF-SQLI-02) (http=403; anomaly score block: sql_injection: 10, anomaly: 13, )"
+          },
+          "properties": {
+            "detected": true,
+            "prevented": true,
+            "context_maturity": 2,
+            "ttfa_ms": 463.72,
+            "pre_kill_damage": null
+          }
+        },
+        {
+          "ruleId": "WAF-SQLI-03",
+          "level": "note",
+          "message": {
+            "text": "[BLOCKED+DETECTED] SQL Injection (WAF-SQLI-03) (http=403; anomaly score block: sql_injection: 5, anomaly: 8, )"
+          },
+          "properties": {
+            "detected": true,
+            "prevented": true,
+            "context_maturity": 2,
+            "ttfa_ms": 108.51,
+            "pre_kill_damage": null
+          }
+        },
+        {
+          "ruleId": "WAF-XSS-01",
+          "level": "note",
+          "message": {
+            "text": "[BLOCKED+DETECTED] Cross-Site Scripting (WAF-XSS-01) (http=403; crowdsecurity/appsec-native, anomaly score block: xss: 50, anomaly: 53, , crowdsecurity/appsec-native)"
+          },
+          "properties": {
+            "detected": true,
+            "prevented": true,
+            "context_maturity": 2,
+            "ttfa_ms": 659.19,
+            "pre_kill_damage": null
+          }
+        },
+        {
+          "ruleId": "WAF-XSS-02",
+          "level": "note",
+          "message": {
+            "text": "[BLOCKED+DETECTED] Cross-Site Scripting (WAF-XSS-02) (http=403; anomaly score block: xss: 20, anomaly: 23, )"
+          },
+          "properties": {
+            "detected": true,
+            "prevented": true,
+            "context_maturity": 2,
+            "ttfa_ms": 625.59,
+            "pre_kill_damage": null
+          }
+        },
+        {
+          "ruleId": "WAF-LFI-01",
+          "level": "note",
+          "message": {
+            "text": "[BLOCKED+DETECTED] Path Traversal / LFI (WAF-LFI-01) (http=403; anomaly score block: lfi: 40, rce: 10, anomaly: 53, )"
+          },
+          "properties": {
+            "detected": true,
+            "prevented": true,
+            "context_maturity": 2,
+            "ttfa_ms": 1194.07,
+            "pre_kill_damage": null
+          }
+        },
+        {
+          "ruleId": "WAF-LFI-02",
+          "level": "note",
+          "message": {
+            "text": "[BLOCKED+DETECTED] Double-Encoded Traversal (WAF-LFI-02) (http=403; anomaly score block: lfi: 35, anomaly: 38, )"
+          },
+          "properties": {
+            "detected": true,
+            "prevented": true,
+            "context_maturity": 2,
+            "ttfa_ms": 426.38,
+            "pre_kill_damage": null
+          }
+        },
+        {
+          "ruleId": "WAF-RCE-01",
+          "level": "note",
+          "message": {
+            "text": "[BLOCKED+DETECTED] OS Command Injection (WAF-RCE-01) (http=403; anomaly score block: lfi: 10, rce: 20, anomaly: 33, )"
+          },
+          "properties": {
+            "detected": true,
+            "prevented": true,
+            "context_maturity": 2,
+            "ttfa_ms": 330.76,
+            "pre_kill_damage": null
+          }
+        },
+        {
+          "ruleId": "WAF-RCE-02",
+          "level": "note",
+          "message": {
+            "text": "[BLOCKED+DETECTED] PHP Webshell Payload (WAF-RCE-02) (http=403; anomaly score block: anomaly: 8, )"
+          },
+          "properties": {
+            "detected": true,
+            "prevented": true,
+            "context_maturity": 2,
+            "ttfa_ms": 313.66,
+            "pre_kill_damage": null
+          }
+        },
+        {
+          "ruleId": "WAF-SSTI-01",
+          "level": "note",
+          "message": {
+            "text": "[BLOCKED+DETECTED] Server-Side Template Injection (WAF-SSTI-01) (http=403; anomaly score block: rce: 10, anomaly: 13, )"
+          },
+          "properties": {
+            "detected": true,
+            "prevented": true,
+            "context_maturity": 2,
+            "ttfa_ms": 128.14,
+            "pre_kill_damage": null
+          }
+        },
+        {
+          "ruleId": "WAF-XXE-01",
+          "level": "error",
+          "message": {
+            "text": "[MISSED] XML External Entity (WAF-XXE-01) (expected defense failed)"
+          },
+          "properties": {
+            "detected": false,
+            "prevented": false,
+            "context_maturity": 0,
+            "ttfa_ms": null,
+            "pre_kill_damage": null
+          }
+        },
+        {
+          "ruleId": "WAF-SSRF-01",
+          "level": "note",
+          "message": {
+            "text": "[BLOCKED+DETECTED] Cloud Metadata SSRF (WAF-SSRF-01) (http=403; anomaly score block: rfi: 10, rce: 10, anomaly: 23, )"
+          },
+          "properties": {
+            "detected": true,
+            "prevented": true,
+            "context_maturity": 2,
+            "ttfa_ms": 687.9,
+            "pre_kill_damage": null
+          }
+        },
+        {
+          "ruleId": "WAF-SCAN-01",
+          "level": "note",
+          "message": {
+            "text": "[BLOCKED+DETECTED] Exploit Scanner UA / Sensitive File (WAF-SCAN-01) (http=403; anomaly score block: lfi: 5, anomaly: 13, )"
+          },
+          "properties": {
+            "detected": true,
+            "prevented": true,
+            "context_maturity": 2,
+            "ttfa_ms": 644.24,
+            "pre_kill_damage": null
+          }
+        },
+        {
+          "ruleId": "WAF-FAILOPEN-01",
+          "level": "warning",
+          "message": {
+            "text": "[PARTIAL det=True prev=False] Oversized Body Inspection Check (WAF-FAILOPEN-01) (http=200; anomaly score block: anomaly: 8, )"
+          },
+          "properties": {
+            "detected": true,
+            "prevented": false,
+            "context_maturity": 2,
+            "ttfa_ms": 584.25,
+            "pre_kill_damage": null
+          }
+        },
+        {
+          "ruleId": "NET-BRUTE-HTTP-01",
+          "level": "error",
+          "message": {
+            "text": "[MISSED] Rapid HTTP credential spraying (/wp-login.php 25x) (expected defense failed)"
+          },
+          "properties": {
+            "detected": false,
+            "prevented": false,
+            "context_maturity": 0,
+            "ttfa_ms": null,
+            "pre_kill_damage": null
+          }
+        },
+        {
+          "ruleId": "NET-BRUTE-SSH-01",
+          "level": "warning",
+          "message": {
+            "text": "[PARTIAL det=True prev=False] SSH failed login burst (18 attempts -> IP ban test) (ssh_spray={'probe': 'ssh-spray', 'addr': '192.168.56.50:22', 'attempts': 18, 'auth_failed': 18, 'timeouts': 0, 'tcp_refused': 0, 'other_errors': 0, 'first_drop_idx': -1, 'results': [{'idx': 0, 'username': 'hardred_invalid_00', 'outcome': 'auth_failed', 'error': 'ssh: handshake failed: ssh: unable to authenticate, attempted methods [none publickey], no supported methods remain', 'elapsed_ms': 36.973}, {'idx': 1, 'username': 'hardred_invalid_01', 'outcome': 'auth_failed', 'error': 'ssh: handshake failed: ssh: unable to authenticate, attempted methods [none publickey], no supported methods remain', 'elapsed_ms': 43.298}, {'idx': 2, 'username': 'hardred_invalid_02', 'outcome': 'auth_failed', 'error': 'ssh: handshake failed: ssh: unable to authenticate, attempted methods [none publickey], no supported methods remain', 'elapsed_ms': 42.834}, {'idx': 3, 'username': 'hardred_invalid_03', 'outcome': 'auth_failed', 'error': 'ssh: handshake failed: ssh: unable to authenticate, attempted methods [none publickey], no supported methods remain', 'elapsed_ms': 50.67}, {'idx': 4, 'username': 'hardred_invalid_04', 'outcome': 'auth_failed', 'error': 'ssh: handshake failed: ssh: unable to authenticate, attempted methods [none publickey], no supported methods remain', 'elapsed_ms': 64.369}, {'idx': 5, 'username': 'hardred_invalid_05', 'outcome': 'auth_failed', 'error': 'ssh: handshake failed: ssh: unable to authenticate, attempted methods [none publickey], no supported methods remain', 'elapsed_ms': 48.547}, {'idx': 6, 'username': 'hardred_invalid_06', 'outcome': 'auth_failed', 'error': 'ssh: handshake failed: ssh: unable to authenticate, attempted methods [none publickey], no supported methods remain', 'elapsed_ms': 43.103}, {'idx': 7, 'username': 'hardred_invalid_07', 'outcome': 'auth_failed', 'error': 'ssh: handshake failed: ssh: unable to authenticate, attempted methods [none publickey], no supported methods remain', 'elapsed_ms': 43.524}, {'idx': 8, 'username': 'hardred_invalid_08', 'outcome': 'auth_failed', 'error': 'ssh: handshake failed: ssh: unable to authenticate, attempted methods [none publickey], no supported methods remain', 'elapsed_ms': 54.19}, {'idx': 9, 'username': 'hardred_invalid_09', 'outcome': 'auth_failed', 'error': 'ssh: handshake failed: ssh: unable to authenticate, attempted methods [none publickey], no supported methods remain', 'elapsed_ms': 51.842}, {'idx': 10, 'username': 'hardred_invalid_10', 'outcome': 'auth_failed', 'error': 'ssh: handshake failed: ssh: unable to authenticate, attempted methods [none publickey], no supported methods remain', 'elapsed_ms': 44.929}, {'idx': 11, 'username': 'hardred_invalid_11', 'outcome': 'auth_failed', 'error': 'ssh: handshake failed: ssh: unable to authenticate, attempted methods [none publickey], no supported methods remain', 'elapsed_ms': 239.28}, {'idx': 12, 'username': 'hardred_invalid_12', 'outcome': 'auth_failed', 'error': 'ssh: handshake failed: ssh: unable to authenticate, attempted methods [none publickey], no supported methods remain', 'elapsed_ms': 52.246}, {'idx': 13, 'username': 'hardred_invalid_13', 'outcome': 'auth_failed', 'error': 'ssh: handshake failed: ssh: unable to authenticate, attempted methods [none publickey], no supported methods remain', 'elapsed_ms': 49.663}, {'idx': 14, 'username': 'hardred_invalid_14', 'outcome': 'auth_failed', 'error': 'ssh: handshake failed: ssh: unable to authenticate, attempted methods [none publickey], no supported methods remain', 'elapsed_ms': 57.757}, {'idx': 15, 'username': 'hardred_invalid_15', 'outcome': 'auth_failed', 'error': 'ssh: handshake failed: ssh: unable to authenticate, attempted methods [none publickey], no supported methods remain', 'elapsed_ms': 51.296}, {'idx': 16, 'username': 'hardred_invalid_16', 'outcome': 'auth_failed', 'error': 'ssh: handshake failed: ssh: unable to authenticate, attempted methods [none publickey], no supported methods remain', 'elapsed_ms': 47.26}, {'idx': 17, 'username': 'hardred_invalid_17', 'outcome': 'auth_failed', 'error': 'ssh: handshake failed: ssh: unable to authenticate, attempted methods [none publickey], no supported methods remain', 'elapsed_ms': 45.125}], 'total_elapsed_ms': 2439.039}; crowdsecurity/ssh-slow-bf_user-enum, crowdsecurity/ssh-bf_user-enum, crowdsecurity/ssh-slow-bf, crowdsecurity/ssh-bf, crowdsecurity/ssh-slow-bf_user-enum)"
+          },
+          "properties": {
+            "detected": true,
+            "prevented": false,
+            "context_maturity": 2,
+            "ttfa_ms": 165.37,
+            "pre_kill_damage": null
+          }
+        },
+        {
+          "ruleId": "NET-VELOCITY-01",
+          "level": "warning",
+          "message": {
+            "text": "[PARTIAL det=False prev=True] High-concurrency connection & request flood (240 req @ 28 threads) (blocked_or_dropped=56/240; none)"
+          },
+          "properties": {
+            "detected": false,
+            "prevented": true,
+            "context_maturity": 0,
+            "ttfa_ms": 9329.13,
+            "pre_kill_damage": null
+          }
+        },
+        {
+          "ruleId": "NET-PORTSCAN-01",
+          "level": "error",
+          "message": {
+            "text": "[MISSED] 16-port TCP connect scan -> Kinetic XDP / Firewall Ban verification (expected defense failed)"
+          },
+          "properties": {
+            "detected": false,
+            "prevented": false,
+            "context_maturity": 0,
+            "ttfa_ms": null,
+            "pre_kill_damage": null
+          }
+        }
+      ]
+    }
+  ]
+}

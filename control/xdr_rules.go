@@ -33,6 +33,7 @@ var supportedXDRRuleOverrides = map[string]struct{}{
 	"KD.LINUX.PERSISTENCE": {}, "KD.LINUX.BPF_LOAD": {},
 	"KD.LINUX.LOG_TAMPER": {}, "KD.LINUX.CREDENTIAL_PATH_PROBE": {},
 	"KD.LINUX.TUNNEL_BINARY": {}, "KD.LINUX.PERSISTENCE_DROPIN": {},
+	"KD.LINUX.DISCOVERY.ACCOUNT": {}, "KD.LINUX.DISCOVERY.SUID": {},
 	"XDR.EXE_DELETED": {}, "XDR.MEMFD_EXEC": {}, "XDR.TEMP_EXEC": {}, "XDR.WEB_SHELL_LINEAGE": {},
 	"XDR.NAME_PATH_MISMATCH": {}, "XDR.THREAT_INTEL_C2": {},
 	// M2.2: kernel ransomware-freeze rule ids are objective evidence tokens and
@@ -41,6 +42,8 @@ var supportedXDRRuleOverrides = map[string]struct{}{
 	// M2.4: the credential-guard DENY is kernel-proven evidence; it is alert-only
 	// and never authorises an active response.
 	"XDR.CREDENTIAL_READ_BLOCKED": {},
+	"XDR.PTRACE_ATTEMPT": {}, "XDR.KERNEL_PROTOCOL_PROBE": {},
+	"XDR.CREDENTIAL_PROBE": {}, "XDR.SYMLINK_OVER_SENSITIVE": {},
 	"XDR.ANOMALY.EXEC_BURST":      {}, "XDR.ANOMALY.CONNECTION_FANOUT": {},
 	"XDR.ANOMALY.REMOTE_DIVERSITY": {}, "XDR.ANOMALY.PORT_DIVERSITY": {},
 	"BASELINE.HASH_MISMATCH": {}, "BASELINE.NETWORK_DEVIATION": {}, "BASELINE.NETWORK_FORBIDDEN": {},
@@ -74,6 +77,8 @@ func NewXDRRuleEngine() *XDRRuleEngine {
 		{"KD.LINUX.CREDENTIAL_PATH_PROBE", "credential", "Credential store read, copied or encoded in bulk", `(?i)\b(?:cp|tar|rsync|scp|dd|base64|openssl|zip|gzip|cat|less|more|strings|awk|sed|python3?|perl)\b[^\n]{0,500}(?:/etc/shadow|/etc/gshadow|/etc/security/opasswd|/root/\.ssh/|/etc/vgt/gedefense/secrets/|\.kdbx|credentials\.json|/opt/beyondtrust/)`, 100, false},
 		{"KD.LINUX.TUNNEL_BINARY", "network", "Tunnelling or proxy tool executed", `(?i)(?:^|[/\s])(?:chisel|frpc|frps|ngrok|ligolo|gost|rathole|cloudflared|iodine|dnscat2?|socat)\b`, 110, false},
 		{"KD.LINUX.PERSISTENCE_DROPIN", "persistence", "Persistence entry written outside package management", `(?i)(?:\bcrontab\b[^\n]{0,200}(?:-e\b|-r\b|/tmp/|/var/tmp/|/dev/shm/|\s-\s*$)|\btee\b[^\n]{0,200}/etc/(?:cron\.|systemd/system)|\bcp\b[^\n]{0,200}/etc/(?:cron\.|systemd/system)|>\s*/etc/(?:cron\.|systemd/system)|\bauthorized_keys\b|\bsystemd-run\b[^\n]{0,200}--unit\b)`, 90, false},
+		{"KD.LINUX.DISCOVERY.ACCOUNT", "discovery", "Account or privilege-escalation discovery chain executed", `(?i)(?:\bgetent\s+(?:passwd|group|shadow)\b|\bsudo\s+-n\b|\bid\b[^\n]{0,120}\bgetent\b|\bcat\s+/etc/passwd\b[^\n]{0,120}\bsudo\b)`, 45, false},
+		{"KD.LINUX.DISCOVERY.SUID", "discovery", "SUID/SGID privilege-escalation binary enumeration executed", `(?i)\bfind\b[^\n]{0,200}-perm\s+[/-]?(?:4000|2000|6000|u=s|g=s)\b`, 45, false},
 	}
 	out := &XDRRuleEngine{}
 	for _, d := range defs {

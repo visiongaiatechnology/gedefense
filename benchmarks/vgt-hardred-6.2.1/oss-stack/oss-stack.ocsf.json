@@ -1,0 +1,1290 @@
+[
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 1,
+    "time": "2026-11-23T09:27:20.993288+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "OSS Best-of-Breed (ModSec CRS + Suricata IPS + Tetragon + ClamAV)",
+        "uid": "oss-stack"
+      }
+    },
+    "finding_info": {
+      "uid": "oss-stack:WAF-BENIGN-06",
+      "title": "Benign Math Query",
+      "desc": "http=403; 942100",
+      "types": [
+        "hardred-waf",
+        "Benign HTTP Control"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "NONE",
+            "name": "Benign HTTP Control"
+          },
+          "tactic": {
+            "name": "None"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 3,
+    "unmapped": {
+      "polarity": "benign",
+      "context_maturity": 2,
+      "ttfa_ms": 250.0,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-23T09:27:31.752098+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "OSS Best-of-Breed (ModSec CRS + Suricata IPS + Tetragon + ClamAV)",
+        "uid": "oss-stack"
+      }
+    },
+    "finding_info": {
+      "uid": "oss-stack:MAL-EICAR-DISK-01",
+      "title": "Write EICAR signature file to sandbox and check quarantine/alert",
+      "desc": "disk=QUARANTINED; clamav.onaccess.malware, clamav.onaccess.malware, clamav.onaccess.malware",
+      "types": [
+        "hardred-malware",
+        "Standard AV/YARA EICAR Disk Drop"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1027",
+            "name": "Standard AV/YARA EICAR Disk Drop"
+          },
+          "tactic": {
+            "name": "Defense Evasion"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 2,
+      "ttfa_ms": 250.0,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-23T09:27:35.510574+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "OSS Best-of-Breed (ModSec CRS + Suricata IPS + Tetragon + ClamAV)",
+        "uid": "oss-stack"
+      }
+    },
+    "finding_info": {
+      "uid": "oss-stack:MAL-EICAR-HTTP-01",
+      "title": "POST EICAR payload over HTTP edge proxy/WAF",
+      "desc": "http=403; 920420",
+      "types": [
+        "hardred-malware",
+        "Inline L7 EICAR/Malware Upload"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1105",
+            "name": "Inline L7 EICAR/Malware Upload"
+          },
+          "tactic": {
+            "name": "Command and Control"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 2,
+      "ttfa_ms": 250.0,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 3,
+    "time": "2026-11-23T09:27:39.132319+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "OSS Best-of-Breed (ModSec CRS + Suricata IPS + Tetragon + ClamAV)",
+        "uid": "oss-stack"
+      }
+    },
+    "finding_info": {
+      "uid": "oss-stack:MAL-NESTED-ARCHIVE-01",
+      "title": "8-layer nested ZIP wrapper + clamav-testfiles archive inspection",
+      "desc": "nested=WROTE 813; clamav.onaccess.malware, clamav.onaccess.malware, clamav.onaccess.malware, clamav.onaccess.malware, clamav.onaccess.malware",
+      "types": [
+        "hardred-malware",
+        "Nested Archive & ClamAV Corpus Inspection"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1027.002",
+            "name": "Nested Archive & ClamAV Corpus Inspection"
+          },
+          "tactic": {
+            "name": "Defense Evasion"
+          }
+        }
+      ]
+    },
+    "action_id": 1,
+    "action": "Allowed",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 2,
+      "ttfa_ms": 250.0,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 5,
+    "time": "2026-11-23T09:27:59.321456+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "OSS Best-of-Breed (ModSec CRS + Suricata IPS + Tetragon + ClamAV)",
+        "uid": "oss-stack"
+      }
+    },
+    "finding_info": {
+      "uid": "oss-stack:EP-FILELESS-MEMFD-01",
+      "title": "In-memory ELF/script execution via memfd_create (/proc/self/fd)",
+      "desc": "rc=0, out={\"probe\": \"memfd-exec\", \"target\": \"/proc/self/fd/3\", \"ok\": true, \"exit_code\": 0, \"stdout\": \"MEMFD_OK\", \"elapsed_ms\": 15.035}; hardred-kernel-network-surface/__x64_sys_memfd_create",
+      "types": [
+        "hardred-endpoint",
+        "Fileless Execution (memfd_create)"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1620",
+            "name": "Fileless Execution (memfd_create)"
+          },
+          "tactic": {
+            "name": "Defense Evasion"
+          }
+        }
+      ]
+    },
+    "action_id": 1,
+    "action": "Allowed",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 3,
+      "ttfa_ms": 250.0,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-23T09:28:01.228515+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "OSS Best-of-Breed (ModSec CRS + Suricata IPS + Tetragon + ClamAV)",
+        "uid": "oss-stack"
+      }
+    },
+    "finding_info": {
+      "uid": "oss-stack:EP-SHM-EXEC-01",
+      "title": "Executable script staged & executed from /dev/shm/hardred-sandbox",
+      "desc": "rc=0, out={\"probe\": \"shm-exec\", \"target\": \"/dev/shm/hardred-sandbox/shm_exec_test.sh\", \"ok\": false, \"exit_code\": -1, \"error\": \"signal: killed\", \"elaps; hardred-untrusted-exec/__x64_sys_execve",
+      "types": [
+        "hardred-endpoint",
+        "/dev/shm Dropper Execution"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1059.004",
+            "name": "/dev/shm Dropper Execution"
+          },
+          "tactic": {
+            "name": "Execution"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 3,
+      "ttfa_ms": 250.0,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 5,
+    "time": "2026-11-23T09:28:03.158732+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "OSS Best-of-Breed (ModSec CRS + Suricata IPS + Tetragon + ClamAV)",
+        "uid": "oss-stack"
+      }
+    },
+    "finding_info": {
+      "uid": "oss-stack:EP-TMP-ELF-01",
+      "title": "Unverified ELF binary copied to /tmp and executed (TITAN-Exec gate)",
+      "desc": "rc=0, out={\"probe\": \"tmp-exec\", \"target\": \"/tmp/hardred-sandbox/tmpexec/untrusted_exec_test\", \"ok\": false, \"exit_code\": -1, \"error\": \"signal: killed\",; hardred-untrusted-exec/__x64_sys_execve",
+      "types": [
+        "hardred-endpoint",
+        "Untrusted Binary Execution (/tmp)"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1204.002",
+            "name": "Untrusted Binary Execution (/tmp)"
+          },
+          "tactic": {
+            "name": "Execution"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 3,
+      "ttfa_ms": 250.0,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-23T09:28:05.091357+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "OSS Best-of-Breed (ModSec CRS + Suricata IPS + Tetragon + ClamAV)",
+        "uid": "oss-stack"
+      }
+    },
+    "finding_info": {
+      "uid": "oss-stack:EP-LPE-KERNEL-01",
+      "title": "Blacklisted SCTP/DCCP socket + AF_PACKET + ptrace + /etc/shadow probe",
+      "desc": "rc=0, out={\"probe\": \"lpe-probe\", \"sctp_socket\": {\"attempted\": true, \"ok\": false, \"errno\": \"ESOCKTNOSUPPORT\", \"error\": \"socket type not supported\", \"de; hardred-kernel-network-surface/__x64_sys_ptrace",
+      "types": [
+        "hardred-endpoint",
+        "Kernel LPE & Protocol Attack Surface"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1068",
+            "name": "Kernel LPE & Protocol Attack Surface"
+          },
+          "tactic": {
+            "name": "Privilege Escalation"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 3,
+      "ttfa_ms": 250.0,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-23T09:28:31.661015+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "OSS Best-of-Breed (ModSec CRS + Suricata IPS + Tetragon + ClamAV)",
+        "uid": "oss-stack"
+      }
+    },
+    "finding_info": {
+      "uid": "oss-stack:EP-C2-EGRESS-01",
+      "title": "Outbound HTTP egress to 1.1.1.1 from inside php8.3-fpm.service cgroup",
+      "desc": "rc=7, out={}; none",
+      "types": [
+        "hardred-endpoint",
+        "Unauthorized C2 Egress (Web Worker Cell)"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1071.001",
+            "name": "Unauthorized C2 Egress (Web Worker Cell)"
+          },
+          "tactic": {
+            "name": "Command and Control"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 1,
+      "ttfa_ms": 472.16,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-23T09:28:41.403529+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "OSS Best-of-Breed (ModSec CRS + Suricata IPS + Tetragon + ClamAV)",
+        "uid": "oss-stack"
+      }
+    },
+    "finding_info": {
+      "uid": "oss-stack:EP-FALCO-03",
+      "title": "Ptrace process memory / anti-debug syscall",
+      "desc": "rc=0, out={}; hardred-kernel-network-surface/__x64_sys_ptrace",
+      "types": [
+        "hardred-endpoint",
+        "Kernel Syscall Behavior (Falco)"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1055.008",
+            "name": "Kernel Syscall Behavior (Falco)"
+          },
+          "tactic": {
+            "name": "Privilege Escalation"
+          }
+        }
+      ]
+    },
+    "action_id": 1,
+    "action": "Allowed",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 3,
+      "ttfa_ms": 250.0,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-23T09:31:27.989694+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "OSS Best-of-Breed (ModSec CRS + Suricata IPS + Tetragon + ClamAV)",
+        "uid": "oss-stack"
+      }
+    },
+    "finding_info": {
+      "uid": "oss-stack:WAF-SQLI-01",
+      "title": "SQL Injection (WAF-SQLI-01)",
+      "desc": "http=403; 942100",
+      "types": [
+        "hardred-waf",
+        "SQL Injection"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1190",
+            "name": "SQL Injection"
+          },
+          "tactic": {
+            "name": "Initial Access"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 2,
+      "ttfa_ms": 250.0,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-23T09:31:29.078720+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "OSS Best-of-Breed (ModSec CRS + Suricata IPS + Tetragon + ClamAV)",
+        "uid": "oss-stack"
+      }
+    },
+    "finding_info": {
+      "uid": "oss-stack:WAF-SQLI-02",
+      "title": "SQL Injection (WAF-SQLI-02)",
+      "desc": "http=403; 942100",
+      "types": [
+        "hardred-waf",
+        "SQL Injection"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1190",
+            "name": "SQL Injection"
+          },
+          "tactic": {
+            "name": "Initial Access"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 2,
+      "ttfa_ms": 250.0,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-23T09:31:30.155850+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "OSS Best-of-Breed (ModSec CRS + Suricata IPS + Tetragon + ClamAV)",
+        "uid": "oss-stack"
+      }
+    },
+    "finding_info": {
+      "uid": "oss-stack:WAF-SQLI-03",
+      "title": "SQL Injection (WAF-SQLI-03)",
+      "desc": "http=403; 942100",
+      "types": [
+        "hardred-waf",
+        "SQL Injection"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1190",
+            "name": "SQL Injection"
+          },
+          "tactic": {
+            "name": "Initial Access"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 2,
+      "ttfa_ms": 250.0,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-23T09:31:31.435244+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "OSS Best-of-Breed (ModSec CRS + Suricata IPS + Tetragon + ClamAV)",
+        "uid": "oss-stack"
+      }
+    },
+    "finding_info": {
+      "uid": "oss-stack:WAF-XSS-01",
+      "title": "Cross-Site Scripting (WAF-XSS-01)",
+      "desc": "http=403; 941100",
+      "types": [
+        "hardred-waf",
+        "Cross-Site Scripting"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1059.007",
+            "name": "Cross-Site Scripting"
+          },
+          "tactic": {
+            "name": "Execution"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 2,
+      "ttfa_ms": 250.0,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-23T09:31:32.644199+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "OSS Best-of-Breed (ModSec CRS + Suricata IPS + Tetragon + ClamAV)",
+        "uid": "oss-stack"
+      }
+    },
+    "finding_info": {
+      "uid": "oss-stack:WAF-XSS-02",
+      "title": "Cross-Site Scripting (WAF-XSS-02)",
+      "desc": "http=403; 941100",
+      "types": [
+        "hardred-waf",
+        "Cross-Site Scripting"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1059.007",
+            "name": "Cross-Site Scripting"
+          },
+          "tactic": {
+            "name": "Execution"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 2,
+      "ttfa_ms": 250.0,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-23T09:31:33.846794+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "OSS Best-of-Breed (ModSec CRS + Suricata IPS + Tetragon + ClamAV)",
+        "uid": "oss-stack"
+      }
+    },
+    "finding_info": {
+      "uid": "oss-stack:WAF-LFI-01",
+      "title": "Path Traversal / LFI (WAF-LFI-01)",
+      "desc": "http=None; suricata:9100001, suricata:9100001, suricata:9100001",
+      "types": [
+        "hardred-waf",
+        "Path Traversal / LFI"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1083",
+            "name": "Path Traversal / LFI"
+          },
+          "tactic": {
+            "name": "Discovery"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 2,
+      "ttfa_ms": 182.25,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-23T09:31:40.431221+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "OSS Best-of-Breed (ModSec CRS + Suricata IPS + Tetragon + ClamAV)",
+        "uid": "oss-stack"
+      }
+    },
+    "finding_info": {
+      "uid": "oss-stack:WAF-LFI-02",
+      "title": "Double-Encoded Traversal (WAF-LFI-02)",
+      "desc": "http=403; 930100",
+      "types": [
+        "hardred-waf",
+        "Double-Encoded Traversal"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1083",
+            "name": "Double-Encoded Traversal"
+          },
+          "tactic": {
+            "name": "Discovery"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 2,
+      "ttfa_ms": 250.0,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-23T09:31:41.512891+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "OSS Best-of-Breed (ModSec CRS + Suricata IPS + Tetragon + ClamAV)",
+        "uid": "oss-stack"
+      }
+    },
+    "finding_info": {
+      "uid": "oss-stack:WAF-RCE-01",
+      "title": "OS Command Injection (WAF-RCE-01)",
+      "desc": "http=403; 930120",
+      "types": [
+        "hardred-waf",
+        "OS Command Injection"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1059.004",
+            "name": "OS Command Injection"
+          },
+          "tactic": {
+            "name": "Execution"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 2,
+      "ttfa_ms": 250.0,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-23T09:31:42.623977+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "OSS Best-of-Breed (ModSec CRS + Suricata IPS + Tetragon + ClamAV)",
+        "uid": "oss-stack"
+      }
+    },
+    "finding_info": {
+      "uid": "oss-stack:WAF-RCE-02",
+      "title": "PHP Webshell Payload (WAF-RCE-02)",
+      "desc": "http=403; 920420, hardred-kernel-network-surface/__x64_sys_memfd_create",
+      "types": [
+        "hardred-waf",
+        "PHP Webshell Payload"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1505.003",
+            "name": "PHP Webshell Payload"
+          },
+          "tactic": {
+            "name": "Persistence"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 3,
+      "ttfa_ms": 250.0,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-23T09:31:43.731395+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "OSS Best-of-Breed (ModSec CRS + Suricata IPS + Tetragon + ClamAV)",
+        "uid": "oss-stack"
+      }
+    },
+    "finding_info": {
+      "uid": "oss-stack:WAF-SSTI-01",
+      "title": "Server-Side Template Injection (WAF-SSTI-01)",
+      "desc": "http=403; 920220",
+      "types": [
+        "hardred-waf",
+        "Server-Side Template Injection"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1190",
+            "name": "Server-Side Template Injection"
+          },
+          "tactic": {
+            "name": "Initial Access"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 2,
+      "ttfa_ms": 250.0,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-23T09:31:44.807811+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "OSS Best-of-Breed (ModSec CRS + Suricata IPS + Tetragon + ClamAV)",
+        "uid": "oss-stack"
+      }
+    },
+    "finding_info": {
+      "uid": "oss-stack:WAF-XXE-01",
+      "title": "XML External Entity (WAF-XXE-01)",
+      "desc": "http=200; suricata:2066044",
+      "types": [
+        "hardred-waf",
+        "XML External Entity"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1190",
+            "name": "XML External Entity"
+          },
+          "tactic": {
+            "name": "Initial Access"
+          }
+        }
+      ]
+    },
+    "action_id": 1,
+    "action": "Allowed",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 2,
+      "ttfa_ms": 250.0,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-23T09:31:45.901104+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "OSS Best-of-Breed (ModSec CRS + Suricata IPS + Tetragon + ClamAV)",
+        "uid": "oss-stack"
+      }
+    },
+    "finding_info": {
+      "uid": "oss-stack:WAF-SSRF-01",
+      "title": "Cloud Metadata SSRF (WAF-SSRF-01)",
+      "desc": "http=None; suricata:9100001, suricata:9100001, suricata:9100001",
+      "types": [
+        "hardred-waf",
+        "Cloud Metadata SSRF"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1552.005",
+            "name": "Cloud Metadata SSRF"
+          },
+          "tactic": {
+            "name": "Credential Access"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 2,
+      "ttfa_ms": 180.82,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-23T09:31:52.385517+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "OSS Best-of-Breed (ModSec CRS + Suricata IPS + Tetragon + ClamAV)",
+        "uid": "oss-stack"
+      }
+    },
+    "finding_info": {
+      "uid": "oss-stack:WAF-SCAN-01",
+      "title": "Exploit Scanner UA / Sensitive File (WAF-SCAN-01)",
+      "desc": "http=403; 913100, suricata:2031502",
+      "types": [
+        "hardred-waf",
+        "Exploit Scanner UA / Sensitive File"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1595.002",
+            "name": "Exploit Scanner UA / Sensitive File"
+          },
+          "tactic": {
+            "name": "Reconnaissance"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 2,
+      "ttfa_ms": 250.0,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-23T09:31:53.507293+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "OSS Best-of-Breed (ModSec CRS + Suricata IPS + Tetragon + ClamAV)",
+        "uid": "oss-stack"
+      }
+    },
+    "finding_info": {
+      "uid": "oss-stack:WAF-FAILOPEN-01",
+      "title": "Oversized Body Inspection Check (WAF-FAILOPEN-01)",
+      "desc": "http=403; 920420",
+      "types": [
+        "hardred-waf",
+        "Oversized Body Inspection Check"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1190",
+            "name": "Oversized Body Inspection Check"
+          },
+          "tactic": {
+            "name": "Initial Access"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 2,
+      "ttfa_ms": 250.0,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-23T09:31:59.281984+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "OSS Best-of-Breed (ModSec CRS + Suricata IPS + Tetragon + ClamAV)",
+        "uid": "oss-stack"
+      }
+    },
+    "finding_info": {
+      "uid": "oss-stack:NET-BRUTE-HTTP-01",
+      "title": "Rapid HTTP credential spraying (/wp-login.php 25x)",
+      "desc": "blocked_or_dropped=8/25; 920350, 920350, 920350, 920350, 920350",
+      "types": [
+        "hardred-netids",
+        "HTTP Auth Brute-Force"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1110.001",
+            "name": "HTTP Auth Brute-Force"
+          },
+          "tactic": {
+            "name": "Credential Access"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 3,
+      "ttfa_ms": 151.5,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-23T09:32:15.951428+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "OSS Best-of-Breed (ModSec CRS + Suricata IPS + Tetragon + ClamAV)",
+        "uid": "oss-stack"
+      }
+    },
+    "finding_info": {
+      "uid": "oss-stack:NET-BRUTE-SSH-01",
+      "title": "SSH failed login burst (18 attempts -> IP ban test)",
+      "desc": "ssh_spray={'probe': 'ssh-spray', 'addr': '192.168.56.50:22', 'attempts': 18, 'auth_failed': 3, 'timeouts': 4, 'tcp_refused': 0, 'other_errors': 0, 'first_drop_idx': 3, 'results': [{'idx': 0, 'username': 'hardred_invalid_00', 'outcome': 'auth_failed', 'error': 'ssh: handshake failed: ssh: unable to authenticate, attempted methods [none publickey], no supported methods remain', 'elapsed_ms': 57.403}, {'idx': 1, 'username': 'hardred_invalid_01', 'outcome': 'auth_failed', 'error': 'ssh: handshake failed: ssh: unable to authenticate, attempted methods [none publickey], no supported methods remain', 'elapsed_ms': 54.001}, {'idx': 2, 'username': 'hardred_invalid_02', 'outcome': 'auth_failed', 'error': 'ssh: handshake failed: ssh: unable to authenticate, attempted methods [none publickey], no supported methods remain', 'elapsed_ms': 58.142}, {'idx': 3, 'username': 'hardred_invalid_03', 'outcome': 'timeout', 'error': 'dial tcp 192.168.56.50:22: i/o timeout', 'elapsed_ms': 1200.038}, {'idx': 4, 'username': 'hardred_invalid_04', 'outcome': 'timeout', 'error': 'dial tcp 192.168.56.50:22: i/o timeout', 'elapsed_ms': 1200.58}, {'idx': 5, 'username': 'hardred_invalid_05', 'outcome': 'timeout', 'error': 'dial tcp 192.168.56.50:22: i/o timeout', 'elapsed_ms': 1200.235}, {'idx': 6, 'username': 'hardred_invalid_06', 'outcome': 'timeout', 'error': 'dial tcp 192.168.56.50:22: i/o timeout', 'elapsed_ms': 1200.23}], 'total_elapsed_ms': 5454.412}; suricata:2038967, suricata:2038968, suricata:9100001, suricata:9100001, suricata:9100001",
+      "types": [
+        "hardred-netids",
+        "SSH Credential Brute-Force"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1110.001",
+            "name": "SSH Credential Brute-Force"
+          },
+          "tactic": {
+            "name": "Credential Access"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 2,
+      "ttfa_ms": 577.76,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-23T09:32:24.392196+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "OSS Best-of-Breed (ModSec CRS + Suricata IPS + Tetragon + ClamAV)",
+        "uid": "oss-stack"
+      }
+    },
+    "finding_info": {
+      "uid": "oss-stack:NET-VELOCITY-01",
+      "title": "High-concurrency connection & request flood (240 req @ 28 threads)",
+      "desc": "blocked_or_dropped=0/240; suricata:9100001, suricata:9100001, suricata:9100001, suricata:9100001, suricata:9100001",
+      "types": [
+        "hardred-netids",
+        "HTTP/L4 Velocity Burst"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1499.002",
+            "name": "HTTP/L4 Velocity Burst"
+          },
+          "tactic": {
+            "name": "Impact"
+          }
+        }
+      ]
+    },
+    "action_id": 1,
+    "action": "Allowed",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 2,
+      "ttfa_ms": 172.99,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-23T09:32:28.995402+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "OSS Best-of-Breed (ModSec CRS + Suricata IPS + Tetragon + ClamAV)",
+        "uid": "oss-stack"
+      }
+    },
+    "finding_info": {
+      "uid": "oss-stack:NET-PORTSCAN-01",
+      "title": "16-port TCP connect scan -> Kinetic XDP / Firewall Ban verification",
+      "desc": "post_scan_banned=False, open_blocked=True; suricata:9100001, suricata:9100001, suricata:9100001, suricata:9100001, suricata:9100001",
+      "types": [
+        "hardred-netids",
+        "Multi-Port Reconnaissance"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1046",
+            "name": "Multi-Port Reconnaissance"
+          },
+          "tactic": {
+            "name": "Discovery"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 2,
+      "ttfa_ms": 108.71,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  }
+]

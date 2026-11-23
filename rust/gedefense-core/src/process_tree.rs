@@ -148,15 +148,46 @@ pub(crate) fn read_process_table() -> Result<Vec<ProcEntry>, BoxError> {
     Ok(table)
 }
 
+/// Returns true when `root` is a non-leader worker inside a shared multi-worker
+/// service pool (e.g. `php-fpm`, `lsphp`, `httpd`, `nginx`) whose PGID leader
+/// serves other traffic. In that topology, containment targets `root` and its
+/// own PPID descendants instead of sweeping sibling workers or the pool master.
+pub(crate) fn entry_is_service_pool_worker(root: &ProcEntry, table: &[ProcEntry]) -> bool {
+    if root.pid <= 1 || root.pid == root.pgrp {
+        return false;
+    }
+    if crate::ransom::POOL_SERVICE_COMMS.contains(&root.comm.as_str()) {
+        return true;
+    }
+    table.iter().any(|entry| {
+        entry.pid == root.pgrp
+            && crate::ransom::POOL_SERVICE_COMMS.contains(&entry.comm.as_str())
+    })
+}
+
+/// Checks whether a live PID is a worker inside a pooled service daemon group.
+pub(crate) fn is_service_pool_worker(pid: i32) -> Result<bool, BoxError> {
+    if pid <= 1 {
+        return Ok(false);
+    }
+    let table = read_process_table()?;
+    let Some(root) = table.iter().find(|entry| entry.pid == pid) else {
+        return Ok(false);
+    };
+    Ok(entry_is_service_pool_worker(root, &table))
+}
+
 /// Collects the bounded kill set for `root_pid`: PPID descendants (BFS, depth
-/// capped) plus every member of the root's process group. The visited set makes
-/// the walk cycle-safe even against a synthetic `/proc` snapshot; ordering is
-/// deepest-first so children are stopped before their parent. The root must
-/// remain present.
+/// capped) plus every member of the root's process group (except when `root` is
+/// a worker inside a shared multi-worker service pool, so sibling workers and
+/// the master daemon stay online). The visited set makes the walk cycle-safe
+/// even against a synthetic `/proc` snapshot; ordering is deepest-first so
+/// children are stopped before their parent. The root must remain present.
 pub(crate) fn collect_tree(root_pid: i32, table: &[ProcEntry]) -> Result<Vec<ProcEntry>, BoxError> {
     let Some(root) = table.iter().find(|entry| entry.pid == root_pid) else {
         return Err("kill tree root is not present in the proc snapshot".into());
     };
+    let isolate_worker_only = entry_is_service_pool_worker(root, table);
     let mut children: HashMap<i32, Vec<&ProcEntry>> = HashMap::new();
     for entry in table {
         children.entry(entry.ppid).or_default().push(entry);
@@ -185,14 +216,17 @@ pub(crate) fn collect_tree(root_pid: i32, table: &[ProcEntry]) -> Result<Vec<Pro
             }
         }
     }
-    // Process-group members of the root's group (the PGID half of the scope).
-    for entry in table {
-        if entry.pgrp == root.pgrp && !visited.contains(&entry.pid) {
-            if ordered.len() >= MAX_TREE_SIGNALS {
-                return Err("kill tree exceeds the signal budget".into());
+    // Process-group members of the root's group (the PGID half of the scope),
+    // skipped when isolating a pooled service worker to avoid master/sibling DoS.
+    if !isolate_worker_only {
+        for entry in table {
+            if entry.pgrp == root.pgrp && !visited.contains(&entry.pid) {
+                if ordered.len() >= MAX_TREE_SIGNALS {
+                    return Err("kill tree exceeds the signal budget".into());
+                }
+                visited.insert(entry.pid);
+                ordered.push((1, entry.clone()));
             }
-            visited.insert(entry.pid);
-            ordered.push((1, entry.clone()));
         }
     }
     if !ordered.iter().any(|(_, entry)| entry.pid == root.pid) {
@@ -291,10 +325,36 @@ fn is_benign_kill_error(error: &std::io::Error) -> bool {
     matches!(error.raw_os_error(), Some(libc::ESRCH) | Some(libc::ENOENT))
 }
 
-/// Signals exactly one identity-verified PID with `SIGKILL` through pidfd. The
-/// start time is checked before and after `pidfd_open`; a vanished process is a
-/// benign skip, any other failure is reported.
-fn pidfd_sigkill_verified(pid: i32, expected_start: u64) -> Result<(), BoxError> {
+/// M2.2 isolated freeze for pooled daemon workers: freezes only `root_pid` and
+/// its verified PPID descendants via pidfd `SIGSTOP`, keeping pool siblings alive.
+pub(crate) fn stop_process_descendants(root_pid: i32, rule: &str) -> Result<(), BoxError> {
+    if root_pid <= 4 || root_pid == std::process::id() as i32 {
+        return Err("protected PID".into());
+    }
+    if !valid_rule_token(rule) {
+        return Err("invalid rule token".into());
+    }
+    let table = read_process_table()?;
+    let members = collect_tree(root_pid, &table)?;
+    let own_pid = std::process::id() as i32;
+    let mut stopped = 0u32;
+    for member in &members {
+        let exe = resolve_exe(member.pid);
+        if protected_proc_entry(member, exe.as_deref(), own_pid) {
+            continue;
+        }
+        if pidfd_sig_verified(member.pid, member.start_ticks, libc::SIGSTOP).is_ok() {
+            stopped += 1;
+        }
+    }
+    if stopped == 0 {
+        return Err("isolated worker freeze signaled no process".into());
+    }
+    Ok(())
+}
+
+/// Signals one identity-verified PID with the requested signal through pidfd.
+fn pidfd_sig_verified(pid: i32, expected_start: u64, sig: i32) -> Result<(), BoxError> {
     if proc_start_ticks(pid)? != expected_start {
         return Err("PID identity mismatch before pidfd_open".into());
     }
@@ -312,7 +372,7 @@ fn pidfd_sigkill_verified(pid: i32, expected_start: u64) -> Result<(), BoxError>
             libc::syscall(
                 libc::SYS_pidfd_send_signal,
                 pidfd,
-                libc::SIGKILL,
+                sig,
                 std::ptr::null::<libc::siginfo_t>(),
                 0u32,
             )
@@ -325,6 +385,13 @@ fn pidfd_sigkill_verified(pid: i32, expected_start: u64) -> Result<(), BoxError>
     // SAFETY: pidfd is owned by this function and closed exactly once.
     unsafe { libc::close(pidfd) };
     result
+}
+
+/// Signals exactly one identity-verified PID with `SIGKILL` through pidfd. The
+/// start time is checked before and after `pidfd_open`; a vanished process is a
+/// benign skip, any other failure is reported.
+fn pidfd_sigkill_verified(pid: i32, expected_start: u64) -> Result<(), BoxError> {
+    pidfd_sig_verified(pid, expected_start, libc::SIGKILL)
 }
 
 /// M2.3: bounded, identity-checked process-tree/group `SIGKILL`. The root must

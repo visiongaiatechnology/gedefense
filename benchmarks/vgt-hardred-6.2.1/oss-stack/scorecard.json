@@ -1,0 +1,2232 @@
+{
+  "contender_id": "oss-stack",
+  "contender_label": "OSS Best-of-Breed (ModSec CRS + Suricata IPS + Tetragon + ClamAV)",
+  "snapshot": "06-oss-bestofbreed-max",
+  "run_started_utc": "2026-11-23T09:27:15.206231+00:00",
+  "run_ended_utc": "2026-11-23T09:32:48.130804+00:00",
+  "axis1_efficacy": 76.27,
+  "axis2_fp_resilience": 38.46,
+  "axis3_latency_containment": 38.91,
+  "axis4_overhead": 37.35,
+  "overall_score": 55.4,
+  "gate_status": "FAIL",
+  "gate_reasons": [
+    "WAF Protection FPR 12.50% > 1% gate",
+    "Detection FPR elevated (EP=0.0%, WAF=12.5%)"
+  ],
+  "domain_scores": {
+    "hardred-waf": {
+      "domain": "hardred-waf",
+      "attack_total": 14,
+      "benign_total": 8,
+      "detected_tp": 14,
+      "prevented_tp": 13,
+      "detection_fp": 1,
+      "protection_fp": 1,
+      "detection_tpr": 1.0,
+      "prevention_tpr": 0.9286,
+      "detection_fpr": 0.125,
+      "protection_fpr": 0.125,
+      "balanced_accuracy": 0.9375,
+      "youden_j": 0.875,
+      "avg_context_maturity": 2.07,
+      "median_ttfa_ms": 250.0,
+      "avg_damage_ratio": null,
+      "domain_score": 92.75
+    },
+    "hardred-netids": {
+      "domain": "hardred-netids",
+      "attack_total": 4,
+      "benign_total": 2,
+      "detected_tp": 4,
+      "prevented_tp": 3,
+      "detection_fp": 0,
+      "protection_fp": 0,
+      "detection_tpr": 1.0,
+      "prevention_tpr": 0.75,
+      "detection_fpr": 0.0,
+      "protection_fpr": 0.0,
+      "balanced_accuracy": 1.0,
+      "youden_j": 1.0,
+      "avg_context_maturity": 2.25,
+      "median_ttfa_ms": 162.25,
+      "avg_damage_ratio": null,
+      "domain_score": 86.25
+    },
+    "hardred-endpoint": {
+      "domain": "hardred-endpoint",
+      "attack_total": 15,
+      "benign_total": 2,
+      "detected_tp": 5,
+      "prevented_tp": 4,
+      "detection_fp": 0,
+      "protection_fp": 0,
+      "detection_tpr": 0.3333,
+      "prevention_tpr": 0.5,
+      "detection_fpr": 0.0,
+      "protection_fpr": 0.0,
+      "balanced_accuracy": 0.7,
+      "youden_j": 0.4,
+      "avg_context_maturity": 2.67,
+      "median_ttfa_ms": 250.0,
+      "avg_damage_ratio": 1.0,
+      "domain_score": 51.89
+    },
+    "hardred-malware": {
+      "domain": "hardred-malware",
+      "attack_total": 3,
+      "benign_total": 1,
+      "detected_tp": 3,
+      "prevented_tp": 2,
+      "detection_fp": 0,
+      "protection_fp": 0,
+      "detection_tpr": 1.0,
+      "prevention_tpr": 1.0,
+      "detection_fpr": 0.0,
+      "protection_fpr": 0.0,
+      "balanced_accuracy": 1.0,
+      "youden_j": 1.0,
+      "avg_context_maturity": 2.0,
+      "median_ttfa_ms": 250.0,
+      "avg_damage_ratio": null,
+      "domain_score": 96.67
+    },
+    "hardred-compliance": {
+      "domain": "hardred-compliance",
+      "attack_total": 0,
+      "benign_total": 0,
+      "detected_tp": 0,
+      "prevented_tp": 0,
+      "detection_fp": 0,
+      "protection_fp": 0,
+      "detection_tpr": 1.0,
+      "prevention_tpr": 0.8,
+      "detection_fpr": 0.0,
+      "protection_fpr": 0.0,
+      "balanced_accuracy": 0.8,
+      "youden_j": 0.8,
+      "avg_context_maturity": 3.0,
+      "median_ttfa_ms": null,
+      "avg_damage_ratio": null,
+      "domain_score": 80.0
+    }
+  },
+  "perf": {
+    "http_rps": 452.362,
+    "http_p50_ms": 13.846,
+    "http_p95_ms": 29.929,
+    "http_p99_ms": 36.529,
+    "http_ok": 36,
+    "http_errors": 0,
+    "sysbench_events_per_sec": 84829.46,
+    "fio_randwrite_iops": 237.43,
+    "fio_randwrite_lat_p99_ms": 8.792,
+    "security_rss_mib": 1761.03,
+    "security_cpu_pct": 57.3,
+    "system_mem_used_mib": 2201.0,
+    "lynis_hardening_index": 65,
+    "lsm_active": [
+      "lockdown",
+      "capability",
+      "landlock",
+      "yama",
+      "apparmor",
+      "bpf",
+      "ima",
+      "evm"
+    ]
+  },
+  "compliance_index": 65,
+  "case_results": [
+    {
+      "case": {
+        "case_id": "WAF-BENIGN-01",
+        "domain": "hardred-waf",
+        "category": "Benign HTTP Control",
+        "title": "Benign Health Probe",
+        "polarity": "benign",
+        "mitre_technique": "NONE",
+        "mitre_tactic": "None",
+        "tool_source": "hardred-http-keepalive",
+        "expected_prevention": false,
+        "severity": "info"
+      },
+      "started_utc": "2026-11-23T09:27:15.683697+00:00",
+      "ended_utc": "2026-11-23T09:27:15.732849+00:00",
+      "duration_ms": 49.14,
+      "detected": false,
+      "prevented": false,
+      "context_maturity": 0,
+      "ttfa_ms": null,
+      "pre_kill_damage": null,
+      "pre_kill_total": null,
+      "http_status": 200,
+      "exit_code": null,
+      "evidence_summary": "http=200; none",
+      "raw_alerts": [],
+      "error": ""
+    },
+    {
+      "case": {
+        "case_id": "WAF-BENIGN-02",
+        "domain": "hardred-waf",
+        "category": "Benign HTTP Control",
+        "title": "Benign App Index",
+        "polarity": "benign",
+        "mitre_technique": "NONE",
+        "mitre_tactic": "None",
+        "tool_source": "hardred-http-keepalive",
+        "expected_prevention": false,
+        "severity": "info"
+      },
+      "started_utc": "2026-11-23T09:27:16.824788+00:00",
+      "ended_utc": "2026-11-23T09:27:16.832619+00:00",
+      "duration_ms": 7.82,
+      "detected": false,
+      "prevented": false,
+      "context_maturity": 0,
+      "ttfa_ms": null,
+      "pre_kill_damage": null,
+      "pre_kill_total": null,
+      "http_status": 200,
+      "exit_code": null,
+      "evidence_summary": "http=200; none",
+      "raw_alerts": [],
+      "error": ""
+    },
+    {
+      "case": {
+        "case_id": "WAF-BENIGN-03",
+        "domain": "hardred-waf",
+        "category": "Benign HTTP Control",
+        "title": "Benign UTF-8 Search",
+        "polarity": "benign",
+        "mitre_technique": "NONE",
+        "mitre_tactic": "None",
+        "tool_source": "hardred-http-keepalive",
+        "expected_prevention": false,
+        "severity": "info"
+      },
+      "started_utc": "2026-11-23T09:27:17.771035+00:00",
+      "ended_utc": "2026-11-23T09:27:17.781773+00:00",
+      "duration_ms": 10.73,
+      "detected": false,
+      "prevented": false,
+      "context_maturity": 0,
+      "ttfa_ms": null,
+      "pre_kill_damage": null,
+      "pre_kill_total": null,
+      "http_status": 200,
+      "exit_code": null,
+      "evidence_summary": "http=200; none",
+      "raw_alerts": [],
+      "error": ""
+    },
+    {
+      "case": {
+        "case_id": "WAF-BENIGN-04",
+        "domain": "hardred-waf",
+        "category": "Benign HTTP Control",
+        "title": "Benign English SQL Words",
+        "polarity": "benign",
+        "mitre_technique": "NONE",
+        "mitre_tactic": "None",
+        "tool_source": "hardred-http-keepalive",
+        "expected_prevention": false,
+        "severity": "info"
+      },
+      "started_utc": "2026-11-23T09:27:18.851803+00:00",
+      "ended_utc": "2026-11-23T09:27:18.863988+00:00",
+      "duration_ms": 12.18,
+      "detected": false,
+      "prevented": false,
+      "context_maturity": 0,
+      "ttfa_ms": null,
+      "pre_kill_damage": null,
+      "pre_kill_total": null,
+      "http_status": 200,
+      "exit_code": null,
+      "evidence_summary": "http=200; none",
+      "raw_alerts": [],
+      "error": ""
+    },
+    {
+      "case": {
+        "case_id": "WAF-BENIGN-05",
+        "domain": "hardred-waf",
+        "category": "Benign HTTP Control",
+        "title": "Benign JSON Payload",
+        "polarity": "benign",
+        "mitre_technique": "NONE",
+        "mitre_tactic": "None",
+        "tool_source": "hardred-http-keepalive",
+        "expected_prevention": false,
+        "severity": "info"
+      },
+      "started_utc": "2026-11-23T09:27:19.913633+00:00",
+      "ended_utc": "2026-11-23T09:27:19.921466+00:00",
+      "duration_ms": 7.82,
+      "detected": false,
+      "prevented": false,
+      "context_maturity": 0,
+      "ttfa_ms": null,
+      "pre_kill_damage": null,
+      "pre_kill_total": null,
+      "http_status": 200,
+      "exit_code": null,
+      "evidence_summary": "http=200; none",
+      "raw_alerts": [],
+      "error": ""
+    },
+    {
+      "case": {
+        "case_id": "WAF-BENIGN-06",
+        "domain": "hardred-waf",
+        "category": "Benign HTTP Control",
+        "title": "Benign Math Query",
+        "polarity": "benign",
+        "mitre_technique": "NONE",
+        "mitre_tactic": "None",
+        "tool_source": "hardred-http-keepalive",
+        "expected_prevention": false,
+        "severity": "info"
+      },
+      "started_utc": "2026-11-23T09:27:20.993288+00:00",
+      "ended_utc": "2026-11-23T09:27:20.997739+00:00",
+      "duration_ms": 4.44,
+      "detected": true,
+      "prevented": true,
+      "context_maturity": 2,
+      "ttfa_ms": 250.0,
+      "pre_kill_damage": null,
+      "pre_kill_total": null,
+      "http_status": 403,
+      "exit_code": null,
+      "evidence_summary": "http=403; 942100",
+      "raw_alerts": [
+        {
+          "sensor": "modsecurity-crs",
+          "rule_id": "942100",
+          "src_ip": "192.168.56.1",
+          "uri": "/index.php?calc=(10%2B20)*3/2&lang=de-DE",
+          "http_code": 403,
+          "msg": "SQL Injection Attack Detected via libinjection"
+        }
+      ],
+      "error": ""
+    },
+    {
+      "case": {
+        "case_id": "WAF-BENIGN-07",
+        "domain": "hardred-waf",
+        "category": "Benign HTTP Control",
+        "title": "Benign File Name Param",
+        "polarity": "benign",
+        "mitre_technique": "NONE",
+        "mitre_tactic": "None",
+        "tool_source": "hardred-http-keepalive",
+        "expected_prevention": false,
+        "severity": "info"
+      },
+      "started_utc": "2026-11-23T09:27:22.158073+00:00",
+      "ended_utc": "2026-11-23T09:27:22.169150+00:00",
+      "duration_ms": 11.07,
+      "detected": false,
+      "prevented": false,
+      "context_maturity": 0,
+      "ttfa_ms": null,
+      "pre_kill_damage": null,
+      "pre_kill_total": null,
+      "http_status": 200,
+      "exit_code": null,
+      "evidence_summary": "http=200; none",
+      "raw_alerts": [],
+      "error": ""
+    },
+    {
+      "case": {
+        "case_id": "WAF-BENIGN-08",
+        "domain": "hardred-waf",
+        "category": "Benign HTTP Control",
+        "title": "Benign Contact Form",
+        "polarity": "benign",
+        "mitre_technique": "NONE",
+        "mitre_tactic": "None",
+        "tool_source": "hardred-http-keepalive",
+        "expected_prevention": false,
+        "severity": "info"
+      },
+      "started_utc": "2026-11-23T09:27:23.298152+00:00",
+      "ended_utc": "2026-11-23T09:27:23.307259+00:00",
+      "duration_ms": 9.1,
+      "detected": false,
+      "prevented": false,
+      "context_maturity": 0,
+      "ttfa_ms": null,
+      "pre_kill_damage": null,
+      "pre_kill_total": null,
+      "http_status": 200,
+      "exit_code": null,
+      "evidence_summary": "http=200; none",
+      "raw_alerts": [],
+      "error": ""
+    },
+    {
+      "case": {
+        "case_id": "NET-BENIGN-01",
+        "domain": "hardred-netids",
+        "category": "Benign Paced Web Traffic",
+        "title": "Legitimate paced HTTP traffic (6 req @ 250ms)",
+        "polarity": "benign",
+        "mitre_technique": "NONE",
+        "mitre_tactic": "None",
+        "tool_source": "hardred-netbench",
+        "expected_prevention": false,
+        "severity": "info"
+      },
+      "started_utc": "2026-11-23T09:27:24.416707+00:00",
+      "ended_utc": "2026-11-23T09:27:26.657283+00:00",
+      "duration_ms": 1535.97,
+      "detected": false,
+      "prevented": false,
+      "context_maturity": 0,
+      "ttfa_ms": null,
+      "pre_kill_damage": null,
+      "pre_kill_total": null,
+      "http_status": null,
+      "exit_code": null,
+      "evidence_summary": "ok=6/6 blocked=0; none",
+      "raw_alerts": [],
+      "error": ""
+    },
+    {
+      "case": {
+        "case_id": "NET-BENIGN-02",
+        "domain": "hardred-netids",
+        "category": "Benign TLS Connections",
+        "title": "Normal TLS 1.3 HTTPS requests (4 handshakes)",
+        "polarity": "benign",
+        "mitre_technique": "NONE",
+        "mitre_tactic": "None",
+        "tool_source": "urllib-tls",
+        "expected_prevention": false,
+        "severity": "info"
+      },
+      "started_utc": "2026-11-23T09:27:27.105750+00:00",
+      "ended_utc": "2026-11-23T09:27:28.734295+00:00",
+      "duration_ms": 896.54,
+      "detected": false,
+      "prevented": false,
+      "context_maturity": 0,
+      "ttfa_ms": null,
+      "pre_kill_damage": null,
+      "pre_kill_total": null,
+      "http_status": null,
+      "exit_code": null,
+      "evidence_summary": "tls_ok=4/4 blocked=0; none",
+      "raw_alerts": [],
+      "error": ""
+    },
+    {
+      "case": {
+        "case_id": "MAL-BENIGN-01",
+        "domain": "hardred-malware",
+        "category": "Benign Binary & Script Control",
+        "title": "Clean signed JSON / minified JS asset in sandbox",
+        "polarity": "benign",
+        "mitre_technique": "NONE",
+        "mitre_tactic": "None",
+        "tool_source": "hardred-malware",
+        "expected_prevention": false,
+        "severity": "info"
+      },
+      "started_utc": "2026-11-23T09:27:29.977763+00:00",
+      "ended_utc": "2026-11-23T09:27:31.208796+00:00",
+      "duration_ms": 373.15,
+      "detected": false,
+      "prevented": false,
+      "context_maturity": 0,
+      "ttfa_ms": null,
+      "pre_kill_damage": null,
+      "pre_kill_total": null,
+      "http_status": null,
+      "exit_code": 0,
+      "evidence_summary": "rc=0; none",
+      "raw_alerts": [],
+      "error": ""
+    },
+    {
+      "case": {
+        "case_id": "MAL-EICAR-DISK-01",
+        "domain": "hardred-malware",
+        "category": "Standard AV/YARA EICAR Disk Drop",
+        "title": "Write EICAR signature file to sandbox and check quarantine/alert",
+        "polarity": "attack",
+        "mitre_technique": "T1027",
+        "mitre_tactic": "Defense Evasion",
+        "tool_source": "eicar-standard",
+        "expected_prevention": true,
+        "severity": "high"
+      },
+      "started_utc": "2026-11-23T09:27:31.752098+00:00",
+      "ended_utc": "2026-11-23T09:27:35.033502+00:00",
+      "duration_ms": 1303.36,
+      "detected": true,
+      "prevented": true,
+      "context_maturity": 2,
+      "ttfa_ms": 250.0,
+      "pre_kill_damage": null,
+      "pre_kill_total": null,
+      "http_status": null,
+      "exit_code": 0,
+      "evidence_summary": "disk=QUARANTINED; clamav.onaccess.malware, clamav.onaccess.malware, clamav.onaccess.malware",
+      "raw_alerts": [
+        {
+          "sensor": "clamav-onaccess",
+          "rule_id": "clamav.onaccess.malware",
+          "target": "/tmp/hardred-sandbox/malware/eicar.com.txt: Eicar-Test-Signature FOUND"
+        },
+        {
+          "sensor": "clamav-onaccess",
+          "rule_id": "clamav.onaccess.malware",
+          "target": "/tmp/hardred-sandbox/malware/eicar.com.txt: moved to '/var/lib/clamav-quarantine/eicar.com.txt'"
+        },
+        {
+          "sensor": "clamav-onaccess",
+          "rule_id": "clamav.onaccess.malware",
+          "target": "Mon Nov 23 09:27:31 2026 -> /tmp/hardred-sandbox/malware/eicar.com.txt: Eicar-Test-Signature FOUND"
+        }
+      ],
+      "error": ""
+    },
+    {
+      "case": {
+        "case_id": "MAL-EICAR-HTTP-01",
+        "domain": "hardred-malware",
+        "category": "Inline L7 EICAR/Malware Upload",
+        "title": "POST EICAR payload over HTTP edge proxy/WAF",
+        "polarity": "attack",
+        "mitre_technique": "T1105",
+        "mitre_tactic": "Command and Control",
+        "tool_source": "eicar-http",
+        "expected_prevention": true,
+        "severity": "high"
+      },
+      "started_utc": "2026-11-23T09:27:35.510574+00:00",
+      "ended_utc": "2026-11-23T09:27:37.874059+00:00",
+      "duration_ms": 46.04,
+      "detected": true,
+      "prevented": true,
+      "context_maturity": 2,
+      "ttfa_ms": 250.0,
+      "pre_kill_damage": null,
+      "pre_kill_total": null,
+      "http_status": 403,
+      "exit_code": null,
+      "evidence_summary": "http=403; 920420",
+      "raw_alerts": [
+        {
+          "sensor": "modsecurity-crs",
+          "rule_id": "920420",
+          "src_ip": "192.168.56.1",
+          "uri": "/index.php?upload=eicar",
+          "http_code": 403,
+          "msg": "Request content type is not allowed by policy"
+        }
+      ],
+      "error": ""
+    },
+    {
+      "case": {
+        "case_id": "MAL-NESTED-ARCHIVE-01",
+        "domain": "hardred-malware",
+        "category": "Nested Archive & ClamAV Corpus Inspection",
+        "title": "8-layer nested ZIP wrapper + clamav-testfiles archive inspection",
+        "polarity": "attack",
+        "mitre_technique": "T1027.002",
+        "mitre_tactic": "Defense Evasion",
+        "tool_source": "hardred-archive+clamav-testfiles",
+        "expected_prevention": false,
+        "severity": "medium"
+      },
+      "started_utc": "2026-11-23T09:27:39.132319+00:00",
+      "ended_utc": "2026-11-23T09:27:41.819218+00:00",
+      "duration_ms": 807.59,
+      "detected": true,
+      "prevented": false,
+      "context_maturity": 2,
+      "ttfa_ms": 250.0,
+      "pre_kill_damage": null,
+      "pre_kill_total": null,
+      "http_status": null,
+      "exit_code": 0,
+      "evidence_summary": "nested=WROTE 813; clamav.onaccess.malware, clamav.onaccess.malware, clamav.onaccess.malware, clamav.onaccess.malware, clamav.onaccess.malware",
+      "raw_alerts": [
+        {
+          "sensor": "clamav-onaccess",
+          "rule_id": "clamav.onaccess.malware",
+          "target": "/tmp/hardred-sandbox/malware/clam.bz2.zip: Clamav.Test.File-6 FOUND"
+        },
+        {
+          "sensor": "clamav-onaccess",
+          "rule_id": "clamav.onaccess.malware",
+          "target": "/tmp/hardred-sandbox/malware/clam.bz2.zip: moved to '/var/lib/clamav-quarantine/clam.bz2.zip'"
+        },
+        {
+          "sensor": "clamav-onaccess",
+          "rule_id": "clamav.onaccess.malware",
+          "target": "/tmp/hardred-sandbox/malware/nested8.zip: Eicar-Test-Signature FOUND"
+        },
+        {
+          "sensor": "clamav-onaccess",
+          "rule_id": "clamav.onaccess.malware",
+          "target": "/tmp/hardred-sandbox/malware/nested8.zip: moved to '/var/lib/clamav-quarantine/nested8.zip'"
+        },
+        {
+          "sensor": "clamav-onaccess",
+          "rule_id": "clamav.onaccess.malware",
+          "target": "Mon Nov 23 09:27:39 2026 -> /tmp/hardred-sandbox/malware/clam.bz2.zip: Clamav.Test.File-6 FOUND"
+        },
+        {
+          "sensor": "clamav-onaccess",
+          "rule_id": "clamav.onaccess.malware",
+          "target": "Mon Nov 23 09:27:39 2026 -> /tmp/hardred-sandbox/malware/nested8.zip: Eicar-Test-Signature FOUND"
+        }
+      ],
+      "error": ""
+    },
+    {
+      "case": {
+        "case_id": "EP-BENIGN-01",
+        "domain": "hardred-endpoint",
+        "category": "Benign Admin Workload",
+        "title": "Trusted dpkg-query, tar backup, os-release read, SHA-256 hash",
+        "polarity": "benign",
+        "mitre_technique": "NONE",
+        "mitre_tactic": "None",
+        "tool_source": "system-admin",
+        "expected_prevention": false,
+        "severity": "info"
+      },
+      "started_utc": "2026-11-23T09:27:53.747134+00:00",
+      "ended_utc": "2026-11-23T09:27:54.973408+00:00",
+      "duration_ms": 1226.26,
+      "detected": false,
+      "prevented": false,
+      "context_maturity": 0,
+      "ttfa_ms": null,
+      "pre_kill_damage": null,
+      "pre_kill_total": null,
+      "http_status": null,
+      "exit_code": 0,
+      "evidence_summary": "rc=0, out={\"ok\": true, \"sha256\": \"5dcee1d66c49e929\"}; none",
+      "raw_alerts": [],
+      "error": ""
+    },
+    {
+      "case": {
+        "case_id": "EP-BENIGN-02",
+        "domain": "hardred-endpoint",
+        "category": "Benign Admin Process Tree",
+        "title": "Normal bash+python3 pipeline listing /etc/nginx configuration",
+        "polarity": "benign",
+        "mitre_technique": "NONE",
+        "mitre_tactic": "None",
+        "tool_source": "bash",
+        "expected_prevention": false,
+        "severity": "info"
+      },
+      "started_utc": "2026-11-23T09:27:57.725201+00:00",
+      "ended_utc": "2026-11-23T09:27:58.106461+00:00",
+      "duration_ms": 381.25,
+      "detected": false,
+      "prevented": false,
+      "context_maturity": 0,
+      "ttfa_ms": null,
+      "pre_kill_damage": null,
+      "pre_kill_total": null,
+      "http_status": null,
+      "exit_code": 0,
+      "evidence_summary": "rc=0, out={\"ok\": true}; none",
+      "raw_alerts": [],
+      "error": ""
+    },
+    {
+      "case": {
+        "case_id": "EP-FILELESS-MEMFD-01",
+        "domain": "hardred-endpoint",
+        "category": "Fileless Execution (memfd_create)",
+        "title": "In-memory ELF/script execution via memfd_create (/proc/self/fd)",
+        "polarity": "attack",
+        "mitre_technique": "T1620",
+        "mitre_tactic": "Defense Evasion",
+        "tool_source": "hardred-probe",
+        "expected_prevention": true,
+        "severity": "critical"
+      },
+      "started_utc": "2026-11-23T09:27:59.321456+00:00",
+      "ended_utc": "2026-11-23T09:27:59.749173+00:00",
+      "duration_ms": 427.71,
+      "detected": true,
+      "prevented": false,
+      "context_maturity": 3,
+      "ttfa_ms": 250.0,
+      "pre_kill_damage": null,
+      "pre_kill_total": null,
+      "http_status": null,
+      "exit_code": 0,
+      "evidence_summary": "rc=0, out={\"probe\": \"memfd-exec\", \"target\": \"/proc/self/fd/3\", \"ok\": true, \"exit_code\": 0, \"stdout\": \"MEMFD_OK\", \"elapsed_ms\": 15.035}; hardred-kernel-network-surface/__x64_sys_memfd_create",
+      "raw_alerts": [
+        {
+          "sensor": "cilium-tetragon",
+          "rule_id": "hardred-kernel-network-surface/__x64_sys_memfd_create",
+          "action": "KPROBE_ACTION_POST",
+          "pid": 4573,
+          "ppid": 4573,
+          "exe": "/usr/local/bin/hardred-probe",
+          "parent": "/bin/bash"
+        }
+      ],
+      "error": ""
+    },
+    {
+      "case": {
+        "case_id": "EP-SHM-EXEC-01",
+        "domain": "hardred-endpoint",
+        "category": "/dev/shm Dropper Execution",
+        "title": "Executable script staged & executed from /dev/shm/hardred-sandbox",
+        "polarity": "attack",
+        "mitre_technique": "T1059.004",
+        "mitre_tactic": "Execution",
+        "tool_source": "hardred-probe",
+        "expected_prevention": true,
+        "severity": "high"
+      },
+      "started_utc": "2026-11-23T09:28:01.228515+00:00",
+      "ended_utc": "2026-11-23T09:28:01.631052+00:00",
+      "duration_ms": 402.53,
+      "detected": true,
+      "prevented": true,
+      "context_maturity": 3,
+      "ttfa_ms": 250.0,
+      "pre_kill_damage": null,
+      "pre_kill_total": null,
+      "http_status": null,
+      "exit_code": 0,
+      "evidence_summary": "rc=0, out={\"probe\": \"shm-exec\", \"target\": \"/dev/shm/hardred-sandbox/shm_exec_test.sh\", \"ok\": false, \"exit_code\": -1, \"error\": \"signal: killed\", \"elaps; hardred-untrusted-exec/__x64_sys_execve",
+      "raw_alerts": [
+        {
+          "sensor": "cilium-tetragon",
+          "rule_id": "hardred-untrusted-exec/__x64_sys_execve",
+          "action": "KPROBE_ACTION_SIGKILL",
+          "pid": 4752,
+          "ppid": 4746,
+          "exe": "/usr/local/bin/hardred-probe",
+          "parent": "/usr/local/bin/hardred-probe"
+        }
+      ],
+      "error": ""
+    },
+    {
+      "case": {
+        "case_id": "EP-TMP-ELF-01",
+        "domain": "hardred-endpoint",
+        "category": "Untrusted Binary Execution (/tmp)",
+        "title": "Unverified ELF binary copied to /tmp and executed (TITAN-Exec gate)",
+        "polarity": "attack",
+        "mitre_technique": "T1204.002",
+        "mitre_tactic": "Execution",
+        "tool_source": "hardred-probe",
+        "expected_prevention": true,
+        "severity": "critical"
+      },
+      "started_utc": "2026-11-23T09:28:03.158732+00:00",
+      "ended_utc": "2026-11-23T09:28:03.590964+00:00",
+      "duration_ms": 432.22,
+      "detected": true,
+      "prevented": true,
+      "context_maturity": 3,
+      "ttfa_ms": 250.0,
+      "pre_kill_damage": null,
+      "pre_kill_total": null,
+      "http_status": null,
+      "exit_code": 0,
+      "evidence_summary": "rc=0, out={\"probe\": \"tmp-exec\", \"target\": \"/tmp/hardred-sandbox/tmpexec/untrusted_exec_test\", \"ok\": false, \"exit_code\": -1, \"error\": \"signal: killed\",; hardred-untrusted-exec/__x64_sys_execve",
+      "raw_alerts": [
+        {
+          "sensor": "cilium-tetragon",
+          "rule_id": "hardred-untrusted-exec/__x64_sys_execve",
+          "action": "KPROBE_ACTION_SIGKILL",
+          "pid": 4926,
+          "ppid": 4920,
+          "exe": "/usr/local/bin/hardred-probe",
+          "parent": "/usr/local/bin/hardred-probe"
+        }
+      ],
+      "error": ""
+    },
+    {
+      "case": {
+        "case_id": "EP-LPE-KERNEL-01",
+        "domain": "hardred-endpoint",
+        "category": "Kernel LPE & Protocol Attack Surface",
+        "title": "Blacklisted SCTP/DCCP socket + AF_PACKET + ptrace + /etc/shadow probe",
+        "polarity": "attack",
+        "mitre_technique": "T1068",
+        "mitre_tactic": "Privilege Escalation",
+        "tool_source": "hardred-probe",
+        "expected_prevention": true,
+        "severity": "high"
+      },
+      "started_utc": "2026-11-23T09:28:05.091357+00:00",
+      "ended_utc": "2026-11-23T09:28:05.522590+00:00",
+      "duration_ms": 431.22,
+      "detected": true,
+      "prevented": true,
+      "context_maturity": 3,
+      "ttfa_ms": 250.0,
+      "pre_kill_damage": null,
+      "pre_kill_total": null,
+      "http_status": null,
+      "exit_code": 0,
+      "evidence_summary": "rc=0, out={\"probe\": \"lpe-probe\", \"sctp_socket\": {\"attempted\": true, \"ok\": false, \"errno\": \"ESOCKTNOSUPPORT\", \"error\": \"socket type not supported\", \"de; hardred-kernel-network-surface/__x64_sys_ptrace",
+      "raw_alerts": [
+        {
+          "sensor": "cilium-tetragon",
+          "rule_id": "hardred-kernel-network-surface/__x64_sys_ptrace",
+          "action": "KPROBE_ACTION_POST",
+          "pid": 5107,
+          "ppid": 5093,
+          "exe": "/usr/local/bin/hardred-probe",
+          "parent": "/usr/local/bin/hardred-probe"
+        }
+      ],
+      "error": ""
+    },
+    {
+      "case": {
+        "case_id": "EP-RANSOM-AES-01",
+        "domain": "hardred-endpoint",
+        "category": "Ransomware AES-256 Encryption Burst",
+        "title": "In-place AES-256-GCM encryption of 120 realistic files (TTFA + pre-kill damage)",
+        "polarity": "attack",
+        "mitre_technique": "T1486",
+        "mitre_tactic": "Impact",
+        "tool_source": "hardred-probe",
+        "expected_prevention": true,
+        "severity": "critical"
+      },
+      "started_utc": "2026-11-23T09:28:06.900078+00:00",
+      "ended_utc": "2026-11-23T09:28:13.011888+00:00",
+      "duration_ms": 6111.8,
+      "detected": false,
+      "prevented": false,
+      "context_maturity": 0,
+      "ttfa_ms": null,
+      "pre_kill_damage": 120,
+      "pre_kill_total": 120,
+      "http_status": null,
+      "exit_code": 0,
+      "evidence_summary": "rc=0, out={\"probe\": \"aes-ransom\", \"sandbox\": \"/tmp/hardred-sandbox/aes\", \"requested_count\": 120, \"completed_count\": 120, \"mean_entropy_before\": 4.8444; none",
+      "raw_alerts": [],
+      "error": ""
+    },
+    {
+      "case": {
+        "case_id": "EP-RANSOM-STORM-01",
+        "domain": "hardred-endpoint",
+        "category": "Ransomware Rename/Wiper Storm",
+        "title": "600-file / 50-batch rapid rename+wipe storm (TTFA + pre-kill damage)",
+        "polarity": "attack",
+        "mitre_technique": "T1485",
+        "mitre_tactic": "Impact",
+        "tool_source": "hardred-probe",
+        "expected_prevention": true,
+        "severity": "critical"
+      },
+      "started_utc": "2026-11-23T09:28:16.681374+00:00",
+      "ended_utc": "2026-11-23T09:28:21.418843+00:00",
+      "duration_ms": 4737.46,
+      "detected": false,
+      "prevented": false,
+      "context_maturity": 0,
+      "ttfa_ms": null,
+      "pre_kill_damage": 600,
+      "pre_kill_total": 600,
+      "http_status": null,
+      "exit_code": 0,
+      "evidence_summary": "rc=0, out={\"probe\": \"rename-storm\", \"sandbox\": \"/tmp/hardred-sandbox/storm\", \"requested_count\": 600, \"completed_count\": 600, \"batches\": 12, \"progress_; none",
+      "raw_alerts": [],
+      "error": ""
+    },
+    {
+      "case": {
+        "case_id": "EP-LINEAGE-CHILD-01",
+        "domain": "hardred-endpoint",
+        "category": "Process Lineage / Child-Kill Resilience",
+        "title": "Parent spawns child conducting AES-256 burst (child vs tree kill check)",
+        "polarity": "attack",
+        "mitre_technique": "T1059",
+        "mitre_tactic": "Execution",
+        "tool_source": "hardred-probe",
+        "expected_prevention": true,
+        "severity": "high"
+      },
+      "started_utc": "2026-11-23T09:28:25.174427+00:00",
+      "ended_utc": "2026-11-23T09:28:27.968730+00:00",
+      "duration_ms": 2794.29,
+      "detected": false,
+      "prevented": false,
+      "context_maturity": 0,
+      "ttfa_ms": null,
+      "pre_kill_damage": 60,
+      "pre_kill_total": 60,
+      "http_status": null,
+      "exit_code": 0,
+      "evidence_summary": "rc=0, out={\"probe\": \"child-kill-test\", \"sandbox\": \"/tmp/hardred-sandbox/child\", \"child_pid\": 5742, \"status\": {\"exited\": true, \"exit_code\": 0, \"signale; none",
+      "raw_alerts": [],
+      "error": ""
+    },
+    {
+      "case": {
+        "case_id": "EP-C2-EGRESS-01",
+        "domain": "hardred-endpoint",
+        "category": "Unauthorized C2 Egress (Web Worker Cell)",
+        "title": "Outbound HTTP egress to 1.1.1.1 from inside php8.3-fpm.service cgroup",
+        "polarity": "attack",
+        "mitre_technique": "T1071.001",
+        "mitre_tactic": "Command and Control",
+        "tool_source": "styx-cgroup-curl",
+        "expected_prevention": true,
+        "severity": "high"
+      },
+      "started_utc": "2026-11-23T09:28:31.661015+00:00",
+      "ended_utc": "2026-11-23T09:28:32.133182+00:00",
+      "duration_ms": 472.16,
+      "detected": false,
+      "prevented": true,
+      "context_maturity": 1,
+      "ttfa_ms": 472.16,
+      "pre_kill_damage": null,
+      "pre_kill_total": null,
+      "http_status": null,
+      "exit_code": 7,
+      "evidence_summary": "rc=7, out={}; none",
+      "raw_alerts": [],
+      "error": "Warning: Permanently added '[127.0.0.1]:2222' (ED25519) to the list of known hosts."
+    },
+    {
+      "case": {
+        "case_id": "EP-FALCO-01",
+        "domain": "hardred-endpoint",
+        "category": "Kernel Syscall Behavior (Falco)",
+        "title": "Read /etc/shadow by untrusted program",
+        "polarity": "attack",
+        "mitre_technique": "T1003.008",
+        "mitre_tactic": "Credential Access",
+        "tool_source": "falco-event-generator",
+        "expected_prevention": false,
+        "severity": "high"
+      },
+      "started_utc": "2026-11-23T09:28:35.065339+00:00",
+      "ended_utc": "2026-11-23T09:28:35.731931+00:00",
+      "duration_ms": 666.58,
+      "detected": false,
+      "prevented": false,
+      "context_maturity": 0,
+      "ttfa_ms": null,
+      "pre_kill_damage": null,
+      "pre_kill_total": null,
+      "http_status": null,
+      "exit_code": 0,
+      "evidence_summary": "rc=0, out={}; none",
+      "raw_alerts": [],
+      "error": ""
+    },
+    {
+      "case": {
+        "case_id": "EP-FALCO-02",
+        "domain": "hardred-endpoint",
+        "category": "Kernel Syscall Behavior (Falco)",
+        "title": "Symlink over sensitive /etc target",
+        "polarity": "attack",
+        "mitre_technique": "T1036",
+        "mitre_tactic": "Defense Evasion",
+        "tool_source": "falco-event-generator",
+        "expected_prevention": false,
+        "severity": "high"
+      },
+      "started_utc": "2026-11-23T09:28:38.285806+00:00",
+      "ended_utc": "2026-11-23T09:28:38.798552+00:00",
+      "duration_ms": 512.74,
+      "detected": false,
+      "prevented": false,
+      "context_maturity": 0,
+      "ttfa_ms": null,
+      "pre_kill_damage": null,
+      "pre_kill_total": null,
+      "http_status": null,
+      "exit_code": 0,
+      "evidence_summary": "rc=0, out={}; none",
+      "raw_alerts": [],
+      "error": ""
+    },
+    {
+      "case": {
+        "case_id": "EP-FALCO-03",
+        "domain": "hardred-endpoint",
+        "category": "Kernel Syscall Behavior (Falco)",
+        "title": "Ptrace process memory / anti-debug syscall",
+        "polarity": "attack",
+        "mitre_technique": "T1055.008",
+        "mitre_tactic": "Privilege Escalation",
+        "tool_source": "falco-event-generator",
+        "expected_prevention": false,
+        "severity": "high"
+      },
+      "started_utc": "2026-11-23T09:28:41.403529+00:00",
+      "ended_utc": "2026-11-23T09:28:41.924163+00:00",
+      "duration_ms": 520.62,
+      "detected": true,
+      "prevented": false,
+      "context_maturity": 3,
+      "ttfa_ms": 250.0,
+      "pre_kill_damage": null,
+      "pre_kill_total": null,
+      "http_status": null,
+      "exit_code": 0,
+      "evidence_summary": "rc=0, out={}; hardred-kernel-network-surface/__x64_sys_ptrace",
+      "raw_alerts": [
+        {
+          "sensor": "cilium-tetragon",
+          "rule_id": "hardred-kernel-network-surface/__x64_sys_ptrace",
+          "action": "KPROBE_ACTION_POST",
+          "pid": 6503,
+          "ppid": 6495,
+          "exe": "/usr/local/bin/event-generator",
+          "parent": "/usr/local/bin/event-generator"
+        }
+      ],
+      "error": ""
+    },
+    {
+      "case": {
+        "case_id": "EP-ART-T1087",
+        "domain": "hardred-endpoint",
+        "category": "Atomic Red Team Linux TTP",
+        "title": "Local Account Enumeration (/etc/passwd, id, lastlog) [yaml=True]",
+        "polarity": "attack",
+        "mitre_technique": "T1087.001",
+        "mitre_tactic": "Discovery",
+        "tool_source": "atomic-red-team",
+        "expected_prevention": false,
+        "severity": "medium"
+      },
+      "started_utc": "2026-11-23T09:28:45.000226+00:00",
+      "ended_utc": "2026-11-23T09:28:45.415867+00:00",
+      "duration_ms": 415.63,
+      "detected": false,
+      "prevented": false,
+      "context_maturity": 0,
+      "ttfa_ms": null,
+      "pre_kill_damage": null,
+      "pre_kill_total": null,
+      "http_status": null,
+      "exit_code": 0,
+      "evidence_summary": "rc=0, out={}; none",
+      "raw_alerts": [],
+      "error": ""
+    },
+    {
+      "case": {
+        "case_id": "EP-ART-T1059",
+        "domain": "hardred-endpoint",
+        "category": "Atomic Red Team Linux TTP",
+        "title": "Base64 Obfuscated Shell Execution [yaml=True]",
+        "polarity": "attack",
+        "mitre_technique": "T1059.004",
+        "mitre_tactic": "Execution",
+        "tool_source": "atomic-red-team",
+        "expected_prevention": false,
+        "severity": "medium"
+      },
+      "started_utc": "2026-11-23T09:28:49.071893+00:00",
+      "ended_utc": "2026-11-23T09:28:49.476154+00:00",
+      "duration_ms": 404.25,
+      "detected": false,
+      "prevented": false,
+      "context_maturity": 0,
+      "ttfa_ms": null,
+      "pre_kill_damage": null,
+      "pre_kill_total": null,
+      "http_status": null,
+      "exit_code": 0,
+      "evidence_summary": "rc=0, out={}; none",
+      "raw_alerts": [],
+      "error": ""
+    },
+    {
+      "case": {
+        "case_id": "EP-ART-T1053",
+        "domain": "hardred-endpoint",
+        "category": "Atomic Red Team Linux TTP",
+        "title": "Cron Persistence Staging & Cleanup [yaml=True]",
+        "polarity": "attack",
+        "mitre_technique": "T1053.003",
+        "mitre_tactic": "Persistence",
+        "tool_source": "atomic-red-team",
+        "expected_prevention": false,
+        "severity": "medium"
+      },
+      "started_utc": "2026-11-23T09:28:51.983919+00:00",
+      "ended_utc": "2026-11-23T09:28:52.638882+00:00",
+      "duration_ms": 654.95,
+      "detected": false,
+      "prevented": false,
+      "context_maturity": 0,
+      "ttfa_ms": null,
+      "pre_kill_damage": null,
+      "pre_kill_total": null,
+      "http_status": null,
+      "exit_code": 0,
+      "evidence_summary": "rc=0, out={}; none",
+      "raw_alerts": [],
+      "error": ""
+    },
+    {
+      "case": {
+        "case_id": "EP-ART-T1548",
+        "domain": "hardred-endpoint",
+        "category": "Atomic Red Team Linux TTP",
+        "title": "SUID/Capabilities Enumeration [yaml=True]",
+        "polarity": "attack",
+        "mitre_technique": "T1548.001",
+        "mitre_tactic": "Privilege Escalation",
+        "tool_source": "atomic-red-team",
+        "expected_prevention": false,
+        "severity": "medium"
+      },
+      "started_utc": "2026-11-23T09:28:55.179305+00:00",
+      "ended_utc": "2026-11-23T09:28:55.531434+00:00",
+      "duration_ms": 352.12,
+      "detected": false,
+      "prevented": false,
+      "context_maturity": 0,
+      "ttfa_ms": null,
+      "pre_kill_damage": null,
+      "pre_kill_total": null,
+      "http_status": null,
+      "exit_code": 0,
+      "evidence_summary": "rc=0, out={}; none",
+      "raw_alerts": [],
+      "error": ""
+    },
+    {
+      "case": {
+        "case_id": "WAF-SQLI-01",
+        "domain": "hardred-waf",
+        "category": "SQL Injection",
+        "title": "SQL Injection (WAF-SQLI-01)",
+        "polarity": "attack",
+        "mitre_technique": "T1190",
+        "mitre_tactic": "Initial Access",
+        "tool_source": "hardred-http",
+        "expected_prevention": true,
+        "severity": "high"
+      },
+      "started_utc": "2026-11-23T09:31:27.989694+00:00",
+      "ended_utc": "2026-11-23T09:31:28.048821+00:00",
+      "duration_ms": 59.12,
+      "detected": true,
+      "prevented": true,
+      "context_maturity": 2,
+      "ttfa_ms": 250.0,
+      "pre_kill_damage": null,
+      "pre_kill_total": null,
+      "http_status": 403,
+      "exit_code": null,
+      "evidence_summary": "http=403; 942100",
+      "raw_alerts": [
+        {
+          "sensor": "modsecurity-crs",
+          "rule_id": "942100",
+          "src_ip": "192.168.56.1",
+          "uri": "/index.php?id=1%27%20UNION%20ALL%20SELECT%20NULL,user(),database()--",
+          "http_code": 403,
+          "msg": "SQL Injection Attack Detected via libinjection"
+        }
+      ],
+      "error": ""
+    },
+    {
+      "case": {
+        "case_id": "WAF-SQLI-02",
+        "domain": "hardred-waf",
+        "category": "SQL Injection",
+        "title": "SQL Injection (WAF-SQLI-02)",
+        "polarity": "attack",
+        "mitre_technique": "T1190",
+        "mitre_tactic": "Initial Access",
+        "tool_source": "hardred-http",
+        "expected_prevention": true,
+        "severity": "high"
+      },
+      "started_utc": "2026-11-23T09:31:29.078720+00:00",
+      "ended_utc": "2026-11-23T09:31:29.116554+00:00",
+      "duration_ms": 37.82,
+      "detected": true,
+      "prevented": true,
+      "context_maturity": 2,
+      "ttfa_ms": 250.0,
+      "pre_kill_damage": null,
+      "pre_kill_total": null,
+      "http_status": 403,
+      "exit_code": null,
+      "evidence_summary": "http=403; 942100",
+      "raw_alerts": [
+        {
+          "sensor": "modsecurity-crs",
+          "rule_id": "942100",
+          "src_ip": "192.168.56.1",
+          "uri": "/index.php?id=1/**/oR/**/1=1--",
+          "http_code": 403,
+          "msg": "SQL Injection Attack Detected via libinjection"
+        }
+      ],
+      "error": ""
+    },
+    {
+      "case": {
+        "case_id": "WAF-SQLI-03",
+        "domain": "hardred-waf",
+        "category": "SQL Injection",
+        "title": "SQL Injection (WAF-SQLI-03)",
+        "polarity": "attack",
+        "mitre_technique": "T1190",
+        "mitre_tactic": "Initial Access",
+        "tool_source": "hardred-http",
+        "expected_prevention": true,
+        "severity": "high"
+      },
+      "started_utc": "2026-11-23T09:31:30.155850+00:00",
+      "ended_utc": "2026-11-23T09:31:30.206418+00:00",
+      "duration_ms": 50.56,
+      "detected": true,
+      "prevented": true,
+      "context_maturity": 2,
+      "ttfa_ms": 250.0,
+      "pre_kill_damage": null,
+      "pre_kill_total": null,
+      "http_status": 403,
+      "exit_code": null,
+      "evidence_summary": "http=403; 942100",
+      "raw_alerts": [
+        {
+          "sensor": "modsecurity-crs",
+          "rule_id": "942100",
+          "src_ip": "192.168.56.1",
+          "uri": "/index.php",
+          "http_code": 403,
+          "msg": "SQL Injection Attack Detected via libinjection"
+        }
+      ],
+      "error": ""
+    },
+    {
+      "case": {
+        "case_id": "WAF-XSS-01",
+        "domain": "hardred-waf",
+        "category": "Cross-Site Scripting",
+        "title": "Cross-Site Scripting (WAF-XSS-01)",
+        "polarity": "attack",
+        "mitre_technique": "T1059.007",
+        "mitre_tactic": "Execution",
+        "tool_source": "hardred-http",
+        "expected_prevention": true,
+        "severity": "high"
+      },
+      "started_utc": "2026-11-23T09:31:31.435244+00:00",
+      "ended_utc": "2026-11-23T09:31:31.487632+00:00",
+      "duration_ms": 52.38,
+      "detected": true,
+      "prevented": true,
+      "context_maturity": 2,
+      "ttfa_ms": 250.0,
+      "pre_kill_damage": null,
+      "pre_kill_total": null,
+      "http_status": 403,
+      "exit_code": null,
+      "evidence_summary": "http=403; 941100",
+      "raw_alerts": [
+        {
+          "sensor": "modsecurity-crs",
+          "rule_id": "941100",
+          "src_ip": "192.168.56.1",
+          "uri": "/index.php?q=%3Cscript%3Ealert(document.cookie)%3C/script%3E",
+          "http_code": 403,
+          "msg": "XSS Attack Detected via libinjection"
+        }
+      ],
+      "error": ""
+    },
+    {
+      "case": {
+        "case_id": "WAF-XSS-02",
+        "domain": "hardred-waf",
+        "category": "Cross-Site Scripting",
+        "title": "Cross-Site Scripting (WAF-XSS-02)",
+        "polarity": "attack",
+        "mitre_technique": "T1059.007",
+        "mitre_tactic": "Execution",
+        "tool_source": "hardred-http",
+        "expected_prevention": true,
+        "severity": "high"
+      },
+      "started_utc": "2026-11-23T09:31:32.644199+00:00",
+      "ended_utc": "2026-11-23T09:31:32.684556+00:00",
+      "duration_ms": 40.34,
+      "detected": true,
+      "prevented": true,
+      "context_maturity": 2,
+      "ttfa_ms": 250.0,
+      "pre_kill_damage": null,
+      "pre_kill_total": null,
+      "http_status": 403,
+      "exit_code": null,
+      "evidence_summary": "http=403; 941100",
+      "raw_alerts": [
+        {
+          "sensor": "modsecurity-crs",
+          "rule_id": "941100",
+          "src_ip": "192.168.56.1",
+          "uri": "/index.php?q=%3Csvg/onload=fetch(%27//evil.invalid%27)%3E",
+          "http_code": 403,
+          "msg": "XSS Attack Detected via libinjection"
+        }
+      ],
+      "error": ""
+    },
+    {
+      "case": {
+        "case_id": "WAF-LFI-01",
+        "domain": "hardred-waf",
+        "category": "Path Traversal / LFI",
+        "title": "Path Traversal / LFI (WAF-LFI-01)",
+        "polarity": "attack",
+        "mitre_technique": "T1083",
+        "mitre_tactic": "Discovery",
+        "tool_source": "hardred-http",
+        "expected_prevention": true,
+        "severity": "high"
+      },
+      "started_utc": "2026-11-23T09:31:33.846794+00:00",
+      "ended_utc": "2026-11-23T09:31:38.877931+00:00",
+      "duration_ms": 5031.13,
+      "detected": true,
+      "prevented": true,
+      "context_maturity": 2,
+      "ttfa_ms": 182.25,
+      "pre_kill_damage": null,
+      "pre_kill_total": null,
+      "http_status": null,
+      "exit_code": null,
+      "evidence_summary": "http=None; suricata:9100001, suricata:9100001, suricata:9100001",
+      "raw_alerts": [
+        {
+          "sensor": "suricata-ips",
+          "rule_id": "suricata:9100001",
+          "signature": "SURICATA-IPS Portscan burst detected",
+          "src_ip": "192.168.56.1",
+          "dest_port": 80,
+          "action": "blocked"
+        },
+        {
+          "sensor": "suricata-ips",
+          "rule_id": "suricata:9100001",
+          "signature": "SURICATA-IPS Portscan burst detected",
+          "src_ip": "192.168.56.1",
+          "dest_port": 80,
+          "action": "blocked"
+        },
+        {
+          "sensor": "suricata-ips",
+          "rule_id": "suricata:9100001",
+          "signature": "SURICATA-IPS Portscan burst detected",
+          "src_ip": "192.168.56.1",
+          "dest_port": 80,
+          "action": "blocked"
+        }
+      ],
+      "error": ""
+    },
+    {
+      "case": {
+        "case_id": "WAF-LFI-02",
+        "domain": "hardred-waf",
+        "category": "Double-Encoded Traversal",
+        "title": "Double-Encoded Traversal (WAF-LFI-02)",
+        "polarity": "attack",
+        "mitre_technique": "T1083",
+        "mitre_tactic": "Discovery",
+        "tool_source": "hardred-http",
+        "expected_prevention": true,
+        "severity": "high"
+      },
+      "started_utc": "2026-11-23T09:31:40.431221+00:00",
+      "ended_utc": "2026-11-23T09:31:40.471853+00:00",
+      "duration_ms": 40.62,
+      "detected": true,
+      "prevented": true,
+      "context_maturity": 2,
+      "ttfa_ms": 250.0,
+      "pre_kill_damage": null,
+      "pre_kill_total": null,
+      "http_status": 403,
+      "exit_code": null,
+      "evidence_summary": "http=403; 930100",
+      "raw_alerts": [
+        {
+          "sensor": "modsecurity-crs",
+          "rule_id": "930100",
+          "src_ip": "192.168.56.1",
+          "uri": "/index.php?file=..%252f..%252f..%252fetc%252fshadow",
+          "http_code": 403,
+          "msg": "Path Traversal Attack (/../)"
+        }
+      ],
+      "error": ""
+    },
+    {
+      "case": {
+        "case_id": "WAF-RCE-01",
+        "domain": "hardred-waf",
+        "category": "OS Command Injection",
+        "title": "OS Command Injection (WAF-RCE-01)",
+        "polarity": "attack",
+        "mitre_technique": "T1059.004",
+        "mitre_tactic": "Execution",
+        "tool_source": "hardred-http",
+        "expected_prevention": true,
+        "severity": "high"
+      },
+      "started_utc": "2026-11-23T09:31:41.512891+00:00",
+      "ended_utc": "2026-11-23T09:31:41.552933+00:00",
+      "duration_ms": 40.03,
+      "detected": true,
+      "prevented": true,
+      "context_maturity": 2,
+      "ttfa_ms": 250.0,
+      "pre_kill_damage": null,
+      "pre_kill_total": null,
+      "http_status": 403,
+      "exit_code": null,
+      "evidence_summary": "http=403; 930120",
+      "raw_alerts": [
+        {
+          "sensor": "modsecurity-crs",
+          "rule_id": "930120",
+          "src_ip": "192.168.56.1",
+          "uri": "/index.php?cmd=;cat%20/etc/passwd%23",
+          "http_code": 403,
+          "msg": "OS File Access Attempt"
+        }
+      ],
+      "error": ""
+    },
+    {
+      "case": {
+        "case_id": "WAF-RCE-02",
+        "domain": "hardred-waf",
+        "category": "PHP Webshell Payload",
+        "title": "PHP Webshell Payload (WAF-RCE-02)",
+        "polarity": "attack",
+        "mitre_technique": "T1505.003",
+        "mitre_tactic": "Persistence",
+        "tool_source": "hardred-http",
+        "expected_prevention": true,
+        "severity": "high"
+      },
+      "started_utc": "2026-11-23T09:31:42.623977+00:00",
+      "ended_utc": "2026-11-23T09:31:42.672062+00:00",
+      "duration_ms": 48.07,
+      "detected": true,
+      "prevented": true,
+      "context_maturity": 3,
+      "ttfa_ms": 250.0,
+      "pre_kill_damage": null,
+      "pre_kill_total": null,
+      "http_status": 403,
+      "exit_code": null,
+      "evidence_summary": "http=403; 920420, hardred-kernel-network-surface/__x64_sys_memfd_create",
+      "raw_alerts": [
+        {
+          "sensor": "modsecurity-crs",
+          "rule_id": "920420",
+          "src_ip": "192.168.56.1",
+          "uri": "/index.php",
+          "http_code": 403,
+          "msg": "Request content type is not allowed by policy"
+        },
+        {
+          "sensor": "cilium-tetragon",
+          "rule_id": "hardred-kernel-network-surface/__x64_sys_memfd_create",
+          "action": "KPROBE_ACTION_POST",
+          "pid": 1,
+          "ppid": 0,
+          "exe": "/usr/lib/systemd/systemd",
+          "parent": "<kernel>"
+        }
+      ],
+      "error": ""
+    },
+    {
+      "case": {
+        "case_id": "WAF-SSTI-01",
+        "domain": "hardred-waf",
+        "category": "Server-Side Template Injection",
+        "title": "Server-Side Template Injection (WAF-SSTI-01)",
+        "polarity": "attack",
+        "mitre_technique": "T1190",
+        "mitre_tactic": "Initial Access",
+        "tool_source": "hardred-http",
+        "expected_prevention": true,
+        "severity": "high"
+      },
+      "started_utc": "2026-11-23T09:31:43.731395+00:00",
+      "ended_utc": "2026-11-23T09:31:43.768849+00:00",
+      "duration_ms": 37.45,
+      "detected": true,
+      "prevented": true,
+      "context_maturity": 2,
+      "ttfa_ms": 250.0,
+      "pre_kill_damage": null,
+      "pre_kill_total": null,
+      "http_status": 403,
+      "exit_code": null,
+      "evidence_summary": "http=403; 920220",
+      "raw_alerts": [
+        {
+          "sensor": "modsecurity-crs",
+          "rule_id": "920220",
+          "src_ip": "192.168.56.1",
+          "uri": "/index.php?tpl={{7*7}}${7*7}%3C%25=7*7%25%3E",
+          "http_code": 403,
+          "msg": "URL Encoding Abuse Attack Attempt"
+        }
+      ],
+      "error": ""
+    },
+    {
+      "case": {
+        "case_id": "WAF-XXE-01",
+        "domain": "hardred-waf",
+        "category": "XML External Entity",
+        "title": "XML External Entity (WAF-XXE-01)",
+        "polarity": "attack",
+        "mitre_technique": "T1190",
+        "mitre_tactic": "Initial Access",
+        "tool_source": "hardred-http",
+        "expected_prevention": true,
+        "severity": "high"
+      },
+      "started_utc": "2026-11-23T09:31:44.807811+00:00",
+      "ended_utc": "2026-11-23T09:31:44.864460+00:00",
+      "duration_ms": 56.64,
+      "detected": true,
+      "prevented": false,
+      "context_maturity": 2,
+      "ttfa_ms": 250.0,
+      "pre_kill_damage": null,
+      "pre_kill_total": null,
+      "http_status": 200,
+      "exit_code": null,
+      "evidence_summary": "http=200; suricata:2066044",
+      "raw_alerts": [
+        {
+          "sensor": "suricata-ips",
+          "rule_id": "suricata:2066044",
+          "signature": "ET HUNTING XML External Entity Injection Inbound M1",
+          "src_ip": "192.168.56.1",
+          "dest_port": 80,
+          "action": "allowed"
+        }
+      ],
+      "error": ""
+    },
+    {
+      "case": {
+        "case_id": "WAF-SSRF-01",
+        "domain": "hardred-waf",
+        "category": "Cloud Metadata SSRF",
+        "title": "Cloud Metadata SSRF (WAF-SSRF-01)",
+        "polarity": "attack",
+        "mitre_technique": "T1552.005",
+        "mitre_tactic": "Credential Access",
+        "tool_source": "hardred-http",
+        "expected_prevention": true,
+        "severity": "high"
+      },
+      "started_utc": "2026-11-23T09:31:45.901104+00:00",
+      "ended_utc": "2026-11-23T09:31:50.930211+00:00",
+      "duration_ms": 5029.1,
+      "detected": true,
+      "prevented": true,
+      "context_maturity": 2,
+      "ttfa_ms": 180.82,
+      "pre_kill_damage": null,
+      "pre_kill_total": null,
+      "http_status": null,
+      "exit_code": null,
+      "evidence_summary": "http=None; suricata:9100001, suricata:9100001, suricata:9100001",
+      "raw_alerts": [
+        {
+          "sensor": "suricata-ips",
+          "rule_id": "suricata:9100001",
+          "signature": "SURICATA-IPS Portscan burst detected",
+          "src_ip": "192.168.56.1",
+          "dest_port": 80,
+          "action": "blocked"
+        },
+        {
+          "sensor": "suricata-ips",
+          "rule_id": "suricata:9100001",
+          "signature": "SURICATA-IPS Portscan burst detected",
+          "src_ip": "192.168.56.1",
+          "dest_port": 80,
+          "action": "blocked"
+        },
+        {
+          "sensor": "suricata-ips",
+          "rule_id": "suricata:9100001",
+          "signature": "SURICATA-IPS Portscan burst detected",
+          "src_ip": "192.168.56.1",
+          "dest_port": 80,
+          "action": "blocked"
+        }
+      ],
+      "error": ""
+    },
+    {
+      "case": {
+        "case_id": "WAF-SCAN-01",
+        "domain": "hardred-waf",
+        "category": "Exploit Scanner UA / Sensitive File",
+        "title": "Exploit Scanner UA / Sensitive File (WAF-SCAN-01)",
+        "polarity": "attack",
+        "mitre_technique": "T1595.002",
+        "mitre_tactic": "Reconnaissance",
+        "tool_source": "hardred-http",
+        "expected_prevention": true,
+        "severity": "high"
+      },
+      "started_utc": "2026-11-23T09:31:52.385517+00:00",
+      "ended_utc": "2026-11-23T09:31:52.436302+00:00",
+      "duration_ms": 50.78,
+      "detected": true,
+      "prevented": true,
+      "context_maturity": 2,
+      "ttfa_ms": 250.0,
+      "pre_kill_damage": null,
+      "pre_kill_total": null,
+      "http_status": 403,
+      "exit_code": null,
+      "evidence_summary": "http=403; 913100, suricata:2031502",
+      "raw_alerts": [
+        {
+          "sensor": "modsecurity-crs",
+          "rule_id": "913100",
+          "src_ip": "192.168.56.1",
+          "uri": "/.env",
+          "http_code": 403,
+          "msg": "Found User-Agent associated with security scanner"
+        },
+        {
+          "sensor": "suricata-ips",
+          "rule_id": "suricata:2031502",
+          "signature": "ET INFO Request to Hidden Environment File - Inbound",
+          "src_ip": "192.168.56.1",
+          "dest_port": 80,
+          "action": "allowed"
+        }
+      ],
+      "error": ""
+    },
+    {
+      "case": {
+        "case_id": "WAF-FAILOPEN-01",
+        "domain": "hardred-waf",
+        "category": "Oversized Body Inspection Check",
+        "title": "Oversized Body Inspection Check (WAF-FAILOPEN-01)",
+        "polarity": "attack",
+        "mitre_technique": "T1190",
+        "mitre_tactic": "Initial Access",
+        "tool_source": "hardred-http",
+        "expected_prevention": true,
+        "severity": "high"
+      },
+      "started_utc": "2026-11-23T09:31:53.507293+00:00",
+      "ended_utc": "2026-11-23T09:31:53.773142+00:00",
+      "duration_ms": 265.84,
+      "detected": true,
+      "prevented": true,
+      "context_maturity": 2,
+      "ttfa_ms": 250.0,
+      "pre_kill_damage": null,
+      "pre_kill_total": null,
+      "http_status": 403,
+      "exit_code": null,
+      "evidence_summary": "http=403; 920420",
+      "raw_alerts": [
+        {
+          "sensor": "modsecurity-crs",
+          "rule_id": "920420",
+          "src_ip": "192.168.56.1",
+          "uri": "/index.php",
+          "http_code": 403,
+          "msg": "Request content type is not allowed by policy"
+        }
+      ],
+      "error": ""
+    },
+    {
+      "case": {
+        "case_id": "NET-BRUTE-HTTP-01",
+        "domain": "hardred-netids",
+        "category": "HTTP Auth Brute-Force",
+        "title": "Rapid HTTP credential spraying (/wp-login.php 25x)",
+        "polarity": "attack",
+        "mitre_technique": "T1110.001",
+        "mitre_tactic": "Credential Access",
+        "tool_source": "hardred-netprobe",
+        "expected_prevention": true,
+        "severity": "high"
+      },
+      "started_utc": "2026-11-23T09:31:59.281984+00:00",
+      "ended_utc": "2026-11-23T09:32:15.193915+00:00",
+      "duration_ms": 14249.6,
+      "detected": true,
+      "prevented": true,
+      "context_maturity": 3,
+      "ttfa_ms": 151.5,
+      "pre_kill_damage": null,
+      "pre_kill_total": null,
+      "http_status": null,
+      "exit_code": null,
+      "evidence_summary": "blocked_or_dropped=8/25; 920350, 920350, 920350, 920350, 920350",
+      "raw_alerts": [
+        {
+          "sensor": "modsecurity-crs",
+          "rule_id": "920350",
+          "src_ip": "192.168.56.1",
+          "uri": "/wp-login.php",
+          "http_code": 404,
+          "msg": "Host header is a numeric IP address"
+        },
+        {
+          "sensor": "modsecurity-crs",
+          "rule_id": "920350",
+          "src_ip": "192.168.56.1",
+          "uri": "/wp-login.php",
+          "http_code": 404,
+          "msg": "Host header is a numeric IP address"
+        },
+        {
+          "sensor": "modsecurity-crs",
+          "rule_id": "920350",
+          "src_ip": "192.168.56.1",
+          "uri": "/wp-login.php",
+          "http_code": 404,
+          "msg": "Host header is a numeric IP address"
+        },
+        {
+          "sensor": "modsecurity-crs",
+          "rule_id": "920350",
+          "src_ip": "192.168.56.1",
+          "uri": "/wp-login.php",
+          "http_code": 404,
+          "msg": "Host header is a numeric IP address"
+        },
+        {
+          "sensor": "modsecurity-crs",
+          "rule_id": "920350",
+          "src_ip": "192.168.56.1",
+          "uri": "/wp-login.php",
+          "http_code": 404,
+          "msg": "Host header is a numeric IP address"
+        },
+        {
+          "sensor": "modsecurity-crs",
+          "rule_id": "920350",
+          "src_ip": "192.168.56.1",
+          "uri": "/wp-login.php",
+          "http_code": 404,
+          "msg": "Host header is a numeric IP address"
+        },
+        {
+          "sensor": "modsecurity-crs",
+          "rule_id": "920350",
+          "src_ip": "192.168.56.1",
+          "uri": "/wp-login.php",
+          "http_code": 404,
+          "msg": "Host header is a numeric IP address"
+        },
+        {
+          "sensor": "modsecurity-crs",
+          "rule_id": "920350",
+          "src_ip": "192.168.56.1",
+          "uri": "/wp-login.php",
+          "http_code": 404,
+          "msg": "Host header is a numeric IP address"
+        },
+        {
+          "sensor": "modsecurity-crs",
+          "rule_id": "920350",
+          "src_ip": "192.168.56.1",
+          "uri": "/wp-login.php",
+          "http_code": 404,
+          "msg": "Host header is a numeric IP address"
+        },
+        {
+          "sensor": "modsecurity-crs",
+          "rule_id": "920350",
+          "src_ip": "192.168.56.1",
+          "uri": "/wp-login.php",
+          "http_code": 404,
+          "msg": "Host header is a numeric IP address"
+        },
+        {
+          "sensor": "modsecurity-crs",
+          "rule_id": "920350",
+          "src_ip": "192.168.56.1",
+          "uri": "/wp-login.php",
+          "http_code": 404,
+          "msg": "Host header is a numeric IP address"
+        },
+        {
+          "sensor": "modsecurity-crs",
+          "rule_id": "920350",
+          "src_ip": "192.168.56.1",
+          "uri": "/wp-login.php",
+          "http_code": 404,
+          "msg": "Host header is a numeric IP address"
+        },
+        {
+          "sensor": "modsecurity-crs",
+          "rule_id": "920350",
+          "src_ip": "192.168.56.1",
+          "uri": "/wp-login.php",
+          "http_code": 404,
+          "msg": "Host header is a numeric IP address"
+        },
+        {
+          "sensor": "modsecurity-crs",
+          "rule_id": "920350",
+          "src_ip": "192.168.56.1",
+          "uri": "/wp-login.php",
+          "http_code": 404,
+          "msg": "Host header is a numeric IP address"
+        },
+        {
+          "sensor": "modsecurity-crs",
+          "rule_id": "920350",
+          "src_ip": "192.168.56.1",
+          "uri": "/wp-login.php",
+          "http_code": 404,
+          "msg": "Host header is a numeric IP address"
+        }
+      ],
+      "error": ""
+    },
+    {
+      "case": {
+        "case_id": "NET-BRUTE-SSH-01",
+        "domain": "hardred-netids",
+        "category": "SSH Credential Brute-Force",
+        "title": "SSH failed login burst (18 attempts -> IP ban test)",
+        "polarity": "attack",
+        "mitre_technique": "T1110.001",
+        "mitre_tactic": "Credential Access",
+        "tool_source": "hardred-netbench",
+        "expected_prevention": true,
+        "severity": "high"
+      },
+      "started_utc": "2026-11-23T09:32:15.951428+00:00",
+      "ended_utc": "2026-11-23T09:32:23.415295+00:00",
+      "duration_ms": 5474.63,
+      "detected": true,
+      "prevented": true,
+      "context_maturity": 2,
+      "ttfa_ms": 577.76,
+      "pre_kill_damage": null,
+      "pre_kill_total": null,
+      "http_status": null,
+      "exit_code": null,
+      "evidence_summary": "ssh_spray={'probe': 'ssh-spray', 'addr': '192.168.56.50:22', 'attempts': 18, 'auth_failed': 3, 'timeouts': 4, 'tcp_refused': 0, 'other_errors': 0, 'first_drop_idx': 3, 'results': [{'idx': 0, 'username': 'hardred_invalid_00', 'outcome': 'auth_failed', 'error': 'ssh: handshake failed: ssh: unable to authenticate, attempted methods [none publickey], no supported methods remain', 'elapsed_ms': 57.403}, {'idx': 1, 'username': 'hardred_invalid_01', 'outcome': 'auth_failed', 'error': 'ssh: handshake failed: ssh: unable to authenticate, attempted methods [none publickey], no supported methods remain', 'elapsed_ms': 54.001}, {'idx': 2, 'username': 'hardred_invalid_02', 'outcome': 'auth_failed', 'error': 'ssh: handshake failed: ssh: unable to authenticate, attempted methods [none publickey], no supported methods remain', 'elapsed_ms': 58.142}, {'idx': 3, 'username': 'hardred_invalid_03', 'outcome': 'timeout', 'error': 'dial tcp 192.168.56.50:22: i/o timeout', 'elapsed_ms': 1200.038}, {'idx': 4, 'username': 'hardred_invalid_04', 'outcome': 'timeout', 'error': 'dial tcp 192.168.56.50:22: i/o timeout', 'elapsed_ms': 1200.58}, {'idx': 5, 'username': 'hardred_invalid_05', 'outcome': 'timeout', 'error': 'dial tcp 192.168.56.50:22: i/o timeout', 'elapsed_ms': 1200.235}, {'idx': 6, 'username': 'hardred_invalid_06', 'outcome': 'timeout', 'error': 'dial tcp 192.168.56.50:22: i/o timeout', 'elapsed_ms': 1200.23}], 'total_elapsed_ms': 5454.412}; suricata:2038967, suricata:2038968, suricata:9100001, suricata:9100001, suricata:9100001",
+      "raw_alerts": [
+        {
+          "sensor": "suricata-ips",
+          "rule_id": "suricata:2038967",
+          "signature": "ET INFO SSH-2.0-Go version string Observed in Network Traffic",
+          "src_ip": "192.168.56.1",
+          "dest_port": 22,
+          "action": "allowed"
+        },
+        {
+          "sensor": "suricata-ips",
+          "rule_id": "suricata:2038968",
+          "signature": "ET INFO SSH-2.0-Go version string Observed in Network Traffic",
+          "src_ip": "192.168.56.1",
+          "dest_port": 22,
+          "action": "allowed"
+        },
+        {
+          "sensor": "suricata-ips",
+          "rule_id": "suricata:9100001",
+          "signature": "SURICATA-IPS Portscan burst detected",
+          "src_ip": "192.168.56.1",
+          "dest_port": 22,
+          "action": "blocked"
+        },
+        {
+          "sensor": "suricata-ips",
+          "rule_id": "suricata:9100001",
+          "signature": "SURICATA-IPS Portscan burst detected",
+          "src_ip": "192.168.56.1",
+          "dest_port": 22,
+          "action": "blocked"
+        },
+        {
+          "sensor": "suricata-ips",
+          "rule_id": "suricata:9100001",
+          "signature": "SURICATA-IPS Portscan burst detected",
+          "src_ip": "192.168.56.1",
+          "dest_port": 22,
+          "action": "blocked"
+        },
+        {
+          "sensor": "suricata-ips",
+          "rule_id": "suricata:9100001",
+          "signature": "SURICATA-IPS Portscan burst detected",
+          "src_ip": "192.168.56.1",
+          "dest_port": 22,
+          "action": "blocked"
+        },
+        {
+          "sensor": "suricata-ips",
+          "rule_id": "suricata:9100001",
+          "signature": "SURICATA-IPS Portscan burst detected",
+          "src_ip": "192.168.56.1",
+          "dest_port": 22,
+          "action": "blocked"
+        },
+        {
+          "sensor": "suricata-ips",
+          "rule_id": "suricata:9100002",
+          "signature": "SURICATA-IPS SSH brute-force SYN burst",
+          "src_ip": "192.168.56.1",
+          "dest_port": 22,
+          "action": "allowed"
+        },
+        {
+          "sensor": "suricata-ips",
+          "rule_id": "suricata:9100001",
+          "signature": "SURICATA-IPS Portscan burst detected",
+          "src_ip": "192.168.56.1",
+          "dest_port": 22,
+          "action": "blocked"
+        },
+        {
+          "sensor": "suricata-ips",
+          "rule_id": "suricata:9100001",
+          "signature": "SURICATA-IPS Portscan burst detected",
+          "src_ip": "192.168.56.1",
+          "dest_port": 22,
+          "action": "blocked"
+        },
+        {
+          "sensor": "suricata-ips",
+          "rule_id": "suricata:9100001",
+          "signature": "SURICATA-IPS Portscan burst detected",
+          "src_ip": "192.168.56.1",
+          "dest_port": 22,
+          "action": "blocked"
+        }
+      ],
+      "error": ""
+    },
+    {
+      "case": {
+        "case_id": "NET-VELOCITY-01",
+        "domain": "hardred-netids",
+        "category": "HTTP/L4 Velocity Burst",
+        "title": "High-concurrency connection & request flood (240 req @ 28 threads)",
+        "polarity": "attack",
+        "mitre_technique": "T1499.002",
+        "mitre_tactic": "Impact",
+        "tool_source": "hardred-netbench",
+        "expected_prevention": true,
+        "severity": "high"
+      },
+      "started_utc": "2026-11-23T09:32:24.392196+00:00",
+      "ended_utc": "2026-11-23T09:32:28.133510+00:00",
+      "duration_ms": 1743.84,
+      "detected": true,
+      "prevented": false,
+      "context_maturity": 2,
+      "ttfa_ms": 172.99,
+      "pre_kill_damage": null,
+      "pre_kill_total": null,
+      "http_status": null,
+      "exit_code": null,
+      "evidence_summary": "blocked_or_dropped=0/240; suricata:9100001, suricata:9100001, suricata:9100001, suricata:9100001, suricata:9100001",
+      "raw_alerts": [
+        {
+          "sensor": "suricata-ips",
+          "rule_id": "suricata:9100001",
+          "signature": "SURICATA-IPS Portscan burst detected",
+          "src_ip": "192.168.56.1",
+          "dest_port": 80,
+          "action": "blocked"
+        },
+        {
+          "sensor": "suricata-ips",
+          "rule_id": "suricata:9100001",
+          "signature": "SURICATA-IPS Portscan burst detected",
+          "src_ip": "192.168.56.1",
+          "dest_port": 80,
+          "action": "blocked"
+        },
+        {
+          "sensor": "suricata-ips",
+          "rule_id": "suricata:9100001",
+          "signature": "SURICATA-IPS Portscan burst detected",
+          "src_ip": "192.168.56.1",
+          "dest_port": 80,
+          "action": "blocked"
+        },
+        {
+          "sensor": "suricata-ips",
+          "rule_id": "suricata:9100001",
+          "signature": "SURICATA-IPS Portscan burst detected",
+          "src_ip": "192.168.56.1",
+          "dest_port": 80,
+          "action": "blocked"
+        },
+        {
+          "sensor": "suricata-ips",
+          "rule_id": "suricata:9100001",
+          "signature": "SURICATA-IPS Portscan burst detected",
+          "src_ip": "192.168.56.1",
+          "dest_port": 80,
+          "action": "blocked"
+        },
+        {
+          "sensor": "suricata-ips",
+          "rule_id": "suricata:9100001",
+          "signature": "SURICATA-IPS Portscan burst detected",
+          "src_ip": "192.168.56.1",
+          "dest_port": 80,
+          "action": "blocked"
+        },
+        {
+          "sensor": "suricata-ips",
+          "rule_id": "suricata:9100001",
+          "signature": "SURICATA-IPS Portscan burst detected",
+          "src_ip": "192.168.56.1",
+          "dest_port": 80,
+          "action": "blocked"
+        },
+        {
+          "sensor": "suricata-ips",
+          "rule_id": "suricata:9100001",
+          "signature": "SURICATA-IPS Portscan burst detected",
+          "src_ip": "192.168.56.1",
+          "dest_port": 80,
+          "action": "blocked"
+        },
+        {
+          "sensor": "suricata-ips",
+          "rule_id": "suricata:9100001",
+          "signature": "SURICATA-IPS Portscan burst detected",
+          "src_ip": "192.168.56.1",
+          "dest_port": 80,
+          "action": "blocked"
+        },
+        {
+          "sensor": "suricata-ips",
+          "rule_id": "suricata:9100001",
+          "signature": "SURICATA-IPS Portscan burst detected",
+          "src_ip": "192.168.56.1",
+          "dest_port": 80,
+          "action": "blocked"
+        },
+        {
+          "sensor": "suricata-ips",
+          "rule_id": "suricata:9100001",
+          "signature": "SURICATA-IPS Portscan burst detected",
+          "src_ip": "192.168.56.1",
+          "dest_port": 80,
+          "action": "blocked"
+        },
+        {
+          "sensor": "suricata-ips",
+          "rule_id": "suricata:9100001",
+          "signature": "SURICATA-IPS Portscan burst detected",
+          "src_ip": "192.168.56.1",
+          "dest_port": 80,
+          "action": "blocked"
+        },
+        {
+          "sensor": "suricata-ips",
+          "rule_id": "suricata:9100001",
+          "signature": "SURICATA-IPS Portscan burst detected",
+          "src_ip": "192.168.56.1",
+          "dest_port": 80,
+          "action": "blocked"
+        },
+        {
+          "sensor": "suricata-ips",
+          "rule_id": "suricata:9100001",
+          "signature": "SURICATA-IPS Portscan burst detected",
+          "src_ip": "192.168.56.1",
+          "dest_port": 80,
+          "action": "blocked"
+        },
+        {
+          "sensor": "suricata-ips",
+          "rule_id": "suricata:9100001",
+          "signature": "SURICATA-IPS Portscan burst detected",
+          "src_ip": "192.168.56.1",
+          "dest_port": 80,
+          "action": "blocked"
+        }
+      ],
+      "error": ""
+    },
+    {
+      "case": {
+        "case_id": "NET-PORTSCAN-01",
+        "domain": "hardred-netids",
+        "category": "Multi-Port Reconnaissance",
+        "title": "16-port TCP connect scan -> Kinetic XDP / Firewall Ban verification",
+        "polarity": "attack",
+        "mitre_technique": "T1046",
+        "mitre_tactic": "Discovery",
+        "tool_source": "hardred-netbench",
+        "expected_prevention": true,
+        "severity": "high"
+      },
+      "started_utc": "2026-11-23T09:32:28.995402+00:00",
+      "ended_utc": "2026-11-23T09:32:37.925793+00:00",
+      "duration_ms": 7534.41,
+      "detected": true,
+      "prevented": true,
+      "context_maturity": 2,
+      "ttfa_ms": 108.71,
+      "pre_kill_damage": null,
+      "pre_kill_total": null,
+      "http_status": null,
+      "exit_code": null,
+      "evidence_summary": "post_scan_banned=False, open_blocked=True; suricata:9100001, suricata:9100001, suricata:9100001, suricata:9100001, suricata:9100001",
+      "raw_alerts": [
+        {
+          "sensor": "suricata-ips",
+          "rule_id": "suricata:9100001",
+          "signature": "SURICATA-IPS Portscan burst detected",
+          "src_ip": "192.168.56.1",
+          "dest_port": 21,
+          "action": "blocked"
+        },
+        {
+          "sensor": "suricata-ips",
+          "rule_id": "suricata:9100001",
+          "signature": "SURICATA-IPS Portscan burst detected",
+          "src_ip": "192.168.56.1",
+          "dest_port": 22,
+          "action": "blocked"
+        },
+        {
+          "sensor": "suricata-ips",
+          "rule_id": "suricata:9100001",
+          "signature": "SURICATA-IPS Portscan burst detected",
+          "src_ip": "192.168.56.1",
+          "dest_port": 23,
+          "action": "blocked"
+        },
+        {
+          "sensor": "suricata-ips",
+          "rule_id": "suricata:9100001",
+          "signature": "SURICATA-IPS Portscan burst detected",
+          "src_ip": "192.168.56.1",
+          "dest_port": 25,
+          "action": "blocked"
+        },
+        {
+          "sensor": "suricata-ips",
+          "rule_id": "suricata:9100001",
+          "signature": "SURICATA-IPS Portscan burst detected",
+          "src_ip": "192.168.56.1",
+          "dest_port": 80,
+          "action": "blocked"
+        },
+        {
+          "sensor": "suricata-ips",
+          "rule_id": "suricata:9100001",
+          "signature": "SURICATA-IPS Portscan burst detected",
+          "src_ip": "192.168.56.1",
+          "dest_port": 110,
+          "action": "blocked"
+        },
+        {
+          "sensor": "suricata-ips",
+          "rule_id": "suricata:9100001",
+          "signature": "SURICATA-IPS Portscan burst detected",
+          "src_ip": "192.168.56.1",
+          "dest_port": 139,
+          "action": "blocked"
+        },
+        {
+          "sensor": "suricata-ips",
+          "rule_id": "suricata:9100001",
+          "signature": "SURICATA-IPS Portscan burst detected",
+          "src_ip": "192.168.56.1",
+          "dest_port": 443,
+          "action": "blocked"
+        },
+        {
+          "sensor": "suricata-ips",
+          "rule_id": "suricata:9100001",
+          "signature": "SURICATA-IPS Portscan burst detected",
+          "src_ip": "192.168.56.1",
+          "dest_port": 445,
+          "action": "blocked"
+        },
+        {
+          "sensor": "suricata-ips",
+          "rule_id": "suricata:9100001",
+          "signature": "SURICATA-IPS Portscan burst detected",
+          "src_ip": "192.168.56.1",
+          "dest_port": 3306,
+          "action": "blocked"
+        },
+        {
+          "sensor": "suricata-ips",
+          "rule_id": "suricata:9100001",
+          "signature": "SURICATA-IPS Portscan burst detected",
+          "src_ip": "192.168.56.1",
+          "dest_port": 3389,
+          "action": "blocked"
+        },
+        {
+          "sensor": "suricata-ips",
+          "rule_id": "suricata:9100001",
+          "signature": "SURICATA-IPS Portscan burst detected",
+          "src_ip": "192.168.56.1",
+          "dest_port": 5432,
+          "action": "blocked"
+        }
+      ],
+      "error": ""
+    }
+  ]
+}

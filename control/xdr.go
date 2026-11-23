@@ -99,6 +99,9 @@ type XDREngine struct {
 	credSeen              map[string]time.Time
 	credArmedRequested    bool
 	credLastOverflow      time.Time
+	probeCore             xdrKernelCore
+	probeMu               sync.Mutex
+	probeSeen             map[string]time.Time
 	styxLastPrune         time.Time
 	styxLastOverflowEvent time.Time
 	// POINT 1 / P1-T5: the Titan exec-gate policy syncer and the bounded kernel
@@ -125,9 +128,10 @@ type XDREngine struct {
 	lockdown      *LockdownEngine
 	morpheus      *MorpheusRASP
 	airlock       *AirlockInspector
-	l7Recent      *L7CorrelationStore
-	chronos       *ChronosScanner
-	degraded      bool
+	l7Recent       *L7CorrelationStore
+	chronos        *ChronosScanner
+	chronosRunning atomic.Bool
+	degraded       bool
 	degradeWhy    string
 	degradeCauses map[string]string
 	recoveryGate  chan struct{}
@@ -394,6 +398,7 @@ func NewXDREngine(cfg Config, state *State, core *CoreClient, feeds *FeedManager
 		e.ransomCore = core
 		// M2.4: the credential guard lives on the same authenticated channel.
 		e.credCore = core
+		e.probeCore = core
 	}
 	if err := logger.Healthy(); err != nil {
 		e.markDegradedCause("incident_log", "incident log integrity failure: "+err.Error())
@@ -854,6 +859,8 @@ func (e *XDREngine) Run(ctx context.Context) {
 	// 10 s status).
 	var credGuardDrainRetryAfter time.Time
 	var credGuardStatusRetryAfter time.Time
+	var execArgvRetryAfter time.Time
+	var kernelProbeRetryAfter time.Time
 	for {
 		select {
 		case <-ctx.Done():
@@ -1020,10 +1027,11 @@ func (e *XDREngine) Run(ctx context.Context) {
 						e.recordStyxFlowHealthFailure(healthErr)
 						e.noteVerificationFailure("styx_flow_sensor", "kernel styx flow health unavailable: "+healthErr.Error())
 					}
+					styxHealthRetryAfter = now.Add(5 * time.Second)
 				} else {
 					e.recordStyxFlowHealth(health, now)
+					styxHealthRetryAfter = now.Add(time.Second)
 				}
-				styxHealthRetryAfter = now.Add(10 * time.Second)
 			}
 			// M2.2: kernel ransomware sensor. Status first (capability + arm
 			// state), then the freeze-record drain on the 100 ms execTick so a
@@ -1070,6 +1078,28 @@ func (e *XDREngine) Run(ctx context.Context) {
 			if runtime.XDREnabled && e.credCore != nil && e.credCapabilityKnown && !now.Before(credGuardDrainRetryAfter) {
 				events, dropped, credErr := e.credCore.CredGuardEvents()
 				credGuardDrainRetryAfter = now.Add(e.consumeCredGuardEvents(events, dropped, credErr, now))
+			}
+			if runtime.XDREnabled && e.probeCore != nil && !now.Before(execArgvRetryAfter) {
+				var nextDelay time.Duration
+				for batch := 0; batch < 12; batch++ {
+					argvEvents, argvErr := e.probeCore.ExecArgvEvents()
+					nextDelay = e.consumeExecArgvEvents(argvEvents, argvErr, runtime.XDRFabric.MaxCommandBytes)
+					if argvErr != nil || len(argvEvents) < maxExecArgvEventsPerResponse {
+						break
+					}
+				}
+				execArgvRetryAfter = now.Add(nextDelay)
+			}
+			if runtime.XDREnabled && e.probeCore != nil && !now.Before(kernelProbeRetryAfter) {
+				var nextDelay time.Duration
+				for batch := 0; batch < 6; batch++ {
+					probeEvents, probeErr := e.probeCore.KernelProbeEvents()
+					nextDelay = e.consumeKernelProbeEvents(probeEvents, probeErr, now)
+					if probeErr != nil || len(probeEvents) < maxKernelProbeEventsPerReply {
+						break
+					}
+				}
+				kernelProbeRetryAfter = now.Add(nextDelay)
 			}
 			if now.Before(egressRetryAfter) {
 				continue
@@ -1155,25 +1185,28 @@ func (e *XDREngine) Run(ctx context.Context) {
 		case <-integrityTick.C:
 			e.checkProtected()
 		case <-chronosTick.C:
-			if e.chronos != nil && e.chronos.Enabled() && runtime.XDREnabled {
-				cp, err := e.chronos.Scan(ctx, true)
-				if err != nil && !errors.Is(err, context.Canceled) {
-					severity := "warning"
-					if cp != nil && cp.Phase == "BOUNDED" {
-						// A bounded walk is a policy outcome, not a fault: the digest
-						// set is partial and says so instead of reporting success.
-						severity = "info"
+			if e.chronos != nil && e.chronos.Enabled() && runtime.XDREnabled && e.chronosRunning.CompareAndSwap(false, true) {
+				go func() {
+					defer e.chronosRunning.Store(false)
+					cp, err := e.chronos.Scan(ctx, true)
+					if err != nil && !errors.Is(err, context.Canceled) {
+						severity := "warning"
+						if cp != nil && cp.Phase == "BOUNDED" {
+							// A bounded walk is a policy outcome, not a fault: the digest
+							// set is partial and says so instead of reporting success.
+							severity = "info"
+						}
+						e.state.AddEvent(Event{
+							Severity: severity, Kind: "chronos.scan_failed", Source: "fim",
+							Message: fmt.Sprintf("Chronos FIM scan did not complete: %v", err),
+						})
+					} else if cp != nil && cp.Phase == "COMPLETED" {
+						e.state.AddEvent(Event{
+							Severity: "info", Kind: "chronos.merkle_verified", Source: "fim",
+							Message: fmt.Sprintf("Chronos Merkle tree integrity verified: root=%s files=%d bytes=%d", cp.MerkleRoot, cp.FilesScanned, cp.BytesScanned),
+						})
 					}
-					e.state.AddEvent(Event{
-						Severity: severity, Kind: "chronos.scan_failed", Source: "fim",
-						Message: fmt.Sprintf("Chronos FIM scan did not complete: %v", err),
-					})
-				} else if cp != nil && cp.Phase == "COMPLETED" {
-					e.state.AddEvent(Event{
-						Severity: "info", Kind: "chronos.merkle_verified", Source: "fim",
-						Message: fmt.Sprintf("Chronos Merkle tree integrity verified: root=%s files=%d bytes=%d", cp.MerkleRoot, cp.FilesScanned, cp.BytesScanned),
-					})
-				}
+				}()
 			}
 		case <-logVerifyTick.C:
 			e.verifyForensicArtefacts(ctx)

@@ -42,7 +42,8 @@ use aya::{
 };
 use gedefense_common::{
     decode_ransom_event, RansomEvent, RANSOM_SIGNAL_RENAME_STORM, RANSOM_STATE_ABI,
-    RANSOM_STATE_ABI_SHIFT, RANSOM_STATE_ARMED_SHIFT, RANSOM_STATE_MAGIC, RANSOM_STATE_MAGIC_SHIFT,
+    RANSOM_STATE_ABI_SHIFT, RANSOM_STATE_ARMED_SHIFT, RANSOM_STATE_MAGIC,
+    RANSOM_STATE_MAGIC_SHIFT, RANSOM_TRUST_FULL, RANSOM_TRUST_POOL_METADATA,
 };
 use std::{
     collections::VecDeque,
@@ -109,6 +110,7 @@ pub(crate) const TRUSTED_COMMS: &[&str] = &[
     "systemd-udevd",
     "udevadm",
     "systemd-tmpfile",
+    "systemd-user-ru",
     "systemd-logind",
     "systemd-resolve",
     "systemd-timesyn",
@@ -119,6 +121,37 @@ pub(crate) const TRUSTED_COMMS: &[&str] = &[
     "dockerd",
     "containerd",
     "runc",
+];
+
+/// Pooled web/PHP/DB service workers routinely perform rapid atomic cache
+/// writes (`tempnam -> rename -> unlink`); skip `rename_storm` heuristics
+/// while keeping high-entropy encryption detection (`entropy_burst`) active
+/// and isolating any triggered worker without crashing its pool siblings.
+pub(crate) const POOL_SERVICE_COMMS: &[&str] = &[
+    "php-fpm",
+    "php-fpm8.0",
+    "php-fpm8.1",
+    "php-fpm8.2",
+    "php-fpm8.3",
+    "php-fpm8.4",
+    "php-fpm8.5",
+    "php-fpm8.6",
+    "lsphp",
+    "lsphp81",
+    "lsphp82",
+    "lsphp83",
+    "lsphp84",
+    "httpd",
+    "apache2",
+    "nginx",
+    "openlitespeed",
+    "lshttpd",
+    "mariadbd",
+    "mysqld",
+    "postgres",
+    "redis-server",
+    "memcached",
+    "gitea",
 ];
 
 #[derive(Default)]
@@ -267,16 +300,22 @@ impl RansomCore {
         Ok(core)
     }
 
-    fn populate_trusted_comm(&mut self) -> Result<(), BoxError> {
-        for name in TRUSTED_COMMS {
+    fn insert_comm_tier(&mut self, comms: &[&str], tier: u8) -> Result<(), BoxError> {
+        for name in comms {
             let bytes = name.as_bytes();
             if bytes.is_empty() || bytes.len() >= 16 {
                 return Err("trusted comm entry exceeds the task-name ABI".into());
             }
             let mut key = [0u8; 16];
             key[..bytes.len()].copy_from_slice(bytes);
-            self.trusted_comm.insert(&key, 1u8, 0)?;
+            self.trusted_comm.insert(&key, tier, 0)?;
         }
+        Ok(())
+    }
+
+    fn populate_trusted_comm(&mut self) -> Result<(), BoxError> {
+        self.insert_comm_tier(TRUSTED_COMMS, RANSOM_TRUST_FULL)?;
+        self.insert_comm_tier(POOL_SERVICE_COMMS, RANSOM_TRUST_POOL_METADATA)?;
         Ok(())
     }
 
@@ -444,6 +483,14 @@ fn process_ring_item(raw: &[u8], queue: &Mutex<RansomQueue>) {
         );
         return;
     }
+    let pooled_worker = process_tree::is_service_pool_worker(event.tgid as i32)
+        .unwrap_or(false);
+    if pooled_worker && event.signal == RANSOM_SIGNAL_RENAME_STORM {
+        let mut guard = lock_queue(queue);
+        guard.stops_skipped = guard.stops_skipped.saturating_add(1);
+        guard.last_event_ts = event.ts_ns;
+        return;
+    }
     // FP guard: never freeze or queue for tree-kill a group that contains a
     // trusted package/build/service comm or a protected core/init/systemd task.
     let exempt = match process_tree::process_group_has_trusted_comm(pgid, TRUSTED_COMMS) {
@@ -463,7 +510,13 @@ fn process_ring_item(raw: &[u8], queue: &Mutex<RansomQueue>) {
             return;
         }
         Ok(false) => {
-            let stop_result = process_tree::stop_process_group(pgid, rule);
+            // A pooled worker (e.g. compromised php-fpm child sharing the master PGID)
+            // is frozen by PID/descendants alone so healthy pool siblings keep serving.
+            let stop_result = if pooled_worker {
+                process_tree::stop_process_descendants(event.tgid as i32, rule)
+            } else {
+                process_tree::stop_process_group(pgid, rule)
+            };
             let mut guard = lock_queue(queue);
             match stop_result {
                 Ok(()) => guard.stops_ok = guard.stops_ok.saturating_add(1),

@@ -33,6 +33,9 @@ pub use lockdown::*;
 mod worker_guard;
 pub use worker_guard::*;
 
+mod xdr_kernel;
+pub use xdr_kernel::*;
+
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct DeceptionAccessEvent {

@@ -55,6 +55,7 @@ mod styx_flow;
 mod titan_exec;
 mod titan_status;
 mod worker_guard;
+mod xdr_kernel;
 use canary::{collect_canary_roots, CanaryBroker};
 use malware::{handle_user_scan, MalwareScanner};
 #[cfg(test)]
@@ -2037,6 +2038,8 @@ struct KernelCore {
     // 6.2.0 M2.4: file_open LSM credential guard (mandatory maps, optional
     // LSM attach reported through CRED_GUARD_STATUS; the kernel denies with -EACCES).
     credential_guard: credential_guard::CredentialGuardCore,
+    // Kernel XDR behavioral tracepoints & probe emitters.
+    xdr_kernel: xdr_kernel::XdrKernelCore,
 }
 
 impl KernelCore {
@@ -2447,6 +2450,7 @@ impl KernelCore {
         // file_open LSM attach (active=0 when BPF-LSM/BTF/policy are unavailable).
         let credential_guard =
             credential_guard::CredentialGuardCore::load(&mut ebpf, lsm_btf.as_ref(), bpf_lsm_active)?;
+        let xdr_kernel = xdr_kernel::XdrKernelCore::load(&mut ebpf)?;
         Ok(Self {
             _ebpf: ebpf,
             exec_events,
@@ -2495,6 +2499,7 @@ impl KernelCore {
             worker_guard,
             ransom,
             credential_guard,
+            xdr_kernel,
         })
     }
 
@@ -3444,6 +3449,8 @@ fn process_command(
         ["CELL_POLICY_DEL", cgroup_id] => core.delete_cell_policy(cgroup_id),
         ["CELL_LSM_EVENTS"] => core.take_cell_lsm_events(),
         ["EXEC_EVENTS"] => core.take_exec_events(),
+        ["EXEC_ARGV_EVENTS"] => core.xdr_kernel.take_exec_argv_events(),
+        ["KERNEL_PROBE_EVENTS"] => core.xdr_kernel.take_kernel_probe_events(),
         ["EGRESS_EVENTS"] => core.take_egress_events(),
         ["INGRESS_EVENTS"] => core.take_ingress_events(),
         ["INGRESS_HEALTH"] => core.ingress_health(),
@@ -3802,9 +3809,16 @@ fn main() -> Result<(), BoxError> {
     // unit keeps writable and can be overridden with repeated
     // `--on-write-watch-root=` flags (each value is a comma-separated list).
     eprintln!("GeDefense core startup phase=malware-on-write");
+    let malware_inode_lock: credential_guard::SharedMalwareInodeLock =
+        Arc::new(std::sync::Mutex::new(None));
     let on_write_roots = on_write::resolve_roots(&multi_arg("on-write-watch-root"))
         .map_err(|error| std::io::Error::other(format!("on-write watch roots: {error}")))?;
-    on_write::OnWriteSensor::start(scanner.clone(), Arc::clone(&quarantine), &on_write_roots)
+    on_write::OnWriteSensor::start(
+        scanner.clone(),
+        Arc::clone(&quarantine),
+        Arc::clone(&malware_inode_lock),
+        &on_write_roots,
+    )
         .map_err(|error| std::io::Error::other(format!("on-write sensor: {error}")))?;
     eprintln!("GeDefense core startup phase=canary-broker");
     // The unprivileged control plane cannot create decoys outside its sandbox
@@ -3882,6 +3896,9 @@ fn main() -> Result<(), BoxError> {
         .map_err(|error| {
             std::io::Error::other(format!("kernel data-plane load/attach: {error}"))
         })?;
+    if let Ok(mut slot) = malware_inode_lock.lock() {
+        *slot = Some(core.credential_guard.malware_inode_lock_handle());
+    }
     // Point 5 (§5): re-arm the persisted lockdown (drop/USB/TB/hardening and
     // the uevent monitor) before the IPC accept loop serves the first request.
     match core.lockdown.startup_rearm() {

@@ -1,0 +1,275 @@
+{
+  "schema": "vgt-hardred-ares-transcript-v1.2",
+  "generator_model": "vgt-gemini-frontier-live-audit-2026-11-22",
+  "target_contender": "gedefense",
+  "target_version": "6.2.0",
+  "debates": [
+    {
+      "red": {
+        "chain_id": "ARES-GD620-S05-R1-1337",
+        "scenario_id": "S05",
+        "origin": "fixed_core",
+        "seed": 1337,
+        "round_index": 1,
+        "title": "S05 Web-to-Host RCE & /tmp ELF Dropper Chain (6.2.0 Live Audit)",
+        "hypothesis_rationale": "Attempt SQLi + OS command injection on HTTP ingress followed by /tmp/hardred-sandbox untrusted ELF execution.",
+        "adapted_from_chain_id": null,
+        "adaptation_reason": "Round 1 fixed core baseline against GeDefense 6.2.0.",
+        "steps": [
+          {"step_index": 1, "stage": "initial_access", "primitive_id": "PRIM-WAF-SQLI-UNION", "target_boundary": "HTTP L7 Ingress to /index.php", "expected_signal": "HTTP 403 WAF block", "params": {"encoding_variant": "url_single", "delay_ms": 15}},
+          {"step_index": 2, "stage": "privilege_transition", "primitive_id": "PRIM-WAF-RCE-CMDI", "target_boundary": "PHP Worker to OS Command Sink", "expected_signal": "HTTP 403 CMDi block", "params": {"encoding_variant": "url_single", "delay_ms": 20}},
+          {"step_index": 3, "stage": "objective", "primitive_id": "PRIM-EP-TMP-ELF-EXEC", "target_boundary": "/tmp/hardred-sandbox to Kernel execve", "expected_signal": "BPF-LSM / Titan execve denial", "params": {"sandbox_path": "/tmp/hardred-sandbox/drop-620", "delay_ms": 25}}
+        ],
+        "citations": [
+          {"file": "control/l7_detectors.go", "line_start": 44, "line_end": 46, "quote": "l7PatternDefinitions is the closed, read-only built-in signature set"},
+          {"file": "control/titan.go", "line_start": 432, "line_end": 435, "quote": "normalizeTitanPaths(policy.Allowlist, titanMaxAllowlist)"}
+        ]
+      },
+      "blue": {
+        "blocking_controls": ["L7 closed built-in detector pipeline + multi-layer decoder", "BPF-LSM Titan untrusted /tmp execve block"],
+        "breakpoint_step": 1,
+        "containment_claim": "blocked",
+        "fail_mode": "fail_closed",
+        "rationale": "GeDefense 6.2.0 blocks SQLi/CMDi inline at L7 ingress (100% WAF Prevention TPR) and blocks untrusted /tmp ELF execution at kernel BPF-LSM.",
+        "citations": [
+          {"file": "control/l7_detectors.go", "line_start": 303, "line_end": 307, "quote": "signature-unknown payload behind layered encoding (F-10 / CHAIN-008)"},
+          {"file": "rust/gedefense-ebpf/src/main.rs", "line_start": 1038, "line_end": 1044, "quote": "TITAN_EXEC_REASON_NOT_ALLOWLISTED"}
+        ]
+      },
+      "purple": {
+        "challenged_party": "RED",
+        "challenged_claim": "Red hypothesized L7/Titan gap between HTTP ingress and /tmp dropper.",
+        "counter_hypothesis": "Both L7 ingress and BPF-LSM Titan independently hold; however, non-root EICAR unlink in foreign-owned 0755 dirs still cannot unlink without CAP_DAC_OVERRIDE.",
+        "bypass_or_mitigation_proof": "Verified 100% WAF prevention and /tmp exec denial in HardRed 6.2.0 scorecard.",
+        "alternative_primitive_id": "PRIM-WAF-LFI-DOUBLE-ENC",
+        "severity_adjustment": "Refute R1 Web-to-Host RCE chain; pivot Red to layered Unicode/double-encoding & nested archives in R2.",
+        "citations": [
+          {"file": "control/l7_decode.go", "line_start": 52, "line_end": 67, "quote": "func foldL7CompatibilityASCII(value string, maxBytes int)"}
+        ]
+      }
+    },
+    {
+      "red": {
+        "chain_id": "ARES-GD620-DYN-02-L7-UNICODE-R2-1337",
+        "scenario_id": "S11",
+        "origin": "ai_dynamic",
+        "seed": 1337,
+        "round_index": 2,
+        "title": "Adaptive R2: Layered Unicode/Double-Encoded LFI -> Oversized Body -> 8-Layer Nested Archive -> S13 FP Check",
+        "hypothesis_rationale": "Blocked at Step 1 in R1; pivot to parser differentials (%252f double encoding, oversized body padding) and 8-layer nested ZIP drop.",
+        "adapted_from_chain_id": "ARES-GD620-S05-R1-1337",
+        "adaptation_reason": "Pivoted from plain SQLi to layered encoding & archive inspection boundaries.",
+        "steps": [
+          {"step_index": 1, "stage": "evasion", "primitive_id": "PRIM-WAF-LFI-DOUBLE-ENC", "target_boundary": "L7 Recursive Decoder vs Nginx URI Normalization", "expected_signal": "Canonical decode LFI block", "params": {"encoding_variant": "double_percent_utf8", "delay_ms": 15}},
+          {"step_index": 2, "stage": "evasion", "primitive_id": "PRIM-WAF-OVERSIZE-BODY", "target_boundary": "L7 Body Inspection Window Limit", "expected_signal": "Oversized body block without fail-open", "params": {"body_padding_kb": 128, "delay_ms": 20}},
+          {"step_index": 3, "stage": "defense_manipulation", "primitive_id": "PRIM-MAL-NESTED-ARCHIVE", "target_boundary": "Fanotify On-Write Drop Root /tmp/hardred-sandbox", "expected_signal": "Nested archive detection & quarantine", "params": {"sandbox_path": "/tmp/hardred-sandbox/zip-620", "delay_ms": 25}},
+          {"step_index": 4, "stage": "objective", "primitive_id": "PRIM-BENIGN-HTTP-CONTROL", "target_boundary": "Benign SQL-Prose Traffic (S13 FP Check)", "expected_signal": "HTTP 200 OK (0% Protection FPR)", "params": {"delay_ms": 10}}
+        ],
+        "citations": [
+          {"file": "control/l7_decode.go", "line_start": 79, "line_end": 102, "quote": "func decodeL7TextEscapes(value string, maxBytes int)"},
+          {"file": "packaging/systemd/gedefense-core.service", "line_start": 23, "line_end": 24, "quote": "CapabilityBoundingSet=CAP_BPF CAP_NET_ADMIN CAP_PERFMON CAP_SYS_ADMIN CAP_SYS_RESOURCE CAP_KILL"}
+        ]
+      },
+      "blue": {
+        "blocking_controls": ["foldL7CompatibilityASCII + decodeL7TextEscapes + Base64 decoder", "Zero-FP WAF rule discipline (0.0% Prot-FPR)"],
+        "breakpoint_step": 1,
+        "containment_claim": "blocked",
+        "fail_mode": "fail_closed",
+        "rationale": "L7 decoder folds fullwidth Unicode and \\x/\\u/%u escapes before signature matching, blocking double-encoded LFI and oversized payloads while passing benign SQL prose.",
+        "citations": [
+          {"file": "control/l7_decode.go", "line_start": 28, "line_end": 46, "quote": "func decodeTextBase64(value string, maxBytes int)"},
+          {"file": "control/l7_detectors.go", "line_start": 303, "line_end": 307, "quote": "signature-unknown payload behind layered encoding"}
+        ]
+      },
+      "purple": {
+        "challenged_party": "BLUE",
+        "challenged_claim": "Blue claims end-to-end quarantine prevention across all archive drops.",
+        "counter_hypothesis": "L7 blocks Steps 1-2 cleanly with 0 FP on Step 4, but Step 3 (MAL-NESTED-ARCHIVE-01 in foreign-owned 0755 dir) is detected on-write without unlink because CAP_DAC_OVERRIDE is intentionally omitted.",
+        "bypass_or_mitigation_proof": "Confirmed partial trade-off: least-privilege core (no CAP_DAC_OVERRIDE) blocks execution but leaves foreign-dir file unlinked.",
+        "alternative_primitive_id": "PRIM-MAL-EICAR-DROP",
+        "severity_adjustment": "Verify L7/FP victory (BLUE), retain on-disk foreign-owner unlink boundary as architectural note.",
+        "citations": [
+          {"file": "packaging/systemd/gedefense-core.service", "line_start": 23, "line_end": 24, "quote": "CapabilityBoundingSet=CAP_BPF CAP_NET_ADMIN CAP_PERFMON CAP_SYS_ADMIN CAP_SYS_RESOURCE CAP_KILL"}
+        ]
+      }
+    },
+    {
+      "red": {
+        "chain_id": "ARES-GD620-S14-R1-1337",
+        "scenario_id": "S14",
+        "origin": "fixed_core",
+        "seed": 1337,
+        "round_index": 1,
+        "title": "S14 Confused Deputy Quarantine Broker vs. /etc/sysctl.d (Persists in 6.2.0!)",
+        "hypothesis_rationale": "Even in GeDefense 6.2.0, rust/gedefense-core/src/quarantine.rs decode_path() validates only absolute non-root paths while gedefense-core.service still grants ReadWritePaths=/etc/sysctl.d; path allowlisting lives only in Go control/quarantine.go.",
+        "adapted_from_chain_id": null,
+        "adaptation_reason": "Round 1 deep code audit of privileged Rust quarantine broker trust boundary in 6.2.0.",
+        "steps": [
+          {"step_index": 1, "stage": "privilege_transition", "primitive_id": "PRIM-EP-KERNEL-LPE-PROBE", "target_boundary": "Unprivileged Control Plane to Privileged Root Core IPC", "expected_signal": "Kernel surface / IPC policy guard", "params": {"subsystem": "sctp", "delay_ms": 20}},
+          {"step_index": 2, "stage": "defense_manipulation", "primitive_id": "PRIM-MAL-EICAR-DROP", "target_boundary": "Rust Quarantine Broker decode_path() vs. /etc/sysctl.d ReadWritePaths", "expected_signal": "Core-side canonical path allowlist rejection", "params": {"sandbox_path": "/tmp/hardred-sandbox/quar-620", "delay_ms": 20}}
+        ],
+        "citations": [
+          {"file": "rust/gedefense-core/src/quarantine.rs", "line_start": 671, "line_end": 675, "quote": "if !path.is_absolute() || path == Path::new(\"/\")"},
+          {"file": "packaging/systemd/gedefense-core.service", "line_start": 68, "line_end": 68, "quote": "ReadWritePaths=/etc/sysctl.d"},
+          {"file": "control/quarantine.go", "line_start": 180, "line_end": 182, "quote": "policy.pathForbidden(clean) || policy.pathOutsideAllowedRoots(clean)"}
+        ]
+      },
+      "blue": {
+        "blocking_controls": ["Go control/quarantine.go path allowlist", "fd-anchored openat2 (RESOLVE_NO_SYMLINKS | RESOLVE_NO_MAGICLINKS)", "No CAP_CHOWN / CAP_DAC_OVERRIDE in core.service"],
+        "breakpoint_step": 1,
+        "containment_claim": "contained",
+        "fail_mode": "fail_closed",
+        "rationale": "Normal control plane enforces pathForbidden/pathOutsideAllowedRoots, and core drops CAP_CHOWN so root-owned files cannot be forged with chosen content.",
+        "citations": [
+          {"file": "rust/gedefense-core/src/quarantine.rs", "line_start": 688, "line_end": 696, "quote": "RESOLVE_NO_MAGICLINKS | RESOLVE_NO_SYMLINKS"},
+          {"file": "rust/gedefense-core/src/quarantine.rs", "line_start": 725, "line_end": 727, "quote": "fn restored_mode(mode: u32)"}
+        ]
+      },
+      "purple": {
+        "challenged_party": "BOTH",
+        "challenged_claim": "Red implies full root overwrite; Blue implies complete core-side path isolation.",
+        "counter_hypothesis": "CONFIRMED 6.2.0 GAP: quarantine.rs:672 STILL lacks a core-side path allowlist while core.service:68 still grants ReadWritePaths=/etc/sysctl.d. Arbitrary content overwrite is blocked (no CAP_CHOWN), but a compromised control daemon can still trigger rename/unlink of root hardening files in /etc/sysctl.d!",
+        "bypass_or_mitigation_proof": "Verified live in GeDefense 6.2.0: FIND-G-001 root cause in Rust core remains unpatched in 6.2.0.",
+        "alternative_primitive_id": "PRIM-EP-TMP-ELF-EXEC",
+        "severity_adjustment": "Keep HIGH FIND-G-001 (R5 cap <= 2.0) active in 6.2.0 until Rust core enforces its own canonical quarantine path allowlist.",
+        "citations": [
+          {"file": "rust/gedefense-core/src/quarantine.rs", "line_start": 663, "line_end": 675, "quote": "fn decode_path(encoded: &str)"},
+          {"file": "packaging/systemd/gedefense-core.service", "line_start": 68, "line_end": 68, "quote": "ReadWritePaths=/etc/sysctl.d"}
+        ]
+      }
+    },
+    {
+      "red": {
+        "chain_id": "ARES-GD620-DYN-02-PRIVATETMP-RACE-R2-1337",
+        "scenario_id": "S02",
+        "origin": "ai_dynamic",
+        "seed": 1337,
+        "round_index": 2,
+        "title": "Adaptive R2: PrivateTmp=false Symlink/FIFO Race + memfd_create + /dev/shm Dropper",
+        "hypothesis_rationale": "GeDefense 6.2.0 set PrivateTmp=false and added ReadWritePaths=-/tmp -/var/tmp -/dev/shm -/var/www; probe for symlink/FIFO races or fileless memfd/shm execution bypass.",
+        "adapted_from_chain_id": "ARES-GD620-S14-R1-1337",
+        "adaptation_reason": "Targeted newly introduced 6.2.0 M1.3 PrivateTmp=false drop-root surface.",
+        "steps": [
+          {"step_index": 1, "stage": "initial_access", "primitive_id": "PRIM-EP-MEMFD-EXEC", "target_boundary": "Anonymous memfd_create to BPF-LSM Hook", "expected_signal": "TITAN_EXEC_REASON_MEMFD block", "params": {"sandbox_path": "/tmp/hardred-sandbox/memfd-620", "delay_ms": 15}},
+          {"step_index": 2, "stage": "evasion", "primitive_id": "PRIM-EP-SHM-ELF-EXEC", "target_boundary": "/dev/shm/hardred-sandbox to execve", "expected_signal": "BPF-LSM /dev/shm execution block", "params": {"sandbox_path": "/dev/shm/hardred-sandbox/shm-620", "delay_ms": 15}},
+          {"step_index": 3, "stage": "objective", "primitive_id": "PRIM-EP-C2-EGRESS", "target_boundary": "Process Cgroup to StyX Egress Filter", "expected_signal": "StyX egress policy drop", "params": {"delay_ms": 30}}
+        ],
+        "citations": [
+          {"file": "packaging/systemd/gedefense-core.service", "line_start": 42, "line_end": 42, "quote": "PrivateTmp=false"},
+          {"file": "packaging/systemd/gedefense-core.service", "line_start": 67, "line_end": 67, "quote": "ReadWritePaths=-/tmp -/var/tmp -/dev/shm -/var/www"}
+        ]
+      },
+      "blue": {
+        "blocking_controls": ["openat2 RESOLVE_NO_SYMLINKS + O_NONBLOCK FIFO fix", "quarantine_open_file stat_matches_identity", "BPF-LSM TITAN_EXEC_REASON_MEMFD & StyX Cgroup Egress"],
+        "breakpoint_step": 1,
+        "containment_claim": "blocked",
+        "fail_mode": "fail_closed",
+        "rationale": "quarantine.rs:738 uses O_NOFOLLOW | O_NONBLOCK to defeat planted FIFOs and symlinks; eBPF blocks memfd_create, /dev/shm exec, and cgroup C2 egress.",
+        "citations": [
+          {"file": "rust/gedefense-core/src/quarantine.rs", "line_start": 734, "line_end": 740, "quote": "libc::O_RDONLY | libc::O_CLOEXEC | libc::O_NOFOLLOW | libc::O_NONBLOCK"},
+          {"file": "rust/gedefense-ebpf/src/main.rs", "line_start": 1063, "line_end": 1067, "quote": "TITAN_EXEC_REASON_MEMFD"},
+          {"file": "rust/gedefense-ebpf/src/main.rs", "line_start": 2170, "line_end": 2174, "quote": "STYX_FLAG_ALLOW_HOST_ALLOWLIST"}
+        ]
+      },
+      "purple": {
+        "challenged_party": "RED",
+        "challenged_claim": "Red claimed PrivateTmp=false reopens classic /tmp FIFO or symlink race attacks.",
+        "counter_hypothesis": "Refuted: openat2 with RESOLVE_NO_MAGICLINKS | RESOLVE_NO_SYMLINKS, O_NONBLOCK FIFO protection, and kernel-opened fanotify fd capture (quarantine_open_file) close the race window cleanly.",
+        "bypass_or_mitigation_proof": "All 3 runtime probes (EP-FILELESS-MEMFD-01, EP-SHM-EXEC-01, EP-C2-EGRESS-01) prevented in HardRed 6.2.0.",
+        "alternative_primitive_id": "PRIM-EP-RANSOM-AES-BURST",
+        "severity_adjustment": "Refute PrivateTmp=false symlink/FIFO exploit claim; confirm 6.2.0 M1.3 hardening holds.",
+        "citations": [
+          {"file": "rust/gedefense-core/src/quarantine.rs", "line_start": 207, "line_end": 228, "quote": "pub fn quarantine_open_file"}
+        ]
+      }
+    },
+    {
+      "red": {
+        "chain_id": "ARES-GD620-DYN-03-EBPF-FRAG-AND-KDF-R3-1337",
+        "scenario_id": "S12",
+        "origin": "ai_dynamic",
+        "seed": 1337,
+        "round_index": 3,
+        "title": "Adaptive R3: Re-test Historical 5.0.0-beta.1 Gaps (IPv4 Frag + Argon2 DoS + Ledger Witness + Ransomware Lineage)",
+        "hypothesis_rationale": "Verify whether 5.0.0-beta.1 findings (FIND-G-005 IPv4 frag, FIND-G-004 Argon2 DoS, FIND-G-003 local-only witness) still hold under 6.2.0 concurrent velocity flood and ransomware lineage burst.",
+        "adapted_from_chain_id": "ARES-GD620-DYN-02-PRIVATETMP-RACE-R2-1337",
+        "adaptation_reason": "Round 3 regression attack probing all major 5.0.0-beta.1 audit findings against 6.2.0.",
+        "steps": [
+          {"step_index": 1, "stage": "evasion", "primitive_id": "PRIM-NET-VELOCITY-FLOOD", "target_boundary": "XDP IPv4/IPv6 Fragment and Rate-Limit Engine", "expected_signal": "XDP rate-limit and fragment inspection active", "params": {"concurrency_tier": "high", "delay_ms": 10}},
+          {"step_index": 2, "stage": "objective", "primitive_id": "PRIM-EP-LINEAGE-KILL", "target_boundary": "Kinetic Process Tree Containment under Load", "expected_signal": "Process tree killed with low pre-kill damage", "params": {"sandbox_path": "/tmp/hardred-sandbox/lin-620", "delay_ms": 15}},
+          {"step_index": 3, "stage": "defense_manipulation", "primitive_id": "PRIM-BENIGN-ADMIN-CONTROL", "target_boundary": "Legitimate Admin Recovery and Allowlist Immunity (S13)", "expected_signal": "0% Endpoint Protection FPR", "params": {"sandbox_path": "/tmp/hardred-sandbox/adm-620", "delay_ms": 10}}
+        ],
+        "citations": [
+          {"file": "rust/gedefense-ebpf/src/main.rs", "line_start": 1882, "line_end": 1885, "quote": "let fragment_offset = u16::from_be_bytes(header.frag) & 0x1fff;"},
+          {"file": "gateway/main.go", "line_start": 1090, "line_end": 1093, "quote": "g.verifyPasswordGated(r.Context(), ip, password)"}
+        ]
+      },
+      "blue": {
+        "blocking_controls": ["XDP IPv4 & IPv6 fragment offset checks (6.2.0 fix)", "verifyPasswordGated Argon2 admission gate (6.2.0 fix)", "WitnessCheckpointSigner out-of-band witness (6.2.0 fix)", "Immutable management allowlist immunity"],
+        "breakpoint_step": 1,
+        "containment_claim": "blocked",
+        "fail_mode": "fail_closed",
+        "rationale": "All three historical 5.0.0-beta.1 findings (FIND-G-003, FIND-G-004, FIND-G-005) are provably patched in 6.2.0 source code, and runtime tests show 100% NetIDS velocity blocking + low pre-kill lineage damage + 0% benign FP.",
+        "citations": [
+          {"file": "rust/gedefense-ebpf/src/main.rs", "line_start": 1979, "line_end": 1984, "quote": "if u16::from_be_bytes(fragment) & 0xfff8 != 0"},
+          {"file": "gateway/main.go", "line_start": 1432, "line_end": 1438, "quote": "func (g *gateway) verifyPasswordGated"},
+          {"file": "control/evidence_ledger.go", "line_start": 1384, "line_end": 1390, "quote": "func (l *EvidenceLedger) WitnessCheckpointSigner()"},
+          {"file": "control/kinetic_response.go", "line_start": 164, "line_end": 168, "quote": "func (r *KineticResponseEngine) IsAllowlistProtected"}
+        ]
+      },
+      "purple": {
+        "challenged_party": "RED",
+        "challenged_claim": "Red attempted to replay historical 5.0.0-beta.1 bugs against 6.2.0.",
+        "counter_hypothesis": "Verified closed in 6.2.0: IPv4/IPv6 fragment handling, Argon2 admission gating, and out-of-band witness signing are all present in live code.",
+        "bypass_or_mitigation_proof": "All 4 Blue defense citations verified FULL on disk + runtime probes blocked cleanly.",
+        "alternative_primitive_id": "PRIM-EP-RANSOM-AES-BURST",
+        "severity_adjustment": "Close FIND-G-003/004/005 in 6.2.0 delta; only FIND-G-001 (Rust core quarantine allowlist) remains open.",
+        "citations": [
+          {"file": "control/evidence_ledger.go", "line_start": 66, "line_end": 68, "quote": "out-of-band witness"}
+        ]
+      }
+    },
+    {
+      "red": {
+        "chain_id": "ARES-GD620-S10-R1-2026",
+        "scenario_id": "S10",
+        "origin": "fixed_core",
+        "seed": 2026,
+        "round_index": 1,
+        "title": "S10 Multi-Seed Ransomware AES-256 + Wiper Storm + Child Lineage Verification (Seed 2026)",
+        "hypothesis_rationale": "Measure pre-kill containment consistency across AES-256 encryption, rapid rename wiper storm, and parent->child lineage under second seed.",
+        "adapted_from_chain_id": null,
+        "adaptation_reason": "Second-seed verification of ransomware containment stability.",
+        "steps": [
+          {"step_index": 1, "stage": "initial_access", "primitive_id": "PRIM-EP-RANSOM-AES-BURST", "target_boundary": "/tmp/hardred-sandbox/aes to Fanotify/FIM", "expected_signal": "Kinetic SIGKILL (<25% damage)", "params": {"sandbox_path": "/tmp/hardred-sandbox/aes", "pacing_mode": "interleaved"}},
+          {"step_index": 2, "stage": "evasion", "primitive_id": "PRIM-EP-LINEAGE-KILL", "target_boundary": "Parent->Child Ransomware Worker Tree", "expected_signal": "Full process tree kill", "params": {"sandbox_path": "/tmp/hardred-sandbox/lineage", "delay_ms": 15}},
+          {"step_index": 3, "stage": "objective", "primitive_id": "PRIM-EP-WIPER-RENAME-STORM", "target_boundary": "600-file Rapid Rename Storm", "expected_signal": "Early containment halt", "params": {"sandbox_path": "/tmp/hardred-sandbox/wipe", "pacing_mode": "staggered"}}
+        ],
+        "citations": [
+          {"file": "control/kinetic_response.go", "line_start": 110, "line_end": 112, "quote": "if !snap.AllowlistReady"}
+        ]
+      },
+      "blue": {
+        "blocking_controls": ["Kinetic pre-kill process termination", "Allowlist-ready guard before kinetic response"],
+        "breakpoint_step": 1,
+        "containment_claim": "contained",
+        "fail_mode": "fail_closed",
+        "rationale": "Kinetic engine halts AES-256 burst, lineage child, and rename storm early across all runs.",
+        "citations": [
+          {"file": "control/kinetic_response.go", "line_start": 164, "line_end": 168, "quote": "func (r *KineticResponseEngine) IsAllowlistProtected"}
+        ]
+      },
+      "purple": {
+        "challenged_party": "BLUE",
+        "challenged_claim": "Blue claims zero file damage during ransomware bursts.",
+        "counter_hypothesis": "Pre-kill containment is strong (~18-25% damage ratio vs 100% on Wazuh/CrowdSec), but not 0% because rapid burst writes race fanotify detection.",
+        "bypass_or_mitigation_proof": "Verified measured pre-kill damage in HardRed 6.2.0 scorecard.",
+        "alternative_primitive_id": "PRIM-EP-WIPER-RENAME-STORM",
+        "severity_adjustment": "Calibrate containment score by actual measured damage ratio.",
+        "citations": [
+          {"file": "control/security_roots.go", "line_start": 24, "line_end": 36, "quote": "var securityProtectionRootCandidates = []string{"}
+        ]
+      }
+    }
+  ]
+}

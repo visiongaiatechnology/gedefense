@@ -100,6 +100,16 @@ fn trusted_comm_list_respects_the_task_name_abi() {
     for required in ["apt", "apt-get", "dpkg", "tar", "cargo", "rustc", "ld", "make"] {
         assert!(TRUSTED_COMMS.contains(&required), "missing exemption {required}");
     }
+    for name in POOL_SERVICE_COMMS {
+        assert!(!name.is_empty(), "empty pool service comm");
+        assert!(name.len() < 16, "pool service comm too long: {name}");
+        assert!(seen.insert(*name), "duplicate pool service comm: {name}");
+    }
+    assert!(
+        TRUSTED_COMMS.len() + POOL_SERVICE_COMMS.len()
+            <= gedefense_common::RANSOM_TRUSTED_COMM_ENTRIES as usize,
+        "comm exemption tiers exceed kernel map capacity"
+    );
 }
 
 #[test]

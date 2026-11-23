@@ -272,3 +272,21 @@ fn protected_group_detection_covers_system_daemons_without_excluding_normal_work
         }
     }));
 }
+
+#[test]
+fn pooled_service_worker_collection_isolates_worker_without_killing_master_or_siblings() {
+    let table = vec![
+        entry(5000, 1, 5000, 10, "php-fpm"),       // master daemon (PGID leader)
+        entry(5001, 5000, 5000, 11, "php-fpm"),    // compromised worker (trigger root)
+        entry(5002, 5001, 5000, 12, "sh"),         // child shell spawned by compromised worker
+        entry(5003, 5000, 5000, 13, "php-fpm"),    // healthy sibling worker sharing PGID 5000
+    ];
+    assert!(entry_is_service_pool_worker(&table[1], &table));
+    assert!(!entry_is_service_pool_worker(&table[0], &table));
+
+    let members = collect_tree(5001, &table).expect("isolated worker collection");
+    let pids: Vec<i32> = members.iter().map(|item| item.pid).collect();
+    assert_eq!(pids, vec![5002, 5001]);
+    assert!(!pids.contains(&5000), "master daemon must not be collected");
+    assert!(!pids.contains(&5003), "healthy sibling worker must not be collected");
+}

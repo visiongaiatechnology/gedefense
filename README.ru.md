@@ -9,8 +9,8 @@
 <sub>*(Примечание: «Entenprise» — это не опечатка, а умышленная игра слов от нем. «Ente» — «утка» и отсылка к Sir Quacksec 🦆)*</sub>
 
 [![License](https://img.shields.io/badge/License-AGPL--3.0--only-blue?style=for-the-badge)](https://www.gnu.org/licenses/agpl-3.0)
-[![Version](https://img.shields.io/badge/Version-6.2.0-orange?style=for-the-badge)](#)
-[![Status](https://img.shields.io/badge/Status-Release_V6_(6.2.0)-brightgreen?style=for-the-badge)](#)
+[![Version](https://img.shields.io/badge/Version-6.2.1-orange?style=for-the-badge)](#)
+[![Status](https://img.shields.io/badge/Status-Release_V6_(6.2.1)-brightgreen?style=for-the-badge)](#)
 [![Installer](https://img.shields.io/badge/Installer-Universal_Linux-green?style=for-the-badge)](#-быстрый-старт)
 [![Platform](https://img.shields.io/badge/Platform-Linux_x86__64-lightgrey?style=for-the-badge&logo=linux)](#)
 [![Data Plane](https://img.shields.io/badge/Data_Plane-Rust_eBPF%2FXDP-red?style=for-the-badge&logo=rust)](#-архитектура)
@@ -32,8 +32,8 @@
 
 <br />
 
-⬇️ **Прямые ссылки на установщики (v6.2.0 / V6):**
-[**OneClick-установщик (`.run`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.2.0/VGT_GeDefense_V6_6.2.0_OneClick.run) · [`.sha256`](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.2.0/VGT_GeDefense_V6_6.2.0_OneClick.run.sha256) · [**Desktop Tray (`.run`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.2.0/GeDefense-6.2.0-Desktop-OneClick.run) · [`.sha256`](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.2.0/GeDefense-6.2.0-Desktop-OneClick.run.sha256) · [**Исходный код (`.zip`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.2.0/VGT_GeDefense_V6_6.2.0_Source.zip) · [**Релиз v6.2.0**](https://github.com/visiongaiatechnology/gedefense/releases/tag/v6.2.0) · [Быстрый старт](#-быстрый-старт)
+⬇️ **Прямые ссылки на установщики (v6.2.1 / V6):**
+[**OneClick-установщик (`.run`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.2.1/VGT_GeDefense_V6_6.2.1_OneClick.run) · [`.sha256`](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.2.1/VGT_GeDefense_V6_6.2.1_OneClick.run.sha256) · [**Desktop Tray (`.run`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.2.1/GeDefense-6.2.1-Desktop-OneClick.run) · [`.sha256`](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.2.1/GeDefense-6.2.1-Desktop-OneClick.run.sha256) · [**Исходный код (`.zip`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.2.1/VGT_GeDefense_V6_6.2.1_Source.zip) · [**Релиз v6.2.1**](https://github.com/visiongaiatechnology/gedefense/releases/tag/v6.2.1) · [**Результаты тестов (`93.31 / PASS`)**](benchmarks/vgt-hardred-6.2.1/) · [Быстрый старт](#-быстрый-старт)
 
 </div>
 
@@ -43,39 +43,61 @@
 
 | Раздел | Описание | Переход |
 |---|---|---|
-| 📊 **Тест VGT HardRed** | `86.16 / 100 · PASS` против Baseline, Wazuh и CrowdSec | [Результаты](#-бенчмарк-vgt-hardred--оценка-v620) |
-| ⚙️ **Воспроизведение и настройки** | Точный профиль `Max-Hardness` и оговорки по среде | [Настройки](#-воспроизведение-профиля-max-hardness) |
-| 🔍 **Что такое VGT GeDefense?** | Стек V6.2, модули A–E, Titan, Setup Wizard и ПК vs. Сервер | [Обзор](#-что-такое-vgt-gedefense) |
+| 📊 **Тест VGT HardRed** | `93.31 / 100 · PASS` против OSS-стека (`55.40 / FAIL`), Wazuh и CrowdSec | [Результаты](#-бенчмарк-vgt-hardred--сравнение-v621-с-oss-стеком) |
+| 📂 **Папка с результатами** | Все дашборды HardRed и ARES, SARIF, ATT&CK, OCSF и GoTestWAF | [`benchmarks/vgt-hardred-6.2.1/`](benchmarks/vgt-hardred-6.2.1/) |
+| ⚙️ **Воспроизведение и настройки** | Точный профиль `EDR/Hardened Max` и изменения `6.2.0 → 6.2.1` | [Настройки](#-воспроизведение-профиля-max-hardness) |
+| 🔍 **Что такое VGT GeDefense?** | Стек V6.2.1, модули A–E, Titan, Setup Wizard и ПК vs. Сервер | [Обзор](#-что-такое-vgt-gedefense) |
 | 🧪 **Verify Yourself** | Тесты Go/Rust и 19 шлюзов статического аудита | [Самопроверка](#-verify-yourself--полный-набор-тестов-и-руководство-по-независимому-аудиту) |
 | 🏛️ **Архитектура и защита** | Домены доверия, eBPF/XDP, Host XDR, StyX и криптография | [Архитектура](#-архитектура) |
 | 🚀 **Быстрый старт и гейты** | OneClick-установка, гейты релизов и ограничения | [Быстрый старт](#-быстрый-старт) |
-| 📋 **Журнал изменений (Changelog)** | Полная история релизов (`v6.2.0` → `v1.0.0-beta.5`) | [Changelog](#-журнал-изменений-changelog) |
+| 📋 **Журнал изменений (Changelog)** | Полная история релизов (`v6.2.1` → `v1.0.0-beta.5`) | [Changelog](#-журнал-изменений-changelog) |
 | 📄 **Лицензия и атрибуция** | `AGPL-3.0-only`, GeoIP/ASN и лицензии третьих сторон | [Лицензия](#-лицензия) |
 
 ---
 
-## 📊 Бенчмарк VGT HardRed — оценка V6.2.0
+## 📊 Бенчмарк VGT HardRed — сравнение V6.2.1 с OSS-стеком
 
-Измерено с помощью открытого мультидоменного бенчмарка безопасности Linux **[VGT HardRed (`RedHard`)](https://github.com/visiongaiatechnology/redhard)** на изолированном от снэпшота целевом хосте **Ubuntu 24.04 (Linux HWE 7.0, NGINX + PHP 8.3-FPM)** (`eth0` out-of-band управляющий канал, `eth1` боевой канал атак без allowlist; 4-осевая модель: эффективность 45 % · устойчивость к ложным срабатываниям 20 % · задержка/сдерживание 20 % · накладные расходы 15 %):
+Измерено с помощью открытого мультидоменного бенчмарка безопасности Linux **[VGT HardRed (`RedHard`)](https://github.com/visiongaiatechnology/redhard)** (`2026-11-23T09:32:48Z`) на изолированном от снэпшота целевом хосте **Ubuntu 24.04 (Linux HWE 7.0, NGINX + PHP 8.3-FPM)** (`eth0` out-of-band управляющий канал, `eth1` боевой канал атак без allowlist; 4-осевая модель: эффективность 45 % · устойчивость к ложным срабатываниям 20 % · задержка/сдерживание 20 % · накладные расходы 15 %). Расширенный прогон сравнивает **GeDefense Linux 6.2.1** с интегрированным **OSS Best-of-Breed стеком (ModSecurity CRS + Suricata IPS + Tetragon + ClamAV)**, **Wazuh**, **CrowdSec** и чистым **Baseline**:
 
 | Место | Система безопасности | Итог (0–100) | Ось 1: Эффективность | Ось 2: FP-устойчивость | Ось 3: Латентность и сдерживание | Ось 4: Нагрузка | Гейт |
 |---:|---|---:|---:|---:|---:|---:|---|
-| 1 | **GeDefense Linux 6.2.0 (`Max-Hardness`)** | **86.16** | **80.49** | **100.00** | **78.07** | **95.53** | **`PASS`** |
-| 2 | **Wazuh (`Max Rules + FIM + Auditd + Active Response`)** | **46.29** | 31.74 | 69.23 | 22.14 | 91.53 | `CONDITIONAL` |
-| Ref | **Baseline (`Clean Ubuntu HWE 7.0 WebStack`)** | **45.82** | 16.94 | 100.00 | 15.97 | 100.00 | `CONDITIONAL` |
-| 3 | **CrowdSec (`Max Collections + Bouncers + AppSec WAF`)** | **35.83** | 42.89 | 0.00 | 28.38 | 72.37 | `FAIL` |
+| 1 | **GeDefense Linux 6.2.1 (`EDR/Hardened Max`)** | **93.31** | **95.78** | **100.00** | **86.13** | **86.54** | **`PASS`** |
+| 2 | **OSS Best-of-Breed (`ModSec CRS + Suricata IPS + Tetragon + ClamAV`)** | **55.40** | 76.27 | 38.46 | 38.91 | 37.35 | `FAIL` |
+| 3 | **Wazuh (`Max Rules + FIM + Auditd + Active Response`)** | **46.70** | 32.66 | 69.23 | 22.14 | 91.53 | `CONDITIONAL` |
+| Ref | **Baseline (`Clean Ubuntu HWE 7.0 WebStack`)** | **46.23** | 17.86 | 100.00 | 15.97 | 100.00 | `CONDITIONAL` |
+| 4 | **CrowdSec (`Max Collections + Bouncers + AppSec WAF`)** | **36.58** | 44.56 | 0.00 | 28.38 | 72.37 | `FAIL` |
 
-### Детализация GeDefense 6.2.0 по доменам и нагрузке
+> **Прогресс версии (`6.2.0 → 6.2.1`):** Итоговый балл вырос с **`86.16`** до **`93.31 / 100 (PASS)`** (`+7.15`) за счёт блокировки inode вредоносных файлов в BPF-LSM (`hardred-malware`: `65.6 → 95.6`, Prevention TPR `33.3% → 100.0%`) и ядерного поведенческого XDR (`hardred-endpoint`: `59.0 → 94.2`, Detection TPR `53.3% → 93.3%`, Prevention TPR `53.3% → 100.0%`, коэффициент ущерба снижен с `18.1%` до **`8.6%`**) при `0.0%` ложных срабатываний.
 
-| Домен | Detection TPR | Prevention TPR | Det / Prot FPR | Контекст (0–3) | Медиана TTFA | Оценка домена | Ключевая метрика |
-|---|---:|---:|---:|---:|---:|---:|---|
-| `hardred-waf` | 100.0% | 100.0% | 0.0% / 0.0% | 3.00 | 250.0 мс | **100.0** | 0/8 ложных срабатываний; HTTP `403` на inline-edge |
-| `hardred-netids` | 100.0% | 100.0% | 0.0% / 0.0% | 2.50 | 175.9 мс | **98.3** | XDP/Kinetic отсекает HTTP-флуд, SSH-брут и портскан |
-| `hardred-compliance` | 100.0% | 86.0% | 0.0% / 0.0% | 3.00 | — | **86.0** | Lynis Hardening Index `71` (Baseline `63`); 8 активных LSM вкл. `bpf` |
-| `hardred-malware` | 100.0% | 33.3% | 0.0% / 0.0% | 1.67 | 250.0 мс | **65.6** | HTTP EICAR `403` + хостовый `FAN_CLOSE_WRITE` и запрет запуска |
-| `hardred-endpoint` | 53.3% | 53.3% | 0.0% / 0.0% | 2.11 | 250.0 мс | **59.0** | **Ущерб `18.1%`** (Baseline `100.0%`): заморозка ransomware и блок `memfd`/`/tmp` |
+### Прямое сравнение по доменам: GeDefense 6.2.1 vs. OSS Best-of-Breed
 
-- **Измеренная системная нагрузка (`03d-gedefense-6.2.0-max-bench` против чистого Baseline):** `730.7` HTTP RPS (`8.74 мс` p50 · **`17.99 мс` p95** против `21.23 мс` в Baseline) · `90,420.3` Sysbench EPS · `245.2` FIO IOPS · **`83.3 MiB`** Security RSS · **`4.3%`** Security CPU.
+| Домен | GeDefense 6.2.1 (Det / Prev / FPR / Балл) | OSS Best-of-Breed (Det / Prev / FPR / Балл) | Ключевое преимущество |
+|---|---|---|---|
+| `hardred-waf` | 100.0% / 100.0% / **0.0%** / **100.0** | 100.0% / 92.9% / 12.5% / **92.8** | Ноль ложных срабатываний (у OSS-стека `FAIL` из-за `12.50%` WAF Prot FPR) |
+| `hardred-netids` | 100.0% / 100.0% / 0.0% / **98.3** | 100.0% / 75.0% / 0.0% / **86.2** | Kinetic XDP надёжно блокирует HTTP-флуд (`196/240`) и сканирование портов |
+| `hardred-endpoint` | **93.3%** / **100.0%** / 0.0% / **94.2** | 33.3% / 50.0% / 0.0% / **51.9** | **Ущерб `8.6%` против `100.0%` у OSS** (OSS пропустил AES/storm ransomware и `memfd`) |
+| `hardred-malware` | 100.0% / 100.0% / 0.0% / **95.6** | 100.0% / 100.0% / 0.0% / **96.7** | Блокировка BPF-LSM `MALWARE_DENIED_INODES` + шифрованный Vault AES-256-GCM |
+| `hardred-compliance` | 100.0% / 86.0% / 0.0% / **86.0** | 100.0% / 80.0% / 0.0% / **80.0** | Индекс Lynis Hardening **`71`** (OSS `65`, Baseline `63`) |
+
+- **Измеренная нагрузка (`GeDefense 6.2.1` против `OSS Best-of-Breed` и Baseline):**
+  - **GeDefense Linux 6.2.1:** `523.3` HTTP RPS (`12.03 мс` p50 · `29.26 мс` p95) · `90,248.0` Sysbench EPS · `249.9` FIO IOPS · **`88.4 MiB`** Security RSS · **`4.3%`** Security CPU · Lynis `71`.
+  - **OSS Best-of-Breed (`ModSec + Suricata + Tetragon + ClamAV`):** `452.4` HTTP RPS (`13.85 мс` p50 · `29.93 мс` p95) · `84,829.5` Sysbench EPS · `237.4` FIO IOPS · **`1,761.0 MiB`** Security RSS (`~20×` больше памяти) · **`57.3%`** Security CPU (`~13×` больше нагрузки на CPU) · Lynis `65`.
+
+### Адаптивный многоэтапный бенчмарк (`VGT HardRed 1.2 / REDHARD ARES`)
+
+| Система | ARES Design Resilience | ARES Runtime Resilience | ARES Adaptive Resilience | Прервано цепочек | Ø Pre-Kill Damage | Multi-Seed Ø (3 Seed × 3 раунда) | Ложные срабатывания |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| **GeDefense Linux** | **68.20** | **96.68** | **93.46** | **36 / 36** | **11.1%** | **93.64** (σ = `0.0918`) | **0** |
+| **Wazuh HIDS/SIEM** | 65.10 | 15.42 | 27.78 | 3 / 36 | 100.0% | 27.96 | 3 |
+| **CrowdSec IPS/CTI** | 59.80 | 51.67 | 42.25 | 24 / 36 | 100.0% | 42.44 | 0 |
+
+### 📂 Все артефакты и отчёты тестирования в репозитории
+
+Полные scorecards, результаты всех 93 тестов (5 систем), отчёты SARIF, матрицы MITRE ATT&CK, OCSF и интерактивные HTML-панели доступны прямо в репозитории:
+- 📁 **[Каталог результатов тестирования (`benchmarks/vgt-hardred-6.2.1/`)](benchmarks/vgt-hardred-6.2.1/)**
+- 📄 **[Полный отчёт бенчмарка (`FINAL_BENCHMARK_REPORT.md`)](benchmarks/vgt-hardred-6.2.1/FINAL_BENCHMARK_REPORT.md)** · **[Таблица CSV](benchmarks/vgt-hardred-6.2.1/VGT_HardRed_Comparison.csv)** · **[Интерактивный HTML-дашборд](benchmarks/vgt-hardred-6.2.1/VGT_HardRed_Dashboard.html)**
+- 🤖 **[Гибридный отчёт REDHARD ARES](benchmarks/vgt-hardred-6.2.1/ares/FINAL_ARES_HYBRID_REPORT.md)** · **[ARES CSV](benchmarks/vgt-hardred-6.2.1/ares/VGT_HardRed_ARES_Comparison.csv)** · **[ARES HTML-дашборд](benchmarks/vgt-hardred-6.2.1/ares/VGT_HardRed_ARES_Dashboard.html)**
+- 🔎 **Исходные каталоги участников:** [`gedefense/`](benchmarks/vgt-hardred-6.2.1/gedefense/) · [`oss-stack/`](benchmarks/vgt-hardred-6.2.1/oss-stack/) · [`wazuh/`](benchmarks/vgt-hardred-6.2.1/wazuh/) · [`crowdsec/`](benchmarks/vgt-hardred-6.2.1/crowdsec/) · [`baseline/`](benchmarks/vgt-hardred-6.2.1/baseline/)
 
 ### ⚙️ Воспроизведение профиля `Max-Hardness`
 
@@ -98,7 +120,7 @@
 5. **Профиль усиления CIS / Lynis:** Примените транзакционный sysctl-профиль **`astraeaos-cis-l1`** (`/api/v1/transactions/preview` → `/apply`, `type: "hardening.sysctl-profile"`) и при необходимости opt-in скрипт `gedefense-cis-baseline --apply` (SSHD drop-in, `UMASK 027`, баннеры, чёрный список модулей и правила auditd).
 
 > [!NOTE]
-> **Зависимость от среды и инженерная прозрачность:** Показатели бенчмарка зависят от версии ядра Linux и параметров LSM (`lsm=...,bpf`), производительности CPU/диска, топологии сети, списков исключений рабочих нагрузок и версий тестовых инструментов. Первые прогоны 6.1.2/6.2.0 также выявили реальные ошибки и узкие места — в том числе фильтр UID в on-write сканере (пропускавший файлы не-root пользователей), секундную задержку дренирования ransomware-событий (сниженную до 100 мс), нехватку утилит входа/учётных записей в allowlist Credential Guard, отсутствие словаря `astraeaos-cis-l1` в Rust-ядре и дрейф cgroup в StyX после перезагрузки — и все они были исправлены в GeDefense 6.2.0 для реального повышения защиты независимо от бенчмарка.
+> **Зависимость от среды и инженерная прозрачность (`6.2.0 → 6.2.1`):** Показатели бенчмарка зависят от версии ядра Linux и параметров LSM (`lsm=...,bpf`), производительности CPU/диска, топологии сети и исключений нагрузок. Выявленные в первых прогонах пробелы системно устранены в ветке `6.2.0 → 6.2.1`: помимо базы `6.2.0`, в `6.2.1` добавлены блокировка вредоносных inode в BPF-LSM (`MALWARE_DENIED_INODES` + `CORE_QUARANTINE_ALLOWED_ROOTS`), ядерные поведенческие XDR-сенсоры (`EXEC_ARGV_EVENTS`, `KERNEL_PROBE_EVENTS`, kretprobe `getname_flags` и multi-CPU tracepoints в `aya`), уточнённые пороги ransomware (`15→6` / `25→18`) с изоляцией рабочих процессов сервис-пулов по PPID (`RANSOM_TRUST_POOL_METADATA`), фильтрация внутренних/локальных потоков в StyX (`isIgnoredNonExternalFlow`) и асинхронный `ChronosScanner`.
 
 ---
 
@@ -228,7 +250,7 @@ VGT GeDefense:
 
 Ни одно единичное срабатывание сигнатуры, фида или поведенческой эвристики **не может авторизовать завершение процесса**. Применение мер (Enforce) требует как минимум двух независимых категорий подтверждения, объективных доказательств и стабильного состояния системы.
 
-### 🛡️ Полный стек возможностей V6.2.0 и модули A–E
+### 🛡️ Полный стек возможностей V6.2.1 и модули A–E
 
 Все подсистемы используют разделённые домены доверия, единый REST API и панели управления. В `observe`/`canary` блокировки V6 выключены; при переходе в `enforce` автоматически включается безопасный базовый профиль (`styx=monitor`, `titan_exec=contain`, `parser_cells=enabled`), а более строгие режимы (**Emergency Lockdown**, **Witness**, `titan_exec=untrusted`, `per_cell` StyX `enforce` и CIS userland-база) включаются администратором явно:
 
@@ -255,7 +277,7 @@ VGT GeDefense:
 | **Linux-сервер (Web / API / Compute)** | L7 SQLi/RCE/веб-шеллы, исходящие C2/утечки из веб-cgroup, дропы в `/tmp`/`/var/www`, шифровальщики, чтение `/etc/shadow` | **L7 Edge/WAF + Kinetic XDP** отбивают сетевой/HTTP-флуд и инъекции; **StyX (`per_cell enforce`)** обрывает egress воркеров; **Titan Exec + Ransomware + On-Write + Credential Guard** пресекают пост-эксплуатацию; **Witness** фиксирует контрольные точки вовне |
 
 > [!WARNING]
-> **СТАТУС РЕЛИЗА И КВАЛИФИКАЦИИ (Версия 6.2.0 / V6).**  
+> **СТАТУС РЕЛИЗА И КВАЛИФИКАЦИИ (Версия 6.2.1 / V6).**  
 > GeDefense V6 активно развивается для тестовых и квалификационных сред. Автоматизированные гейты проверяют воспроизводимость сборки, подписи Ed25519, тесты Go/Rust и статические инварианты безопасности; внешние якоря доверия (публичный CA, RFC3161, CRL/OCSP, инфраструктура подписи фидов) и проверка eBPF-верификатора/NIC XDP остаются обязательным этапом квалификации на целевом хосте. Перед включением `enforce` в продакшене изучите [SECURITY.md](SECURITY.md), [RELEASE-NOTES.md](RELEASE-NOTES.md) и [CHANGELOG.md](CHANGELOG.md).
 
 ---
@@ -549,17 +571,17 @@ Observe ──→ Canary ──→ Enforce
 
 ```bash
 # Загрузить инсталлятор
-wget https://github.com/visiongaiatechnology/gedefense/releases/download/v6.2.0/VGT_GeDefense_V6_6.2.0_OneClick.run
+wget https://github.com/visiongaiatechnology/gedefense/releases/download/v6.2.1/VGT_GeDefense_V6_6.2.1_OneClick.run
 
 # Проверить SHA-256
-sha256sum --check VGT_GeDefense_V6_6.2.0_OneClick.run.sha256
+sha256sum --check VGT_GeDefense_V6_6.2.1_OneClick.run.sha256
 
 # Установить (требуются права root)
-chmod 700 VGT_GeDefense_V6_6.2.0_OneClick.run
-sudo ./VGT_GeDefense_V6_6.2.0_OneClick.run
+chmod 700 VGT_GeDefense_V6_6.2.1_OneClick.run
+sudo ./VGT_GeDefense_V6_6.2.1_OneClick.run
 ```
 
-> **Доступность инсталлятора:** Официальные автономные установочные ассеты v6.2.0 (`VGT_GeDefense_V6_6.2.0_OneClick.run`) публикуются вместе с подписанным GitHub Release.
+> **Доступность инсталлятора:** Официальные автономные установочные ассеты v6.2.1 (`VGT_GeDefense_V6_6.2.1_OneClick.run` и `GeDefense-6.2.1-Desktop-OneClick.run`) публикуются вместе с подписанным GitHub Release.
 
 > Инсталлятор и контрольные суммы публикуются только после успешного прохождения всех этапов GitHub CI и квалификационных проверок целевого хоста. Никогда не запускайте непроверенные файлы RUN.
 
@@ -593,7 +615,7 @@ sudo ./VGT_GeDefense_V6_6.2.0_OneClick.run
 
 ---
 
-## 🚧 Известные ограничения (6.2.0 / V6)
+## 🚧 Известные ограничения (6.2.1 / V6)
 
 - Отсутствие поддержки Swarm / Mesh
 - Отсутствие разгрузки QUIC
@@ -616,7 +638,14 @@ sudo ./VGT_GeDefense_V6_6.2.0_OneClick.run
 
 ## 📋 Журнал изменений (Changelog)
 
-### v6.2.0 — Максимизация защиты и устойчивость телеметрии *(Текущий релиз — 22.11.2026)*
+### v6.2.1 — Ядерный поведенческий XDR, блокировка inode в карантине и изоляция сервис-пулов *(Текущий релиз — 23.11.2026)*
+
+- **Блокировка вредоносных inode и границы ядра (`FIND-G-001`):** Карта BPF-LSM `MALWARE_DENIED_INODES` (`4 096` записей) отклоняет `file_open` с `-EACCES` для всех процессов кроме `gedefense-*` даже в не-root каталогах `0755` без расширения привилегий DAC, совместно с `CORE_QUARANTINE_ALLOWED_ROOTS` / `FORBIDDEN_ROOTS` и `capture_open_fd_only()`.
+- **Ядерный поведенческий XDR и multi-CPU tracepoints:** Буферы `EXEC_ARGV_EVENTS` (`512` Б аргументов командной строки), `KERNEL_PROBE_EVENTS` (`XDR.PTRACE_ATTEMPT`, `XDR.KERNEL_PROTOCOL_PROBE`, `XDR.CREDENTIAL_PROBE`, `XDR.SYMLINK_OVER_SENSITIVE`), `PENDING_COLD_OPEN` + kretprobe `getname_flags`, правила обнаружения (`KD.LINUX.DISCOVERY.ACCOUNT`, `KD.LINUX.DISCOVERY.SUID`) и активация perf-tracepoints на всех CPU в `rust/vendor/aya`.
+- **Изоляция сервис-пулов и гигиена телеметрии:** Ужесточённые пороги ransomware (`15 → 6` и `25 → 18`) с профилем доверия `RANSOM_TRUST_POOL_METADATA` (`php-fpm`, `lsphp`, `nginx`, `httpd`, `apache2`, `mariadbd`, `postgres`, `redis-server` и др.) и изоляцией по PPID в `stop_process_descendants`/`collect_tree` (мастер-демон и здоровые воркеры продолжают работу); фильтр `isIgnoredNonExternalFlow` в `StyxBeacon`, асинхронный `ChronosScanner` и опрос `StyxFlowHealth` раз в `1с`.
+- **Расширенный бенчмарк VGT HardRed (`86.16 → 93.31`):** Итог **`93.31 / 100 (PASS)`** против OSS Best-of-Breed (`55.40 / FAIL`), Wazuh (`46.70`), CrowdSec (`36.58`) и гибридные данные REDHARD ARES опубликованы в [`benchmarks/vgt-hardred-6.2.1/`](benchmarks/vgt-hardred-6.2.1/) (`docs/V6.2.1-RELEASE.md`).
+
+### v6.2.0 — Максимизация защиты и устойчивость телеметрии *(22.11.2026)*
 
 - **Вредоносное ПО и архивы (`M1.1`–`M1.3`):** Асинхронный `FAN_CLOSE_WRITE`-наблюдатель для `/tmp`, `/var/tmp`, `/dev/shm`, `/var/www` (сканирование независимо от UID с пробой до `16 MiB` / полным сканом до `64 MiB`), ограниченный рекурсивный разбор ZIP/GZIP/TAR (глубина 8, fail-closed при zip-slip), `PrivateTmp=false` с узкими правами, fd-карантин и проверка raw-body в HTTP `POST`/`PUT`.
 - **Сдерживание на хосте и модули ядра (`M2.1`–`M2.4`):** Глобальный режим TITAN Exec `untrusted` (`4`) через ABI-2; `XDR_KILL_TREE` / `GROUP_STOP` / `GROUP_CONT` с проверкой `pidfd`; eBPF-сенсор ransomware (`vfs_write`/`vfs_rename`/`vfs_unlink`), вооружаемый при attach с тиком дренирования `100 мс` и обратимым `SIGSTOP`; BPF-LSM Credential Guard (`file_open`) для `/etc/shadow`, `/etc/gshadow` и секретов (расширенный allowlist для TTY `login`, `cron`, `useradd`, `dpkg`).
@@ -921,6 +950,6 @@ sudo python3 scripts/update-geoip-db.py /var/lib/vgt/gedefense/geoip.csv
 
 [![VGT](https://img.shields.io/badge/VisionGaia-Technology-cyan?style=for-the-badge)](https://visiongaiatechnology.de)
 
-*VGT GeDefense 6.2.0 (V6) — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
+*VGT GeDefense 6.2.1 (V6) — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
 
 </div>

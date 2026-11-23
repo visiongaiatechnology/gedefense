@@ -54,6 +54,11 @@ pub(crate) static CRED_GUARD_STATE: Array<u64> = Array::with_max_entries(1, 0);
 #[map]
 pub(crate) static CRED_GUARD_FILES: HashMap<[u8; 16], u8> =
     HashMap::with_max_entries(CRED_GUARD_FILE_MAP_ENTRIES, 0);
+/// Malware-locked inodes: files detected in non-writable drop dirs (`0755` non-root)
+/// whose unlinking was refused without broad DAC override are locked at `file_open`.
+#[map]
+pub(crate) static MALWARE_DENIED_INODES: HashMap<[u8; 16], u8> =
+    HashMap::with_max_entries(4_096, 0);
 /// Protected directory inodes: every direct child is a credential secret.
 #[map]
 pub(crate) static CRED_GUARD_DIRS: HashMap<[u8; 16], u8> =
@@ -192,6 +197,27 @@ fn emit_credential_event(identity: &[u8; 16], inode_mode: u32, action: u8, comm:
     }
 }
 
+#[inline(always)]
+fn starts_with_bytes(haystack: &[u8], prefix: &[u8]) -> bool {
+    if haystack.len() < prefix.len() {
+        return false;
+    }
+    let mut i = 0usize;
+    while i < prefix.len() {
+        let Some(&a) = haystack.get(i) else {
+            return false;
+        };
+        let Some(&b) = prefix.get(i) else {
+            return false;
+        };
+        if a != b {
+            return false;
+        }
+        i += 1;
+    }
+    true
+}
+
 #[lsm(hook = "file_open")]
 pub fn gedefense_credential_guard_file_open(ctx: LsmContext) -> i32 {
     match try_credential_guard_file_open(&ctx) {
@@ -206,9 +232,6 @@ fn try_credential_guard_file_open(ctx: &LsmContext) -> Result<i32, i32> {
     if previous != 0 {
         return Ok(previous);
     }
-    if !guard_active() {
-        return Ok(0);
-    }
     let file_ptr: u64 = ctx.arg(0);
     if file_ptr == 0 {
         increment_counter(&CRED_GUARD_READ_FAILURES);
@@ -221,6 +244,24 @@ fn try_credential_guard_file_open(ctx: &LsmContext) -> Result<i32, i32> {
             return Ok(0);
         }
     };
+    let inode: u64 = match titan_probe(file_ptr, offsets.file_inode) {
+        Some(v) => v,
+        None => return Ok(0),
+    };
+    let Some((identity, mode)) = inode_identity(inode, &offsets) else {
+        return Ok(0);
+    };
+    if unsafe { MALWARE_DENIED_INODES.get(&identity).is_some() } {
+        let comm = bpf_get_current_comm().unwrap_or([0u8; 16]);
+        if !starts_with_bytes(&comm, b"gedefense-") {
+            increment_counter(&CRED_GUARD_DENIED);
+            emit_credential_event(&identity, mode, CRED_GUARD_ACTION_DENY, &comm);
+            return Err(-EACCES);
+        }
+    }
+    if !guard_active() {
+        return Ok(0);
+    }
     // Cheap path: most opens are not credential targets.
     let target = match credential_target(file_ptr, &offsets) {
         Some(target) => target,

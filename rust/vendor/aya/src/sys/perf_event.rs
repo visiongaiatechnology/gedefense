@@ -180,6 +180,20 @@ pub(crate) fn perf_event_open_trace_point(
     )
 }
 
+pub(crate) fn perf_event_open_trace_point_cpu(
+    event_id: u64,
+    cpu: u32,
+) -> io::Result<crate::MockableFd> {
+    perf_event_open(
+        PerfEventConfig::TracePoint { event_id },
+        PerfEventScope::AllProcessesOneCpu { cpu },
+        SamplePolicy::Period(0),
+        WakeupPolicy::Events(1),
+        false,
+        PERF_FLAG_FD_CLOEXEC,
+    )
+}
+
 pub(crate) fn perf_event_ioctl(
     fd: BorrowedFd<'_>,
     request: PerfEventIoctlRequest<'_>,

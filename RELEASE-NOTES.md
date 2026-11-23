@@ -1,5 +1,15 @@
 # Release Notes
 
+## 6.2.1 — 2026-11-23 — Kernel Behavioral XDR, Inode Quarantine Lock & Service-Pool Isolation
+
+**6.2.1 strengthens kernel behavioral telemetry, malware quarantine confinement, and multi-worker service-pool resilience on top of 6.2.0.** It increases the VGT HardRed overall score from `86.16` to **`93.31 / 100 (PASS)`**, achieves **`100.0%` prevention TPR** in `hardred-malware` (`95.6` vs. `65.6`) and **`93.3%` detection / `100.0%` prevention TPR** in `hardred-endpoint` (`94.2` vs. `59.0`, `8.6%` damage ratio), and outperforms the OSS Best-of-Breed stack (`55.40 / FAIL`). Full details: `docs/V6.2.1-RELEASE.md` · Raw results: `benchmarks/vgt-hardred-6.2.1/`.
+
+### Highlights
+- **Kernel malware inode lock & quarantine boundary (`FIND-G-001`):** `MALWARE_DENIED_INODES` locks confirmed malicious files directly inside the `file_open` BPF-LSM hook (`-EACCES`) even in non-root `0755` drop directories without broad DAC override capabilities, while `CORE_QUARANTINE_ALLOWED_ROOTS` / `FORBIDDEN_ROOTS` and `capture_open_fd_only()` confine Vault reads strictly inside safe drop roots.
+- **Kernel behavioral XDR & subshell `argv` capture:** `EXEC_ARGV_EVENTS` (`512` B), `KERNEL_PROBE_EVENTS` (`64` B), `getname_flags` `kretprobe` demand-page resolution, and multi-CPU `aya` tracepoint activation deliver `XDR.PTRACE_ATTEMPT`, `XDR.KERNEL_PROTOCOL_PROBE`, `XDR.CREDENTIAL_PROBE`, `XDR.SYMLINK_OVER_SENSITIVE`, and discovery rules (`KD.LINUX.DISCOVERY.ACCOUNT`, `KD.LINUX.DISCOVERY.SUID`).
+- **Service-pool isolation & beacon/FIM hygiene:** Tightened ransomware thresholds (`15 -> 6` / `25 -> 18`) with `RANSOM_TRUST_POOL_METADATA` and PPID-only `stop_process_descendants`/`collect_tree` worker isolation, filtered loopback/link-local/`pid=0` StyX flows (`isIgnoredNonExternalFlow`), moved `ChronosScanner.Scan` asynchronously off the XDR tick (`chronosRunning`), and polled healthy `StyxFlowHealth` at `1s`.
+- **Artifacts:** `VGT_GeDefense_V6_6.2.1_*`, `GeDefense-6.2.1-*`.
+
 ## 6.2.0 — 2026-11-21 — Defense Maximization & Telemetry Resilience
 
 **6.2.0 is the HardRed-driven hardening release on top of 6.1.2.** It closes the confirmed malware, endpoint-containment, StyX cold-start drift and flow-telemetry gaps without weakening the strict `0.0 %` protection-FPR gate. Full details: `docs/V6.2.0-RELEASE.md`.

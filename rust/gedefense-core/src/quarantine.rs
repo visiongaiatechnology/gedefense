@@ -262,6 +262,28 @@ impl QuarantineBroker {
         result
     }
 
+    /// Captures an already-open malicious descriptor into the encrypted vault
+    /// AFTER the caller has kernel-locked `(dev, ino)` in eBPF LSM (used strictly
+    /// when a non-root `0755` drop directory refuses unlinking without `CAP_DAC_OVERRIDE`).
+    pub fn capture_open_fd_only(
+        &self,
+        encoded_path: &str,
+        source: &mut File,
+        object_id: &str,
+        expected_sha256: [u8; 32],
+        expected_size: u64,
+    ) -> Result<String, BoxError> {
+        validate_object_id(object_id)?;
+        let _ = decode_path(encoded_path)?;
+        let fd_meta = source.metadata()?;
+        if !fd_meta.is_file() || fd_meta.len() > MAX_FILE_BYTES || fd_meta.len() != expected_size {
+            return Err("quarantine source identity changed before capture".into());
+        }
+        let expected = file_identity_from_metadata(&fd_meta, expected_sha256)?;
+        self.encrypt_open_source(source, object_id, &expected)?;
+        Ok(expected.encode())
+    }
+
     fn finish_staged_quarantine(
         &self,
         parent_fd: RawFd,
@@ -660,6 +682,83 @@ impl Drop for QuarantineBroker {
     }
 }
 
+const CORE_QUARANTINE_FORBIDDEN_ROOTS: &[&str] = &[
+    "/proc",
+    "/sys",
+    "/run",
+    "/boot",
+    "/bin",
+    "/sbin",
+    "/lib",
+    "/lib64",
+    "/lib32",
+    "/libx32",
+    "/usr",
+    "/etc",
+    "/var/lib/vgt",
+    "/etc/vgt",
+    "/opt/vgt",
+];
+
+const CORE_QUARANTINE_ALLOWED_ROOTS: &[&str] = &[
+    "/tmp",
+    "/var/tmp",
+    "/dev/shm",
+    "/var/www",
+    "/home",
+    "/root",
+    "/srv",
+    "/mnt",
+    "/media",
+    "/var/backups",
+    "/var/spool",
+    "/var/cache",
+    "/var/opt",
+    "/opt",
+];
+
+fn path_matches_root(path: &Path, root: &Path) -> bool {
+    path == root || path.starts_with(root)
+}
+
+pub(crate) fn validate_core_quarantine_path(path: &Path) -> Result<(), BoxError> {
+    if !path.is_absolute() || path == Path::new("/") {
+        return Err("quarantine path must be absolute and non-root".into());
+    }
+    for component in path.components() {
+        match component {
+            std::path::Component::CurDir | std::path::Component::ParentDir => {
+                return Err("quarantine path must be normalized without relative components".into());
+            }
+            _ => {}
+        }
+    }
+    if path == Path::new("/dev")
+        || (path.starts_with(Path::new("/dev")) && !path.starts_with(Path::new("/dev/shm")))
+    {
+        return Err("quarantine path is inside forbidden device root".into());
+    }
+    for forbidden in CORE_QUARANTINE_FORBIDDEN_ROOTS {
+        if path_matches_root(path, Path::new(forbidden)) {
+            return Err("quarantine path is inside forbidden system or control root".into());
+        }
+    }
+    let allowed = CORE_QUARANTINE_ALLOWED_ROOTS
+        .iter()
+        .any(|root| path_matches_root(path, Path::new(root)));
+    if !allowed {
+        return Err("quarantine path is outside permitted core allowlist roots".into());
+    }
+    // Never allow quarantining one of the allowlist root directories themselves (must be a child).
+    let is_bare_root = CORE_QUARANTINE_ALLOWED_ROOTS
+        .iter()
+        .any(|root| path == Path::new(root));
+    if is_bare_root {
+        return Err("quarantine target must be a file below an allowed root".into());
+    }
+    Ok(())
+}
+
 fn decode_path(encoded: &str) -> Result<PathBuf, BoxError> {
     if encoded.is_empty() || encoded.len() > 3072 {
         return Err("quarantine path token is outside bounds".into());
@@ -669,9 +768,7 @@ fn decode_path(encoded: &str) -> Result<PathBuf, BoxError> {
         return Err("quarantine path is outside bounds".into());
     }
     let path = PathBuf::from(OsStr::from_bytes(&raw));
-    if !path.is_absolute() || path == Path::new("/") {
-        return Err("quarantine path must be absolute and non-root".into());
-    }
+    validate_core_quarantine_path(&path)?;
     Ok(path)
 }
 
@@ -1553,5 +1650,43 @@ mod tests {
             "verified"
         );
         fs::remove_dir_all(&root).expect("test cleanup");
+    }
+
+    #[test]
+    fn find_g_001_decode_path_enforces_core_allowlist_and_denylist() {
+        for blocked in [
+            "/etc/sysctl.d/99-gedefense.conf",
+            "/etc/shadow",
+            "/etc/vgt/gedefense/secrets/core-ipc.key",
+            "/var/lib/vgt/gedefense/quarantine/objects/x.qv",
+            "/opt/vgt/gedefense/current/bin/gedefense-control",
+            "/proc/self/environ",
+            "/sys/kernel/security/lsm",
+            "/dev/sda1",
+            "/usr/bin/bash",
+            "/tmp/../etc/shadow",
+            "/tmp",
+            "relative/path.bin",
+            "/",
+        ] {
+            let token = URL_SAFE_NO_PAD.encode(blocked.as_bytes());
+            assert!(
+                decode_path(&token).is_err(),
+                "expected core path policy to reject {blocked}"
+            );
+        }
+        for allowed in [
+            "/tmp/drop.bin",
+            "/var/tmp/payload.elf",
+            "/dev/shm/stage.sh",
+            "/var/www/html/shell.php",
+            "/home/pentest/download.bin",
+        ] {
+            let token = URL_SAFE_NO_PAD.encode(allowed.as_bytes());
+            assert_eq!(
+                decode_path(&token).expect("allowed path"),
+                PathBuf::from(allowed)
+            );
+        }
     }
 }

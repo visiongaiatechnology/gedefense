@@ -40,7 +40,7 @@ use gedefense_common::{
     RANSOM_SAMPLE_BYTES, RANSOM_SIGNAL_ENTROPY_BURST, RANSOM_SIGNAL_RENAME_STORM,
     RANSOM_STATE_ABI, RANSOM_STATE_ABI_SHIFT, RANSOM_STATE_ARMED_SHIFT, RANSOM_STATE_BYTE_MASK,
     RANSOM_STATE_MAGIC, RANSOM_STATE_MAGIC_SHIFT, RANSOM_TRACK_ENTRIES,
-    RANSOM_TRUSTED_COMM_ENTRIES,
+    RANSOM_TRUSTED_COMM_ENTRIES, RANSOM_TRUST_FULL, RANSOM_TRUST_POOL_METADATA,
 };
 use crate::{titan_offsets, titan_probe, TitanOffsets};
 
@@ -102,8 +102,8 @@ fn ransom_armed() -> bool {
 }
 
 #[inline(always)]
-fn comm_trusted(comm: &[u8; 16]) -> bool {
-    unsafe { RANSOM_TRUSTED_COMM.get(comm).is_some() }
+fn trust_level(comm: &[u8; 16]) -> u8 {
+    unsafe { RANSOM_TRUSTED_COMM.get(comm).copied().unwrap_or(0) }
 }
 
 /// Integer-only distinct-byte estimator: samples up to 64 user bytes into a
@@ -289,7 +289,7 @@ fn track_metadata(tgid: u32, now: u64, uid_gid: u64, comm: &[u8; 16]) -> Option<
 }
 
 #[inline(always)]
-fn current_identity() -> Option<(u32, u32, u64, u64, [u8; 16])> {
+fn current_identity(skip_pool_metadata: bool) -> Option<(u32, u32, u64, u64, [u8; 16])> {
     if !ransom_armed() {
         return None;
     }
@@ -299,7 +299,8 @@ fn current_identity() -> Option<(u32, u32, u64, u64, [u8; 16])> {
         return None;
     }
     let comm = bpf_get_current_comm().ok()?;
-    if comm_trusted(&comm) {
+    let tier = trust_level(&comm);
+    if tier == RANSOM_TRUST_FULL || (skip_pool_metadata && tier == RANSOM_TRUST_POOL_METADATA) {
         return None;
     }
     Some((
@@ -320,7 +321,7 @@ pub fn gedefense_ransom_vfs_write(ctx: ProbeContext) -> u32 {
 
 #[inline(always)]
 fn try_ransom_vfs_write(ctx: &ProbeContext) -> Option<()> {
-    let (tgid, _tid, now, uid_gid, comm) = current_identity()?;
+    let (tgid, _tid, now, uid_gid, comm) = current_identity(false)?;
     let file: u64 = ctx.arg(0)?;
     let buffer: u64 = ctx.arg(1)?;
     let count: u64 = ctx.arg(2)?;
@@ -367,6 +368,6 @@ pub fn gedefense_ransom_vfs_unlink(_ctx: ProbeContext) -> u32 {
 
 #[inline(always)]
 fn try_ransom_metadata() -> Option<()> {
-    let (tgid, _tid, now, uid_gid, comm) = current_identity()?;
+    let (tgid, _tid, now, uid_gid, comm) = current_identity(true)?;
     track_metadata(tgid, now, uid_gid, &comm)
 }

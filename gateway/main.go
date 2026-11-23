@@ -30,7 +30,7 @@ import (
 	"time"
 )
 
-const version = "6.2.0-access"
+const version = "6.2.1-access"
 const cookieName = "__Host-vgt_gedefense_session"
 const csrfCookieName = "vgt_gedefense_login_csrf"
 

@@ -35,6 +35,11 @@ pub const RANSOM_SIGNAL_MAX: u8 = RANSOM_SIGNAL_RENAME_STORM;
 /// Action byte: the kernel only ever audits (1); the core owns the response.
 pub const RANSOM_ACTION_AUDIT: u8 = 1;
 
+/// `RANSOM_TRUSTED_COMM` exemption tiers: full skips entropy + metadata storms;
+/// pool-metadata skips benign atomic cache rewrites while keeping entropy bursts live.
+pub const RANSOM_TRUST_FULL: u8 = 1;
+pub const RANSOM_TRUST_POOL_METADATA: u8 = 2;
+
 /// `RANSOM_STATE` word layout (ABI 1): epoch 0..31, armed bit 32, magic 40..47,
 /// ABI 48..55. Default 0 (kernel map zero-init) = disarmed = no event.
 pub const RANSOM_STATE_MAGIC: u8 = 0x52;
@@ -47,7 +52,7 @@ pub const RANSOM_STATE_BYTE_MASK: u64 = 0xff;
 /// One entropy window (Signal A).
 pub const RANSOM_ENTROPY_WINDOW_NS: u64 = 500_000_000;
 /// Distinct high-entropy inode writes that trigger Signal A.
-pub const RANSOM_ENTROPY_DISTINCT_THRESHOLD: u64 = 15;
+pub const RANSOM_ENTROPY_DISTINCT_THRESHOLD: u64 = 6;
 /// Bytes sampled from the write buffer for the integer entropy estimate.
 pub const RANSOM_SAMPLE_BYTES: usize = 64;
 /// Distinct byte values (of 256) that make a sample "high entropy".
@@ -55,7 +60,7 @@ pub const RANSOM_ENTROPY_MIN_DISTINCT: u32 = 40;
 /// One metadata window (Signal B).
 pub const RANSOM_META_WINDOW_NS: u64 = 250_000_000;
 /// Rename/unlink operations that trigger Signal B.
-pub const RANSOM_META_THRESHOLD: u64 = 25;
+pub const RANSOM_META_THRESHOLD: u64 = 18;
 /// Per-TGID tracker capacity (LRU); bounded kernel memory.
 pub const RANSOM_TRACK_ENTRIES: u32 = 4_096;
 /// Trusted-comm exemption capacity (package managers, compilers, snapshots).
@@ -249,9 +254,9 @@ mod tests {
     #[test]
     fn policy_constants_are_the_documented_budgets() {
         assert_eq!(RANSOM_ENTROPY_WINDOW_NS, 500_000_000);
-        assert_eq!(RANSOM_ENTROPY_DISTINCT_THRESHOLD, 15);
+        assert_eq!(RANSOM_ENTROPY_DISTINCT_THRESHOLD, 6);
         assert_eq!(RANSOM_META_WINDOW_NS, 250_000_000);
-        assert_eq!(RANSOM_META_THRESHOLD, 25);
+        assert_eq!(RANSOM_META_THRESHOLD, 18);
         assert_eq!(RANSOM_SAMPLE_BYTES, 64);
         assert!(RANSOM_ENTROPY_MIN_DISTINCT < RANSOM_SAMPLE_BYTES as u32);
         assert_eq!(RANSOM_EVENT_RING_BYTES, 1 << 20);

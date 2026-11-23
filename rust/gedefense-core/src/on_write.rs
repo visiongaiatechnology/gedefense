@@ -33,6 +33,7 @@
 //! read-only (exec protection for `/home` remains in place).
 
 use crate::{
+    credential_guard::{deny_malware_inode, SharedMalwareInodeLock},
     malware::{encode_path_token, MalwareScanner, ScanVerdict},
     on_write_policy::{
         classify_candidate, path_is_below_any, path_is_trusted, Candidate, MAX_ON_WRITE_ROOTS,
@@ -72,6 +73,7 @@ pub(crate) struct OnWriteSensor {
     roots: Vec<PathBuf>,
     scanner: MalwareScanner,
     quarantine: Arc<QuarantineBroker>,
+    inode_lock: SharedMalwareInodeLock,
     dropped: Arc<AtomicU64>,
 }
 
@@ -83,6 +85,7 @@ impl OnWriteSensor {
     pub(crate) fn start(
         scanner: MalwareScanner,
         quarantine: Arc<QuarantineBroker>,
+        inode_lock: SharedMalwareInodeLock,
         roots: &[PathBuf],
     ) -> Result<(), BoxError> {
         if roots.is_empty() || roots.len() > MAX_ON_WRITE_ROOTS {
@@ -98,6 +101,7 @@ impl OnWriteSensor {
             roots: unique,
             scanner,
             quarantine,
+            inode_lock,
             dropped: Arc::new(AtomicU64::new(0)),
         };
         let (tx, rx) = sync_channel::<QueuedWrite>(ON_WRITE_QUEUE_DEPTH);
@@ -117,6 +121,7 @@ impl OnWriteSensor {
             roots: self.roots.clone(),
             scanner: self.scanner.clone(),
             quarantine: Arc::clone(&self.quarantine),
+            inode_lock: Arc::clone(&self.inode_lock),
             dropped: Arc::clone(&self.dropped),
         }
     }
@@ -328,7 +333,15 @@ impl OnWriteSensor {
         let token = encode_path_token(path.as_os_str().as_encoded_bytes());
         match verdict {
             Ok(verdict) if verdict.state == "malicious" => {
-                self.quarantine_hit(pid, metadata.uid(), &token, &mut capture_file, verdict);
+                self.quarantine_hit(
+                    pid,
+                    metadata.uid(),
+                    metadata.dev(),
+                    metadata.ino(),
+                    &token,
+                    &mut capture_file,
+                    verdict,
+                );
                 Ok(())
             }
             Ok(verdict) if verdict.state == "suspicious" => self.scanner.record_on_write_event(
@@ -364,6 +377,8 @@ impl OnWriteSensor {
         &self,
         pid: i32,
         file_uid: u32,
+        dev: u64,
+        ino: u64,
         token: &str,
         capture_file: &mut File,
         verdict: ScanVerdict,
@@ -378,11 +393,30 @@ impl OnWriteSensor {
             match self.try_quarantine(token, capture_file, &verdict) {
                 Ok(()) => "on-write-quarantined",
                 Err(error) => {
-                    eprintln!(
-                        "GeDefense on-write quarantine failed sha256={} error={error}",
-                        hex::encode(verdict.sha256)
-                    );
-                    "on-write-quarantine-failed"
+                    if let Err(lock_err) = deny_malware_inode(&self.inode_lock, dev, ino) {
+                        eprintln!(
+                            "GeDefense on-write quarantine failed sha256={} error={error} inode_lock_error={lock_err}",
+                            hex::encode(verdict.sha256)
+                        );
+                        "on-write-quarantine-failed"
+                    } else {
+                        if let Ok(object_id) = random_object_id() {
+                            let _ = self.quarantine.capture_open_fd_only(
+                                token,
+                                capture_file,
+                                &object_id,
+                                verdict.sha256,
+                                verdict.size,
+                            );
+                        }
+                        eprintln!(
+                            "GeDefense on-write quarantined via kernel inode lock sha256={} dev={} ino={} unlink_err={error}",
+                            hex::encode(verdict.sha256),
+                            dev,
+                            ino
+                        );
+                        "on-write-inode-locked"
+                    }
                 }
             }
         };

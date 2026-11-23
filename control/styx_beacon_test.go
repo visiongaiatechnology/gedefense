@@ -480,3 +480,34 @@ func TestStyxBeaconProductionSettingsKeepPhase1CapabilitiesOff(t *testing.T) {
 		t.Fatalf("phase-1 volume-only flow produced %d incidents", got)
 	}
 }
+
+func TestStyxBeaconIgnoresLoopbackLinkLocalAndKernelSwapperFlows(t *testing.T) {
+	clock := newBeaconTestClock()
+	engine := newBeaconTestEngine(t, activeBeaconConfig(), clock, nil)
+	noiseTemplates := []struct {
+		pid  int
+		comm string
+		ip   string
+		port uint16
+	}{
+		{pid: 0, comm: "swapper/1", ip: "127.0.0.1", port: 20198},
+		{pid: 43428, comm: "gedefense-contr", ip: "127.0.0.1", port: 443},
+		{pid: 0, comm: "swapper/6", ip: "169.254.0.2", port: 0},
+		{pid: 0, comm: "swapper/6", ip: "51.169.45.190", port: 0},
+		{pid: 1200, comm: "systemd", ip: "51.169.45.190", port: 0},
+	}
+	for _, tpl := range noiseTemplates {
+		for i := 0; i < 15; i++ {
+			ev := beaconEvent(1, tpl.pid, 1_000_000_000+uint64(30*time.Second)*uint64(i), 1024, 0, 1, tpl.ip, tpl.port, 4, 6)
+			ev.Comm = tpl.comm
+			if inc := engine.RecordFlows([]CoreStyxFlowEvent{ev}); len(inc) != 0 {
+				t.Fatalf("ignored noise flow %+v emitted unexpected beacon incident: %+v", tpl, inc[0])
+			}
+			clock.Advance(time.Second)
+		}
+	}
+	snap := engine.Snapshot()
+	if snap.Flows != 0 || snap.Incidents != 0 || len(snap.Top) != 0 || snap.Dropped != 0 {
+		t.Fatalf("expected zero tracked/flagged/dropped for non-external noise, got %+v", snap)
+	}
+}

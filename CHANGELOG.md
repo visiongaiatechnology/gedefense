@@ -1,5 +1,23 @@
 # Changelog
 
+## 6.2.1 — 2026-11-23 — Kernel Behavioral XDR, Inode Quarantine Lock & Service-Pool Isolation
+
+Security, kernel behavioral XDR, and service-pool isolation release on top of `6.2.0`, lifting GeDefense Linux from `86.16` to **`93.31 / 100 (PASS)`** in the VGT HardRed benchmark while cutting average endpoint damage ratio to **`8.6%`** and beating the OSS Best-of-Breed stack (**`55.40 / FAIL`**) across efficacy, FP resilience, containment latency, and memory/CPU efficiency (`88.4 MiB` vs. `1,761.0 MiB` RSS). Release note: `docs/V6.2.1-RELEASE.md` · Raw results: `benchmarks/vgt-hardred-6.2.1/`.
+
+### Kernel behavioral XDR & malware inode lock
+- **Core quarantine boundary (`FIND-G-001`, `rust/gedefense-core/src/quarantine.rs`):** Enforced explicit path allowlists (`CORE_QUARANTINE_ALLOWED_ROOTS`) and forbidden-root denylists (`CORE_QUARANTINE_FORBIDDEN_ROOTS`, covering `/proc`, `/sys`, `/run`, `/boot`, `/bin`, `/sbin`, `/lib*`, `/usr`, `/etc`, `/var/lib/vgt`, `/etc/vgt`, `/opt/vgt`, and `/dev` except `/dev/shm`) directly in `decode_path()`, plus `capture_open_fd_only()` for post-inode-lock Vault encryption without broad `CAP_DAC_OVERRIDE` privileges.
+- **BPF-LSM malware inode quarantine lock (`rust/gedefense-ebpf/src/credential_guard.rs`, `rust/gedefense-core/src/{credential_guard.rs, on_write.rs}`):** Added `MALWARE_DENIED_INODES` (`4,096` entries) to enforce `-EACCES` at `file_open` for non-`gedefense-` processes even inside non-root `0755` drop directories where unlinking returns `EACCES`, while archiving the sample encrypted (`"on-write-inode-locked"`).
+- **Kernel behavioral XDR & subshell `argv` capture (`rust/gedefense-*/src/xdr_kernel.rs`, `control/{coreipc_xdr_kernel.go, xdr_kernel.go, xdr_rules.go}`):** Added `EXEC_ARGV_EVENTS` (`512`-byte ring capture across `sys_enter_execve`/`execveat` + `sched_process_exec`), `KERNEL_PROBE_EVENTS` (`64`-byte capture for `sys_enter_ptrace` `XDR.PTRACE_ATTEMPT`, `socket_create` `SCTP`/`DCCP`/`RDS` `XDR.KERNEL_PROTOCOL_PROBE`, `openat`/`openat2` `XDR.CREDENTIAL_PROBE`, and sensitive `/etc` symlink attempts `XDR.SYMLINK_OVER_SENSITIVE`), `PENDING_COLD_OPEN` + `getname_flags` `kretprobe` fallback, and `KD.LINUX.DISCOVERY.ACCOUNT` / `KD.LINUX.DISCOVERY.SUID`.
+- **Multi-CPU tracepoint activation (`rust/vendor/aya/src/programs/trace_point.rs`, `mod.rs`, `sys/perf_event.rs`):** Enables per-CPU perf tracepoint file descriptors across `online_cpus()` while maintaining a single BPF program entry.
+
+### Service-pool isolation & control-plane responsiveness
+- **Ransomware thresholds & pooled worker isolation (`rust/gedefense-common/src/ransom.rs`, `rust/gedefense-core/src/{process_tree.rs, ransom.rs}`, `rust/gedefense-ebpf/src/ransom.rs`):** Tightened `RANSOM_ENTROPY_DISTINCT_THRESHOLD` (`15 -> 6`) and `RANSOM_META_THRESHOLD` (`25 -> 18`), added `RANSOM_TRUST_POOL_METADATA` (`2u8`) for pooled web/DB daemons (`php-fpm*`, `lsphp*`, `httpd`, `apache2`, `nginx`, `openlitespeed`, `lshttpd`, `mariadbd`, `mysqld`, `postgres`, `redis-server`, `memcached`, `gitea`) to prevent routine cache-rename false positives while preserving high-entropy burst protection, and isolated compromised pooled workers via PPID-only `stop_process_descendants` / `collect_tree` (keeping pool masters and sibling workers online).
+- **StyX beacon filter, async Chronos FIM & health cadence (`control/styx_beacon.go`, `control/xdr.go`):** Filtered loopback (`127.0.0.0/8`, `::1`), link-local/multicast, and unattributable kernel softirq flows (`pid=0` / `swapper/*` / `DstPort=0`) via `isIgnoredNonExternalFlow`; moved `ChronosScanner.Scan` onto an atomic-guarded background goroutine (`chronosRunning`); and tightened healthy `StyxFlowHealth` polling to `1s`.
+
+### Version, benchmark archive & artifacts
+- Product version bumped to **6.2.1** across `VERSION`, Control (`6.2.1`), Gateway (`6.2.1-access`), Rust workspace/`Cargo.lock`, AstraeaOS contract, Arch `PKGBUILD`, OneClick headers, READMEs, and `VGT_GeDefense_V6_6.2.1_*` / `GeDefense-6.2.1-*` release assets.
+- Published sanitized VGT HardRed + REDHARD ARES results (incl. OSS Best-of-Breed comparison) in [`benchmarks/vgt-hardred-6.2.1/`](benchmarks/vgt-hardred-6.2.1/).
+
 ## 6.2.0 — 2026-11-21 — Defense Maximization & Telemetry Resilience
 
 Major hardening release on top of `6.1.2`, driven by the VGT HardRed 6.1.2 evidence review. It closes the malware, endpoint-containment, StyX reboot-drift and flow-telemetry findings without weakening the `0.0 %` protection-FPR gate. Release note: `docs/V6.2.0-RELEASE.md`.
