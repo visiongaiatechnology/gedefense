@@ -43,7 +43,7 @@
 
 | Раздел | Описание | Переход |
 |---|---|---|
-| 📊 **Тест VGT HardRed** | `93.31 / 100 · PASS` против OSS-стека (`55.40 / FAIL`), Wazuh и CrowdSec | [Результаты](#-бенчмарк-vgt-hardred--сравнение-v621-с-oss-стеком) |
+| 📊 **Тест VGT HardRed** | `93.31 / 100 · PASS` против OSS+SafeLine (`59.28 / PASS`), OSS+ModSec (`55.40 / FAIL`), SafeLine (`52.92`), Wazuh и CrowdSec | [Результаты](#-бенчмарк-vgt-hardred--сравнение-v621-с-oss-стеком) |
 | 📂 **Папка с результатами** | Все дашборды HardRed и ARES, SARIF, ATT&CK, OCSF и GoTestWAF | [`benchmarks/vgt-hardred-6.2.1/`](benchmarks/vgt-hardred-6.2.1/) |
 | ⚙️ **Воспроизведение и настройки** | Точный профиль `EDR/Hardened Max` и изменения `6.2.0 → 6.2.1` | [Настройки](#-воспроизведение-профиля-max-hardness) |
 | 🔍 **Что такое VGT GeDefense?** | Стек V6.2.1, модули A–E, Titan, Setup Wizard и ПК vs. Сервер | [Обзор](#-что-такое-vgt-gedefense) |
@@ -57,15 +57,17 @@
 
 ## 📊 Бенчмарк VGT HardRed — сравнение V6.2.1 с OSS-стеком
 
-Измерено с помощью открытого мультидоменного бенчмарка безопасности Linux **[VGT HardRed (`RedHard`)](https://github.com/visiongaiatechnology/redhard)** (`2026-11-23T09:32:48Z`) на изолированном от снэпшота целевом хосте **Ubuntu 24.04 (Linux HWE 7.0, NGINX + PHP 8.3-FPM)** (`eth0` out-of-band управляющий канал, `eth1` боевой канал атак без allowlist; 4-осевая модель: эффективность 45 % · устойчивость к ложным срабатываниям 20 % · задержка/сдерживание 20 % · накладные расходы 15 %). Расширенный прогон сравнивает **GeDefense Linux 6.2.1** с интегрированным **OSS Best-of-Breed стеком (ModSecurity CRS + Suricata IPS + Tetragon + ClamAV)**, **Wazuh**, **CrowdSec** и чистым **Baseline**:
+Измерено с помощью открытого мультидоменного бенчмарка безопасности Linux **[VGT HardRed (`RedHard`)](https://github.com/visiongaiatechnology/redhard)** (`2026-11-23T23:42:33Z`) на изолированном от снэпшота целевом хосте **Ubuntu 24.04 (Linux HWE 7.0, NGINX + PHP 8.3-FPM)** (`eth0` out-of-band управляющий канал, `eth1` боевой канал атак без allowlist; 4-осевая модель: эффективность 45 % · устойчивость к ложным срабатываниям 20 % · задержка/сдерживание 20 % · накладные расходы 15 %). Расширенный прогон сравнивает **GeDefense Linux 6.2.1** с **OSS Best-of-Breed + SafeLine WAF**, **OSS Best-of-Breed (ModSecurity CRS + Suricata IPS + Tetragon + ClamAV)**, **Chaitin SafeLine WAF CE 9.4.7**, **Wazuh**, **CrowdSec** и чистым **Baseline**:
 
 | Место | Система безопасности | Итог (0–100) | Ось 1: Эффективность | Ось 2: FP-устойчивость | Ось 3: Латентность и сдерживание | Ось 4: Нагрузка | Гейт |
 |---:|---|---:|---:|---:|---:|---:|---|
 | 1 | **GeDefense Linux 6.2.1 (`EDR/Hardened Max`)** | **93.31** | **95.78** | **100.00** | **86.13** | **86.54** | **`PASS`** |
-| 2 | **OSS Best-of-Breed (`ModSec CRS + Suricata IPS + Tetragon + ClamAV`)** | **55.40** | 76.27 | 38.46 | 38.91 | 37.35 | `FAIL` |
-| 3 | **Wazuh (`Max Rules + FIM + Auditd + Active Response`)** | **46.70** | 32.66 | 69.23 | 22.14 | 91.53 | `CONDITIONAL` |
+| 2 | **OSS Best-of-Breed + SafeLine WAF (`SafeLine + Suricata + Tetragon + ClamAV`)** | **59.28** | 69.31 | 100.00 | 38.14 | 3.08 | `PASS` |
+| 3 | **OSS Best-of-Breed (`ModSec CRS + Suricata IPS + Tetragon + ClamAV`)** | **55.40** | 76.27 | 38.46 | 38.91 | 37.35 | `FAIL` |
+| 4 | **Chaitin SafeLine WAF CE 9.4.7 (`Max Strict Semantics + ACL`)** | **52.92** | 41.09 | 100.00 | 28.23 | 58.59 | `PASS` |
+| 5 | **Wazuh (`Max Rules + FIM + Auditd + Active Response`)** | **46.70** | 32.66 | 69.23 | 22.14 | 91.53 | `CONDITIONAL` |
 | Ref | **Baseline (`Clean Ubuntu HWE 7.0 WebStack`)** | **46.23** | 17.86 | 100.00 | 15.97 | 100.00 | `CONDITIONAL` |
-| 4 | **CrowdSec (`Max Collections + Bouncers + AppSec WAF`)** | **36.58** | 44.56 | 0.00 | 28.38 | 72.37 | `FAIL` |
+| 6 | **CrowdSec (`Max Collections + Bouncers + AppSec WAF`)** | **36.58** | 44.56 | 0.00 | 28.38 | 72.37 | `FAIL` |
 
 > **Прогресс версии (`6.2.0 → 6.2.1`):** Итоговый балл вырос с **`86.16`** до **`93.31 / 100 (PASS)`** (`+7.15`) за счёт блокировки inode вредоносных файлов в BPF-LSM (`hardred-malware`: `65.6 → 95.6`, Prevention TPR `33.3% → 100.0%`) и ядерного поведенческого XDR (`hardred-endpoint`: `59.0 → 94.2`, Detection TPR `53.3% → 93.3%`, Prevention TPR `53.3% → 100.0%`, коэффициент ущерба снижен с `18.1%` до **`8.6%`**) при `0.0%` ложных срабатываний.
 
@@ -82,6 +84,7 @@
 - **Измеренная нагрузка (`GeDefense 6.2.1` против `OSS Best-of-Breed` и Baseline):**
   - **GeDefense Linux 6.2.1:** `523.3` HTTP RPS (`12.03 мс` p50 · `29.26 мс` p95) · `90,248.0` Sysbench EPS · `249.9` FIO IOPS · **`88.4 MiB`** Security RSS · **`4.3%`** Security CPU · Lynis `71`.
   - **OSS Best-of-Breed (`ModSec + Suricata + Tetragon + ClamAV`):** `452.4` HTTP RPS (`13.85 мс` p50 · `29.93 мс` p95) · `84,829.5` Sysbench EPS · `237.4` FIO IOPS · **`1,761.0 MiB`** Security RSS (`~20×` больше памяти) · **`57.3%`** Security CPU (`~13×` больше нагрузки на CPU) · Lynis `65`.
+  - **Chaitin SafeLine WAF CE 9.4.7 (`07-safeline-max` и `OSS+SafeLine`):** `0.0%` ложных срабатываний (`PASS`, поднимает `OSS+SafeLine` до `59.28`), но в `hardred-waf` набрал **`79.0`** (`11/14`; пропустил `WAF-LFI-02`, `WAF-XXE-01`, `WAF-SCAN-01` `sqlmap` + `/.env`) при **`1,040.5 MiB` RSS / `48.1%` CPU** отдельно (`484.9` RPS) и **`2,614.7 MiB` RSS / `60.6%` CPU / `175.2` RPS (`67.45 мс` p95)** в стеке `OSS+SafeLine`.
 
 ### Адаптивный многоэтапный бенчмарк (`VGT HardRed 1.2 / REDHARD ARES`)
 
@@ -93,11 +96,11 @@
 
 ### 📂 Все артефакты и отчёты тестирования в репозитории
 
-Полные scorecards, результаты всех 93 тестов (5 систем), отчёты SARIF, матрицы MITRE ATT&CK, OCSF и интерактивные HTML-панели доступны прямо в репозитории:
+Полные scorecards, результаты всех тестов (7 систем), отчёты SARIF, матрицы MITRE ATT&CK, OCSF и интерактивные HTML-панели доступны прямо в репозитории:
 - 📁 **[Каталог результатов тестирования (`benchmarks/vgt-hardred-6.2.1/`)](benchmarks/vgt-hardred-6.2.1/)**
 - 📄 **[Полный отчёт бенчмарка (`FINAL_BENCHMARK_REPORT.md`)](benchmarks/vgt-hardred-6.2.1/FINAL_BENCHMARK_REPORT.md)** · **[Таблица CSV](benchmarks/vgt-hardred-6.2.1/VGT_HardRed_Comparison.csv)** · **[Интерактивный HTML-дашборд](benchmarks/vgt-hardred-6.2.1/VGT_HardRed_Dashboard.html)**
 - 🤖 **[Гибридный отчёт REDHARD ARES](benchmarks/vgt-hardred-6.2.1/ares/FINAL_ARES_HYBRID_REPORT.md)** · **[ARES CSV](benchmarks/vgt-hardred-6.2.1/ares/VGT_HardRed_ARES_Comparison.csv)** · **[ARES HTML-дашборд](benchmarks/vgt-hardred-6.2.1/ares/VGT_HardRed_ARES_Dashboard.html)**
-- 🔎 **Исходные каталоги участников:** [`gedefense/`](benchmarks/vgt-hardred-6.2.1/gedefense/) · [`oss-stack/`](benchmarks/vgt-hardred-6.2.1/oss-stack/) · [`wazuh/`](benchmarks/vgt-hardred-6.2.1/wazuh/) · [`crowdsec/`](benchmarks/vgt-hardred-6.2.1/crowdsec/) · [`baseline/`](benchmarks/vgt-hardred-6.2.1/baseline/)
+- 🔎 **Исходные каталоги участников:** [`gedefense/`](benchmarks/vgt-hardred-6.2.1/gedefense/) · [`oss-safeline/`](benchmarks/vgt-hardred-6.2.1/oss-safeline/) · [`oss-stack/`](benchmarks/vgt-hardred-6.2.1/oss-stack/) · [`safeline/`](benchmarks/vgt-hardred-6.2.1/safeline/) · [`wazuh/`](benchmarks/vgt-hardred-6.2.1/wazuh/) · [`crowdsec/`](benchmarks/vgt-hardred-6.2.1/crowdsec/) · [`baseline/`](benchmarks/vgt-hardred-6.2.1/baseline/)
 
 ### ⚙️ Воспроизведение профиля `Max-Hardness`
 
@@ -643,7 +646,7 @@ sudo ./VGT_GeDefense_V6_6.2.1_OneClick.run
 - **Блокировка вредоносных inode и границы ядра (`FIND-G-001`):** Карта BPF-LSM `MALWARE_DENIED_INODES` (`4 096` записей) отклоняет `file_open` с `-EACCES` для всех процессов кроме `gedefense-*` даже в не-root каталогах `0755` без расширения привилегий DAC, совместно с `CORE_QUARANTINE_ALLOWED_ROOTS` / `FORBIDDEN_ROOTS` и `capture_open_fd_only()`.
 - **Ядерный поведенческий XDR и multi-CPU tracepoints:** Буферы `EXEC_ARGV_EVENTS` (`512` Б аргументов командной строки), `KERNEL_PROBE_EVENTS` (`XDR.PTRACE_ATTEMPT`, `XDR.KERNEL_PROTOCOL_PROBE`, `XDR.CREDENTIAL_PROBE`, `XDR.SYMLINK_OVER_SENSITIVE`), `PENDING_COLD_OPEN` + kretprobe `getname_flags`, правила обнаружения (`KD.LINUX.DISCOVERY.ACCOUNT`, `KD.LINUX.DISCOVERY.SUID`) и активация perf-tracepoints на всех CPU в `rust/vendor/aya`.
 - **Изоляция сервис-пулов и гигиена телеметрии:** Ужесточённые пороги ransomware (`15 → 6` и `25 → 18`) с профилем доверия `RANSOM_TRUST_POOL_METADATA` (`php-fpm`, `lsphp`, `nginx`, `httpd`, `apache2`, `mariadbd`, `postgres`, `redis-server` и др.) и изоляцией по PPID в `stop_process_descendants`/`collect_tree` (мастер-демон и здоровые воркеры продолжают работу); фильтр `isIgnoredNonExternalFlow` в `StyxBeacon`, асинхронный `ChronosScanner` и опрос `StyxFlowHealth` раз в `1с`.
-- **Расширенный бенчмарк VGT HardRed (`86.16 → 93.31`):** Итог **`93.31 / 100 (PASS)`** против OSS Best-of-Breed (`55.40 / FAIL`), Wazuh (`46.70`), CrowdSec (`36.58`) и гибридные данные REDHARD ARES опубликованы в [`benchmarks/vgt-hardred-6.2.1/`](benchmarks/vgt-hardred-6.2.1/) (`docs/V6.2.1-RELEASE.md`).
+- **Расширенный бенчмарк VGT HardRed (`86.16 → 93.31`):** Итог **`93.31 / 100 (PASS)`** против OSS Best-of-Breed + SafeLine WAF (`59.28 / PASS`), OSS Best-of-Breed (`55.40 / FAIL`), SafeLine WAF (`52.92 / PASS`), Wazuh (`46.70`), CrowdSec (`36.58`) и гибридные данные REDHARD ARES опубликованы в [`benchmarks/vgt-hardred-6.2.1/`](benchmarks/vgt-hardred-6.2.1/) (`docs/V6.2.1-RELEASE.md`).
 
 ### v6.2.0 — Максимизация защиты и устойчивость телеметрии *(22.11.2026)*
 

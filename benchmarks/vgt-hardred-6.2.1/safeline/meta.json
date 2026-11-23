@@ -1,0 +1,199 @@
+{
+  "malware": {
+    "clamav_files_used": 1
+  },
+  "endpoint": {
+    "event_generator_pushed": true,
+    "atomic_dir_present": true
+  },
+  "compliance": {
+    "lynis_ran": true,
+    "hardening_index": 62,
+    "warnings": 1,
+    "suggestions": 46,
+    "lsm_active": [
+      "lockdown",
+      "capability",
+      "landlock",
+      "yama",
+      "apparmor",
+      "bpf",
+      "ima",
+      "evm"
+    ]
+  },
+  "netids": {
+    "rate_burst": {
+      "probe": "rate-burst",
+      "url": "http://192.168.56.50/index.php?burst=1",
+      "requests": 240,
+      "concurrency": 28,
+      "ok_2xx": 240,
+      "rate_limited_429": 0,
+      "blocked_403": 0,
+      "other_4xx": 0,
+      "server_5xx": 0,
+      "timeouts": 0,
+      "transport_errors": 0,
+      "first_block_idx": -1,
+      "p50_ms": 47.967,
+      "p95_ms": 87.584,
+      "max_ms": 99.979,
+      "recovery_wait_ms": 1200,
+      "recovery_probes": 5,
+      "recovery_ok": 5,
+      "recovery_blocked": 0,
+      "recovery_errors": 0,
+      "recovered": true
+    },
+    "portscan": {
+      "probe": "portscan",
+      "host": "192.168.56.50",
+      "total_ports": 16,
+      "open_ports": [
+        22,
+        80,
+        443
+      ],
+      "closed_ports": [],
+      "timeout_ports": [
+        21,
+        23,
+        25,
+        110,
+        139,
+        445,
+        3306,
+        3389,
+        5432,
+        6379,
+        8080,
+        8443,
+        9200
+      ],
+      "error_ports": [],
+      "first_timeout_idx": 0,
+      "first_timeout_port": 21,
+      "tail_consecutive_timeouts": 8,
+      "results": [
+        {
+          "idx": 0,
+          "port": 21,
+          "state": "timeout",
+          "error": "dial tcp 192.168.56.50:21: i/o timeout",
+          "elapsed_ms": 452.867
+        },
+        {
+          "idx": 1,
+          "port": 22,
+          "state": "open",
+          "elapsed_ms": 2.319
+        },
+        {
+          "idx": 2,
+          "port": 23,
+          "state": "timeout",
+          "error": "dial tcp 192.168.56.50:23: i/o timeout",
+          "elapsed_ms": 450.192
+        },
+        {
+          "idx": 3,
+          "port": 25,
+          "state": "timeout",
+          "error": "dial tcp 192.168.56.50:25: i/o timeout",
+          "elapsed_ms": 450.519
+        },
+        {
+          "idx": 4,
+          "port": 80,
+          "state": "open",
+          "elapsed_ms": 1.016
+        },
+        {
+          "idx": 5,
+          "port": 110,
+          "state": "timeout",
+          "error": "dial tcp 192.168.56.50:110: i/o timeout",
+          "elapsed_ms": 450.374
+        },
+        {
+          "idx": 6,
+          "port": 139,
+          "state": "timeout",
+          "error": "dial tcp 192.168.56.50:139: i/o timeout",
+          "elapsed_ms": 450.519
+        },
+        {
+          "idx": 7,
+          "port": 443,
+          "state": "open",
+          "elapsed_ms": 1.108
+        },
+        {
+          "idx": 8,
+          "port": 445,
+          "state": "timeout",
+          "error": "dial tcp 192.168.56.50:445: i/o timeout",
+          "elapsed_ms": 450.488
+        },
+        {
+          "idx": 9,
+          "port": 3306,
+          "state": "timeout",
+          "error": "dial tcp 192.168.56.50:3306: i/o timeout",
+          "elapsed_ms": 450.294
+        },
+        {
+          "idx": 10,
+          "port": 3389,
+          "state": "timeout",
+          "error": "dial tcp 192.168.56.50:3389: i/o timeout",
+          "elapsed_ms": 450.16
+        },
+        {
+          "idx": 11,
+          "port": 5432,
+          "state": "timeout",
+          "error": "dial tcp 192.168.56.50:5432: i/o timeout",
+          "elapsed_ms": 450.506
+        },
+        {
+          "idx": 12,
+          "port": 6379,
+          "state": "timeout",
+          "error": "dial tcp 192.168.56.50:6379: i/o timeout",
+          "elapsed_ms": 450.335
+        },
+        {
+          "idx": 13,
+          "port": 8080,
+          "state": "timeout",
+          "error": "dial tcp 192.168.56.50:8080: i/o timeout",
+          "elapsed_ms": 450.504
+        },
+        {
+          "idx": 14,
+          "port": 8443,
+          "state": "timeout",
+          "error": "dial tcp 192.168.56.50:8443: i/o timeout",
+          "elapsed_ms": 450.034
+        },
+        {
+          "idx": 15,
+          "port": 9200,
+          "state": "timeout",
+          "error": "dial tcp 192.168.56.50:9200: i/o timeout",
+          "elapsed_ms": 450.42
+        }
+      ],
+      "total_elapsed_ms": 6170.757
+    },
+    "post_scan_ip_banned": true
+  },
+  "waf": {
+    "available": true,
+    "error": "gotestwaf timed out after 35s",
+    "mid_run_unbans": 9,
+    "stderr": ""
+  }
+}

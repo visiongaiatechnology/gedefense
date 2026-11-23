@@ -1,0 +1,600 @@
+[
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-23T23:23:13.217925+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "Chaitin SafeLine WAF CE 9.4.7 (Max Strict Semantics + ACL)",
+        "uid": "safeline"
+      }
+    },
+    "finding_info": {
+      "uid": "safeline:EP-LPE-KERNEL-01",
+      "title": "Blacklisted SCTP/DCCP socket + AF_PACKET + ptrace + /etc/shadow probe",
+      "desc": "rc=0, out={\"probe\": \"lpe-probe\", \"sctp_socket\": {\"attempted\": true, \"ok\": true, \"detail\": \"IPPROTO_SCTP\", \"elapsed_ms\": 73.031}, \"dccp_socket\": {\"atte; none",
+      "types": [
+        "hardred-endpoint",
+        "Kernel LPE & Protocol Attack Surface"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1068",
+            "name": "Kernel LPE & Protocol Attack Surface"
+          },
+          "tactic": {
+            "name": "Privilege Escalation"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 1,
+      "ttfa_ms": 480.6,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-23T23:27:01.018350+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "Chaitin SafeLine WAF CE 9.4.7 (Max Strict Semantics + ACL)",
+        "uid": "safeline"
+      }
+    },
+    "finding_info": {
+      "uid": "safeline:WAF-SQLI-01",
+      "title": "SQL Injection (WAF-SQLI-01)",
+      "desc": "http=403; m_sqli",
+      "types": [
+        "hardred-waf",
+        "SQL Injection"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1190",
+            "name": "SQL Injection"
+          },
+          "tactic": {
+            "name": "Initial Access"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 2,
+      "ttfa_ms": 250.0,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-23T23:27:03.679317+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "Chaitin SafeLine WAF CE 9.4.7 (Max Strict Semantics + ACL)",
+        "uid": "safeline"
+      }
+    },
+    "finding_info": {
+      "uid": "safeline:WAF-SQLI-02",
+      "title": "SQL Injection (WAF-SQLI-02)",
+      "desc": "http=403; m_sqli",
+      "types": [
+        "hardred-waf",
+        "SQL Injection"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1190",
+            "name": "SQL Injection"
+          },
+          "tactic": {
+            "name": "Initial Access"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 2,
+      "ttfa_ms": 250.0,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-23T23:27:07.351977+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "Chaitin SafeLine WAF CE 9.4.7 (Max Strict Semantics + ACL)",
+        "uid": "safeline"
+      }
+    },
+    "finding_info": {
+      "uid": "safeline:WAF-SQLI-03",
+      "title": "SQL Injection (WAF-SQLI-03)",
+      "desc": "http=403; m_sqli",
+      "types": [
+        "hardred-waf",
+        "SQL Injection"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1190",
+            "name": "SQL Injection"
+          },
+          "tactic": {
+            "name": "Initial Access"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 2,
+      "ttfa_ms": 250.0,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-23T23:27:09.999232+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "Chaitin SafeLine WAF CE 9.4.7 (Max Strict Semantics + ACL)",
+        "uid": "safeline"
+      }
+    },
+    "finding_info": {
+      "uid": "safeline:WAF-XSS-01",
+      "title": "Cross-Site Scripting (WAF-XSS-01)",
+      "desc": "http=403; m_xss",
+      "types": [
+        "hardred-waf",
+        "Cross-Site Scripting"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1059.007",
+            "name": "Cross-Site Scripting"
+          },
+          "tactic": {
+            "name": "Execution"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 2,
+      "ttfa_ms": 250.0,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-23T23:27:13.343981+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "Chaitin SafeLine WAF CE 9.4.7 (Max Strict Semantics + ACL)",
+        "uid": "safeline"
+      }
+    },
+    "finding_info": {
+      "uid": "safeline:WAF-XSS-02",
+      "title": "Cross-Site Scripting (WAF-XSS-02)",
+      "desc": "http=403; m_xss",
+      "types": [
+        "hardred-waf",
+        "Cross-Site Scripting"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1059.007",
+            "name": "Cross-Site Scripting"
+          },
+          "tactic": {
+            "name": "Execution"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 2,
+      "ttfa_ms": 250.0,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-23T23:27:15.794433+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "Chaitin SafeLine WAF CE 9.4.7 (Max Strict Semantics + ACL)",
+        "uid": "safeline"
+      }
+    },
+    "finding_info": {
+      "uid": "safeline:WAF-LFI-01",
+      "title": "Path Traversal / LFI (WAF-LFI-01)",
+      "desc": "http=403; m_file_include",
+      "types": [
+        "hardred-waf",
+        "Path Traversal / LFI"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1083",
+            "name": "Path Traversal / LFI"
+          },
+          "tactic": {
+            "name": "Discovery"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 2,
+      "ttfa_ms": 250.0,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-23T23:27:24.816436+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "Chaitin SafeLine WAF CE 9.4.7 (Max Strict Semantics + ACL)",
+        "uid": "safeline"
+      }
+    },
+    "finding_info": {
+      "uid": "safeline:WAF-RCE-01",
+      "title": "OS Command Injection (WAF-RCE-01)",
+      "desc": "http=403; m_cmd_injection",
+      "types": [
+        "hardred-waf",
+        "OS Command Injection"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1059.004",
+            "name": "OS Command Injection"
+          },
+          "tactic": {
+            "name": "Execution"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 2,
+      "ttfa_ms": 250.0,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-23T23:27:28.093720+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "Chaitin SafeLine WAF CE 9.4.7 (Max Strict Semantics + ACL)",
+        "uid": "safeline"
+      }
+    },
+    "finding_info": {
+      "uid": "safeline:WAF-RCE-02",
+      "title": "PHP Webshell Payload (WAF-RCE-02)",
+      "desc": "http=403; m_php_code_injection",
+      "types": [
+        "hardred-waf",
+        "PHP Webshell Payload"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1505.003",
+            "name": "PHP Webshell Payload"
+          },
+          "tactic": {
+            "name": "Persistence"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 2,
+      "ttfa_ms": 250.0,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-23T23:27:30.660895+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "Chaitin SafeLine WAF CE 9.4.7 (Max Strict Semantics + ACL)",
+        "uid": "safeline"
+      }
+    },
+    "finding_info": {
+      "uid": "safeline:WAF-SSTI-01",
+      "title": "Server-Side Template Injection (WAF-SSTI-01)",
+      "desc": "http=403; m_ssti",
+      "types": [
+        "hardred-waf",
+        "Server-Side Template Injection"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1190",
+            "name": "Server-Side Template Injection"
+          },
+          "tactic": {
+            "name": "Initial Access"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 2,
+      "ttfa_ms": 250.0,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-23T23:27:38.250629+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "Chaitin SafeLine WAF CE 9.4.7 (Max Strict Semantics + ACL)",
+        "uid": "safeline"
+      }
+    },
+    "finding_info": {
+      "uid": "safeline:WAF-SSRF-01",
+      "title": "Cloud Metadata SSRF (WAF-SSRF-01)",
+      "desc": "http=403; m_ssrf",
+      "types": [
+        "hardred-waf",
+        "Cloud Metadata SSRF"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1552.005",
+            "name": "Cloud Metadata SSRF"
+          },
+          "tactic": {
+            "name": "Credential Access"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 2,
+      "ttfa_ms": 250.0,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-23T23:27:44.127635+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "Chaitin SafeLine WAF CE 9.4.7 (Max Strict Semantics + ACL)",
+        "uid": "safeline"
+      }
+    },
+    "finding_info": {
+      "uid": "safeline:WAF-FAILOPEN-01",
+      "title": "Oversized Body Inspection Check (WAF-FAILOPEN-01)",
+      "desc": "http=403; m_php_code_injection",
+      "types": [
+        "hardred-waf",
+        "Oversized Body Inspection Check"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1190",
+            "name": "Oversized Body Inspection Check"
+          },
+          "tactic": {
+            "name": "Initial Access"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 2,
+      "ttfa_ms": 250.0,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-23T23:29:49.550492+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "Chaitin SafeLine WAF CE 9.4.7 (Max Strict Semantics + ACL)",
+        "uid": "safeline"
+      }
+    },
+    "finding_info": {
+      "uid": "safeline:NET-PORTSCAN-01",
+      "title": "16-port TCP connect scan -> Kinetic XDP / Firewall Ban verification",
+      "desc": "post_scan_banned=True, open_blocked=False; m_php_code_injection, m_ssrf, m_ssti, m_php_code_injection, m_cmd_injection",
+      "types": [
+        "hardred-netids",
+        "Multi-Port Reconnaissance"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1046",
+            "name": "Multi-Port Reconnaissance"
+          },
+          "tactic": {
+            "name": "Discovery"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 2,
+      "ttfa_ms": 250.0,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  }
+]
