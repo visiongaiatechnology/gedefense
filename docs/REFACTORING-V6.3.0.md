@@ -69,20 +69,59 @@ also gained no new permissions/paths and keeps the same forbid checks (e.g. no
 Wave 1a commit: `refactor(wave1a): split Go control/gateway mega-files
 (structure-only)`.
 
-### Wave 1b (pending) — remaining >1,000-line Go files
-`runtime_settings.go` 1,442 · `state.go` 1,377 · `evidence_ledger.go` 1,363 ·
-`kinetic_engine.go` 1,305 · `release.go` 1,281 · `titan.go` 1,235 ·
-`fabric_settings.go` 1,157 · `boot_trust.go` 1,061 · `main.go` 1,097 ·
-`kernel_advisories.go` 1,023 → same-package thematic files (audit anchors kept
-in the family where the audit contract permits; otherwise family aggregation as
-in wave 1a), then the wave gate + local commit.
+### Wave 1b (2026-11-24) — remaining >1,000-line Go files
 
-### Wave 1 fine-grain (optional, per plan)
+| Original | Before | After | New same-package files |
+|---|---:|---:|---|
+| `control/runtime_settings.go` | 1,491 | **271** | `runtime_settings_types` 330, `runtime_settings_store` 476, `runtime_settings_apply` 443 |
+| `control/state.go` | 1,480 | **498** | `state_persist` 427, `state_metrics` 576 |
+| `control/evidence_ledger.go` | 1,418 | **476** | `evidence_ledger_crypto` 495, `evidence_ledger_query` 478 |
+| `control/kinetic_engine.go` | 1,394 | **495** | `kinetic_probes` 495, `kinetic_eval` 418 |
+| `control/release.go` | 1,336 | **537** | `release_gate` 518, `release_soak` 321 |
+| `control/titan.go` | 1,318 | **635** | `titan_sync` 483, `titan_policy_compile` 241 |
+| `control/boot_trust.go` | 1,117 | **213** | `boot_trust_tpm` 500, `boot_trust_eval` 443 |
+| `control/fabric_settings.go` | 1,191 | **284** | `fabric_settings_validate` 480, `fabric_settings_projection` 452 |
+| `control/main.go` | 1,119 | **392** | `main_wire` 563, `main_runtime` 286 |
+| `control/kernel_advisories.go` | 1,077 | — (deleted) | `kernel_advisories_db` 464, `kernel_advisories_eval` 631 |
+
+All files `package main`, no new packages/dependencies/symbols, no logic, flag,
+startup-order, error-string, evidence-signing, TPM/release-gate or advisory
+changes. All files ≤ 700 (hard ceiling); six files are above the 500-line
+guideline with documented reasons: `state_metrics` 576 (minimal coherent 3-way
+partition of the state aggregate), `main_wire` 563 (clean construction/attach
+split of the control-plane wiring), `kernel_advisories_eval` 631 (the plan
+prescribes a two-file split: DB + evaluation), `release.go` 537 /
+`release_gate` 518 / `titan.go` 635 (type parents kept together deliberately).
+`kernel_advisories.go` was deleted after its content was distributed; the wave
+commit stages the deletion together with the replacements.
+
+**Audit contract:** integration owner pre-aggregated the audit reads to the
+production families `runtime_settings*.go`, `state*.go`, `evidence_ledger*.go`,
+`release*.go`, `fabric_settings*.go`, `main*.go` (tests excluded); the audit was
+green before and after the split, no anchors were removed. `titan*`/`kinetic*`/
+`boot_trust*`/`kernel_advisories*` have no audit read sites, their behaviour was
+proven by the focused and full test suites.
+
+#### Wave 1b gate evidence (serial, settled tree)
+| Gate | Result |
+|---|---|
+| `go vet ./...` control (linux/CGO=0) + gateway (CGO=1) | exit 0 / exit 0 |
+| `gofmt -l` on all touched files | empty |
+| `make test` | **exit 0** — control `ok 248.3 s`, gateway cached green, node check + `SECURITY AUDIT PASS` |
+| `make test-race` | **exit 0** — control `ok 291.9 s`, gateway cached green |
+| `make fuzz-smoke` | **24/24 PASS** |
+| Validators | `validate-linux-integration` (`GeDefense 6.3.0 … PASS`), `validate-github-release`, `validate-systemd`, `security-audit.sh` PASS |
+| Structure proof | per-file AST/line-slice relocation checks: all original declarations present exactly once, parents contain only deletions/relocated glue (e.g. release 0 insertions/799 deletions, titan 0/683, boot_trust 0/904; runtime+state 2,790/2,790 original non-blank lines preserved; evidence 48/48 + kinetic 36/36 declarations; fabric/main/advisories relocated once, bootstrap/serve blocks byte-identical) |
+
+Wave 1b commit: `refactor(wave1b): split remaining Go mega-files
+(structure-only)`.
+
+### Wave 1 fine-grain (optional, per plan) — pending
 Files in the 500–999 range (`fabric_schema`, `l7_server`, `cms`,
 `l7_fabric_settings`, `mitigation_guard`, `l7_tls`, `airlock`, `transactions`,
 `fim`, `xdr_recovery`, `deception`, `overview_map`, `cases`, `response_engine`,
-…) and the XDR family 5-way split to reach the ≤ 500 guideline in the Go
-backend.
+…), the XDR family 5-way split, and the six >500 files from wave 1b above, to
+reach the ≤ 500 guideline across the Go backend.
 
 ## Wave 2 — Web UI (`control/web/`) — pending
 ## Wave 3 — Rust privileged core (`rust/gedefense-core/src/`) — pending

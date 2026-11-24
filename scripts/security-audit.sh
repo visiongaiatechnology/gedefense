@@ -292,10 +292,10 @@ from pathlib import Path
 import re
 import sys
 root=Path(sys.argv[1])
-release=(root/'control'/'release.go').read_text(encoding='utf-8')
+release=''.join(p.read_text(encoding='utf-8') for p in sorted((root/'control').glob('release*.go')) if not p.name.endswith('_test.go'))
 core_client=(root/'control'/'coreipc.go').read_text(encoding='utf-8')
 core=(root/'rust'/'gedefense-core'/'src'/'main.rs').read_text(encoding='utf-8')
-settings=(root/'control'/'runtime_settings.go').read_text(encoding='utf-8')
+settings=''.join(p.read_text(encoding='utf-8') for p in sorted((root/'control').glob('runtime_settings*.go')) if not p.name.endswith('_test.go'))
 rules=(root/'control'/'xdr_rules.go').read_text(encoding='utf-8')
 required={
     'release controller': [
@@ -454,7 +454,7 @@ python3 - "$ROOT" <<'PY'
 from pathlib import Path
 import json, sys
 root=Path(sys.argv[1])
-ledger=(root/'control'/'evidence_ledger.go').read_text(encoding='utf-8')
+ledger=''.join(p.read_text(encoding='utf-8') for p in sorted((root/'control').glob('evidence_ledger*.go')) if not p.name.endswith('_test.go'))
 for anchor in [
     'ed25519.Sign', 'ed25519.Verify', '"evidence-record"', '"evidence-head"',
     'evidence checkpoint does not match verified ledger head',
@@ -793,7 +793,7 @@ if 'styx_policy.go' not in {path.name for path in styx_sources}:
     missing.append('go-policy: control/styx_policy.go missing from the StyX source set')
 policy='\n'.join(path.read_text(encoding='utf-8') for path in styx_sources)
 xdr=''.join(p.read_text(encoding='utf-8') for p in sorted((root/'control').glob('xdr*.go')) if not p.name.endswith('_test.go'))
-runtime=read('control/runtime_settings.go')
+runtime=''.join(p.read_text(encoding='utf-8') for p in sorted((root/'control').glob('runtime_settings*.go')) if not p.name.endswith('_test.go'))
 schema=read('control/fabric_schema.go')
 server=''.join(p.read_text(encoding='utf-8') for p in sorted((root/'control').glob('server*.go')) if not p.name.endswith('_test.go'))
 
@@ -923,10 +923,10 @@ settings=read('control/titan_exec_settings.go')
 syncer=read('control/titan_exec_syncer.go')
 syncer_status=read('control/titan_exec_syncer_status.go')
 events=read('control/titan_exec_events.go')
-runtime=read('control/runtime_settings.go')
+runtime=''.join(p.read_text(encoding='utf-8') for p in sorted((root/'control').glob('runtime_settings*.go')) if not p.name.endswith('_test.go'))
 schema=read('control/fabric_schema.go')
 server=''.join(p.read_text(encoding='utf-8') for p in sorted((root/'control').glob('server*.go')) if not p.name.endswith('_test.go'))
-state=read('control/state.go')
+state=''.join(p.read_text(encoding='utf-8') for p in sorted((root/'control').glob('state*.go')) if not p.name.endswith('_test.go'))
 
 # ABI-1: one shared, exactly 88-byte TitanExecEvent contract with a rejecting decoder.
 need('rust-common', common_lib, 'mod titan_exec;')
@@ -1276,7 +1276,7 @@ manager_ops = read('control/parser_cells_manager_ops.go')
 settings = read('control/parser_cells_settings.go')
 kernel = read('control/parser_cells_kernel.go')
 api = read('control/parser_cells_api.go')
-runtime_settings = read('control/runtime_settings.go')
+runtime_settings = ''.join(p.read_text(encoding='utf-8') for p in sorted((root/'control').glob('runtime_settings*.go')) if not p.name.endswith('_test.go'))
 server = ''.join(p.read_text(encoding='utf-8') for p in sorted((root/'control').glob('server*.go')) if not p.name.endswith('_test.go'))
 guard = read('control/cell_guard.go')
 bootstrap = read('control/config.go')
@@ -1587,7 +1587,7 @@ need('rust-core', core, 'fn lockdown_modules_never_use_shell_or_kill_primitives(
 
 # --- Go control plane: default-off settings, latch, triggers, API (§7) --------
 settings = read('control/lockdown_settings.go')
-runtime_settings = read('control/runtime_settings.go')
+runtime_settings = ''.join(p.read_text(encoding='utf-8') for p in sorted((root/'control').glob('runtime_settings*.go')) if not p.name.endswith('_test.go'))
 engine = read('control/lockdown.go')
 engine_ops = read('control/lockdown_engine.go')
 phases = read('control/lockdown_phases.go')
@@ -1597,10 +1597,10 @@ status = read('control/lockdown_status.go')
 coreipc = read('control/coreipc.go')
 server = ''.join(p.read_text(encoding='utf-8') for p in sorted((root/'control').glob('server*.go')) if not p.name.endswith('_test.go'))
 xdr=''.join(p.read_text(encoding='utf-8') for p in sorted((root/'control').glob('xdr*.go')) if not p.name.endswith('_test.go'))
-main = read('control/main.go')
-state = read('control/state.go')
+main = ''.join(p.read_text(encoding='utf-8') for p in sorted((root/'control').glob('main*.go')) if not p.name.endswith('_test.go'))
+state = ''.join(p.read_text(encoding='utf-8') for p in sorted((root/'control').glob('state*.go')) if not p.name.endswith('_test.go'))
 schema = read('control/fabric_schema.go')
-fabric_settings = read('control/fabric_settings.go')
+fabric_settings = ''.join(p.read_text(encoding='utf-8') for p in sorted((root/'control').glob('fabric_settings*.go')) if not p.name.endswith('_test.go'))
 need_match('go-settings', settings, 'lockdown defaults are disabled and disarmed (inert upgrade)',
            r'func defaultLockdownFabricSettings\(\) LockdownFabricSettings \{.*?Enabled:\s+false,.*?AutoArm:\s+false,')
 need_match('go-settings', settings, 'the panic loopback drop is opt-in and hardening is off by default',
@@ -1772,7 +1772,7 @@ def forbid(component, text, pattern, label):
         missing.append(f'{component}: forbidden {label}')
 
 # --- ABI-1: persistent ledger epoch + atomic checkpoint view (§3) ------------
-ledger = read('control/evidence_ledger.go')
+ledger = ''.join(p.read_text(encoding='utf-8') for p in sorted((root/'control').glob('evidence_ledger*.go')) if not p.name.endswith('_test.go'))
 rotation = read('control/evidence_rotation.go')
 for anchor in (
     'LedgerEpoch uint64 `json:"ledger_epoch,omitempty"`',
@@ -1954,7 +1954,7 @@ for anchor in (
 ):
     need('go-witness-settings', witness_settings, anchor)
 need_match('go-witness-settings', witness_settings, 'witness defaults are enabled=false and mode=off', r'func defaultWitnessFabricSettings\(\) WitnessFabricSettings \{.*?Enabled:\s+false,.*?Mode:\s+witnessModeOff,')
-runtime_settings = read('control/runtime_settings.go')
+runtime_settings = ''.join(p.read_text(encoding='utf-8') for p in sorted((root/'control').glob('runtime_settings*.go')) if not p.name.endswith('_test.go'))
 need_match('go-runtime', runtime_settings, 'settings schema version is at least v17 (POINT 4 witness migration)', r'const fabricSettingsVersion = (?:1[7-9]|[2-9][0-9])')
 need('go-runtime', runtime_settings, 'Witness *WitnessFabricSettings `json:"witness,omitempty"`')
 schema = read('control/fabric_schema.go')
@@ -1989,8 +1989,8 @@ for anchor in (
     'QuoteKind: witnessQuoteKindNone, KeyBinding: witnessKeyBinding,',
 ):
     need('go-witness-api', witness_api, anchor)
-need('go-state', read('control/state.go'), 'Witness *WitnessStatus `json:"witness,omitempty"`')
-main_go = read('control/main.go')
+need('go-state', ''.join(p.read_text(encoding='utf-8') for p in sorted((root/'control').glob('state*.go')) if not p.name.endswith('_test.go')), 'Witness *WitnessStatus `json:"witness,omitempty"`')
+main_go = ''.join(p.read_text(encoding='utf-8') for p in sorted((root/'control').glob('main*.go')) if not p.name.endswith('_test.go'))
 need('go-main', main_go, 'srv.AttachWitness(witnessEngine)')
 need('go-main', main_go, 'go witnessEngine.Run(xdrCtx)')
 need('go-main', main_go, 'filepath.Join(evidenceDir, "witness", "outbox.enc")')
@@ -2676,8 +2676,8 @@ for anchor in ['func NewChameleonProfile', 'func (p *ChameleonProfile) Active',
                'func (p *ChameleonProfile) Apply', 'func (p *ChameleonProfile) AuditMapping',
                'func chameleonScanSocket']:
     need('ap8-chameleon-control', chameleon_go, anchor)
-need('ap8-chameleon-seam', read('control/main.go'), 'NewChameleonProfile(chameleonManifestPath)')
-need('ap8-chameleon-flag', read('control/main.go'), 'chameleon-manifest')
+need('ap8-chameleon-seam', ''.join(p.read_text(encoding='utf-8') for p in sorted((root/'control').glob('main*.go')) if not p.name.endswith('_test.go')), 'NewChameleonProfile(chameleonManifestPath)')
+need('ap8-chameleon-flag', ''.join(p.read_text(encoding='utf-8') for p in sorted((root/'control').glob('main*.go')) if not p.name.endswith('_test.go')), 'chameleon-manifest')
 need('ap8-chameleon-load', read('rust/gedefense-core/src/main.rs'), 'chameleon::ManagedEbpf::new')
 need('ap8-chameleon-arg', read('rust/gedefense-core/src/main.rs'), '"chameleon-manifest"')
 need('ap8-chameleon-installer', read('scripts/apply-chameleon-profile.sh'),
