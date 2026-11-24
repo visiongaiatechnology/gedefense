@@ -764,7 +764,7 @@
             "detected": true,
             "prevented": true,
             "context_maturity": 1,
-            "ttfa_ms": 252.37,
+            "ttfa_ms": 860.63,
             "pre_kill_damage": null
           }
         },
@@ -778,7 +778,7 @@
             "detected": true,
             "prevented": true,
             "context_maturity": 3,
-            "ttfa_ms": 250.0,
+            "ttfa_ms": 61.96,
             "pre_kill_damage": null
           }
         },
@@ -786,13 +786,13 @@
           "ruleId": "MAL-NESTED-ARCHIVE-01",
           "level": "warning",
           "message": {
-            "text": "[PARTIAL det=True prev=False] 8-layer nested ZIP wrapper + clamav-testfiles archive inspection (nested=WROTE 808; malware.execution_blocked)"
+            "text": "[PARTIAL det=True prev=False] 8-layer nested ZIP wrapper + clamav-testfiles archive inspection (nested=WROTE 810; malware.execution_blocked)"
           },
           "properties": {
             "detected": true,
             "prevented": false,
             "context_maturity": 1,
-            "ttfa_ms": 250.0,
+            "ttfa_ms": 728.87,
             "pre_kill_damage": null
           }
         },
@@ -854,15 +854,15 @@
         },
         {
           "ruleId": "EP-TMP-ELF-01",
-          "level": "note",
+          "level": "warning",
           "message": {
-            "text": "[BLOCKED+DETECTED] Unverified ELF binary copied to /tmp and executed (TITAN-Exec gate) (rc=0, out={\"probe\": \"tmp-exec\", \"target\": \"/tmp/hardred-sandbox/tmpexec/untrusted_exec_test\", \"ok\": false, \"errno\": \"EPERM\", \"exit_code\": -1, \"error\":; TITAN.EXEC_DENIED, WORKER_GUARD)"
+            "text": "[PARTIAL det=False prev=True] Unverified ELF binary copied to /tmp and executed (TITAN-Exec gate) (rc=0, out={\"probe\": \"tmp-exec\", \"target\": \"/tmp/hardred-sandbox/tmpexec/untrusted_exec_test\", \"ok\": false, \"errno\": \"EPERM\", \"exit_code\": -1, \"error\":; none)"
           },
           "properties": {
-            "detected": true,
+            "detected": false,
             "prevented": true,
-            "context_maturity": 3,
-            "ttfa_ms": 250.0,
+            "context_maturity": 1,
+            "ttfa_ms": 2255.25,
             "pre_kill_damage": null
           }
         },
@@ -876,7 +876,7 @@
             "detected": true,
             "prevented": true,
             "context_maturity": 1,
-            "ttfa_ms": 250.0,
+            "ttfa_ms": 432.6,
             "pre_kill_damage": null
           }
         },
@@ -890,7 +890,7 @@
             "detected": true,
             "prevented": true,
             "context_maturity": 1,
-            "ttfa_ms": 250.0,
+            "ttfa_ms": 427.06,
             "pre_kill_damage": 7
           }
         },
@@ -904,7 +904,7 @@
             "detected": true,
             "prevented": true,
             "context_maturity": 1,
-            "ttfa_ms": 250.0,
+            "ttfa_ms": 1639.97,
             "pre_kill_damage": 50
           }
         },
@@ -918,7 +918,7 @@
             "detected": true,
             "prevented": true,
             "context_maturity": 1,
-            "ttfa_ms": 250.0,
+            "ttfa_ms": 532.09,
             "pre_kill_damage": 7
           }
         },
@@ -946,7 +946,7 @@
             "detected": true,
             "prevented": false,
             "context_maturity": 1,
-            "ttfa_ms": 250.0,
+            "ttfa_ms": 473.47,
             "pre_kill_damage": null
           }
         },
@@ -960,7 +960,7 @@
             "detected": true,
             "prevented": false,
             "context_maturity": 1,
-            "ttfa_ms": 250.0,
+            "ttfa_ms": 506.66,
             "pre_kill_damage": null
           }
         },
@@ -974,7 +974,7 @@
             "detected": true,
             "prevented": false,
             "context_maturity": 1,
-            "ttfa_ms": 250.0,
+            "ttfa_ms": 1203.31,
             "pre_kill_damage": null
           }
         },
@@ -982,27 +982,27 @@
           "ruleId": "EP-ART-T1087",
           "level": "warning",
           "message": {
-            "text": "[PARTIAL det=True prev=False] Local Account Enumeration (/etc/passwd, id, lastlog) [yaml=True] (rc=0, out={}; xdr.alert, xdr.alert, xdr-dag, xdr-dag)"
+            "text": "[PARTIAL det=True prev=False] Local Account Enumeration (/etc/passwd, id, lastlog) [yaml=True] (rc=0, out={}; xdr.alert, xdr.alert, xdr.alert, xdr-dag, xdr-dag)"
           },
           "properties": {
             "detected": true,
             "prevented": false,
             "context_maturity": 3,
-            "ttfa_ms": 250.0,
+            "ttfa_ms": 514.12,
             "pre_kill_damage": null
           }
         },
         {
           "ruleId": "EP-ART-T1059",
-          "level": "error",
+          "level": "warning",
           "message": {
-            "text": "[MISSED] Base64 Obfuscated Shell Execution [yaml=True] (expected defense failed)"
+            "text": "[PARTIAL det=True prev=False] Base64 Obfuscated Shell Execution [yaml=True] (rc=0, out={}; xdr.contain, xdr-dag)"
           },
           "properties": {
-            "detected": false,
+            "detected": true,
             "prevented": false,
-            "context_maturity": 0,
-            "ttfa_ms": null,
+            "context_maturity": 3,
+            "ttfa_ms": 521.49,
             "pre_kill_damage": null
           }
         },
@@ -1016,7 +1016,7 @@
             "detected": true,
             "prevented": false,
             "context_maturity": 3,
-            "ttfa_ms": 250.0,
+            "ttfa_ms": 740.87,
             "pre_kill_damage": null
           }
         },
@@ -1030,7 +1030,7 @@
             "detected": true,
             "prevented": false,
             "context_maturity": 3,
-            "ttfa_ms": 250.0,
+            "ttfa_ms": 454.54,
             "pre_kill_damage": null
           }
         },
@@ -1044,7 +1044,7 @@
             "detected": true,
             "prevented": true,
             "context_maturity": 3,
-            "ttfa_ms": 250.0,
+            "ttfa_ms": 17.11,
             "pre_kill_damage": null
           }
         },
@@ -1058,7 +1058,7 @@
             "detected": true,
             "prevented": true,
             "context_maturity": 3,
-            "ttfa_ms": 250.0,
+            "ttfa_ms": 17.73,
             "pre_kill_damage": null
           }
         },
@@ -1072,7 +1072,7 @@
             "detected": true,
             "prevented": true,
             "context_maturity": 3,
-            "ttfa_ms": 250.0,
+            "ttfa_ms": 17.76,
             "pre_kill_damage": null
           }
         },
@@ -1086,7 +1086,7 @@
             "detected": true,
             "prevented": true,
             "context_maturity": 3,
-            "ttfa_ms": 250.0,
+            "ttfa_ms": 24.35,
             "pre_kill_damage": null
           }
         },
@@ -1100,7 +1100,7 @@
             "detected": true,
             "prevented": true,
             "context_maturity": 3,
-            "ttfa_ms": 250.0,
+            "ttfa_ms": 29.94,
             "pre_kill_damage": null
           }
         },
@@ -1114,7 +1114,7 @@
             "detected": true,
             "prevented": true,
             "context_maturity": 3,
-            "ttfa_ms": 250.0,
+            "ttfa_ms": 10.93,
             "pre_kill_damage": null
           }
         },
@@ -1128,7 +1128,7 @@
             "detected": true,
             "prevented": true,
             "context_maturity": 3,
-            "ttfa_ms": 250.0,
+            "ttfa_ms": 23.35,
             "pre_kill_damage": null
           }
         },
@@ -1142,7 +1142,7 @@
             "detected": true,
             "prevented": true,
             "context_maturity": 3,
-            "ttfa_ms": 250.0,
+            "ttfa_ms": 11.62,
             "pre_kill_damage": null
           }
         },
@@ -1156,7 +1156,7 @@
             "detected": true,
             "prevented": true,
             "context_maturity": 3,
-            "ttfa_ms": 250.0,
+            "ttfa_ms": 17.67,
             "pre_kill_damage": null
           }
         },
@@ -1170,7 +1170,7 @@
             "detected": true,
             "prevented": true,
             "context_maturity": 3,
-            "ttfa_ms": 250.0,
+            "ttfa_ms": 10.08,
             "pre_kill_damage": null
           }
         },
@@ -1184,7 +1184,7 @@
             "detected": true,
             "prevented": true,
             "context_maturity": 3,
-            "ttfa_ms": 250.0,
+            "ttfa_ms": 15.14,
             "pre_kill_damage": null
           }
         },
@@ -1198,7 +1198,7 @@
             "detected": true,
             "prevented": true,
             "context_maturity": 3,
-            "ttfa_ms": 250.0,
+            "ttfa_ms": 22.59,
             "pre_kill_damage": null
           }
         },
@@ -1212,7 +1212,7 @@
             "detected": true,
             "prevented": true,
             "context_maturity": 3,
-            "ttfa_ms": 250.0,
+            "ttfa_ms": 20.98,
             "pre_kill_damage": null
           }
         },
@@ -1226,7 +1226,7 @@
             "detected": true,
             "prevented": true,
             "context_maturity": 3,
-            "ttfa_ms": 250.0,
+            "ttfa_ms": 119.77,
             "pre_kill_damage": null
           }
         },
@@ -1240,7 +1240,7 @@
             "detected": true,
             "prevented": true,
             "context_maturity": 3,
-            "ttfa_ms": 250.0,
+            "ttfa_ms": 56.13,
             "pre_kill_damage": null
           }
         },
@@ -1248,13 +1248,13 @@
           "ruleId": "NET-BRUTE-SSH-01",
           "level": "note",
           "message": {
-            "text": "[BLOCKED+DETECTED] SSH failed login burst (18 attempts -> IP ban test) (ssh_spray={'probe': 'ssh-spray', 'addr': '192.168.56.50:22', 'attempts': 18, 'auth_failed': 0, 'timeouts': 4, 'tcp_refused': 0, 'other_errors': 0, 'first_drop_idx': 0, 'results': [{'idx': 0, 'username': 'hardred_invalid_00', 'outcome': 'timeout', 'error': 'ssh: handshake failed: read tcp 192.168.56.1:56992->192.168.56.50:22: i/o timeout', 'elapsed_ms': 1205.206}, {'idx': 1, 'username': 'hardred_invalid_01', 'outcome': 'timeout', 'error': 'dial tcp 192.168.56.50:22: i/o timeout', 'elapsed_ms': 1200.221}, {'idx': 2, 'username': 'hardred_invalid_02', 'outcome': 'timeout', 'error': 'dial tcp 192.168.56.50:22: i/o timeout', 'elapsed_ms': 1200.444}, {'idx': 3, 'username': 'hardred_invalid_03', 'outcome': 'timeout', 'error': 'dial tcp 192.168.56.50:22: i/o timeout', 'elapsed_ms': 1200.504}], 'total_elapsed_ms': 5048.999}; xdr.egress_blocked, xdr.kinetic_block, kinetic.block_applied, kinetic_strike, xdr.egress_blocked)"
+            "text": "[BLOCKED+DETECTED] SSH failed login burst (18 attempts -> IP ban test) (ssh_spray={'probe': 'ssh-spray', 'addr': '192.168.56.50:22', 'attempts': 18, 'auth_failed': 1, 'timeouts': 4, 'tcp_refused': 0, 'other_errors': 0, 'first_drop_idx': 1, 'results': [{'idx': 0, 'username': 'hardred_invalid_00', 'outcome': 'auth_failed', 'error': 'ssh: handshake failed: ssh: unable to authenticate, attempted methods [none publickey], no supported methods remain', 'elapsed_ms': 48.696}, {'idx': 1, 'username': 'hardred_invalid_01', 'outcome': 'timeout', 'error': 'dial tcp 192.168.56.50:22: i/o timeout', 'elapsed_ms': 1200.412}, {'idx': 2, 'username': 'hardred_invalid_02', 'outcome': 'timeout', 'error': 'dial tcp 192.168.56.50:22: i/o timeout', 'elapsed_ms': 1200.478}, {'idx': 3, 'username': 'hardred_invalid_03', 'outcome': 'timeout', 'error': 'dial tcp 192.168.56.50:22: i/o timeout', 'elapsed_ms': 1200.388}, {'idx': 4, 'username': 'hardred_invalid_04', 'outcome': 'timeout', 'error': 'dial tcp 192.168.56.50:22: i/o timeout', 'elapsed_ms': 1200.283}], 'total_elapsed_ms': 5173.056}; xdr.kinetic_block, kinetic.block_applied, kinetic_strike, xdr.kinetic_block, kinetic.block_applied)"
           },
           "properties": {
             "detected": true,
             "prevented": true,
             "context_maturity": 3,
-            "ttfa_ms": 1182.75,
+            "ttfa_ms": 78.36,
             "pre_kill_damage": null
           }
         },
@@ -1262,13 +1262,13 @@
           "ruleId": "NET-VELOCITY-01",
           "level": "note",
           "message": {
-            "text": "[BLOCKED+DETECTED] High-concurrency connection & request flood (240 req @ 28 threads) (blocked_or_dropped=196/240; xdr.egress_blocked, xdr.egress_blocked, xdr.kinetic_block, kinetic.block_applied, kinetic_strike)"
+            "text": "[BLOCKED+DETECTED] High-concurrency connection & request flood (240 req @ 28 threads) (blocked_or_dropped=186/240; kinetic.block_applied, kinetic_strike, kinetic.block_applied, kinetic_strike, xdr.egress_blocked)"
           },
           "properties": {
             "detected": true,
             "prevented": true,
             "context_maturity": 3,
-            "ttfa_ms": 13.87,
+            "ttfa_ms": 48.55,
             "pre_kill_damage": null
           }
         },
@@ -1276,13 +1276,13 @@
           "ruleId": "NET-PORTSCAN-01",
           "level": "note",
           "message": {
-            "text": "[BLOCKED+DETECTED] 16-port TCP connect scan -> Kinetic XDP / Firewall Ban verification (post_scan_banned=True, open_blocked=True; kinetic.block_applied, kinetic_strike, kinetic.block_applied, kinetic_strike, KINETIC.bans_enforced_total)"
+            "text": "[BLOCKED+DETECTED] 16-port TCP connect scan -> Kinetic XDP / Firewall Ban verification (post_scan_banned=True, open_blocked=True; xdr.egress_blocked, xdr.egress_blocked, kinetic.block_applied, kinetic_strike, kinetic.block_applied)"
           },
           "properties": {
             "detected": true,
             "prevented": true,
             "context_maturity": 1,
-            "ttfa_ms": 1109.48,
+            "ttfa_ms": 31.89,
             "pre_kill_damage": null
           }
         }

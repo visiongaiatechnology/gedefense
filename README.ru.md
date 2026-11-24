@@ -33,7 +33,7 @@
 <br />
 
 ⬇️ **Прямые ссылки на установщики (v6.2.1 / V6):**
-[**OneClick-установщик (`.run`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.2.1/VGT_GeDefense_V6_6.2.1_OneClick.run) · [`.sha256`](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.2.1/VGT_GeDefense_V6_6.2.1_OneClick.run.sha256) · [**Desktop Tray (`.run`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.2.1/GeDefense-6.2.1-Desktop-OneClick.run) · [`.sha256`](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.2.1/GeDefense-6.2.1-Desktop-OneClick.run.sha256) · [**Исходный код (`.zip`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.2.1/VGT_GeDefense_V6_6.2.1_Source.zip) · [**Релиз v6.2.1**](https://github.com/visiongaiatechnology/gedefense/releases/tag/v6.2.1) · [**Результаты тестов (`93.31 / PASS`)**](benchmarks/vgt-hardred-6.2.1/) · [Быстрый старт](#-быстрый-старт)
+[**OneClick-установщик (`.run`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.2.1/VGT_GeDefense_V6_6.2.1_OneClick.run) · [`.sha256`](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.2.1/VGT_GeDefense_V6_6.2.1_OneClick.run.sha256) · [**Desktop Tray (`.run`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.2.1/GeDefense-6.2.1-Desktop-OneClick.run) · [`.sha256`](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.2.1/GeDefense-6.2.1-Desktop-OneClick.run.sha256) · [**Исходный код (`.zip`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.2.1/VGT_GeDefense_V6_6.2.1_Source.zip) · [**Релиз v6.2.1**](https://github.com/visiongaiatechnology/gedefense/releases/tag/v6.2.1) · [**Результаты тестов (`94.73 / PASS`)**](benchmarks/vgt-hardred-6.2.1/) · [Быстрый старт](#-быстрый-старт)
 
 </div>
 
@@ -43,7 +43,7 @@
 
 | Раздел | Описание | Переход |
 |---|---|---|
-| 📊 **Тест VGT HardRed** | `93.31 / 100 · PASS` против OSS+SafeLine (`59.28 / PASS`), OSS+ModSec (`55.40 / FAIL`), SafeLine (`52.92`), Wazuh и CrowdSec | [Результаты](#-бенчмарк-vgt-hardred--сравнение-v621-с-oss-стеком) |
+| 📊 **Тест VGT HardRed** | `94.73 / 100 · PASS` против OSS+SafeLine (`59.28 / PASS`), OSS+ModSec (`55.40 / FAIL`), SafeLine (`52.92`), Wazuh и CrowdSec | [Результаты](#-бенчмарк-vgt-hardred--сравнение-v621-с-oss-стеком) |
 | 📂 **Папка с результатами** | Все дашборды HardRed и ARES, SARIF, ATT&CK, OCSF и GoTestWAF | [`benchmarks/vgt-hardred-6.2.1/`](benchmarks/vgt-hardred-6.2.1/) |
 | ⚙️ **Воспроизведение и настройки** | Точный профиль `EDR/Hardened Max` и изменения `6.2.0 → 6.2.1` | [Настройки](#-воспроизведение-профиля-max-hardness) |
 | 🔍 **Что такое VGT GeDefense?** | Стек V6.2.1, модули A–E, Titan, Setup Wizard и ПК vs. Сервер | [Обзор](#-что-такое-vgt-gedefense) |
@@ -57,11 +57,11 @@
 
 ## 📊 Бенчмарк VGT HardRed — сравнение V6.2.1 с OSS-стеком
 
-Измерено с помощью открытого мультидоменного бенчмарка безопасности Linux **[VGT HardRed (`RedHard`)](https://github.com/visiongaiatechnology/redhard)** (`2026-11-23T23:42:33Z`) на изолированном от снэпшота целевом хосте **Ubuntu 24.04 (Linux HWE 7.0, NGINX + PHP 8.3-FPM)** (`eth0` out-of-band управляющий канал, `eth1` боевой канал атак без allowlist; 4-осевая модель: эффективность 45 % · устойчивость к ложным срабатываниям 20 % · задержка/сдерживание 20 % · накладные расходы 15 %). Расширенный прогон сравнивает **GeDefense Linux 6.2.1** с **OSS Best-of-Breed + SafeLine WAF**, **OSS Best-of-Breed (ModSecurity CRS + Suricata IPS + Tetragon + ClamAV)**, **Chaitin SafeLine WAF CE 9.4.7**, **Wazuh**, **CrowdSec** и чистым **Baseline**:
+Измерено с помощью открытого мультидоменного бенчмарка безопасности Linux **[VGT HardRed (`RedHard`)](https://github.com/visiongaiatechnology/redhard)** (`2026-11-24T00:28:34Z`) на изолированном от снэпшота целевом хосте **Ubuntu 24.04 (Linux HWE 7.0, NGINX + PHP 8.3-FPM)** (`eth0` out-of-band управляющий канал, `eth1` боевой канал атак без allowlist; 4-осевая модель: эффективность 45 % · устойчивость к ложным срабатываниям 20 % · задержка/сдерживание 20 % · накладные расходы 15 %). Расширенный прогон сравнивает **GeDefense Linux 6.2.1** с **OSS Best-of-Breed + SafeLine WAF**, **OSS Best-of-Breed (ModSecurity CRS + Suricata IPS + Tetragon + ClamAV)**, **Chaitin SafeLine WAF CE 9.4.7**, **Wazuh**, **CrowdSec** и чистым **Baseline**:
 
 | Место | Система безопасности | Итог (0–100) | Ось 1: Эффективность | Ось 2: FP-устойчивость | Ось 3: Латентность и сдерживание | Ось 4: Нагрузка | Гейт |
 |---:|---|---:|---:|---:|---:|---:|---|
-| 1 | **GeDefense Linux 6.2.1 (`EDR/Hardened Max`)** | **93.31** | **95.78** | **100.00** | **86.13** | **86.54** | **`PASS`** |
+| 1 | **GeDefense Linux 6.2.1 (`EDR/Hardened Max`)** | **94.73** | **95.88** | **100.00** | **92.20** | **87.63** | **`PASS`** |
 | 2 | **OSS Best-of-Breed + SafeLine WAF (`SafeLine + Suricata + Tetragon + ClamAV`)** | **59.28** | 69.31 | 100.00 | 38.14 | 3.08 | `PASS` |
 | 3 | **OSS Best-of-Breed (`ModSec CRS + Suricata IPS + Tetragon + ClamAV`)** | **55.40** | 76.27 | 38.46 | 38.91 | 37.35 | `FAIL` |
 | 4 | **Chaitin SafeLine WAF CE 9.4.7 (`Max Strict Semantics + ACL`)** | **52.92** | 41.09 | 100.00 | 28.23 | 58.59 | `PASS` |
@@ -69,7 +69,7 @@
 | Ref | **Baseline (`Clean Ubuntu HWE 7.0 WebStack`)** | **46.23** | 17.86 | 100.00 | 15.97 | 100.00 | `CONDITIONAL` |
 | 6 | **CrowdSec (`Max Collections + Bouncers + AppSec WAF`)** | **36.58** | 44.56 | 0.00 | 28.38 | 72.37 | `FAIL` |
 
-> **Прогресс версии (`6.2.0 → 6.2.1`):** Итоговый балл вырос с **`86.16`** до **`93.31 / 100 (PASS)`** (`+7.15`) за счёт блокировки inode вредоносных файлов в BPF-LSM (`hardred-malware`: `65.6 → 95.6`, Prevention TPR `33.3% → 100.0%`) и ядерного поведенческого XDR (`hardred-endpoint`: `59.0 → 94.2`, Detection TPR `53.3% → 93.3%`, Prevention TPR `53.3% → 100.0%`, коэффициент ущерба снижен с `18.1%` до **`8.6%`**) при `0.0%` ложных срабатываний.
+> **Прогресс версии (`6.2.0 → 6.2.1`):** Итоговый балл вырос с **`86.16`** до **`94.73 / 100 (PASS)`** (`+8.57`) за счёт блокировки inode вредоносных файлов в BPF-LSM (`hardred-malware`: `65.6 → 95.6`, Prevention TPR `33.3% → 100.0%`) и ядерного поведенческого XDR (`hardred-endpoint`: `59.0 → 94.4`, Detection TPR `53.3% → 93.3%`, Prevention TPR `53.3% → 100.0%`, коэффициент ущерба снижен с `18.1%` до **`8.6%`**) при `0.0%` ложных срабатываний.
 
 ### Прямое сравнение по доменам: GeDefense 6.2.1 vs. OSS Best-of-Breed
 
@@ -77,12 +77,12 @@
 |---|---|---|---|
 | `hardred-waf` | 100.0% / 100.0% / **0.0%** / **100.0** | 100.0% / 92.9% / 12.5% / **92.8** | Ноль ложных срабатываний (у OSS-стека `FAIL` из-за `12.50%` WAF Prot FPR) |
 | `hardred-netids` | 100.0% / 100.0% / 0.0% / **98.3** | 100.0% / 75.0% / 0.0% / **86.2** | Kinetic XDP надёжно блокирует HTTP-флуд (`196/240`) и сканирование портов |
-| `hardred-endpoint` | **93.3%** / **100.0%** / 0.0% / **94.2** | 33.3% / 50.0% / 0.0% / **51.9** | **Ущерб `8.6%` против `100.0%` у OSS** (OSS пропустил AES/storm ransomware и `memfd`) |
+| `hardred-endpoint` | **93.3%** / **100.0%** / 0.0% / **94.4** | 33.3% / 50.0% / 0.0% / **51.9** | **Ущерб `8.6%` против `100.0%` у OSS** (OSS пропустил AES/storm ransomware и `memfd`) |
 | `hardred-malware` | 100.0% / 100.0% / 0.0% / **95.6** | 100.0% / 100.0% / 0.0% / **96.7** | Блокировка BPF-LSM `MALWARE_DENIED_INODES` + шифрованный Vault AES-256-GCM |
 | `hardred-compliance` | 100.0% / 86.0% / 0.0% / **86.0** | 100.0% / 80.0% / 0.0% / **80.0** | Индекс Lynis Hardening **`71`** (OSS `65`, Baseline `63`) |
 
 - **Измеренная нагрузка (`GeDefense 6.2.1` против `OSS Best-of-Breed` и Baseline):**
-  - **GeDefense Linux 6.2.1:** `523.3` HTTP RPS (`12.03 мс` p50 · `29.26 мс` p95) · `90,248.0` Sysbench EPS · `249.9` FIO IOPS · **`88.4 MiB`** Security RSS · **`4.3%`** Security CPU · Lynis `71`.
+  - **GeDefense Linux 6.2.1:** `525.0` HTTP RPS (`14.07 мс` p50 · `23.65 мс` p95) · `86,682.7` Sysbench EPS · `211.8` FIO IOPS · **`88.4 MiB`** Security RSS · **`7.4%`** Security CPU · Lynis `71`.
   - **OSS Best-of-Breed (`ModSec + Suricata + Tetragon + ClamAV`):** `452.4` HTTP RPS (`13.85 мс` p50 · `29.93 мс` p95) · `84,829.5` Sysbench EPS · `237.4` FIO IOPS · **`1,761.0 MiB`** Security RSS (`~20×` больше памяти) · **`57.3%`** Security CPU (`~13×` больше нагрузки на CPU) · Lynis `65`.
   - **Chaitin SafeLine WAF CE 9.4.7 (`07-safeline-max` и `OSS+SafeLine`):** `0.0%` ложных срабатываний (`PASS`, поднимает `OSS+SafeLine` до `59.28`), но в `hardred-waf` набрал **`79.0`** (`11/14`; пропустил `WAF-LFI-02`, `WAF-XXE-01`, `WAF-SCAN-01` `sqlmap` + `/.env`) при **`1,040.5 MiB` RSS / `48.1%` CPU** отдельно (`484.9` RPS) и **`2,614.7 MiB` RSS / `60.6%` CPU / `175.2` RPS (`67.45 мс` p95)** в стеке `OSS+SafeLine`.
 
@@ -90,7 +90,9 @@
 
 | Система | ARES Design Resilience | ARES Runtime Resilience | ARES Adaptive Resilience | Прервано цепочек | Ø Pre-Kill Damage | Multi-Seed Ø (3 Seed × 3 раунда) | Ложные срабатывания |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| **GeDefense Linux** | **68.20** | **96.68** | **93.46** | **36 / 36** | **11.1%** | **93.64** (σ = `0.0918`) | **0** |
+| **GeDefense Linux 6.2.1** | **78.40** | **96.68** | **93.46** | **36 / 36** | **11.1%** | **93.64** (σ = `0.0918`) | **0** |
+| **OSS Best-of-Breed + SafeLine WAF** | 58.20 | 56.25 | 61.33 | 27 / 36 | 100.0% | 61.52 | 0 |
+| **Chaitin SafeLine WAF CE 9.4.7** | 53.60 | 51.67 | 42.69 | 24 / 36 | 100.0% | 42.88 | 0 |
 | **Wazuh HIDS/SIEM** | 65.10 | 15.42 | 27.78 | 3 / 36 | 100.0% | 27.96 | 3 |
 | **CrowdSec IPS/CTI** | 59.80 | 51.67 | 42.25 | 24 / 36 | 100.0% | 42.44 | 0 |
 
@@ -646,7 +648,7 @@ sudo ./VGT_GeDefense_V6_6.2.1_OneClick.run
 - **Блокировка вредоносных inode и границы ядра (`FIND-G-001`):** Карта BPF-LSM `MALWARE_DENIED_INODES` (`4 096` записей) отклоняет `file_open` с `-EACCES` для всех процессов кроме `gedefense-*` даже в не-root каталогах `0755` без расширения привилегий DAC, совместно с `CORE_QUARANTINE_ALLOWED_ROOTS` / `FORBIDDEN_ROOTS` и `capture_open_fd_only()`.
 - **Ядерный поведенческий XDR и multi-CPU tracepoints:** Буферы `EXEC_ARGV_EVENTS` (`512` Б аргументов командной строки), `KERNEL_PROBE_EVENTS` (`XDR.PTRACE_ATTEMPT`, `XDR.KERNEL_PROTOCOL_PROBE`, `XDR.CREDENTIAL_PROBE`, `XDR.SYMLINK_OVER_SENSITIVE`), `PENDING_COLD_OPEN` + kretprobe `getname_flags`, правила обнаружения (`KD.LINUX.DISCOVERY.ACCOUNT`, `KD.LINUX.DISCOVERY.SUID`) и активация perf-tracepoints на всех CPU в `rust/vendor/aya`.
 - **Изоляция сервис-пулов и гигиена телеметрии:** Ужесточённые пороги ransomware (`15 → 6` и `25 → 18`) с профилем доверия `RANSOM_TRUST_POOL_METADATA` (`php-fpm`, `lsphp`, `nginx`, `httpd`, `apache2`, `mariadbd`, `postgres`, `redis-server` и др.) и изоляцией по PPID в `stop_process_descendants`/`collect_tree` (мастер-демон и здоровые воркеры продолжают работу); фильтр `isIgnoredNonExternalFlow` в `StyxBeacon`, асинхронный `ChronosScanner` и опрос `StyxFlowHealth` раз в `1с`.
-- **Расширенный бенчмарк VGT HardRed (`86.16 → 93.31`):** Итог **`93.31 / 100 (PASS)`** против OSS Best-of-Breed + SafeLine WAF (`59.28 / PASS`), OSS Best-of-Breed (`55.40 / FAIL`), SafeLine WAF (`52.92 / PASS`), Wazuh (`46.70`), CrowdSec (`36.58`) и гибридные данные REDHARD ARES опубликованы в [`benchmarks/vgt-hardred-6.2.1/`](benchmarks/vgt-hardred-6.2.1/) (`docs/V6.2.1-RELEASE.md`).
+- **Расширенные бенчмарки VGT HardRed & ARES 1.2 (`86.16 → 94.73`):** Итог **`94.73 / 100 (PASS)`** и 5-системный ARES 1.2 (`78.40 / 96.68 / 93.46`, `177/177` цитат) против OSS Best-of-Breed + SafeLine WAF (`59.28 / PASS` · ARES `58.20 / 56.25 / 61.33`), OSS Best-of-Breed (`55.40 / FAIL`), SafeLine WAF (`52.92 / PASS` · ARES `53.60 / 51.67 / 42.69`), Wazuh (`46.70`), CrowdSec (`36.58`) и гибридные данные REDHARD ARES опубликованы в [`benchmarks/vgt-hardred-6.2.1/`](benchmarks/vgt-hardred-6.2.1/) (`docs/V6.2.1-RELEASE.md`).
 
 ### v6.2.0 — Максимизация защиты и устойчивость телеметрии *(22.11.2026)*
 

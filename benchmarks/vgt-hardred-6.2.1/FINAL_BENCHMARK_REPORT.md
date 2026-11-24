@@ -1,15 +1,15 @@
 # VGT HardRed Test — Gesamtbericht, Ranking & Gewinner
 
-**Erstellt (UTC):** 2026-11-23T23:42:33.212432+00:00  
+**Erstellt (UTC):** 2026-11-24T00:28:34.404615+00:00  
 **Methodik:** VGT HardRed Test (4-Achsen-Modell: Efficacy 45% · FP-Resilienz 20% · TTFA/Schadensbegrenzung 20% · Overhead 15%; strikte Trennung Detection vs. Prevention TPR/FPR)  
 
-## Gesamtsieger: **GeDefense Linux 6.2.1 (EDR/Hardened Max)** (93.31 / 100 · Gate `PASS`)
+## Gesamtsieger: **GeDefense Linux 6.2.1 (EDR/Hardened Max)** (94.73 / 100 · Gate `PASS`)
 
 ## 1. Gesamt-Ranking & 4-Achsen-Matrix
 
 | Rang | Sicherheitssystem | Gesamt (0-100) | Achse 1: Effektivität | Achse 2: FP-Resilienz | Achse 3: Latenz & Eindämmung | Achse 4: System-Overhead | Gate |
 |---:|---|---:|---:|---:|---:|---:|---|
-| 1 | **GeDefense Linux 6.2.1 (EDR/Hardened Max)** (`03e-gedefense-6.2.1-edr-max`) | **93.31** | 95.78 | 100.00 | 86.13 | 86.54 | `PASS` |
+| 1 | **GeDefense Linux 6.2.1 (EDR/Hardened Max)** (`03f-gedefense-6.2.1-final-max`) | **94.73** | 95.88 | 100.00 | 92.20 | 87.63 | `PASS` |
 | 2 | **OSS Best-of-Breed + SafeLine WAF (SafeLine + Suricata IPS + Tetragon + ClamAV)** (`08-oss-safeline-max`) | **59.28** | 69.31 | 100.00 | 38.14 | 3.08 | `PASS` |
 | 3 | **OSS Best-of-Breed (ModSec CRS + Suricata IPS + Tetragon + ClamAV)** (`06-oss-bestofbreed-max`) | **55.40** | 76.27 | 38.46 | 38.91 | 37.35 | `FAIL` |
 | 4 | **Chaitin SafeLine WAF CE 9.4.7 (Max Strict Semantics + ACL)** (`07-safeline-max`) | **52.92** | 41.09 | 100.00 | 28.23 | 58.59 | `PASS` |
@@ -21,10 +21,10 @@
 
 | System | Domäne | Det TPR | Prev TPR | Det FPR | Prot FPR | Context (0-3) | Median TTFA (ms) | Damage Ratio | Score |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|
-| gedefense | `hardred-waf` | 100.0% | 100.0% | 0.0% | 0.0% | 3.00 | 250.0 | — | **100.0** |
-| gedefense | `hardred-netids` | 100.0% | 100.0% | 0.0% | 0.0% | 2.50 | 679.7 | — | **98.3** |
-| gedefense | `hardred-endpoint` | 93.3% | 100.0% | 0.0% | 0.0% | 2.00 | 250.0 | 8.6% | **94.2** |
-| gedefense | `hardred-malware` | 100.0% | 100.0% | 0.0% | 0.0% | 1.67 | 250.0 | — | **95.6** |
+| gedefense | `hardred-waf` | 100.0% | 100.0% | 0.0% | 0.0% | 3.00 | 17.8 | — | **100.0** |
+| gedefense | `hardred-netids` | 100.0% | 100.0% | 0.0% | 0.0% | 2.50 | 52.3 | — | **98.3** |
+| gedefense | `hardred-endpoint` | 93.3% | 100.0% | 0.0% | 0.0% | 1.93 | 506.7 | 8.6% | **94.4** |
+| gedefense | `hardred-malware` | 100.0% | 100.0% | 0.0% | 0.0% | 1.67 | 728.9 | — | **95.6** |
 | gedefense | `hardred-compliance` | 100.0% | 86.0% | 0.0% | 0.0% | 3.00 | — | — | **86.0** |
 | oss-safeline | `hardred-waf` | 92.9% | 78.6% | 0.0% | 0.0% | 2.08 | 250.0 | — | **84.6** |
 | oss-safeline | `hardred-netids` | 100.0% | 50.0% | 0.0% | 0.0% | 2.25 | 504.3 | — | **75.0** |
@@ -61,7 +61,7 @@
 
 | System | HTTP RPS | HTTP p50 (ms) | HTTP p95 (ms) | HTTP p99 (ms) | Sysbench EPS | FIO IOPS | Security RSS (MiB) | Security CPU (%) | Lynis Index | Aktive LSMs |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
-| gedefense | 523.3 | 12.03 | 29.26 | 32.98 | 90248.0 | 249.9 | 88.4 | 4.3% | 71 | lockdown, capability, landlock, yama, apparmor, bpf, ima, evm |
+| gedefense | 525.0 | 14.07 | 23.65 | 25.21 | 86682.7 | 211.8 | 88.4 | 7.4% | 71 | lockdown, capability, landlock, yama, apparmor, bpf, ima, evm |
 | oss-safeline | 175.2 | 45.45 | 67.45 | 70.79 | 61254.6 | 155.6 | 2614.7 | 60.6% | 64 | lockdown, capability, landlock, yama, apparmor, bpf, ima, evm |
 | oss-stack | 452.4 | 13.85 | 29.93 | 36.53 | 84829.5 | 237.4 | 1761.0 | 57.3% | 65 | lockdown, capability, landlock, yama, apparmor, bpf, ima, evm |
 | safeline | 484.9 | 13.87 | 23.23 | 23.24 | 63159.0 | 224.2 | 1040.5 | 48.1% | 62 | lockdown, capability, landlock, yama, apparmor, bpf, ima, evm |
@@ -94,44 +94,44 @@
 | gedefense | `NET-BENIGN-01` | `hardred-netids` | benign | `NONE` | NO | NO | 0/3 | — | — | `ok=6/6 blocked=0; none` |
 | gedefense | `NET-BENIGN-02` | `hardred-netids` | benign | `NONE` | NO | NO | 0/3 | — | — | `tls_ok=4/4 blocked=0; none` |
 | gedefense | `MAL-BENIGN-01` | `hardred-malware` | benign | `NONE` | NO | NO | 0/3 | — | — | `rc=0; none` |
-| gedefense | `MAL-EICAR-DISK-01` | `hardred-malware` | attack | `T1027` | YES | YES | 1/3 | 252.4 | — | `disk=BLOCKED_INODE; xdr.credential_read_blocked, malware.execution_blocked` |
-| gedefense | `MAL-EICAR-HTTP-01` | `hardred-malware` | attack | `T1105` | YES | YES | 3/3 | 250.0 | — | `http=403; l7.block, L7, xdr-dag` |
-| gedefense | `MAL-NESTED-ARCHIVE-01` | `hardred-malware` | attack | `T1027.002` | YES | NO | 1/3 | 250.0 | — | `nested=WROTE 808; malware.execution_blocked` |
+| gedefense | `MAL-EICAR-DISK-01` | `hardred-malware` | attack | `T1027` | YES | YES | 1/3 | 860.6 | — | `disk=BLOCKED_INODE; xdr.credential_read_blocked, malware.execution_blocked` |
+| gedefense | `MAL-EICAR-HTTP-01` | `hardred-malware` | attack | `T1105` | YES | YES | 3/3 | 62.0 | — | `http=403; l7.block, L7, xdr-dag` |
+| gedefense | `MAL-NESTED-ARCHIVE-01` | `hardred-malware` | attack | `T1027.002` | YES | NO | 1/3 | 728.9 | — | `nested=WROTE 810; malware.execution_blocked` |
 | gedefense | `EP-BENIGN-01` | `hardred-endpoint` | benign | `NONE` | NO | NO | 0/3 | — | — | `rc=0, out={"ok": true, "sha256": "5dcee1d66c49e929"}; none` |
 | gedefense | `EP-BENIGN-02` | `hardred-endpoint` | benign | `NONE` | NO | NO | 0/3 | — | — | `rc=0, out={"ok": true}; none` |
 | gedefense | `EP-FILELESS-MEMFD-01` | `hardred-endpoint` | attack | `T1620` | YES | YES | 3/3 | 250.0 | — | `rc=0, out={"probe": "memfd-exec", "target": "/proc/self/fd/3", "ok": false, "errno": "EPER` |
 | gedefense | `EP-SHM-EXEC-01` | `hardred-endpoint` | attack | `T1059.004` | YES | YES | 3/3 | 250.0 | — | `rc=0, out={"probe": "shm-exec", "target": "/dev/shm/hardred-sandbox/shm_exec_test.sh", "ok` |
-| gedefense | `EP-TMP-ELF-01` | `hardred-endpoint` | attack | `T1204.002` | YES | YES | 3/3 | 250.0 | — | `rc=0, out={"probe": "tmp-exec", "target": "/tmp/hardred-sandbox/tmpexec/untrusted_exec_tes` |
-| gedefense | `EP-LPE-KERNEL-01` | `hardred-endpoint` | attack | `T1068` | YES | YES | 1/3 | 250.0 | — | `rc=0, out={"probe": "lpe-probe", "sctp_socket": {"attempted": true, "ok": false, "errno": ` |
-| gedefense | `EP-RANSOM-AES-01` | `hardred-endpoint` | attack | `T1486` | YES | YES | 1/3 | 250.0 | 7/120 | `rc=4294967295, out={}; xdr.XDR.RANSOM_ENTROPY_BURST` |
-| gedefense | `EP-RANSOM-STORM-01` | `hardred-endpoint` | attack | `T1485` | YES | YES | 1/3 | 250.0 | 50/600 | `rc=4294967295, out={}; xdr.XDR.RANSOM_RENAME_STORM` |
-| gedefense | `EP-LINEAGE-CHILD-01` | `hardred-endpoint` | attack | `T1059` | YES | YES | 1/3 | 250.0 | 7/60 | `rc=4294967295, out={}; xdr.XDR.RANSOM_ENTROPY_BURST` |
+| gedefense | `EP-TMP-ELF-01` | `hardred-endpoint` | attack | `T1204.002` | NO | YES | 1/3 | 2255.2 | — | `rc=0, out={"probe": "tmp-exec", "target": "/tmp/hardred-sandbox/tmpexec/untrusted_exec_tes` |
+| gedefense | `EP-LPE-KERNEL-01` | `hardred-endpoint` | attack | `T1068` | YES | YES | 1/3 | 432.6 | — | `rc=0, out={"probe": "lpe-probe", "sctp_socket": {"attempted": true, "ok": false, "errno": ` |
+| gedefense | `EP-RANSOM-AES-01` | `hardred-endpoint` | attack | `T1486` | YES | YES | 1/3 | 427.1 | 7/120 | `rc=4294967295, out={}; xdr.XDR.RANSOM_ENTROPY_BURST` |
+| gedefense | `EP-RANSOM-STORM-01` | `hardred-endpoint` | attack | `T1485` | YES | YES | 1/3 | 1640.0 | 50/600 | `rc=4294967295, out={}; xdr.XDR.RANSOM_RENAME_STORM` |
+| gedefense | `EP-LINEAGE-CHILD-01` | `hardred-endpoint` | attack | `T1059` | YES | YES | 1/3 | 532.1 | 7/60 | `rc=4294967295, out={}; xdr.XDR.RANSOM_ENTROPY_BURST` |
 | gedefense | `EP-C2-EGRESS-01` | `hardred-endpoint` | attack | `T1071.001` | YES | YES | 3/3 | 250.0 | — | `rc=28, out={}; STYX.POLICY_DROP` |
-| gedefense | `EP-FALCO-01` | `hardred-endpoint` | attack | `T1003.008` | YES | NO | 1/3 | 250.0 | — | `rc=0, out={}; xdr.credential_read_blocked` |
-| gedefense | `EP-FALCO-02` | `hardred-endpoint` | attack | `T1036` | YES | NO | 1/3 | 250.0 | — | `rc=0, out={}; xdr.symlink_over_sensitive` |
-| gedefense | `EP-FALCO-03` | `hardred-endpoint` | attack | `T1055.008` | YES | NO | 1/3 | 250.0 | — | `rc=0, out={}; xdr.ptrace_attempt` |
-| gedefense | `EP-ART-T1087` | `hardred-endpoint` | attack | `T1087.001` | YES | NO | 3/3 | 250.0 | — | `rc=0, out={}; xdr.alert, xdr.alert, xdr-dag, xdr-dag` |
-| gedefense | `EP-ART-T1059` | `hardred-endpoint` | attack | `T1059.004` | NO | NO | 0/3 | — | — | `rc=0, out={}; none` |
-| gedefense | `EP-ART-T1053` | `hardred-endpoint` | attack | `T1053.003` | YES | NO | 3/3 | 250.0 | — | `rc=0, out={}; xdr.contain, xdr.contain, xdr.alert, xdr.alert, xdr.alert` |
-| gedefense | `EP-ART-T1548` | `hardred-endpoint` | attack | `T1548.001` | YES | NO | 3/3 | 250.0 | — | `rc=0, out={}; xdr.alert, xdr.alert, xdr-dag, xdr-dag` |
-| gedefense | `WAF-SQLI-01` | `hardred-waf` | attack | `T1190` | YES | YES | 3/3 | 250.0 | — | `http=403; l7.block, L7, xdr-dag` |
-| gedefense | `WAF-SQLI-02` | `hardred-waf` | attack | `T1190` | YES | YES | 3/3 | 250.0 | — | `http=403; l7.block, L7, xdr-dag` |
-| gedefense | `WAF-SQLI-03` | `hardred-waf` | attack | `T1190` | YES | YES | 3/3 | 250.0 | — | `http=403; l7.block, L7, xdr-dag` |
-| gedefense | `WAF-XSS-01` | `hardred-waf` | attack | `T1059.007` | YES | YES | 3/3 | 250.0 | — | `http=403; l7.block, L7, xdr-dag` |
-| gedefense | `WAF-XSS-02` | `hardred-waf` | attack | `T1059.007` | YES | YES | 3/3 | 250.0 | — | `http=403; l7.block, L7, xdr-dag` |
-| gedefense | `WAF-LFI-01` | `hardred-waf` | attack | `T1083` | YES | YES | 3/3 | 250.0 | — | `http=403; l7.block, L7, xdr-dag` |
-| gedefense | `WAF-LFI-02` | `hardred-waf` | attack | `T1083` | YES | YES | 3/3 | 250.0 | — | `http=403; l7.block, L7, xdr-dag` |
-| gedefense | `WAF-RCE-01` | `hardred-waf` | attack | `T1059.004` | YES | YES | 3/3 | 250.0 | — | `http=403; l7.block, L7, xdr-dag` |
-| gedefense | `WAF-RCE-02` | `hardred-waf` | attack | `T1505.003` | YES | YES | 3/3 | 250.0 | — | `http=403; l7.block, L7, xdr-dag` |
-| gedefense | `WAF-SSTI-01` | `hardred-waf` | attack | `T1190` | YES | YES | 3/3 | 250.0 | — | `http=403; l7.block, L7, xdr-dag` |
-| gedefense | `WAF-XXE-01` | `hardred-waf` | attack | `T1190` | YES | YES | 3/3 | 250.0 | — | `http=403; l7.block, L7, xdr-dag` |
-| gedefense | `WAF-SSRF-01` | `hardred-waf` | attack | `T1552.005` | YES | YES | 3/3 | 250.0 | — | `http=403; l7.block, L7, xdr-dag` |
-| gedefense | `WAF-SCAN-01` | `hardred-waf` | attack | `T1595.002` | YES | YES | 3/3 | 250.0 | — | `http=403; l7.block, L7, xdr-dag` |
-| gedefense | `WAF-FAILOPEN-01` | `hardred-waf` | attack | `T1190` | YES | YES | 3/3 | 250.0 | — | `http=403; l7.block, L7, xdr-dag` |
-| gedefense | `NET-BRUTE-HTTP-01` | `hardred-netids` | attack | `T1110.001` | YES | YES | 3/3 | 250.0 | — | `blocked_or_dropped=20/25; xdr.kinetic_block, kinetic.block_applied, kinetic_strike, kineti` |
-| gedefense | `NET-BRUTE-SSH-01` | `hardred-netids` | attack | `T1110.001` | YES | YES | 3/3 | 1182.8 | — | `ssh_spray={'probe': 'ssh-spray', 'addr': '192.168.56.50:22', 'attempts': 18, 'auth_failed'` |
-| gedefense | `NET-VELOCITY-01` | `hardred-netids` | attack | `T1499.002` | YES | YES | 3/3 | 13.9 | — | `blocked_or_dropped=196/240; xdr.egress_blocked, xdr.egress_blocked, xdr.kinetic_block, kin` |
-| gedefense | `NET-PORTSCAN-01` | `hardred-netids` | attack | `T1046` | YES | YES | 1/3 | 1109.5 | — | `post_scan_banned=True, open_blocked=True; kinetic.block_applied, kinetic_strike, kinetic.b` |
+| gedefense | `EP-FALCO-01` | `hardred-endpoint` | attack | `T1003.008` | YES | NO | 1/3 | 473.5 | — | `rc=0, out={}; xdr.credential_read_blocked` |
+| gedefense | `EP-FALCO-02` | `hardred-endpoint` | attack | `T1036` | YES | NO | 1/3 | 506.7 | — | `rc=0, out={}; xdr.symlink_over_sensitive` |
+| gedefense | `EP-FALCO-03` | `hardred-endpoint` | attack | `T1055.008` | YES | NO | 1/3 | 1203.3 | — | `rc=0, out={}; xdr.ptrace_attempt` |
+| gedefense | `EP-ART-T1087` | `hardred-endpoint` | attack | `T1087.001` | YES | NO | 3/3 | 514.1 | — | `rc=0, out={}; xdr.alert, xdr.alert, xdr.alert, xdr-dag, xdr-dag` |
+| gedefense | `EP-ART-T1059` | `hardred-endpoint` | attack | `T1059.004` | YES | NO | 3/3 | 521.5 | — | `rc=0, out={}; xdr.contain, xdr-dag` |
+| gedefense | `EP-ART-T1053` | `hardred-endpoint` | attack | `T1053.003` | YES | NO | 3/3 | 740.9 | — | `rc=0, out={}; xdr.contain, xdr.contain, xdr.alert, xdr.alert, xdr.alert` |
+| gedefense | `EP-ART-T1548` | `hardred-endpoint` | attack | `T1548.001` | YES | NO | 3/3 | 454.5 | — | `rc=0, out={}; xdr.alert, xdr.alert, xdr-dag, xdr-dag` |
+| gedefense | `WAF-SQLI-01` | `hardred-waf` | attack | `T1190` | YES | YES | 3/3 | 17.1 | — | `http=403; l7.block, L7, xdr-dag` |
+| gedefense | `WAF-SQLI-02` | `hardred-waf` | attack | `T1190` | YES | YES | 3/3 | 17.7 | — | `http=403; l7.block, L7, xdr-dag` |
+| gedefense | `WAF-SQLI-03` | `hardred-waf` | attack | `T1190` | YES | YES | 3/3 | 17.8 | — | `http=403; l7.block, L7, xdr-dag` |
+| gedefense | `WAF-XSS-01` | `hardred-waf` | attack | `T1059.007` | YES | YES | 3/3 | 24.4 | — | `http=403; l7.block, L7, xdr-dag` |
+| gedefense | `WAF-XSS-02` | `hardred-waf` | attack | `T1059.007` | YES | YES | 3/3 | 29.9 | — | `http=403; l7.block, L7, xdr-dag` |
+| gedefense | `WAF-LFI-01` | `hardred-waf` | attack | `T1083` | YES | YES | 3/3 | 10.9 | — | `http=403; l7.block, L7, xdr-dag` |
+| gedefense | `WAF-LFI-02` | `hardred-waf` | attack | `T1083` | YES | YES | 3/3 | 23.4 | — | `http=403; l7.block, L7, xdr-dag` |
+| gedefense | `WAF-RCE-01` | `hardred-waf` | attack | `T1059.004` | YES | YES | 3/3 | 11.6 | — | `http=403; l7.block, L7, xdr-dag` |
+| gedefense | `WAF-RCE-02` | `hardred-waf` | attack | `T1505.003` | YES | YES | 3/3 | 17.7 | — | `http=403; l7.block, L7, xdr-dag` |
+| gedefense | `WAF-SSTI-01` | `hardred-waf` | attack | `T1190` | YES | YES | 3/3 | 10.1 | — | `http=403; l7.block, L7, xdr-dag` |
+| gedefense | `WAF-XXE-01` | `hardred-waf` | attack | `T1190` | YES | YES | 3/3 | 15.1 | — | `http=403; l7.block, L7, xdr-dag` |
+| gedefense | `WAF-SSRF-01` | `hardred-waf` | attack | `T1552.005` | YES | YES | 3/3 | 22.6 | — | `http=403; l7.block, L7, xdr-dag` |
+| gedefense | `WAF-SCAN-01` | `hardred-waf` | attack | `T1595.002` | YES | YES | 3/3 | 21.0 | — | `http=403; l7.block, L7, xdr-dag` |
+| gedefense | `WAF-FAILOPEN-01` | `hardred-waf` | attack | `T1190` | YES | YES | 3/3 | 119.8 | — | `http=403; l7.block, L7, xdr-dag` |
+| gedefense | `NET-BRUTE-HTTP-01` | `hardred-netids` | attack | `T1110.001` | YES | YES | 3/3 | 56.1 | — | `blocked_or_dropped=20/25; xdr.kinetic_block, kinetic.block_applied, kinetic_strike, kineti` |
+| gedefense | `NET-BRUTE-SSH-01` | `hardred-netids` | attack | `T1110.001` | YES | YES | 3/3 | 78.4 | — | `ssh_spray={'probe': 'ssh-spray', 'addr': '192.168.56.50:22', 'attempts': 18, 'auth_failed'` |
+| gedefense | `NET-VELOCITY-01` | `hardred-netids` | attack | `T1499.002` | YES | YES | 3/3 | 48.5 | — | `blocked_or_dropped=186/240; kinetic.block_applied, kinetic_strike, kinetic.block_applied, ` |
+| gedefense | `NET-PORTSCAN-01` | `hardred-netids` | attack | `T1046` | YES | YES | 1/3 | 31.9 | — | `post_scan_banned=True, open_blocked=True; xdr.egress_blocked, xdr.egress_blocked, kinetic.` |
 | oss-safeline | `WAF-BENIGN-01` | `hardred-waf` | benign | `NONE` | NO | NO | 0/3 | — | — | `http=200; none` |
 | oss-safeline | `WAF-BENIGN-02` | `hardred-waf` | benign | `NONE` | NO | NO | 0/3 | — | — | `http=200; none` |
 | oss-safeline | `WAF-BENIGN-03` | `hardred-waf` | benign | `NONE` | NO | NO | 0/3 | — | — | `http=200; none` |

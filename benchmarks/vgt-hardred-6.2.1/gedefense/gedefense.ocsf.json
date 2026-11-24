@@ -6,7 +6,7 @@
     "category_name": "Findings",
     "activity_id": 1,
     "severity_id": 4,
-    "time": "2026-11-22T19:32:14.501902+00:00",
+    "time": "2026-11-24T00:21:58.978401+00:00",
     "metadata": {
       "version": "1.9.0",
       "product": {
@@ -40,7 +40,7 @@
     "unmapped": {
       "polarity": "attack",
       "context_maturity": 1,
-      "ttfa_ms": 252.37,
+      "ttfa_ms": 860.63,
       "pre_kill_damage": null,
       "pre_kill_total": null
     }
@@ -52,7 +52,7 @@
     "category_name": "Findings",
     "activity_id": 1,
     "severity_id": 4,
-    "time": "2026-11-22T19:32:19.635775+00:00",
+    "time": "2026-11-24T00:22:05.986647+00:00",
     "metadata": {
       "version": "1.9.0",
       "product": {
@@ -86,7 +86,7 @@
     "unmapped": {
       "polarity": "attack",
       "context_maturity": 3,
-      "ttfa_ms": 250.0,
+      "ttfa_ms": 61.96,
       "pre_kill_damage": null,
       "pre_kill_total": null
     }
@@ -98,7 +98,7 @@
     "category_name": "Findings",
     "activity_id": 1,
     "severity_id": 3,
-    "time": "2026-11-22T19:32:25.012999+00:00",
+    "time": "2026-11-24T00:22:10.294417+00:00",
     "metadata": {
       "version": "1.9.0",
       "product": {
@@ -109,7 +109,7 @@
     "finding_info": {
       "uid": "gedefense:MAL-NESTED-ARCHIVE-01",
       "title": "8-layer nested ZIP wrapper + clamav-testfiles archive inspection",
-      "desc": "nested=WROTE 808; malware.execution_blocked",
+      "desc": "nested=WROTE 810; malware.execution_blocked",
       "types": [
         "hardred-malware",
         "Nested Archive & ClamAV Corpus Inspection"
@@ -132,7 +132,7 @@
     "unmapped": {
       "polarity": "attack",
       "context_maturity": 1,
-      "ttfa_ms": 250.0,
+      "ttfa_ms": 728.87,
       "pre_kill_damage": null,
       "pre_kill_total": null
     }
@@ -144,7 +144,7 @@
     "category_name": "Findings",
     "activity_id": 1,
     "severity_id": 5,
-    "time": "2026-11-22T19:32:41.792515+00:00",
+    "time": "2026-11-24T00:22:30.292912+00:00",
     "metadata": {
       "version": "1.9.0",
       "product": {
@@ -190,7 +190,7 @@
     "category_name": "Findings",
     "activity_id": 1,
     "severity_id": 4,
-    "time": "2026-11-22T19:32:47.318838+00:00",
+    "time": "2026-11-24T00:22:35.411415+00:00",
     "metadata": {
       "version": "1.9.0",
       "product": {
@@ -236,7 +236,7 @@
     "category_name": "Findings",
     "activity_id": 1,
     "severity_id": 5,
-    "time": "2026-11-22T19:32:52.819293+00:00",
+    "time": "2026-11-24T00:22:41.041431+00:00",
     "metadata": {
       "version": "1.9.0",
       "product": {
@@ -247,7 +247,7 @@
     "finding_info": {
       "uid": "gedefense:EP-TMP-ELF-01",
       "title": "Unverified ELF binary copied to /tmp and executed (TITAN-Exec gate)",
-      "desc": "rc=0, out={\"probe\": \"tmp-exec\", \"target\": \"/tmp/hardred-sandbox/tmpexec/untrusted_exec_test\", \"ok\": false, \"errno\": \"EPERM\", \"exit_code\": -1, \"error\":; TITAN.EXEC_DENIED, WORKER_GUARD",
+      "desc": "rc=0, out={\"probe\": \"tmp-exec\", \"target\": \"/tmp/hardred-sandbox/tmpexec/untrusted_exec_test\", \"ok\": false, \"errno\": \"EPERM\", \"exit_code\": -1, \"error\":; none",
       "types": [
         "hardred-endpoint",
         "Untrusted Binary Execution (/tmp)"
@@ -269,8 +269,8 @@
     "status_id": 1,
     "unmapped": {
       "polarity": "attack",
-      "context_maturity": 3,
-      "ttfa_ms": 250.0,
+      "context_maturity": 1,
+      "ttfa_ms": 2255.25,
       "pre_kill_damage": null,
       "pre_kill_total": null
     }
@@ -282,7 +282,7 @@
     "category_name": "Findings",
     "activity_id": 1,
     "severity_id": 4,
-    "time": "2026-11-22T19:32:58.496434+00:00",
+    "time": "2026-11-24T00:22:48.184481+00:00",
     "metadata": {
       "version": "1.9.0",
       "product": {
@@ -316,7 +316,7 @@
     "unmapped": {
       "polarity": "attack",
       "context_maturity": 1,
-      "ttfa_ms": 250.0,
+      "ttfa_ms": 432.6,
       "pre_kill_damage": null,
       "pre_kill_total": null
     }
@@ -328,7 +328,7 @@
     "category_name": "Findings",
     "activity_id": 1,
     "severity_id": 5,
-    "time": "2026-11-22T19:33:03.983324+00:00",
+    "time": "2026-11-24T00:22:52.190033+00:00",
     "metadata": {
       "version": "1.9.0",
       "product": {
@@ -362,7 +362,7 @@
     "unmapped": {
       "polarity": "attack",
       "context_maturity": 1,
-      "ttfa_ms": 250.0,
+      "ttfa_ms": 427.06,
       "pre_kill_damage": 7,
       "pre_kill_total": 120
     }
@@ -374,7 +374,7 @@
     "category_name": "Findings",
     "activity_id": 1,
     "severity_id": 5,
-    "time": "2026-11-22T19:33:09.350567+00:00",
+    "time": "2026-11-24T00:22:59.977125+00:00",
     "metadata": {
       "version": "1.9.0",
       "product": {
@@ -408,7 +408,7 @@
     "unmapped": {
       "polarity": "attack",
       "context_maturity": 1,
-      "ttfa_ms": 250.0,
+      "ttfa_ms": 1639.97,
       "pre_kill_damage": 50,
       "pre_kill_total": 600
     }
@@ -420,7 +420,7 @@
     "category_name": "Findings",
     "activity_id": 1,
     "severity_id": 4,
-    "time": "2026-11-22T19:33:14.999141+00:00",
+    "time": "2026-11-24T00:23:06.884993+00:00",
     "metadata": {
       "version": "1.9.0",
       "product": {
@@ -454,7 +454,7 @@
     "unmapped": {
       "polarity": "attack",
       "context_maturity": 1,
-      "ttfa_ms": 250.0,
+      "ttfa_ms": 532.09,
       "pre_kill_damage": 7,
       "pre_kill_total": 60
     }
@@ -466,7 +466,7 @@
     "category_name": "Findings",
     "activity_id": 1,
     "severity_id": 4,
-    "time": "2026-11-22T19:33:20.451572+00:00",
+    "time": "2026-11-24T00:23:11.255384+00:00",
     "metadata": {
       "version": "1.9.0",
       "product": {
@@ -512,7 +512,7 @@
     "category_name": "Findings",
     "activity_id": 1,
     "severity_id": 4,
-    "time": "2026-11-22T19:33:27.289990+00:00",
+    "time": "2026-11-24T00:23:17.843615+00:00",
     "metadata": {
       "version": "1.9.0",
       "product": {
@@ -546,7 +546,7 @@
     "unmapped": {
       "polarity": "attack",
       "context_maturity": 1,
-      "ttfa_ms": 250.0,
+      "ttfa_ms": 473.47,
       "pre_kill_damage": null,
       "pre_kill_total": null
     }
@@ -558,7 +558,7 @@
     "category_name": "Findings",
     "activity_id": 1,
     "severity_id": 4,
-    "time": "2026-11-22T19:33:33.781675+00:00",
+    "time": "2026-11-24T00:23:21.110433+00:00",
     "metadata": {
       "version": "1.9.0",
       "product": {
@@ -592,7 +592,7 @@
     "unmapped": {
       "polarity": "attack",
       "context_maturity": 1,
-      "ttfa_ms": 250.0,
+      "ttfa_ms": 506.66,
       "pre_kill_damage": null,
       "pre_kill_total": null
     }
@@ -604,7 +604,7 @@
     "category_name": "Findings",
     "activity_id": 1,
     "severity_id": 4,
-    "time": "2026-11-22T19:33:37.002463+00:00",
+    "time": "2026-11-24T00:23:25.513773+00:00",
     "metadata": {
       "version": "1.9.0",
       "product": {
@@ -638,7 +638,7 @@
     "unmapped": {
       "polarity": "attack",
       "context_maturity": 1,
-      "ttfa_ms": 250.0,
+      "ttfa_ms": 1203.31,
       "pre_kill_damage": null,
       "pre_kill_total": null
     }
@@ -650,7 +650,7 @@
     "category_name": "Findings",
     "activity_id": 1,
     "severity_id": 3,
-    "time": "2026-11-22T19:33:42.691097+00:00",
+    "time": "2026-11-24T00:23:30.935445+00:00",
     "metadata": {
       "version": "1.9.0",
       "product": {
@@ -661,7 +661,7 @@
     "finding_info": {
       "uid": "gedefense:EP-ART-T1087",
       "title": "Local Account Enumeration (/etc/passwd, id, lastlog) [yaml=True]",
-      "desc": "rc=0, out={}; xdr.alert, xdr.alert, xdr-dag, xdr-dag",
+      "desc": "rc=0, out={}; xdr.alert, xdr.alert, xdr.alert, xdr-dag, xdr-dag",
       "types": [
         "hardred-endpoint",
         "Atomic Red Team Linux TTP"
@@ -684,7 +684,7 @@
     "unmapped": {
       "polarity": "attack",
       "context_maturity": 3,
-      "ttfa_ms": 250.0,
+      "ttfa_ms": 514.12,
       "pre_kill_damage": null,
       "pre_kill_total": null
     }
@@ -696,7 +696,53 @@
     "category_name": "Findings",
     "activity_id": 1,
     "severity_id": 3,
-    "time": "2026-11-22T19:33:53.558713+00:00",
+    "time": "2026-11-24T00:23:36.935934+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "GeDefense Linux 6.2.1 (EDR/Hardened Max)",
+        "uid": "gedefense"
+      }
+    },
+    "finding_info": {
+      "uid": "gedefense:EP-ART-T1059",
+      "title": "Base64 Obfuscated Shell Execution [yaml=True]",
+      "desc": "rc=0, out={}; xdr.contain, xdr-dag",
+      "types": [
+        "hardred-endpoint",
+        "Atomic Red Team Linux TTP"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1059.004",
+            "name": "Atomic Red Team Linux TTP"
+          },
+          "tactic": {
+            "name": "Execution"
+          }
+        }
+      ]
+    },
+    "action_id": 1,
+    "action": "Allowed",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 3,
+      "ttfa_ms": 521.49,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 3,
+    "time": "2026-11-24T00:23:41.922261+00:00",
     "metadata": {
       "version": "1.9.0",
       "product": {
@@ -730,7 +776,7 @@
     "unmapped": {
       "polarity": "attack",
       "context_maturity": 3,
-      "ttfa_ms": 250.0,
+      "ttfa_ms": 740.87,
       "pre_kill_damage": null,
       "pre_kill_total": null
     }
@@ -742,7 +788,7 @@
     "category_name": "Findings",
     "activity_id": 1,
     "severity_id": 3,
-    "time": "2026-11-22T19:34:00.158722+00:00",
+    "time": "2026-11-24T00:23:47.605505+00:00",
     "metadata": {
       "version": "1.9.0",
       "product": {
@@ -776,7 +822,7 @@
     "unmapped": {
       "polarity": "attack",
       "context_maturity": 3,
-      "ttfa_ms": 250.0,
+      "ttfa_ms": 454.54,
       "pre_kill_damage": null,
       "pre_kill_total": null
     }
@@ -788,7 +834,7 @@
     "category_name": "Findings",
     "activity_id": 1,
     "severity_id": 4,
-    "time": "2026-11-22T19:35:47.054370+00:00",
+    "time": "2026-11-24T00:26:11.338339+00:00",
     "metadata": {
       "version": "1.9.0",
       "product": {
@@ -822,7 +868,7 @@
     "unmapped": {
       "polarity": "attack",
       "context_maturity": 3,
-      "ttfa_ms": 250.0,
+      "ttfa_ms": 17.11,
       "pre_kill_damage": null,
       "pre_kill_total": null
     }
@@ -834,7 +880,7 @@
     "category_name": "Findings",
     "activity_id": 1,
     "severity_id": 4,
-    "time": "2026-11-22T19:35:48.329248+00:00",
+    "time": "2026-11-24T00:26:12.866615+00:00",
     "metadata": {
       "version": "1.9.0",
       "product": {
@@ -868,7 +914,7 @@
     "unmapped": {
       "polarity": "attack",
       "context_maturity": 3,
-      "ttfa_ms": 250.0,
+      "ttfa_ms": 17.73,
       "pre_kill_damage": null,
       "pre_kill_total": null
     }
@@ -880,7 +926,7 @@
     "category_name": "Findings",
     "activity_id": 1,
     "severity_id": 4,
-    "time": "2026-11-22T19:35:50.870459+00:00",
+    "time": "2026-11-24T00:26:15.210898+00:00",
     "metadata": {
       "version": "1.9.0",
       "product": {
@@ -914,7 +960,7 @@
     "unmapped": {
       "polarity": "attack",
       "context_maturity": 3,
-      "ttfa_ms": 250.0,
+      "ttfa_ms": 17.76,
       "pre_kill_damage": null,
       "pre_kill_total": null
     }
@@ -926,7 +972,7 @@
     "category_name": "Findings",
     "activity_id": 1,
     "severity_id": 4,
-    "time": "2026-11-22T19:35:56.408009+00:00",
+    "time": "2026-11-24T00:26:20.906779+00:00",
     "metadata": {
       "version": "1.9.0",
       "product": {
@@ -960,7 +1006,7 @@
     "unmapped": {
       "polarity": "attack",
       "context_maturity": 3,
-      "ttfa_ms": 250.0,
+      "ttfa_ms": 24.35,
       "pre_kill_damage": null,
       "pre_kill_total": null
     }
@@ -972,7 +1018,7 @@
     "category_name": "Findings",
     "activity_id": 1,
     "severity_id": 4,
-    "time": "2026-11-22T19:36:02.005159+00:00",
+    "time": "2026-11-24T00:26:26.182188+00:00",
     "metadata": {
       "version": "1.9.0",
       "product": {
@@ -1006,7 +1052,7 @@
     "unmapped": {
       "polarity": "attack",
       "context_maturity": 3,
-      "ttfa_ms": 250.0,
+      "ttfa_ms": 29.94,
       "pre_kill_damage": null,
       "pre_kill_total": null
     }
@@ -1018,7 +1064,7 @@
     "category_name": "Findings",
     "activity_id": 1,
     "severity_id": 4,
-    "time": "2026-11-22T19:36:07.539385+00:00",
+    "time": "2026-11-24T00:26:31.646384+00:00",
     "metadata": {
       "version": "1.9.0",
       "product": {
@@ -1052,7 +1098,7 @@
     "unmapped": {
       "polarity": "attack",
       "context_maturity": 3,
-      "ttfa_ms": 250.0,
+      "ttfa_ms": 10.93,
       "pre_kill_damage": null,
       "pre_kill_total": null
     }
@@ -1064,7 +1110,7 @@
     "category_name": "Findings",
     "activity_id": 1,
     "severity_id": 4,
-    "time": "2026-11-22T19:36:13.090119+00:00",
+    "time": "2026-11-24T00:26:37.434763+00:00",
     "metadata": {
       "version": "1.9.0",
       "product": {
@@ -1098,7 +1144,7 @@
     "unmapped": {
       "polarity": "attack",
       "context_maturity": 3,
-      "ttfa_ms": 250.0,
+      "ttfa_ms": 23.35,
       "pre_kill_damage": null,
       "pre_kill_total": null
     }
@@ -1110,7 +1156,7 @@
     "category_name": "Findings",
     "activity_id": 1,
     "severity_id": 4,
-    "time": "2026-11-22T19:36:18.725824+00:00",
+    "time": "2026-11-24T00:26:43.015325+00:00",
     "metadata": {
       "version": "1.9.0",
       "product": {
@@ -1144,7 +1190,7 @@
     "unmapped": {
       "polarity": "attack",
       "context_maturity": 3,
-      "ttfa_ms": 250.0,
+      "ttfa_ms": 11.62,
       "pre_kill_damage": null,
       "pre_kill_total": null
     }
@@ -1156,7 +1202,7 @@
     "category_name": "Findings",
     "activity_id": 1,
     "severity_id": 4,
-    "time": "2026-11-22T19:36:24.278243+00:00",
+    "time": "2026-11-24T00:26:48.412644+00:00",
     "metadata": {
       "version": "1.9.0",
       "product": {
@@ -1190,7 +1236,7 @@
     "unmapped": {
       "polarity": "attack",
       "context_maturity": 3,
-      "ttfa_ms": 250.0,
+      "ttfa_ms": 17.67,
       "pre_kill_damage": null,
       "pre_kill_total": null
     }
@@ -1202,7 +1248,7 @@
     "category_name": "Findings",
     "activity_id": 1,
     "severity_id": 4,
-    "time": "2026-11-22T19:36:29.754984+00:00",
+    "time": "2026-11-24T00:26:54.355509+00:00",
     "metadata": {
       "version": "1.9.0",
       "product": {
@@ -1236,7 +1282,7 @@
     "unmapped": {
       "polarity": "attack",
       "context_maturity": 3,
-      "ttfa_ms": 250.0,
+      "ttfa_ms": 10.08,
       "pre_kill_damage": null,
       "pre_kill_total": null
     }
@@ -1248,7 +1294,7 @@
     "category_name": "Findings",
     "activity_id": 1,
     "severity_id": 4,
-    "time": "2026-11-22T19:36:35.364338+00:00",
+    "time": "2026-11-24T00:26:59.839829+00:00",
     "metadata": {
       "version": "1.9.0",
       "product": {
@@ -1282,7 +1328,7 @@
     "unmapped": {
       "polarity": "attack",
       "context_maturity": 3,
-      "ttfa_ms": 250.0,
+      "ttfa_ms": 15.14,
       "pre_kill_damage": null,
       "pre_kill_total": null
     }
@@ -1294,7 +1340,7 @@
     "category_name": "Findings",
     "activity_id": 1,
     "severity_id": 4,
-    "time": "2026-11-22T19:36:40.860902+00:00",
+    "time": "2026-11-24T00:27:05.362640+00:00",
     "metadata": {
       "version": "1.9.0",
       "product": {
@@ -1328,7 +1374,7 @@
     "unmapped": {
       "polarity": "attack",
       "context_maturity": 3,
-      "ttfa_ms": 250.0,
+      "ttfa_ms": 22.59,
       "pre_kill_damage": null,
       "pre_kill_total": null
     }
@@ -1340,7 +1386,7 @@
     "category_name": "Findings",
     "activity_id": 1,
     "severity_id": 4,
-    "time": "2026-11-22T19:36:46.858637+00:00",
+    "time": "2026-11-24T00:27:11.080499+00:00",
     "metadata": {
       "version": "1.9.0",
       "product": {
@@ -1374,7 +1420,7 @@
     "unmapped": {
       "polarity": "attack",
       "context_maturity": 3,
-      "ttfa_ms": 250.0,
+      "ttfa_ms": 20.98,
       "pre_kill_damage": null,
       "pre_kill_total": null
     }
@@ -1386,7 +1432,7 @@
     "category_name": "Findings",
     "activity_id": 1,
     "severity_id": 4,
-    "time": "2026-11-22T19:36:52.204039+00:00",
+    "time": "2026-11-24T00:27:16.349272+00:00",
     "metadata": {
       "version": "1.9.0",
       "product": {
@@ -1420,7 +1466,7 @@
     "unmapped": {
       "polarity": "attack",
       "context_maturity": 3,
-      "ttfa_ms": 250.0,
+      "ttfa_ms": 119.77,
       "pre_kill_damage": null,
       "pre_kill_total": null
     }
@@ -1432,7 +1478,7 @@
     "category_name": "Findings",
     "activity_id": 1,
     "severity_id": 4,
-    "time": "2026-11-22T19:36:59.561853+00:00",
+    "time": "2026-11-24T00:27:25.138349+00:00",
     "metadata": {
       "version": "1.9.0",
       "product": {
@@ -1466,7 +1512,7 @@
     "unmapped": {
       "polarity": "attack",
       "context_maturity": 3,
-      "ttfa_ms": 250.0,
+      "ttfa_ms": 56.13,
       "pre_kill_damage": null,
       "pre_kill_total": null
     }
@@ -1478,7 +1524,7 @@
     "category_name": "Findings",
     "activity_id": 1,
     "severity_id": 4,
-    "time": "2026-11-22T19:37:04.614728+00:00",
+    "time": "2026-11-24T00:27:29.556472+00:00",
     "metadata": {
       "version": "1.9.0",
       "product": {
@@ -1489,7 +1535,7 @@
     "finding_info": {
       "uid": "gedefense:NET-BRUTE-SSH-01",
       "title": "SSH failed login burst (18 attempts -> IP ban test)",
-      "desc": "ssh_spray={'probe': 'ssh-spray', 'addr': '192.168.56.50:22', 'attempts': 18, 'auth_failed': 0, 'timeouts': 4, 'tcp_refused': 0, 'other_errors': 0, 'first_drop_idx': 0, 'results': [{'idx': 0, 'username': 'hardred_invalid_00', 'outcome': 'timeout', 'error': 'ssh: handshake failed: read tcp 192.168.56.1:56992->192.168.56.50:22: i/o timeout', 'elapsed_ms': 1205.206}, {'idx': 1, 'username': 'hardred_invalid_01', 'outcome': 'timeout', 'error': 'dial tcp 192.168.56.50:22: i/o timeout', 'elapsed_ms': 1200.221}, {'idx': 2, 'username': 'hardred_invalid_02', 'outcome': 'timeout', 'error': 'dial tcp 192.168.56.50:22: i/o timeout', 'elapsed_ms': 1200.444}, {'idx': 3, 'username': 'hardred_invalid_03', 'outcome': 'timeout', 'error': 'dial tcp 192.168.56.50:22: i/o timeout', 'elapsed_ms': 1200.504}], 'total_elapsed_ms': 5048.999}; xdr.egress_blocked, xdr.kinetic_block, kinetic.block_applied, kinetic_strike, xdr.egress_blocked",
+      "desc": "ssh_spray={'probe': 'ssh-spray', 'addr': '192.168.56.50:22', 'attempts': 18, 'auth_failed': 1, 'timeouts': 4, 'tcp_refused': 0, 'other_errors': 0, 'first_drop_idx': 1, 'results': [{'idx': 0, 'username': 'hardred_invalid_00', 'outcome': 'auth_failed', 'error': 'ssh: handshake failed: ssh: unable to authenticate, attempted methods [none publickey], no supported methods remain', 'elapsed_ms': 48.696}, {'idx': 1, 'username': 'hardred_invalid_01', 'outcome': 'timeout', 'error': 'dial tcp 192.168.56.50:22: i/o timeout', 'elapsed_ms': 1200.412}, {'idx': 2, 'username': 'hardred_invalid_02', 'outcome': 'timeout', 'error': 'dial tcp 192.168.56.50:22: i/o timeout', 'elapsed_ms': 1200.478}, {'idx': 3, 'username': 'hardred_invalid_03', 'outcome': 'timeout', 'error': 'dial tcp 192.168.56.50:22: i/o timeout', 'elapsed_ms': 1200.388}, {'idx': 4, 'username': 'hardred_invalid_04', 'outcome': 'timeout', 'error': 'dial tcp 192.168.56.50:22: i/o timeout', 'elapsed_ms': 1200.283}], 'total_elapsed_ms': 5173.056}; xdr.kinetic_block, kinetic.block_applied, kinetic_strike, xdr.kinetic_block, kinetic.block_applied",
       "types": [
         "hardred-netids",
         "SSH Credential Brute-Force"
@@ -1512,7 +1558,7 @@
     "unmapped": {
       "polarity": "attack",
       "context_maturity": 3,
-      "ttfa_ms": 1182.75,
+      "ttfa_ms": 78.36,
       "pre_kill_damage": null,
       "pre_kill_total": null
     }
@@ -1524,7 +1570,7 @@
     "category_name": "Findings",
     "activity_id": 1,
     "severity_id": 4,
-    "time": "2026-11-22T19:37:13.708678+00:00",
+    "time": "2026-11-24T00:27:38.229015+00:00",
     "metadata": {
       "version": "1.9.0",
       "product": {
@@ -1535,7 +1581,7 @@
     "finding_info": {
       "uid": "gedefense:NET-VELOCITY-01",
       "title": "High-concurrency connection & request flood (240 req @ 28 threads)",
-      "desc": "blocked_or_dropped=196/240; xdr.egress_blocked, xdr.egress_blocked, xdr.kinetic_block, kinetic.block_applied, kinetic_strike",
+      "desc": "blocked_or_dropped=186/240; kinetic.block_applied, kinetic_strike, kinetic.block_applied, kinetic_strike, xdr.egress_blocked",
       "types": [
         "hardred-netids",
         "HTTP/L4 Velocity Burst"
@@ -1558,7 +1604,7 @@
     "unmapped": {
       "polarity": "attack",
       "context_maturity": 3,
-      "ttfa_ms": 13.87,
+      "ttfa_ms": 48.55,
       "pre_kill_damage": null,
       "pre_kill_total": null
     }
@@ -1570,7 +1616,7 @@
     "category_name": "Findings",
     "activity_id": 1,
     "severity_id": 4,
-    "time": "2026-11-22T19:37:33.055254+00:00",
+    "time": "2026-11-24T00:28:01.002949+00:00",
     "metadata": {
       "version": "1.9.0",
       "product": {
@@ -1581,7 +1627,7 @@
     "finding_info": {
       "uid": "gedefense:NET-PORTSCAN-01",
       "title": "16-port TCP connect scan -> Kinetic XDP / Firewall Ban verification",
-      "desc": "post_scan_banned=True, open_blocked=True; kinetic.block_applied, kinetic_strike, kinetic.block_applied, kinetic_strike, KINETIC.bans_enforced_total",
+      "desc": "post_scan_banned=True, open_blocked=True; xdr.egress_blocked, xdr.egress_blocked, kinetic.block_applied, kinetic_strike, kinetic.block_applied",
       "types": [
         "hardred-netids",
         "Multi-Port Reconnaissance"
@@ -1604,7 +1650,7 @@
     "unmapped": {
       "polarity": "attack",
       "context_maturity": 1,
-      "ttfa_ms": 1109.48,
+      "ttfa_ms": 31.89,
       "pre_kill_damage": null,
       "pre_kill_total": null
     }

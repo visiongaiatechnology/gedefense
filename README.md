@@ -35,7 +35,7 @@
 <br />
 
 ⬇️ **Direct Installers (v6.2.1 / V6):**
-[**OneClick Installer (`.run`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.2.1/VGT_GeDefense_V6_6.2.1_OneClick.run) · [`.sha256`](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.2.1/VGT_GeDefense_V6_6.2.1_OneClick.run.sha256) · [**Desktop Tray (`.run`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.2.1/GeDefense-6.2.1-Desktop-OneClick.run) · [`.sha256`](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.2.1/GeDefense-6.2.1-Desktop-OneClick.run.sha256) · [**Source (`.zip`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.2.1/VGT_GeDefense_V6_6.2.1_Source.zip) · [**v6.2.1 Release**](https://github.com/visiongaiatechnology/gedefense/releases/tag/v6.2.1) · [**Benchmark Results (`93.31 / PASS`)**](benchmarks/vgt-hardred-6.2.1/) · [Quick Start](#-quick-start)
+[**OneClick Installer (`.run`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.2.1/VGT_GeDefense_V6_6.2.1_OneClick.run) · [`.sha256`](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.2.1/VGT_GeDefense_V6_6.2.1_OneClick.run.sha256) · [**Desktop Tray (`.run`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.2.1/GeDefense-6.2.1-Desktop-OneClick.run) · [`.sha256`](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.2.1/GeDefense-6.2.1-Desktop-OneClick.run.sha256) · [**Source (`.zip`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.2.1/VGT_GeDefense_V6_6.2.1_Source.zip) · [**v6.2.1 Release**](https://github.com/visiongaiatechnology/gedefense/releases/tag/v6.2.1) · [**Benchmark Results (`94.73 / PASS`)**](benchmarks/vgt-hardred-6.2.1/) · [Quick Start](#-quick-start)
 
 </div>
 
@@ -45,7 +45,7 @@
 
 | Section | Focus | Jump |
 |---|---|---|
-| 📊 **VGT HardRed Benchmark** | `93.31 / 100 · PASS` vs. OSS+SafeLine (`59.28 / PASS`), OSS+ModSec (`55.40 / FAIL`), SafeLine (`52.92`), Wazuh & CrowdSec | [Results](#-vgt-hardred-benchmark--v621-vs-oss-stack-evaluation) |
+| 📊 **VGT HardRed Benchmark** | `94.73 / 100 · PASS` vs. OSS+SafeLine (`59.28 / PASS`), OSS+ModSec (`55.40 / FAIL`), SafeLine (`52.92`), Wazuh & CrowdSec | [Results](#-vgt-hardred-benchmark--v621-vs-oss-stack-evaluation) |
 | 📂 **Raw Test Evidence** | Full HardRed & ARES dashboards, SARIF, ATT&CK, OCSF & GoTestWAF reports | [`benchmarks/vgt-hardred-6.2.1/`](benchmarks/vgt-hardred-6.2.1/) |
 | ⚙️ **Reproducing the Result** | Exact `EDR/Hardened Max` settings & `6.2.0 → 6.2.1` delta notes | [Configuration](#-reproducing-the-benchmark-profile-max-hardness) |
 | 🔍 **What is VGT GeDefense?** | V6.2.1 stack, Modules A–E, Titan, Setup Wizard & PC vs. Server | [Overview](#-what-is-vgt-gedefense) |
@@ -59,11 +59,11 @@
 
 ## 📊 VGT HardRed Benchmark — V6.2.1 vs. OSS Stack Evaluation
 
-Evaluated with the open-source **[VGT HardRed (`RedHard`)](https://github.com/visiongaiatechnology/redhard)** multi-domain Linux security benchmark (`2026-11-23T23:42:33Z`) on a clean snapshot-isolated **Ubuntu 24.04 (Linux HWE 7.0, NGINX + PHP 8.3-FPM)** target VM (`eth0` out-of-band control plane, `eth1` unallowlisted host-only attack plane; 4-axis model: Efficacy 45% · FP Resilience 20% · Latency & Containment 20% · Overhead 15%). This expanded run compares **GeDefense Linux 6.2.1** against **OSS Best-of-Breed + SafeLine WAF**, **OSS Best-of-Breed (ModSecurity CRS + Suricata IPS + Tetragon + ClamAV)**, standalone **Chaitin SafeLine WAF CE 9.4.7**, **Wazuh**, **CrowdSec**, and the clean **Baseline**:
+Evaluated with the open-source **[VGT HardRed (`RedHard`)](https://github.com/visiongaiatechnology/redhard)** multi-domain Linux security benchmark (`2026-11-24T00:28:34Z`) on a clean snapshot-isolated **Ubuntu 24.04 (Linux HWE 7.0, NGINX + PHP 8.3-FPM)** target VM (`eth0` out-of-band control plane, `eth1` unallowlisted host-only attack plane; 4-axis model: Efficacy 45% · FP Resilience 20% · Latency & Containment 20% · Overhead 15%). This expanded run compares **GeDefense Linux 6.2.1** against **OSS Best-of-Breed + SafeLine WAF**, **OSS Best-of-Breed (ModSecurity CRS + Suricata IPS + Tetragon + ClamAV)**, standalone **Chaitin SafeLine WAF CE 9.4.7**, **Wazuh**, **CrowdSec**, and the clean **Baseline**:
 
 | Rank | Security Contender | Overall (0–100) | Axis 1: Efficacy | Axis 2: FP Resilience | Axis 3: Latency & Containment | Axis 4: Overhead | Gate |
 |---:|---|---:|---:|---:|---:|---:|---|
-| 1 | **GeDefense Linux 6.2.1 (`EDR/Hardened Max`)** | **93.31** | **95.78** | **100.00** | **86.13** | **86.54** | **`PASS`** |
+| 1 | **GeDefense Linux 6.2.1 (`EDR/Hardened Max`)** | **94.73** | **95.88** | **100.00** | **92.20** | **87.63** | **`PASS`** |
 | 2 | **OSS Best-of-Breed + SafeLine WAF (`SafeLine + Suricata + Tetragon + ClamAV`)** | **59.28** | 69.31 | 100.00 | 38.14 | 3.08 | `PASS` |
 | 3 | **OSS Best-of-Breed (`ModSec CRS + Suricata IPS + Tetragon + ClamAV`)** | **55.40** | 76.27 | 38.46 | 38.91 | 37.35 | `FAIL` |
 | 4 | **Chaitin SafeLine WAF CE 9.4.7 (`Max Strict Semantics + ACL`)** | **52.92** | 41.09 | 100.00 | 28.23 | 58.59 | `PASS` |
@@ -71,7 +71,7 @@ Evaluated with the open-source **[VGT HardRed (`RedHard`)](https://github.com/vi
 | Ref | **Baseline (`Clean Ubuntu HWE 7.0 WebStack`)** | **46.23** | 17.86 | 100.00 | 15.97 | 100.00 | `CONDITIONAL` |
 | 6 | **CrowdSec (`Max Collections + Bouncers + AppSec WAF`)** | **36.58** | 44.56 | 0.00 | 28.38 | 72.37 | `FAIL` |
 
-> **Version progression (`6.2.0 → 6.2.1`):** Overall score rose from **`86.16`** to **`93.31 / 100 (PASS)`** (`+7.15`), driven by Kernel BPF-LSM malware inode locking (`hardred-malware`: `65.6 → 95.6`, prevention TPR `33.3% → 100.0%`) and Kernel Behavioral XDR (`hardred-endpoint`: `59.0 → 94.2`, detection TPR `53.3% → 93.3%`, prevention TPR `53.3% → 100.0%`, damage ratio cut from `18.1%` to **`8.6%`**) at `0.0%` false positives.
+> **Version progression (`6.2.0 → 6.2.1`):** Overall score rose from **`86.16`** to **`94.73 / 100 (PASS)`** (`+8.57`), driven by Kernel BPF-LSM malware inode locking (`hardred-malware`: `65.6 → 95.6`, prevention TPR `33.3% → 100.0%`) and Kernel Behavioral XDR (`hardred-endpoint`: `59.0 → 94.4`, detection TPR `53.3% → 93.3%`, prevention TPR `53.3% → 100.0%`, damage ratio cut from `18.1%` to **`8.6%`**) at `0.0%` false positives.
 
 ### Head-to-Head Domain Breakdown: GeDefense 6.2.1 vs. OSS Best-of-Breed Stack
 
@@ -79,12 +79,12 @@ Evaluated with the open-source **[VGT HardRed (`RedHard`)](https://github.com/vi
 |---|---|---|---|
 | `hardred-waf` | 100.0% / 100.0% / **0.0%** / **100.0** | 100.0% / 92.9% / 12.5% / **92.8** | Zero benign false positives (`FAIL` gate triggered on OSS WAF `12.50%` Prot FPR) |
 | `hardred-netids` | 100.0% / 100.0% / 0.0% / **98.3** | 100.0% / 75.0% / 0.0% / **86.2** | Kinetic XDP blocks velocity floods (`196/240`) & port scans cleanly |
-| `hardred-endpoint` | **93.3%** / **100.0%** / 0.0% / **94.2** | 33.3% / 50.0% / 0.0% / **51.9** | **Damage Ratio `8.6%` vs. OSS `100.0%`** (OSS failed to stop ransomware AES/storm or `memfd`) |
+| `hardred-endpoint` | **93.3%** / **100.0%** / 0.0% / **94.4** | 33.3% / 50.0% / 0.0% / **51.9** | **Damage Ratio `8.6%` vs. OSS `100.0%`** (OSS failed to stop ransomware AES/storm or `memfd`) |
 | `hardred-malware` | 100.0% / 100.0% / 0.0% / **95.6** | 100.0% / 100.0% / 0.0% / **96.7** | BPF-LSM `MALWARE_DENIED_INODES` + AES-256-GCM Vault |
 | `hardred-compliance` | 100.0% / 86.0% / 0.0% / **86.0** | 100.0% / 80.0% / 0.0% / **80.0** | Lynis Hardening Index **`71`** (OSS `65`, Baseline `63`) |
 
 - **Measured System Overhead (`GeDefense 6.2.1` vs. `OSS Best-of-Breed` vs. `Clean Baseline`):**
-  - **GeDefense Linux 6.2.1:** `523.3` HTTP RPS (`12.03 ms` p50 · `29.26 ms` p95) · `90,248.0` Sysbench EPS · `249.9` FIO IOPS · **`88.4 MiB`** Security RSS · **`4.3%`** Security CPU · Lynis `71`.
+  - **GeDefense Linux 6.2.1:** `525.0` HTTP RPS (`14.07 ms` p50 · `23.65 ms` p95) · `86,682.7` Sysbench EPS · `211.8` FIO IOPS · **`88.4 MiB`** Security RSS · **`7.4%`** Security CPU · Lynis `71`.
   - **OSS Best-of-Breed (`ModSec + Suricata + Tetragon + ClamAV`):** `452.4` HTTP RPS (`13.85 ms` p50 · `29.93 ms` p95) · `84,829.5` Sysbench EPS · `237.4` FIO IOPS · **`1,761.0 MiB`** Security RSS (`~20×` higher RAM) · **`57.3%`** Security CPU (`~13×` higher CPU) · Lynis `65`.
   - **Chaitin SafeLine WAF CE 9.4.7 (Standalone `07-safeline-max` & `OSS+SafeLine`):** `0.0%` false positives (`PASS` gate, lifting `OSS+SafeLine` to `59.28`), but `hardred-waf` scored **`79.0`** (`11/14` blocked; missed `WAF-LFI-02` double-encoded traversal, `WAF-XXE-01`, and `WAF-SCAN-01` `sqlmap` + `/.env`), while consuming **`1,040.5 MiB` RSS / `48.1%` CPU** solo (`484.9` RPS) and **`2,614.7 MiB` RSS / `60.6%` CPU / `175.2` RPS (`67.45 ms` p95)** in `OSS+SafeLine`.
 
@@ -92,7 +92,9 @@ Evaluated with the open-source **[VGT HardRed (`RedHard`)](https://github.com/vi
 
 | System | ARES Design Resilience | ARES Runtime Resilience | ARES Adaptive Resilience | Attack Chains Interrupted | Pre-Kill Damage | Multi-Seed Ø (3 Seeds × 3 Rounds) | False Positives |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| **GeDefense Linux** | **68.20** | **96.68** | **93.46** | **36 / 36** | **11.1%** | **93.64** (σ = `0.0918`) | **0** |
+| **GeDefense Linux 6.2.1** | **78.40** | **96.68** | **93.46** | **36 / 36** | **11.1%** | **93.64** (σ = `0.0918`) | **0** |
+| **OSS Best-of-Breed + SafeLine WAF** | 58.20 | 56.25 | 61.33 | 27 / 36 | 100.0% | 61.52 | 0 |
+| **Chaitin SafeLine WAF CE 9.4.7** | 53.60 | 51.67 | 42.69 | 24 / 36 | 100.0% | 42.88 | 0 |
 | **Wazuh HIDS/SIEM** | 65.10 | 15.42 | 27.78 | 3 / 36 | 100.0% | 27.96 | 3 |
 | **CrowdSec IPS/CTI** | 59.80 | 51.67 | 42.25 | 24 / 36 | 100.0% | 42.44 | 0 |
 
@@ -665,7 +667,7 @@ has to pass kernel verifier, XDP attachment, IPC, backend and TLS gates.
 - **Malware inode lock & core path boundary (`FIND-G-001`):** Added BPF-LSM `MALWARE_DENIED_INODES` (`4,096` entries) to enforce `-EACCES` at `file_open` for non-`gedefense-` processes even inside non-root `0755` drop directories without broad DAC override capabilities, alongside `CORE_QUARANTINE_ALLOWED_ROOTS` / `FORBIDDEN_ROOTS` and `capture_open_fd_only()` Vault capture.
 - **Kernel behavioral XDR & multi-CPU tracepoints:** Added `EXEC_ARGV_EVENTS` (`512` B subshell argument capture), `KERNEL_PROBE_EVENTS` (`XDR.PTRACE_ATTEMPT`, `XDR.KERNEL_PROTOCOL_PROBE`, `XDR.CREDENTIAL_PROBE`, `XDR.SYMLINK_OVER_SENSITIVE`), `PENDING_COLD_OPEN` + `getname_flags` `kretprobe`, discovery rules (`KD.LINUX.DISCOVERY.ACCOUNT`, `KD.LINUX.DISCOVERY.SUID`), and multi-CPU perf tracepoint activation in `rust/vendor/aya`.
 - **Service-pool isolation & control-plane hygiene:** Tightened ransomware thresholds (`15 → 6` entropy inodes, `25 → 18` metadata burst) with `RANSOM_TRUST_POOL_METADATA` (`php-fpm`, `lsphp`, `nginx`, `httpd`, `apache2`, `mariadbd`, `postgres`, `redis-server`, etc.) and PPID-only `stop_process_descendants` / `collect_tree` isolation so a worker containment never halts pool masters or siblings; added `isIgnoredNonExternalFlow` (`127.0.0.0/8`, `::1`, link-local, `pid=0`/`swapper/*`) in `StyxBeacon`, async `ChronosScanner` execution, and `1s` healthy `StyxFlowHealth` polling.
-- **Expanded VGT HardRed benchmark (`86.16 → 93.31`):** Published full `93.31 / 100 (PASS)` results head-to-head against OSS Best-of-Breed + SafeLine WAF (`59.28 / PASS`), OSS Best-of-Breed (`55.40 / FAIL`), SafeLine WAF (`52.92 / PASS`), Wazuh (`46.70`), CrowdSec (`36.58`), and ARES hybrid dossiers inside [`benchmarks/vgt-hardred-6.2.1/`](benchmarks/vgt-hardred-6.2.1/) (`docs/V6.2.1-RELEASE.md`).
+- **Expanded VGT HardRed & ARES 1.2 benchmarks (`86.16 → 94.73`):** Published full `94.73 / 100 (PASS)` HardRed and 5-contender ARES 1.2 (`78.40 / 96.68 / 93.46`, `177/177` citations) results head-to-head against OSS Best-of-Breed + SafeLine WAF (`59.28 / PASS` · ARES `58.20 / 56.25 / 61.33`), OSS Best-of-Breed (`55.40 / FAIL`), SafeLine WAF (`52.92 / PASS` · ARES `53.60 / 51.67 / 42.69`), Wazuh (`46.70`), CrowdSec (`36.58`), and ARES hybrid dossiers inside [`benchmarks/vgt-hardred-6.2.1/`](benchmarks/vgt-hardred-6.2.1/) (`docs/V6.2.1-RELEASE.md`).
 
 ### v6.2.0 — Defense Maximization & Telemetry Resilience *(2026-11-22)*
 

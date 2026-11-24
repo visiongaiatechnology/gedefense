@@ -1,5 +1,5 @@
 rank,contender_id,contender_label,overall_score,axis1_efficacy,axis2_fp_resilience,axis3_latency_containment,axis4_overhead,gate_status,waf_det_tpr,waf_prev_tpr,netids_det_tpr,netids_prev_tpr,endpoint_det_tpr,endpoint_prev_tpr,malware_det_tpr,malware_prev_tpr,lynis_index,http_p95_ms,security_rss_mib
-1,gedefense,GeDefense Linux 6.2.1 (EDR/Hardened Max),93.31,95.78,100.0,86.13,86.54,PASS,1.0,1.0,1.0,1.0,0.9333,1.0,1.0,1.0,71,29.257,88.39
+1,gedefense,GeDefense Linux 6.2.1 (EDR/Hardened Max),94.73,95.88,100.0,92.2,87.63,PASS,1.0,1.0,1.0,1.0,0.9333,1.0,1.0,1.0,71,23.648,88.39
 2,oss-safeline,OSS Best-of-Breed + SafeLine WAF (SafeLine + Suricata IPS + Tetragon + ClamAV),59.28,69.31,100.0,38.14,3.08,PASS,0.9286,0.7857,1.0,0.5,0.4,0.5,0.6667,0.5,64,67.446,2614.7
 3,oss-stack,OSS Best-of-Breed (ModSec CRS + Suricata IPS + Tetragon + ClamAV),55.4,76.27,38.46,38.91,37.35,FAIL,1.0,0.9286,1.0,0.75,0.3333,0.5,1.0,1.0,65,29.929,1761.03
 4,safeline,Chaitin SafeLine WAF CE 9.4.7 (Max Strict Semantics + ACL),52.92,41.09,100.0,28.23,58.59,PASS,0.7857,0.7857,0.25,0.25,0.0,0.125,0.0,0.0,62,23.228,1040.46

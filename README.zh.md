@@ -33,7 +33,7 @@
 <br />
 
 ⬇️ **安装程序直链下载 (v6.2.1 / V6):**
-[**OneClick 安装程序 (`.run`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.2.1/VGT_GeDefense_V6_6.2.1_OneClick.run) · [`.sha256`](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.2.1/VGT_GeDefense_V6_6.2.1_OneClick.run.sha256) · [**Desktop Tray (`.run`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.2.1/GeDefense-6.2.1-Desktop-OneClick.run) · [`.sha256`](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.2.1/GeDefense-6.2.1-Desktop-OneClick.run.sha256) · [**源码归档 (`.zip`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.2.1/VGT_GeDefense_V6_6.2.1_Source.zip) · [**v6.2.1 发布页**](https://github.com/visiongaiatechnology/gedefense/releases/tag/v6.2.1) · [**基准测试结果 (`93.31 / PASS`)**](benchmarks/vgt-hardred-6.2.1/) · [快速上手](#-快速上手)
+[**OneClick 安装程序 (`.run`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.2.1/VGT_GeDefense_V6_6.2.1_OneClick.run) · [`.sha256`](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.2.1/VGT_GeDefense_V6_6.2.1_OneClick.run.sha256) · [**Desktop Tray (`.run`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.2.1/GeDefense-6.2.1-Desktop-OneClick.run) · [`.sha256`](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.2.1/GeDefense-6.2.1-Desktop-OneClick.run.sha256) · [**源码归档 (`.zip`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.2.1/VGT_GeDefense_V6_6.2.1_Source.zip) · [**v6.2.1 发布页**](https://github.com/visiongaiatechnology/gedefense/releases/tag/v6.2.1) · [**基准测试结果 (`94.73 / PASS`)**](benchmarks/vgt-hardred-6.2.1/) · [快速上手](#-快速上手)
 
 </div>
 
@@ -43,7 +43,7 @@
 
 | 栏目 | 内容概览 | 跳转 |
 |---|---|---|
-| 📊 **VGT HardRed 基准评测** | `93.31 / 100 · PASS` 对比 OSS+SafeLine (`59.28 / PASS`)、OSS+ModSec (`55.40 / FAIL`)、SafeLine (`52.92`)、Wazuh 与 CrowdSec | [查看结果](#-vgt-hardred-基准测试--v621-对比-oss-组合栈实测评估) |
+| 📊 **VGT HardRed 基准评测** | `94.73 / 100 · PASS` 对比 OSS+SafeLine (`59.28 / PASS`)、OSS+ModSec (`55.40 / FAIL`)、SafeLine (`52.92`)、Wazuh 与 CrowdSec | [查看结果](#-vgt-hardred-基准测试--v621-对比-oss-组合栈实测评估) |
 | 📂 **测试证据与原始报告** | HardRed 与 ARES 面板、SARIF、ATT&CK、OCSF 与 GoTestWAF 报告 | [`benchmarks/vgt-hardred-6.2.1/`](benchmarks/vgt-hardred-6.2.1/) |
 | ⚙️ **复现配置与环境说明** | 完整 `EDR/Hardened Max` 参数与 `6.2.0 → 6.2.1` 变更说明 | [复现指南](#-如何复现-max-hardness-测试配置) |
 | 🔍 **什么是 VGT GeDefense？** | V6.2.1 架构、模块 A–E、Titan、安装向导与 PC vs. 服务器 | [架构总览](#-什么是-vgt-gedefense) |
@@ -57,11 +57,11 @@
 
 ## 📊 VGT HardRed 基准测试 — V6.2.1 对比 OSS 组合栈实测评估
 
-基于开源多领域 Linux 安全基准测试套件 **[VGT HardRed (`RedHard`)](https://github.com/visiongaiatechnology/redhard)**（`2026-11-23T23:42:33Z`），在快照隔离的全新 **Ubuntu 24.04（Linux HWE 7.0，NGINX + PHP 8.3-FPM）** 目标虚拟机上实测（`eth0` 带外控制面，`eth1` 无白名单攻击面；四轴加权模型：防护效能 45% · 误报韧性 20% · 响应与遏制延迟 20% · 系统开销 15%）。本次扩展评测将 **GeDefense Linux 6.2.1** 与 **OSS Best-of-Breed + SafeLine WAF**、**OSS Best-of-Breed（ModSecurity CRS + Suricata IPS + Tetragon + ClamAV）**、独立 **长亭雷池 SafeLine WAF CE 9.4.7**、**Wazuh**、**CrowdSec** 及纯净 **Baseline** 进行全面横向对比：
+基于开源多领域 Linux 安全基准测试套件 **[VGT HardRed (`RedHard`)](https://github.com/visiongaiatechnology/redhard)**（`2026-11-24T00:28:34Z`），在快照隔离的全新 **Ubuntu 24.04（Linux HWE 7.0，NGINX + PHP 8.3-FPM）** 目标虚拟机上实测（`eth0` 带外控制面，`eth1` 无白名单攻击面；四轴加权模型：防护效能 45% · 误报韧性 20% · 响应与遏制延迟 20% · 系统开销 15%）。本次扩展评测将 **GeDefense Linux 6.2.1** 与 **OSS Best-of-Breed + SafeLine WAF**、**OSS Best-of-Breed（ModSecurity CRS + Suricata IPS + Tetragon + ClamAV）**、独立 **长亭雷池 SafeLine WAF CE 9.4.7**、**Wazuh**、**CrowdSec** 及纯净 **Baseline** 进行全面横向对比：
 
 | 排名 | 受测安全方案 | 综合得分 (0–100) | 轴 1：防护效能 | 轴 2：误报韧性 | 轴 3：延迟与遏制 | 轴 4：系统开销 | 门禁状态 |
 |---:|---|---:|---:|---:|---:|---:|---|
-| 1 | **GeDefense Linux 6.2.1 (`EDR/Hardened Max`)** | **93.31** | **95.78** | **100.00** | **86.13** | **86.54** | **`PASS`** |
+| 1 | **GeDefense Linux 6.2.1 (`EDR/Hardened Max`)** | **94.73** | **95.88** | **100.00** | **92.20** | **87.63** | **`PASS`** |
 | 2 | **OSS Best-of-Breed + SafeLine WAF (`SafeLine + Suricata + Tetragon + ClamAV`)** | **59.28** | 69.31 | 100.00 | 38.14 | 3.08 | `PASS` |
 | 3 | **OSS Best-of-Breed (`ModSec CRS + Suricata IPS + Tetragon + ClamAV`)** | **55.40** | 76.27 | 38.46 | 38.91 | 37.35 | `FAIL` |
 | 4 | **Chaitin SafeLine WAF CE 9.4.7 (`Max Strict Semantics + ACL`)** | **52.92** | 41.09 | 100.00 | 28.23 | 58.59 | `PASS` |
@@ -69,7 +69,7 @@
 | 对照 | **Baseline (`Clean Ubuntu HWE 7.0 WebStack`)** | **46.23** | 17.86 | 100.00 | 15.97 | 100.00 | `CONDITIONAL` |
 | 6 | **CrowdSec (`Max Collections + Bouncers + AppSec WAF`)** | **36.58** | 44.56 | 0.00 | 28.38 | 72.37 | `FAIL` |
 
-> **版本演进提升（`6.2.0 → 6.2.1`）：** 综合得分由 **`86.16`** 跃升至 **`93.31 / 100 (PASS)`**（`+7.15`），主要源自内核 BPF-LSM 恶意文件 inode 锁定（`hardred-malware`：`65.6 → 95.6`，阻断 TPR `33.3% → 100.0%`）以及内核行为级 XDR 探针（`hardred-endpoint`：`59.0 → 94.2`，检测 TPR `53.3% → 93.3%`，阻断 TPR `53.3% → 100.0%`，主机受损率由 `18.1%` 降至 **`8.6%`**），全程保持 `0.0%` 误报。
+> **版本演进提升（`6.2.0 → 6.2.1`）：** 综合得分由 **`86.16`** 跃升至 **`94.73 / 100 (PASS)`**（`+8.57`），主要源自内核 BPF-LSM 恶意文件 inode 锁定（`hardred-malware`：`65.6 → 95.6`，阻断 TPR `33.3% → 100.0%`）以及内核行为级 XDR 探针（`hardred-endpoint`：`59.0 → 94.4`，检测 TPR `53.3% → 93.3%`，阻断 TPR `53.3% → 100.0%`，主机受损率由 `18.1%` 降至 **`8.6%`**），全程保持 `0.0%` 误报。
 
 ### 核心横向对比：GeDefense 6.2.1 vs. OSS Best-of-Breed 组合栈
 
@@ -77,12 +77,12 @@
 |---|---|---|---|
 | `hardred-waf` | 100.0% / 100.0% / **0.0%** / **100.0** | 100.0% / 92.9% / 12.5% / **92.8** | 零正常请求误报（OSS 组合栈因 WAF 12.50% 阻断误报触及 `FAIL`） |
 | `hardred-netids` | 100.0% / 100.0% / 0.0% / **98.3** | 100.0% / 75.0% / 0.0% / **86.2** | Kinetic XDP 稳定拦截高速洪泛（`196/240`）与端口扫描 |
-| `hardred-endpoint` | **93.3%** / **100.0%** / 0.0% / **94.2** | 33.3% / 50.0% / 0.0% / **51.9** | **受损率仅 `8.6%` 对比 OSS `100.0%`**（OSS 未能阻断勒索 AES/风暴及 `memfd`） |
+| `hardred-endpoint` | **93.3%** / **100.0%** / 0.0% / **94.4** | 33.3% / 50.0% / 0.0% / **51.9** | **受损率仅 `8.6%` 对比 OSS `100.0%`**（OSS 未能阻断勒索 AES/风暴及 `memfd`） |
 | `hardred-malware` | 100.0% / 100.0% / 0.0% / **95.6** | 100.0% / 100.0% / 0.0% / **96.7** | BPF-LSM `MALWARE_DENIED_INODES` + AES-256-GCM 隔离保险库 |
 | `hardred-compliance` | 100.0% / 86.0% / 0.0% / **86.0** | 100.0% / 80.0% / 0.0% / **80.0** | Lynis 加固指数 **`71`**（OSS `65`，基线 `63`） |
 
 - **系统性能与资源开销对比（`GeDefense 6.2.1` vs. `OSS Best-of-Breed` vs. Baseline）：**
-  - **GeDefense Linux 6.2.1：** `523.3` HTTP RPS（p50 `12.03 ms` · p95 `29.26 ms`）· `90,248.0` Sysbench EPS · `249.9` FIO IOPS · **`88.4 MiB`** 常驻内存 RSS · **`4.3%`** CPU 占用 · Lynis `71`。
+  - **GeDefense Linux 6.2.1：** `525.0` HTTP RPS（p50 `14.07 ms` · p95 `23.65 ms`）· `86,682.7` Sysbench EPS · `211.8` FIO IOPS · **`88.4 MiB`** 常驻内存 RSS · **`7.4%`** CPU 占用 · Lynis `71`。
   - **OSS Best-of-Breed（`ModSec + Suricata + Tetragon + ClamAV`）：** `452.4` HTTP RPS（p50 `13.85 ms` · p95 `29.93 ms`）· `84,829.5` Sysbench EPS · `237.4` FIO IOPS · **`1,761.0 MiB`** 常驻内存 RSS（约 **`20×`** 内存）· **`57.3%`** CPU 占用（约 **`13×`** CPU）· Lynis `65`。
   - **Chaitin SafeLine WAF CE 9.4.7（单测 `07-safeline-max` 与 `OSS+SafeLine`）：** 误报率 **`0.0%`**（`PASS`，将 `OSS+SafeLine` 提升至 `59.28`），但在 `hardred-waf` 仅获 **`79.0`**（拦截 `11/14`，放行了 `WAF-LFI-02` 双重编码、`WAF-XXE-01` 与 `WAF-SCAN-01` `sqlmap` + `/.env`）；单机占 **`1,040.5 MiB` RSS / `48.1%` CPU**（`484.9` RPS），在 `OSS+SafeLine` 组合中达 **`2,614.7 MiB` RSS / `60.6%` CPU / `175.2` RPS（p95 `67.45 ms`）**。
 
@@ -90,7 +90,9 @@
 
 | 受测系统 | ARES 架构韧性 | ARES 运行时韧性 | ARES 自适应对抗韧性 | 阻断攻击链 | 平均遏制前受损率 | 多种子均值（3 Seed × 3 轮） | 误报数 |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| **GeDefense Linux** | **68.20** | **96.68** | **93.46** | **36 / 36** | **11.1%** | **93.64** (σ = `0.0918`) | **0** |
+| **GeDefense Linux 6.2.1** | **78.40** | **96.68** | **93.46** | **36 / 36** | **11.1%** | **93.64** (σ = `0.0918`) | **0** |
+| **OSS Best-of-Breed + SafeLine WAF** | 58.20 | 56.25 | 61.33 | 27 / 36 | 100.0% | 61.52 | 0 |
+| **Chaitin SafeLine WAF CE 9.4.7** | 53.60 | 51.67 | 42.69 | 24 / 36 | 100.0% | 42.88 | 0 |
 | **Wazuh HIDS/SIEM** | 65.10 | 15.42 | 27.78 | 3 / 36 | 100.0% | 27.96 | 3 |
 | **CrowdSec IPS/CTI** | 59.80 | 51.67 | 42.25 | 24 / 36 | 100.0% | 42.44 | 0 |
 
@@ -645,7 +647,7 @@ sudo ./VGT_GeDefense_V6_6.2.1_OneClick.run
 - **恶意文件 Inode 锁与核心路径边界（`FIND-G-001`）：** 新增 BPF-LSM `MALWARE_DENIED_INODES`（`4,096` 条目），无需宽泛 DAC 特权即可在非 root `0755` 目录中通过 `file_open` 直接返回 `-EACCES` 封锁恶意样本，并与 `CORE_QUARANTINE_ALLOWED_ROOTS` / `FORBIDDEN_ROOTS` 及 `capture_open_fd_only()` 协同完成 AES-256-GCM 加密归档。
 - **内核行为 XDR 与多核 Tracepoint：** 新增 `EXEC_ARGV_EVENTS`（`512` 字节子 Shell 参数捕获）、`KERNEL_PROBE_EVENTS`（`XDR.PTRACE_ATTEMPT`、`XDR.KERNEL_PROTOCOL_PROBE`、`XDR.CREDENTIAL_PROBE`、`XDR.SYMLINK_OVER_SENSITIVE`）、`PENDING_COLD_OPEN` + `getname_flags` kretprobe、发现阶段规则（`KD.LINUX.DISCOVERY.ACCOUNT`、`KD.LINUX.DISCOVERY.SUID`）及 `rust/vendor/aya` 多核 Perf 激活。
 - **服务池隔离与控制面健康度：** 将勒索检测阈值强化为 `15 → 6`（熵爆发）与 `25 → 18`（元数据风暴），增加 `RANSOM_TRUST_POOL_METADATA`（豁免 `php-fpm`、`lsphp`、`nginx`、`httpd`、`apache2`、`mariadbd`、`postgres`、`redis-server` 等常规缓存重命名）并通过 PPID 专属树隔离（`stop_process_descendants` / `collect_tree`）确保主守护与健康并发 Worker 在线；新增 `isIgnoredNonExternalFlow` 过滤及异步 `ChronosScanner`。
-- **扩展 VGT HardRed 基准评测（`86.16 → 93.31`）：** 完整对比 OSS Best-of-Breed + SafeLine WAF（`59.28 / PASS`）、OSS Best-of-Breed（`55.40 / FAIL`）、SafeLine WAF（`52.92 / PASS`）、Wazuh（`46.70`）、CrowdSec（`36.58`）及 ARES 混合对抗报告已收录于 [`benchmarks/vgt-hardred-6.2.1/`](benchmarks/vgt-hardred-6.2.1/)（`docs/V6.2.1-RELEASE.md`）。
+- **扩展 VGT HardRed 与 ARES 1.2 基准评测（`86.16 → 94.73`）：** 完整对比 HardRed **`94.73 / 100 (PASS)`** 与 5 方案 ARES 1.2（`78.40 / 96.68 / 93.46`，`177/177` 源码引用验证）vs. OSS Best-of-Breed + SafeLine WAF（`59.28 / PASS` · ARES `58.20 / 56.25 / 61.33`）、OSS Best-of-Breed（`55.40 / FAIL`）、SafeLine WAF（`52.92 / PASS` · ARES `53.60 / 51.67 / 42.69`）、Wazuh（`46.70`）、CrowdSec（`36.58`）及 ARES 混合对抗报告已收录于 [`benchmarks/vgt-hardred-6.2.1/`](benchmarks/vgt-hardred-6.2.1/)（`docs/V6.2.1-RELEASE.md`）。
 
 ### v6.2.0 — 防御最大化与遥测韧性 *(2026-11-22)*
 
