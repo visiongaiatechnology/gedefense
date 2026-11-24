@@ -168,7 +168,7 @@ func TestFabricSettingsSubnavAnchorsResolveToRealElements(t *testing.T) {
 
 func TestFabricSettingsStylesCoverTheRenderedStructure(t *testing.T) {
 	framework := embeddedWebFile(t, "fabric-settings.js")
-	stylesheet := embeddedWebFile(t, "v4.css")
+	stylesheet := embeddedWebFile(t, "css/components.css")
 
 	defined := map[string]bool{}
 	for _, match := range webCSSClassPattern.FindAllStringSubmatch(stylesheet, -1) {
@@ -339,7 +339,7 @@ func servedTelemetryRails(body string) []string {
 // layout in a stylesheet edit: the groups must be rendered as label/value rows,
 // not as unstyled blocks.
 func TestTelemetryRailHasStyles(t *testing.T) {
-	stylesheet := embeddedWebFile(t, "v4.css")
+	stylesheet := embeddedWebFile(t, "css/components.css")
 	for _, selector := range []string{
 		".defense-telemetry", ".telemetry-group", ".telemetry-list",
 		".telemetry-row dt", ".telemetry-row dd", ".telemetry-note",

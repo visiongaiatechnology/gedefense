@@ -160,8 +160,12 @@ func TestSelfTestRefusalIsNotReportedAsATrafficVerdict(t *testing.T) {
 	}
 	// The blocked message must be present in every catalogue, otherwise a non-German
 	// operator reads a raw key.
-	catalogue := embeddedWebFile(t, "i18n.js")
-	if count := strings.Count(catalogue, `"l7.integration.selfTestBlocked"`); count != 4 {
+	// V6.3.0 refactoring wave 2: the catalogues live in web/i18n/<language>.js.
+	count := 0
+	for _, language := range []string{"de", "en", "ru", "zh-CN"} {
+		count += strings.Count(embeddedWebFile(t, "i18n/"+language+".js"), `"l7.integration.selfTestBlocked"`)
+	}
+	if count != 4 {
 		t.Fatalf("the blocked-self-test message exists in %d of 4 catalogues", count)
 	}
 }

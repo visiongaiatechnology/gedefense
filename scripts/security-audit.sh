@@ -43,18 +43,22 @@ python3 - "$ROOT" <<'PYI18N'
 from pathlib import Path
 import json, re, sys
 root=Path(sys.argv[1])
-i18n=(root/'control'/'web'/'i18n.js').read_text(encoding='utf-8')
-marker='export const catalogs = Object.freeze('
-end_marker=');\n\nlet activeLanguage'
-start=i18n.find(marker)
-end=i18n.find(end_marker,start+len(marker))
-if start < 0 or end < 0:
-    raise SystemExit('i18n catalog structure missing')
-try:
-    catalogs=json.loads(i18n[start+len(marker):end])
-except json.JSONDecodeError as exc:
-    raise SystemExit(f'i18n catalog JSON invalid: {exc}')
+i18n_dir=root/'control'/'web'/'i18n'
+marker='export const catalog = Object.freeze('
 expected=('de','en','ru','zh-CN')
+catalogs={}
+for language in expected:
+    path=i18n_dir/(language+'.js')
+    if not path.is_file():
+        raise SystemExit('i18n catalogue file missing: '+language)
+    text=path.read_text(encoding='utf-8')
+    start=text.find(marker)
+    if start < 0:
+        raise SystemExit('i18n catalogue structure missing: '+language)
+    try:
+        catalogs[language]=json.loads(text[start+len(marker):text.rfind(');')])
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f'i18n catalogue JSON invalid ({language}): {exc}')
 if tuple(catalogs) != expected:
     raise SystemExit('i18n languages mismatch: '+', '.join(catalogs))
 base=set(catalogs['de'])
@@ -69,11 +73,13 @@ for language in expected:
         actual_tokens=sorted(re.findall(r'\{([a-zA-Z0-9_]+)\}',value))
         if actual_tokens != expected_tokens:
             raise SystemExit(f'{language} placeholder mismatch: {key}')
+i18n_module=(root/'control'/'web'/'i18n.js').read_text(encoding='utf-8')
+for anchor in ("export const catalogs = Object.freeze(", "export function t(", "export function initializeI18n("):
+    if anchor not in i18n_module:
+        raise SystemExit('i18n translator module contract missing: '+anchor)
 used=set()
 web=root/'control'/'web'
-for file in [web/'index.html', *sorted(web.glob('*.js'))]:
-    if file.name == 'i18n.js':
-        continue
+for file in [web/'index.html', *[p for p in sorted(web.rglob('*.js')) if 'i18n' not in p.parts]]:
     text=file.read_text(encoding='utf-8')
     used.update(re.findall(r'data-i18n(?:-placeholder|-aria|-title)?=["\']([^"\']+)',text))
     used.update(re.findall(r"\bt\(\s*['\"]([^'\"]+)['\"]",text))
@@ -574,7 +580,7 @@ control=(root/'control'/'coreipc.go').read_text(encoding='utf-8')
 xdr=''.join(p.read_text(encoding='utf-8') for p in sorted((root/'control').glob('xdr*.go')) if not p.name.endswith('_test.go'))
 server=''.join(p.read_text(encoding='utf-8') for p in sorted((root/'control').glob('server*.go')) if not p.name.endswith('_test.go'))
 web=(root/'control'/'web'/'index.html').read_text(encoding='utf-8')
-app=(root/'control'/'web'/'app.js').read_text(encoding='utf-8')
+app=(root/'control'/'web'/'app.js').read_text(encoding='utf-8') + ''.join(p.read_text(encoding='utf-8') for p in sorted((root/'control'/'web'/'js').glob('*.js')) if not p.name.endswith('_test.go'))
 unit=(root/'packaging'/'systemd'/'gedefense-core.service').read_text(encoding='utf-8')
 for anchor in [
     'fanotify_init', 'FAN_OPEN_EXEC_PERM', 'user_quarantine_path',

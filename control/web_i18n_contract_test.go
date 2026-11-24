@@ -30,42 +30,15 @@ var (
 	webTranslationKeyPattern  = regexp.MustCompile(`"([A-Za-z0-9_.]+)":`)
 )
 
-// catalogueBlocks splits the module into one entry per language, preserving the declared
-// order. Splitting on line positions keeps a key whose value happens to mention another
-// language from being mistaken for a catalogue boundary.
+// catalogueBlocks returns one block per language, preserving the declared order.
+// V6.3.0 refactoring wave 2: each catalogue lives in its own module
+// (web/i18n/<language>.js), so the block is the whole file's key/value section.
 func catalogueBlocks(t *testing.T) ([]string, []string) {
 	t.Helper()
-	source := embeddedWebFile(t, "i18n.js")
-	lines := strings.Split(source, "\n")
-
 	names := []string{"de", "en", "ru", "zh-CN"}
-	starts := make([]int, len(names))
-	for index, name := range names {
-		marker := `"` + name + `": {`
-		starts[index] = -1
-		for line, content := range lines {
-			if strings.TrimSpace(content) == marker {
-				starts[index] = line
-				break
-			}
-		}
-		if starts[index] < 0 {
-			t.Fatalf("catalogue %q was not found; the language set changed", name)
-		}
-	}
-	for index := 1; index < len(starts); index++ {
-		if starts[index] <= starts[index-1] {
-			t.Fatalf("catalogues are not in declaration order: %v", starts)
-		}
-	}
-
 	blocks := make([]string, 0, len(names))
-	for index, start := range starts {
-		end := len(lines)
-		if index+1 < len(starts) {
-			end = starts[index+1]
-		}
-		blocks = append(blocks, strings.Join(lines[start+1:end], "\n"))
+	for _, name := range names {
+		blocks = append(blocks, embeddedWebFile(t, "i18n/"+name+".js"))
 	}
 	return names, blocks
 }
@@ -152,8 +125,8 @@ func TestEveryReferencedTranslationKeyExists(t *testing.T) {
 	}
 
 	calls := 0
-	for _, name := range embeddedWebFiles(t) {
-		if !strings.HasSuffix(name, ".js") || strings.Contains(name, "vendor/") {
+	for _, name := range embeddedWebFilesRecursive(t) {
+		if !strings.HasSuffix(name, ".js") || strings.Contains(name, "vendor/") || strings.HasPrefix(name, "i18n/") {
 			continue
 		}
 		for _, match := range webTranslationCallPattern.FindAllStringSubmatch(embeddedWebFile(t, name), -1) {

@@ -125,7 +125,9 @@ func TestHardeningCollectorReadsLiveSysctlValues(t *testing.T) {
 // controls that were already PROTECTED made ten switches inert on a hardened host for
 // no security reason, which is what the operator saw.
 func TestHardeningSwitchesAreAllSelectable(t *testing.T) {
-	source := embeddedWebFile(t, "app.js")
+	// Wave 2a moved the hardening switch renderer out of app.js into the overview
+	// view module; the renderer contract below is unchanged.
+	source := embeddedWebFile(t, "js/views_overview.js")
 
 	start := strings.Index(source, "function renderHardeningSwitches(checks)")
 	if start < 0 {

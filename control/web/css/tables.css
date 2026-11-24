@@ -1,0 +1,77 @@
+/* TABLES */
+.table-wrap {
+  overflow-x: auto; margin-top: 16px; scrollbar-width: thin;
+}
+table { width: 100%; border-collapse: collapse; font-size: 0.74rem; }
+th {
+  color: var(--muted); font-weight: 700; text-align: left;
+  padding: 12px 14px; border-bottom: 1px solid var(--line);
+  white-space: nowrap; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.06em;
+}
+td {
+  padding: 12px 14px; border-bottom: 1px solid var(--line);
+  max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+tbody tr:hover { background: var(--surface-hover); }
+tbody tr.clickable-row { cursor: pointer; }
+.empty-cell { text-align: center; color: var(--muted); padding: 36px 12px; font-style: italic; }
+
+.clickable-row {
+  cursor: pointer; transition: background 0.15s ease;
+}
+.clickable-row:hover, .clickable-row:focus {
+  background: rgba(76, 201, 255, 0.06); outline: none;
+}
+
+.table-wrap {
+  border: 1px solid rgba(78, 182, 224, .11);
+  border-radius: 11px;
+  background: rgba(2, 10, 19, .28);
+  overflow: auto;
+}
+table { font-size: .7rem; }
+thead { position: sticky; top: 0; z-index: 1; }
+th {
+  padding: 10px 12px;
+  color: #7592a9;
+  background: rgba(5, 18, 32, .96);
+  border-bottom-color: rgba(79, 185, 229, .15);
+  font-size: .58rem;
+  letter-spacing: .105em;
+}
+td { padding: 10px 12px; border-bottom-color: rgba(78, 180, 221, .09); }
+tbody tr:last-child td { border-bottom: 0; }
+tbody tr:hover { background: rgba(69, 176, 220, .055); }
+.empty-cell { padding: 28px 14px; }
+.cell-result { max-width: 420px; white-space: normal; line-height: 1.4; }
+.empty-row, .empty-state { color: var(--muted); text-align: center; font-size: .72rem; padding: 20px; }
+.rule-actions, .table-action { display: flex; gap: 6px; align-items: center; }
+
+
+/* ---- bounded list panes (2026-10-20) ----
+   Every long table gets its own scroll area so a view cannot grow to several screens. The pane is
+   the list, not the page: the surrounding panel keeps its header, actions and footer reachable. */
+.view .table-wrap {
+  max-height: 460px;
+  overflow-y: auto;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(120, 190, 255, .45) transparent;
+  overscroll-behavior: contain;
+  /* A rebuilt table must not let the browser re-anchor the scroll position by itself. */
+  overflow-anchor: none;
+}
+.view .table-wrap::-webkit-scrollbar { width: 10px; height: 10px; }
+.view .table-wrap::-webkit-scrollbar-track { background: transparent; }
+.view .table-wrap::-webkit-scrollbar-thumb {
+  background: rgba(120, 190, 255, .35);
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+.view .table-wrap::-webkit-scrollbar-thumb:hover { background: rgba(120, 190, 255, .6); background-clip: padding-box; }
+.table-pane-more {
+  display: flex;
+  justify-content: center;
+  padding: .5rem 0 .25rem;
+}

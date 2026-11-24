@@ -94,7 +94,7 @@ func matchingDivClose(t *testing.T, html string, start int) int {
 // actually styled. An unstyled wrapper would stack the two panels with no gap and no
 // height sharing, which is a different layout, not the intended one.
 func TestKineticLeftStackHasStyles(t *testing.T) {
-	stylesheet, err := webAssets.ReadFile("web/v4.css")
+	stylesheet, err := webAssets.ReadFile("web/css/components.css")
 	if err != nil {
 		t.Fatal(err)
 	}

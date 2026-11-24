@@ -15,7 +15,8 @@ all: test go gateway
 test:
 	cd control && $(GO) test ./... && $(GO) vet ./...
 	cd gateway && $(GO) test ./... && $(GO) vet ./...
-	for f in control/web/*.js; do node --check "$$f" || exit 1; done
+	# V6.3.0 refactoring wave 2: check every JS module, including subdirectories.
+	find control/web -name '*.js' -type f -exec node --check {} +
 	bash ./scripts/security-audit.sh
 
 security-audit:

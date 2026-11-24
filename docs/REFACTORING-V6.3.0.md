@@ -123,7 +123,84 @@ Files in the 500–999 range (`fabric_schema`, `l7_server`, `cms`,
 …), the XDR family 5-way split, and the six >500 files from wave 1b above, to
 reach the ≤ 500 guideline across the Go backend.
 
-## Wave 2 — Web UI (`control/web/`) — pending
+## Wave 2 — Web UI (`control/web/`)
+
+### Wave 2 (2026-11-24) — i18n, app module graph and stylesheet modularization
+
+| Original | Before | After | New files |
+|---|---:|---:|---|
+| `control/web/i18n.js` | 9,053 | **86** | `i18n/{de,en,ru,zh-CN}.js` (2,251 lines each, catalogue data + stable import point) |
+| `control/web/app.js` | 3,160 | **425** | `js/state.js` 564 · `js/navigation.js` 519 · `js/views_overview.js` 663 · `js/views_xdr_spyware.js` 300 · `js/views_logs_audit.js` 276 · `js/views_titan_styx.js` 752 |
+| `control/web/app.css` | 1,371 | — (deleted) | `css/{tokens 103, layout 543, modals 459, components 3,134, tables 77}` |
+| `control/web/v4.css` | 2,950 | — (deleted) | (same five css files) |
+| `control/web/index.html` | 3,873 | 3,873 (−2/+5 lines) | five stylesheet links replace the two legacy ones |
+
+Structure-only: the four catalogues are the original JSON data byte-identically
+(`export const catalog = Object.freeze(...)` per language; `i18n.js` keeps the
+public translator API and re-exports the frozen `catalogs`, so every
+`import { t } from './i18n.js'` is unchanged). `app.js` remains the single ES
+module entry: 138 original declarations preserved exactly once, 27 external
+imports in the pre-split order, 51 DOM listener registrations in identical
+order, `initialize()` call order byte-identical; six `bind*` helpers are the
+only added glue. CSS: 1,163 top-level blocks reparse-verified byte-identical
+(4,321 → 4,316 lines: only boundary newlines changed); `index.html` links
+`tokens → layout → modals → components → tables` and drops the legacy
+`app.css`/`v4.css` links.
+
+**Cascade analysis (CSS):** exhaustive permutation testing over the five files
+and a full declaration model (media, `!important`, property families) compared
+the effective winner per selector/property over 40 widths (every breakpoint
+±1, 2000→300 px) × reduced-motion on/off: **0 winner changes**. The only
+positional change is that the former `v4.css` rules now also precede the
+vendored jsvectormap stylesheet; that stylesheet only defines `--jvm-*` custom
+properties and flat `.jvm-*` rules, and the moved selectors either do not exist
+there or are more specific/tie with identical values — proven by element-level
+simulation (0 changes). Residual risk (honest): static analysis cannot simulate
+every descendant/pseudo-state/runtime-composed class-list interaction without a
+browser; no rule text changed.
+
+**Audit/tests/allowlist (integration owner):**
+- Audit i18n gate now reads the four `web/i18n/<language>.js` catalogues,
+  enforces the same parity/placeholder/coverage rules and checks the thin
+  translator contract; translation-coverage scanning is recursive over
+  `web/**/*.js` (i18n data and vendor excluded) so the split app modules remain
+  covered. The audit `app` anchors (`scanMalware`, `renderMalwareProtection`,
+  `renderMalwareResult`) are checked over `web/app.js` + `web/js/*.js`; the
+  `i18n.js` asset anchor remains (thin module still served).
+- `webAssetAllowlist`: added the 4 i18n, 6 js and 5 css assets; removed the
+  deleted `app.css`/`v4.css`. The exhaustive embedded↔allowlist contract tests
+  are green.
+- Test updates are path-only / scan-scope only, with assertions identical:
+  `evidence_gate_test` (catalogue count across four files),
+  `fabric_settings_ui_test`, `hardening_coverage_test`,
+  `kinetic_layout_test`, `protection_ui_test`, `threat_intel_ui_contract_test`
+  (stylesheet path → `css/components.css`), `web_i18n_contract_test`
+  (catalogues read per language; t()-call scan recursive). `web_i18n_contract_test`
+  still pins `authorizeSession()` to `app.js`, and that function stayed there.
+- `Makefile` node syntax gate is recursive now:
+  `find control/web -name '*.js' -type f -exec node --check {} +`.
+
+**Documented deviations:** `js/state.js` 564, `js/views_overview.js` 663,
+`js/views_titan_styx.js` 752 and `css/components.css` 3,134 exceed the 500-line
+guideline — the JS files are single cohesive domains under the plan's fixed
+six-file allowlist, and the CSS split is the plan's five-theme scheme; a future
+fine-grain pass can subdivide `components.js`/`components.css` theme sections
+with new allowlist entries.
+
+#### Wave 2 gate evidence (serial, settled tree)
+| Gate | Result |
+|---|---|
+| `node --check` recursive over `control/web/**/*.js` | exit 0 |
+| `go vet ./...` control + gateway | exit 0 / exit 0 |
+| `make test` | **exit 0** — control `ok 190.2 s`, gateway cached green, recursive node check + `SECURITY AUDIT PASS` |
+| `make test-race` | **exit 0** — control `ok 230.0 s` |
+| `make fuzz-smoke` | **24/24 PASS** |
+| Validators | `validate-linux-integration` (`GeDefense 6.3.0 … PASS`), `validate-github-release`, `validate-systemd`, `security-audit.sh` PASS |
+| Focused web contract tests | embedded↔allowlist exhaustive, asset resolution, fabric/hardening/kinetic/protection/threat-intel UI contracts, i18n parity+coverage, auth-before-claim — PASS |
+
+Wave 2 commit: `refactor(wave2): modularize web UI (i18n, app modules, css)
+(structure-only)`.
+
 ## Wave 3 — Rust privileged core (`rust/gedefense-core/src/`) — pending
 ## Wave 4 — Rust eBPF (`rust/gedefense-ebpf/src/`) — pending
 ## Wave 5 — Shell scripts & large test files — pending

@@ -69,7 +69,7 @@ func TestThreatIntelUIRefreshIsSingleFlightAndDoesNotInventHistory(t *testing.T)
 }
 
 func TestThreatIntelWarningPillsHaveAVisibleStyle(t *testing.T) {
-	css, err := os.ReadFile("web/v4.css")
+	css, err := os.ReadFile("web/css/components.css")
 	if err != nil {
 		t.Fatal(err)
 	}

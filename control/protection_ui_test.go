@@ -13,8 +13,8 @@ import (
 func TestProtectionStatusBannerSitsOutsideStepperGrid(t *testing.T) {
 	html := embeddedWebFile(t, "index.html")
 	js := embeddedWebFile(t, "protection.js")
-	appCSS := embeddedWebFile(t, "app.css")
-	v4CSS := embeddedWebFile(t, "v4.css")
+	appCSS := embeddedWebFile(t, "css/components.css")
+	v4CSS := embeddedWebFile(t, "css/components.css")
 
 	bannerIdx := strings.Index(html, `id="protectionStatusBanner"`)
 	stepperIdx := strings.Index(html, `id="protectionStepperContainer"`)

@@ -1,0 +1,103 @@
+/* STATUS: DIAMANT VGT SUPREME */
+/* VISIONGAIATECHNOLOGY - GEDEFENSE 4.1 SOVEREIGN DESIGN SYSTEM */
+
+:root {
+  color-scheme: dark;
+  --bg-deep: #040914;
+  --bg-elevated: #07111F;
+  --surface: rgba(10, 24, 43, 0.75);
+  --surface-strong: rgba(8, 21, 38, 0.92);
+  --surface-hover: rgba(16, 38, 68, 0.85);
+  
+  --line: rgba(76, 201, 255, 0.16);
+  --line-strong: rgba(76, 201, 255, 0.38);
+  --line-glow: rgba(76, 201, 255, 0.28);
+  
+  --primary-ice: #4CC9FF;
+  --primary-strong: #168BFF;
+  --highlight-cyan: #64EFFF;
+  
+  --green: #31D0AA;
+  --green-glow: rgba(49, 208, 170, 0.4);
+  --amber: #F6C85F;
+  --amber-glow: rgba(246, 200, 95, 0.4);
+  --red: #FF5C7C;
+  --red-glow: rgba(255, 92, 124, 0.45);
+  
+  --text: #F0F8FF;
+  --muted: #9EB8CB;
+  --muted-dark: #6E8B9E;
+  
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --sidebar-w: 260px;
+  
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+}
+
+* { box-sizing: border-box; }
+html { min-width: 320px; background: var(--bg-deep); scroll-behavior: smooth; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  color: var(--text);
+  background:
+    radial-gradient(circle at 80% -10%, rgba(22, 139, 255, 0.18), transparent 40%),
+    radial-gradient(circle at 10% 75%, rgba(76, 201, 255, 0.09), transparent 35%),
+    var(--bg-deep);
+  background-attachment: fixed;
+  overflow-x: hidden;
+}
+
+button, input, select, textarea { font: inherit; }
+button { color: inherit; }
+button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible, textarea:focus-visible {
+  outline: 2px solid var(--highlight-cyan);
+  outline-offset: 3px;
+}
+[hidden] { display: none !important; }
+/* STATUS: DIAMANT VGT SUPREME */
+/* ========================================================================== */
+/* V4.0.2 UNIFIED COMMAND CENTER                                              */
+/* Cohesive Linux visual system aligned with the GeDefense V4 product family. */
+/* ========================================================================== */
+
+:root {
+  --bg-deep: #030915;
+  --bg-elevated: #071425;
+  --surface: rgba(7, 20, 37, 0.82);
+  --surface-strong: rgba(4, 15, 29, 0.96);
+  --surface-soft: rgba(10, 29, 51, 0.64);
+  --surface-hover: rgba(15, 44, 73, 0.72);
+  --line: rgba(82, 199, 255, 0.15);
+  --line-strong: rgba(82, 199, 255, 0.34);
+  --line-glow: rgba(82, 199, 255, 0.22);
+  --primary-ice: #5bd4ff;
+  --primary-strong: #1e9fff;
+  --highlight-cyan: #66efff;
+  --gold: #e7bd57;
+  --gold-soft: rgba(231, 189, 87, 0.14);
+  --green: #37d9ae;
+  --amber: #f4c76a;
+  --red: #ff6482;
+  --text: #f0f8ff;
+  --text-bright: #f7fbff;
+  --muted: #9eb5c9;
+  --muted-dark: #688298;
+  --sidebar-w: 296px;
+  --radius-sm: 10px;
+  --radius-md: 15px;
+  --radius-lg: 20px;
+  --shadow-panel: 0 18px 50px rgba(0, 0, 0, 0.28);
+  --shadow-float: 0 30px 90px rgba(0, 0, 0, 0.62);
+}
+
+body {
+  background:
+    radial-gradient(1000px 660px at 76% -15%, rgba(30, 159, 255, 0.15), transparent 63%),
+    radial-gradient(760px 620px at 0% 85%, rgba(91, 212, 255, 0.07), transparent 66%),
+    linear-gradient(180deg, #030915 0%, #04101e 52%, #030914 100%);
+  letter-spacing: -0.005em;
+}
