@@ -58,10 +58,10 @@ func TestFaultResponsesNeverCarryInternalDetail(t *testing.T) {
 // TestNoHandlerForwardsARuntimeErrorAsOperatorText guards the class rather than
 // the instance: a new call site that forwards err.Error() reintroduces the leak.
 func TestNoHandlerForwardsARuntimeErrorAsOperatorText(t *testing.T) {
-	for _, source := range []string{"server.go", "fabric_settings.go", "fabric_surface_api.go", "server_settings.go", "xdr_recovery_api.go"} {
-		content := moduleSource(t, source)
+	for _, pattern := range []string{"server.go", "server_handlers_*.go", "fabric_settings.go", "fabric_surface_api.go", "server_settings.go", "xdr_recovery_api.go"} {
+		content := moduleFamilySource(t, pattern)
 		for _, match := range regexp.MustCompile(`apiError\([^)]*err\.Error\(\)`).FindAllString(content, -1) {
-			t.Errorf("%s forwards a runtime error as operator-facing text: %s", source, match)
+			t.Errorf("%s forwards a runtime error as operator-facing text: %s", pattern, match)
 		}
 	}
 }
@@ -434,4 +434,28 @@ func moduleSource(t *testing.T, name string) string {
 		t.Fatalf("read %s: %v", name, err)
 	}
 	return string(content)
+}
+
+// moduleFamilySource concatenates every production file matching pattern so a
+// source-scanning guard keeps covering a module whose implementation was split
+// into several same-package files (refactoring wave 1). Test files are excluded.
+func moduleFamilySource(t *testing.T, pattern string) string {
+	t.Helper()
+	matches, err := filepath.Glob(pattern)
+	if err != nil || len(matches) == 0 {
+		t.Fatalf("source pattern %q: %v", pattern, err)
+	}
+	var builder strings.Builder
+	for _, match := range matches {
+		if strings.HasSuffix(match, "_test.go") {
+			continue
+		}
+		content, err := os.ReadFile(match)
+		if err != nil {
+			t.Fatalf("read %s: %v", match, err)
+		}
+		builder.Write(content)
+		builder.WriteString("\n")
+	}
+	return builder.String()
 }

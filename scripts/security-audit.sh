@@ -359,7 +359,7 @@ python3 - "$ROOT" <<'PY'
 from pathlib import Path
 import sys
 root=Path(sys.argv[1])
-gw=(root/'gateway'/'main.go').read_text(encoding='utf-8')
+gw=''.join(p.read_text(encoding='utf-8') for p in sorted((root/'gateway').glob('*.go')) if not p.name.endswith('_test.go'))
 required=[
     'sameOriginRequired', 'Sec-Fetch-Site', 'subtle.ConstantTimeCompare',
     '__Host-vgt_gedefense_session', 'SameSiteStrictMode', 'HttpOnly: true',
@@ -427,7 +427,7 @@ for anchor in [
 ]:
     if anchor not in helper:
         raise SystemExit('set-password current-password step-up anchor missing: '+anchor)
-gateway=(root/'gateway'/'main.go').read_text(encoding='utf-8')
+gateway=''.join(p.read_text(encoding='utf-8') for p in sorted((root/'gateway').glob('*.go')) if not p.name.endswith('_test.go'))
 if 'verify-password-stdin' not in gateway:
     raise SystemExit('gateway verification path required by the set-password step-up is missing')
 PYFIND9
@@ -437,7 +437,7 @@ python3 - "$ROOT" <<'PY'
 from pathlib import Path
 import sys
 root=Path(sys.argv[1])
-gw=(root/'gateway'/'main.go').read_text(encoding='utf-8')
+gw=''.join(p.read_text(encoding='utf-8') for p in sorted((root/'gateway').glob('*.go')) if not p.name.endswith('_test.go'))
 argon=(root/'gateway'/'argon2_linux.go').read_text(encoding='utf-8')
 if 'v2$argon2id$v=19$m=%d,t=%d,p=%d' not in gw or 'memoryKiB uint32 = 65536' not in gw or 'timeCost uint32 = 3' not in gw:
     raise SystemExit('Argon2id password policy missing or changed')
@@ -463,7 +463,7 @@ for anchor in [
 ]:
     if anchor not in ledger:
         raise SystemExit('Evidence Ledger v2 anchor missing: '+anchor)
-server=(root/'control'/'server.go').read_text(encoding='utf-8')
+server=''.join(p.read_text(encoding='utf-8') for p in sorted((root/'control').glob('server*.go')) if not p.name.endswith('_test.go'))
 for anchor in [
     'GET /api/v1/evidence', 'GET /api/v1/evidence/verify',
     'operator.mutation.intent', 'mandatory evidence commit failed',
@@ -479,7 +479,7 @@ for anchor in [
 ]:
     if anchor not in fim:
         raise SystemExit('hardened FIM anchor missing: '+anchor)
-xdr=(root/'control'/'xdr.go').read_text(encoding='utf-8')
+xdr=''.join(p.read_text(encoding='utf-8') for p in sorted((root/'control').glob('xdr*.go')) if not p.name.endswith('_test.go'))
 if 'xdr.response.intent' not in xdr or 'mandatory evidence commit failed; active response disabled' not in xdr:
     raise SystemExit('XDR response evidence fail-closed gate missing')
 contract=json.loads((root/'integration'/'astraeaos'/'contract.json').read_text(encoding='utf-8'))
@@ -506,7 +506,7 @@ for anchor in [
 ]:
     if anchor not in transactions:
         raise SystemExit('Transaction Engine v2 anchor missing: '+anchor)
-server=(root/'control'/'server.go').read_text(encoding='utf-8')
+server=''.join(p.read_text(encoding='utf-8') for p in sorted((root/'control').glob('server*.go')) if not p.name.endswith('_test.go'))
 for anchor in [
     'POST /api/v1/transactions/preview',
     'POST /api/v1/transactions/{id}/apply',
@@ -571,8 +571,8 @@ root=Path(sys.argv[1])
 malware=(root/'rust'/'gedefense-core'/'src'/'malware.rs').read_text(encoding='utf-8')
 core=(root/'rust'/'gedefense-core'/'src'/'main.rs').read_text(encoding='utf-8')
 control=(root/'control'/'coreipc.go').read_text(encoding='utf-8')
-xdr=(root/'control'/'xdr.go').read_text(encoding='utf-8')
-server=(root/'control'/'server.go').read_text(encoding='utf-8')
+xdr=''.join(p.read_text(encoding='utf-8') for p in sorted((root/'control').glob('xdr*.go')) if not p.name.endswith('_test.go'))
+server=''.join(p.read_text(encoding='utf-8') for p in sorted((root/'control').glob('server*.go')) if not p.name.endswith('_test.go'))
 web=(root/'control'/'web'/'index.html').read_text(encoding='utf-8')
 app=(root/'control'/'web'/'app.js').read_text(encoding='utf-8')
 unit=(root/'packaging'/'systemd'/'gedefense-core.service').read_text(encoding='utf-8')
@@ -632,14 +632,14 @@ python3 - "$ROOT" <<'PY'
 from pathlib import Path
 import sys
 root=Path(sys.argv[1])
-server=(root/'control'/'server.go').read_text(encoding='utf-8')
+server=''.join(p.read_text(encoding='utf-8') for p in sorted((root/'control').glob('server*.go')) if not p.name.endswith('_test.go'))
 for anchor in [
     "script-src 'self'", "object-src 'none'", "base-uri 'none'", "frame-ancestors 'none'",
     'Origin-Agent-Cluster', 'X-Permitted-Cross-Domain-Policies', 'i18n.js',
 ]:
     if anchor not in server:
         raise SystemExit('control-plane browser hardening anchor missing: '+anchor)
-login=(root/'gateway'/'main.go').read_text(encoding='utf-8')
+login=''.join(p.read_text(encoding='utf-8') for p in sorted((root/'gateway').glob('*.go')) if not p.name.endswith('_test.go'))
 for anchor in ["default-src 'none'", "form-action 'self'", "frame-ancestors 'none'", "style-src 'nonce-"]:
     if anchor not in login:
         raise SystemExit('login CSP anchor missing: '+anchor)
@@ -673,10 +673,10 @@ import sys
 root=Path(sys.argv[1])
 ebpf=(root/'rust'/'gedefense-ebpf'/'src'/'main.rs').read_text(encoding='utf-8')
 core=(root/'rust'/'gedefense-core'/'src'/'main.rs').read_text(encoding='utf-8')
-xdr=(root/'control'/'xdr.go').read_text(encoding='utf-8')
+xdr=''.join(p.read_text(encoding='utf-8') for p in sorted((root/'control').glob('xdr*.go')) if not p.name.endswith('_test.go'))
 ipc=(root/'control'/'coreipc.go').read_text(encoding='utf-8')
 packages=(root/'control'/'package_integrity_linux.go').read_text(encoding='utf-8')
-server=(root/'control'/'server.go').read_text(encoding='utf-8')
+server=''.join(p.read_text(encoding='utf-8') for p in sorted((root/'control').glob('server*.go')) if not p.name.endswith('_test.go'))
 required={
     'eBPF exec sensor': ['#[tracepoint]', 'gedefense_exec', 'EXEC_EVENTS.output::<ExecEvent>'],
     'eBPF egress enforcement': [
@@ -792,10 +792,10 @@ styx_sources=[path for path in styx_sources if not path.name.endswith('_test.go'
 if 'styx_policy.go' not in {path.name for path in styx_sources}:
     missing.append('go-policy: control/styx_policy.go missing from the StyX source set')
 policy='\n'.join(path.read_text(encoding='utf-8') for path in styx_sources)
-xdr=read('control/xdr.go')
+xdr=''.join(p.read_text(encoding='utf-8') for p in sorted((root/'control').glob('xdr*.go')) if not p.name.endswith('_test.go'))
 runtime=read('control/runtime_settings.go')
 schema=read('control/fabric_schema.go')
-server=read('control/server.go')
+server=''.join(p.read_text(encoding='utf-8') for p in sorted((root/'control').glob('server*.go')) if not p.name.endswith('_test.go'))
 
 # ABI-1: one shared, exactly 104-byte FlowEvent contract with a rejecting decoder.
 need('rust-common', common_lib, 'mod styx_flow;')
@@ -918,14 +918,14 @@ core=read('rust/gedefense-core/src/main.rs')
 core_titan=read('rust/gedefense-core/src/titan_exec.rs')
 btf=read('rust/gedefense-core/src/btf_offsets.rs')
 ipc=read('control/coreipc.go')
-xdr=read('control/xdr.go')
+xdr=''.join(p.read_text(encoding='utf-8') for p in sorted((root/'control').glob('xdr*.go')) if not p.name.endswith('_test.go'))
 settings=read('control/titan_exec_settings.go')
 syncer=read('control/titan_exec_syncer.go')
 syncer_status=read('control/titan_exec_syncer_status.go')
 events=read('control/titan_exec_events.go')
 runtime=read('control/runtime_settings.go')
 schema=read('control/fabric_schema.go')
-server=read('control/server.go')
+server=''.join(p.read_text(encoding='utf-8') for p in sorted((root/'control').glob('server*.go')) if not p.name.endswith('_test.go'))
 state=read('control/state.go')
 
 # ABI-1: one shared, exactly 88-byte TitanExecEvent contract with a rejecting decoder.
@@ -1104,7 +1104,7 @@ def need_match(component, text, label, pattern):
         missing.append(f'{component}: {label}')
 
 events=read('control/titan_exec_events.go')
-xdr=read('control/xdr.go')
+xdr=''.join(p.read_text(encoding='utf-8') for p in sorted((root/'control').glob('xdr*.go')) if not p.name.endswith('_test.go'))
 settings=read('control/titan_exec_settings.go')
 
 need('go-events', events, 'func decodeTitanExecComm(field string) (string, error) {')
@@ -1277,7 +1277,7 @@ settings = read('control/parser_cells_settings.go')
 kernel = read('control/parser_cells_kernel.go')
 api = read('control/parser_cells_api.go')
 runtime_settings = read('control/runtime_settings.go')
-server = read('control/server.go')
+server = ''.join(p.read_text(encoding='utf-8') for p in sorted((root/'control').glob('server*.go')) if not p.name.endswith('_test.go'))
 guard = read('control/cell_guard.go')
 bootstrap = read('control/config.go')
 for anchor in (
@@ -1595,8 +1595,8 @@ triggers = read('control/lockdown_triggers.go')
 api = read('control/lockdown_api.go')
 status = read('control/lockdown_status.go')
 coreipc = read('control/coreipc.go')
-server = read('control/server.go')
-xdr = read('control/xdr.go')
+server = ''.join(p.read_text(encoding='utf-8') for p in sorted((root/'control').glob('server*.go')) if not p.name.endswith('_test.go'))
+xdr=''.join(p.read_text(encoding='utf-8') for p in sorted((root/'control').glob('xdr*.go')) if not p.name.endswith('_test.go'))
 main = read('control/main.go')
 state = read('control/state.go')
 schema = read('control/fabric_schema.go')
@@ -1963,7 +1963,7 @@ need('go-schema', schema, '{module: "witness", group: "Escalation", key: "trigge
 need('go-schema', schema, 'key: "outbox_max_bytes"')
 
 # --- ABI-9: operator API, evidence gate, status projection (§7) --------------
-server = read('control/server.go')
+server = ''.join(p.read_text(encoding='utf-8') for p in sorted((root/'control').glob('server*.go')) if not p.name.endswith('_test.go'))
 for route in (
     'mux.HandleFunc("GET /api/v1/witness/status", s.auth(s.witnessStatus))',
     'mux.HandleFunc("GET /api/v1/witness/export", s.auth(s.witnessExport))',
@@ -2586,7 +2586,7 @@ need('ap7-permit-profiles', read('control/permit_profiles.go'),
      'func builtinPermitProfiles()')
 need('ap7-permit-broker', read('control/permit_broker.go'),
      'func (e *XDREngine) pollPermits')
-need('ap7-permit-xdr-hook', read('control/xdr.go'), 'applyPermitDecision(decision, permitDecision)')
+need('ap7-permit-xdr-hook', ''.join(p.read_text(encoding='utf-8') for p in sorted((root/'control').glob('xdr*.go')) if not p.name.endswith('_test.go')), 'applyPermitDecision(decision, permitDecision)')
 need('ap7-permit-fuzz', read('control/permit_fuzz_test.go'),
      'func FuzzPermitV1Decode')
 need('ap7-permit-fuzz-makefile', read('Makefile'), 'FuzzPermitV1Decode')
@@ -2612,7 +2612,7 @@ need('ap7-prune-ipc', prune_ipc, 'func (c *CoreClient) QuarantinePrune')
 prune_flow = read('control/quarantine_prune.go')
 for anchor in ['errQuarantinePruneEvidence', 'quarantinePruner']:
     need('ap7-prune-flow', prune_flow, anchor)
-server = read('control/server.go')
+server = ''.join(p.read_text(encoding='utf-8') for p in sorted((root/'control').glob('server*.go')) if not p.name.endswith('_test.go'))
 for anchor in ['POST /api/v1/quarantine/prune',
                'GET /api/v1/xdr/review',
                'POST /api/v1/xdr/review/{id}/ack',
@@ -2635,7 +2635,7 @@ for anchor in ['["QUARANTINE_PRUNE", object_id, identity]', 'prune_token(']:
 # Kill gate and observe-only negatives (must stay untouched by AP-6/AP-7).
 need('kill-gate-r3', read('control/xdr_rules.go'),
      'responseScore >= 120 && len(killCategories) >= 2')
-forbid('xdr-core-r3', read('control/xdr.go'), r'Decision:\s*"kill"',
+forbid('xdr-core-r3', ''.join(p.read_text(encoding='utf-8') for p in sorted((root/'control').glob('xdr*.go')) if not p.name.endswith('_test.go')), r'Decision:\s*"kill"',
        'a hard-coded kill decision in the XDR engine')
 
 if missing:
@@ -2745,7 +2745,7 @@ for anchor in ['func (s *APIServer) classifyCredential',
 rbac_auth = read('control/rbac_auth.go')
 need('ap9-rbac-auth', rbac_auth, 'func (s *APIServer) criticalStepUpKey')
 need('ap9-rbac-lockout', rbac_auth, 'newAttemptLockout')
-server_rbac = read('control/server.go')
+server_rbac = ''.join(p.read_text(encoding='utf-8') for p in sorted((root/'control').glob('server*.go')) if not p.name.endswith('_test.go'))
 for anchor in ['GET /api/v1/auth/roles', 'POST /api/v1/auth/step-up',
                's.requireRole(RoleObserver, s.authRoles)',
                's.requireRole(RoleOperator, s.authStepUp)']:
@@ -2772,9 +2772,9 @@ witness = read('control/witness_priority.go')
 for anchor in ['func (e *XDREngine) pushCriticalWitness', 'witnessPriorityQueueCapacity',
                'func criticalWitnessTrigger', 'xdr.witness_priority_failed']:
     need('ap9-witness-priority', witness, anchor)
-need('ap9-witness-order', read('control/xdr.go'),
+need('ap9-witness-order', ''.join(p.read_text(encoding='utf-8') for p in sorted((root/'control').glob('xdr*.go')) if not p.name.endswith('_test.go')),
      'e.pushCriticalWitness(incident)')
-need('ap9-witness-order-before-log', read('control/xdr.go'),
+need('ap9-witness-order-before-log', ''.join(p.read_text(encoding='utf-8') for p in sorted((root/'control').glob('xdr*.go')) if not p.name.endswith('_test.go')),
      'V6.3.0 AP-9 (S08/S15)')
 need('ap9-witness-tests', read('control/witness_priority_test.go'),
      'TestWitnessPriorityOrderingBeforeForensicAppend')
