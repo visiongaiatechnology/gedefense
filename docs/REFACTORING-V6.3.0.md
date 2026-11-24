@@ -331,4 +331,72 @@ tracepoint); shared constants are grouped in `maps.rs`/`util.rs`.
 Wave 4 commit: `refactor(wave4): split eBPF main.rs into verifier-safe modules
 (structure-only)`.
 
-## Wave 5 — Shell scripts & large test files — pending
+## Wave 5 — Shell scripts & large test files
+
+### Wave 5 (2026-11-24) — audit split, optional large-test splits, OneClick decision
+
+**`scripts/security-audit.sh` split (mandatory):** the 2,906-line monolith became a
+22-line runner (`set -Eeuo pipefail`, `ROOT`, `fail`/`pass`, tool check, `cd
+"$ROOT"`, banner) that sources `scripts/audit/*.sh` in lexical order:
+
+| Stage | Lines | Original lines |
+|---|---:|---|
+| `01_shell_and_secret_hygiene.sh` | 354 | 13–362 |
+| `02_web_and_dashboard.sh` | 316 | 363–674 |
+| `03_ipc_and_transport.sh` | 231 | 675–901 |
+| `04_lsm_and_kernel_contracts.sh` | 233 | 902–1130 |
+| `05_rust_core_and_wire.sh` | 306 | 1131–1432 |
+| `06_go_control_plane.sh` | 323 | 1433–1751 |
+| `07_evidence_and_governance.sh` | 378 | 1752–2125 |
+| `08_hardening_and_release.sh` | 363 | 2126–2484 |
+| `09_anti_spyware_rounds.sh` | 315 | 2485–2795 |
+| `10_release_artifacts.sh` | 113 | 2796–2904 |
+
+Every original content line is preserved verbatim in exactly one stage; the
+Makefile/CI path (`bash ./scripts/security-audit.sh`) and the PASS output are
+unchanged — verified by running the baseline audit before the split and diffing
+the complete stdout: **byte-identical (40 lines, 38 PASS)**, `bash -n` clean for
+runner and all stages. Split boundaries were chosen at top-level statement
+starts (including every `python3` heredoc), never inside a block.
+
+**Audit contract updates (integration owner, widen-only):** Rust-core
+aggregations now also include `rust/gedefense-core/src/main_tests/**` (the
+`rust-core` no-shell guard moved there with its test module);
+`control/permit_broker_test.go` is read as the `permit_broker*_test.go` family
+after its split. Literal anchors, nothing weakened. Living docs updated to the
+new test paths (`ARCHITECTURE.md` feeds table/list, `docs/feed-signing.md`);
+`CHANGELOG.md` history is intentionally left as the historical record.
+
+**Optional large-test splits (per plan):**
+- `rust/gedefense-core/src/main_tests.rs` 2,623 → parent 98 + `main_tests/{ipc_tests 610, lockdown_group 616, btf_tests 538, flow_tests 477, exec_tests 336}`; all **68 tests** preserved exactly once (byte-identical bodies; only one module-path segment added), group for the `lockdown_modules_never_use_shell_or_kill_primitives` include_str! guard keeps scanning the same 11 files.
+- Go control tests: `titan_test.go` 1,149 / `feed_signing_test.go` 1,026 / `mitigation_guard_test.go` 817 / `permit_broker_test.go` 749 / `feeds_test.go` 744 (Σ 4,485 lines, 74 test funcs) → 12 thematic `*_test.go` files (Σ 4,568 lines, max 577), **74/74 test funcs preserved**; full control suite counters identical (2,134 PASS / 2 SKIP / 0 FAIL).
+- **OneClick header NOT modularized (documented decision):** `scripts/oneclick-installer-header.sh` (1,472 lines) is embedded verbatim by the `.run` packaging pipeline (`build-source-oneclick.sh`, `package-artifacts.sh` `--template`) and read directly by `validate-linux-integration.py`/`validate-distro-integration.sh`; the plan conditions this split on verified packaging concatenation, and keeping the single template path is the safer, behaviour-identical choice for this wave.
+
+#### Wave 5 gate evidence (serial, settled tree)
+| Gate | Result |
+|---|---|
+| Audit split output equivalence | **byte-identical** pre/post (40 lines, 38 PASS); `bash -n` runner+10 stages OK |
+| `make full` (`test` + `go` + `gateway` + `rust`) | exit 0 (final refresh of `dist/` binaries + eBPF object) |
+| `make test` | exit 0 — control + gateway green, recursive node check, `SECURITY AUDIT PASS` |
+| `make test-race` | exit 0 |
+| `make fuzz-smoke` | **24/24 PASS** |
+| Rust checks/tests | musl core check (+`--tests`) exit 0; bpfel check exit 0; common **97**, core **259 passed / 0 failed / 5 ignored** (identical) |
+| Go control full package (during test split) | 2,134 PASS / 2 SKIP / 0 FAIL (identical counts before/after) |
+| Validators | `validate-linux-integration`, `validate-github-release`, `validate-systemd`, audit PASS |
+
+Wave 5 commit: `refactor(wave5): split security audit into stages and large
+test files (structure-only)`.
+
+## Refactoring result
+
+All five waves of `GeDefense_Linux_Refactoring_Plan.md` are executed on top of the
+V6.3.0 release: waves 1a/1b (Go control/gateway), wave 2 (web UI), wave 3 (Rust
+privileged core), wave 4 (Rust eBPF, verifier-verified with a real-kernel load),
+wave 5 (audit stages + optional large-test splits). Structure-only throughout:
+no behaviour, wire/ABI, route, threshold, security-invariant or dependency
+changes; the security audit remains literal-anchored (now checked over
+production-file families) and green; the eBPF release object is
+section/symbol-identical to the pre-wave-4 baseline and was accepted by the real
+kernel verifier; the pinned Rust/Go/fuzz/validators matrix is green. Local
+commits: `fb21f9d` (release), `e563e1c`, `9e22715`, `6e2f195`, `9a464b1`,
+`159555f`, and the wave-5 commit (no push).

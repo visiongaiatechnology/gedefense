@@ -251,7 +251,8 @@ control/
   failclosed_contract_test.go                  Testing                        Mutation contract tests verifying fail-closed retention across degradation paths
   feeds.go                                     Threat Feeds                   Threat intelligence feed fetcher, parser, validation, and staging engine
   feeds_json_test.go                           Testing                        Unit tests for JSON-formatted threat intelligence feed parsing
-  feeds_test.go                                Testing                        Unit tests for feed downloading, rate limiting, and CIDR extraction
+  feeds_parse_test.go                          Testing                        Unit tests for threat-feed line parsing, CIDR extraction and dedupe
+  feeds_sync_test.go                           Testing                        Unit tests for feed downloading, rate limiting and staged sync
   fim.go                                       Integrity / FIM                File Integrity Monitor engine (streaming SHA-256, symlink jail protection)
   fim_test.go                                  Testing                        Unit tests for FIM baseline initialization and drift detection
   findings_regression_test.go                  Testing                        Regression tests verifying findings reporting across XDR and L7 engines
@@ -1442,7 +1443,8 @@ Konfiguration:
 - gedefense.toml (feeds section: URLs, update intervals, airlock rules)
 
 Tests:
-- control/feeds_test.go
+- control/feeds_parse_test.go
+- control/feeds_sync_test.go
 - control/threat_intel_fabric_test.go
 ```
 

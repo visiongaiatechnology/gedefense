@@ -135,7 +135,7 @@ Keys sowie Symlinks.
 
 ## Tests
 
-`control/feed_signing_test.go` (Linux) deckt ab: Key-Generierung/-Rechte/
+`control/feed_signing_verify_test.go` und `control/feed_sign_manifest_test.go` (Linux) decken ab: Key-Generierung/-Rechte/
 Overwrite-Schutz, Ende-zu-Ende-Sync mit In-Memory-Transport, exakte Raw-/Items-
 Bindung, Pfad-Jail (Traversal, Symlink-Datei, Symlink-Verzeichnis, Oversize),
 Fail-Closed ohne/mit falschem Pin, Kernel-Apply-Verweigerung bei abgelaufenem/
