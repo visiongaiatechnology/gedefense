@@ -14,12 +14,19 @@
 //!   least `RANSOM_META_THRESHOLD` rename/unlink operations inside
 //!   `RANSOM_META_WINDOW_NS`.
 //!
-//! Package managers / compilers / backup tools registered in
-//! `RANSOM_TRUSTED_COMM` are exempt (comm allowlist is spoofable; the control
-//! plane correlates `RANSOM.*` with the XDR exec sensor instead of trusting the
-//! name alone). The sensor is armed through `RANSOM_STATE` (default 0 =
-//! disarmed); the kernel only emits evidence, the userspace core freezes the
-//! process group (`SIGSTOP`) and the control plane decides.
+//! Package managers / compilers / backup tools and pooled service workers are
+//! exempted through the *real executable identity* (V6.3.0 AP-1): the flags
+//! `ALLOW_RANSOM_FULL` / `ALLOW_RANSOM_POOL_META` of `TRUSTED_EXEC_INODES`,
+//! resolved from `current->mm->exe_file->f_inode` with BTF-published offsets.
+//! `RANSOM_TRUSTED_COMM` (the pre-existing comm-keyed exemption map) is only a
+//! *fallback* used when the inode gate is genuinely unavailable (BTF
+//! offsets/state missing, or no resolvable `exe_file`); the weaker mode is
+//! documented here and reported through the exec-inode gate status. Comm is
+//! spoofable by a local attacker, the executable inode is not.
+//!
+//! The sensor is armed through `RANSOM_STATE` (default 0 = disarmed); the kernel
+//! only emits evidence, the userspace core freezes the process group
+//! (`SIGSTOP`) and the control plane decides.
 //!
 //! Map names, the state-word layout and the 64-byte `RansomEvent` are ABI and
 //! are looked up by name from `rust/gedefense-core`; do not rename or reshape.
@@ -42,7 +49,12 @@ use gedefense_common::{
     RANSOM_STATE_MAGIC, RANSOM_STATE_MAGIC_SHIFT, RANSOM_TRACK_ENTRIES,
     RANSOM_TRUSTED_COMM_ENTRIES, RANSOM_TRUST_FULL, RANSOM_TRUST_POOL_METADATA,
 };
-use crate::{titan_offsets, titan_probe, TitanOffsets};
+use crate::{
+    exec_inode::{
+        current_exec_trust, EXEC_INODE_RANSOM_FULL_FLAG, EXEC_INODE_RANSOM_POOL_META_FLAG,
+    },
+    titan_offsets, titan_probe, TitanOffsets,
+};
 
 /// Index of the single sensor state word in `RANSOM_STATE`.
 const RANSOM_STATE_INDEX: u32 = 0;
@@ -104,6 +116,20 @@ fn ransom_armed() -> bool {
 #[inline(always)]
 fn trust_level(comm: &[u8; 16]) -> u8 {
     unsafe { RANSOM_TRUSTED_COMM.get(comm).copied().unwrap_or(0) }
+}
+
+/// Maps the executable-inode trust flags of `TRUSTED_EXEC_INODES` onto the two
+/// pre-existing exemption tiers. The inode gate is authoritative when it is
+/// available; `0` means "resolved executable, no exemption".
+#[inline(always)]
+fn exec_inode_trust_tier(flags: u32) -> u8 {
+    if flags & EXEC_INODE_RANSOM_FULL_FLAG != 0 {
+        RANSOM_TRUST_FULL
+    } else if flags & EXEC_INODE_RANSOM_POOL_META_FLAG != 0 {
+        RANSOM_TRUST_POOL_METADATA
+    } else {
+        0
+    }
 }
 
 /// Integer-only distinct-byte estimator: samples up to 64 user bytes into a
@@ -299,7 +325,12 @@ fn current_identity(skip_pool_metadata: bool) -> Option<(u32, u32, u64, u64, [u8
         return None;
     }
     let comm = bpf_get_current_comm().ok()?;
-    let tier = trust_level(&comm);
+    // V6.3.0 AP-1: inode identity first, comm allowlist only when the gate is
+    // genuinely unavailable for this decision.
+    let tier = match current_exec_trust() {
+        Some((_identity, flags)) => exec_inode_trust_tier(flags),
+        None => trust_level(&comm),
+    };
     if tier == RANSOM_TRUST_FULL || (skip_pool_metadata && tier == RANSOM_TRUST_POOL_METADATA) {
         return None;
     }

@@ -8,7 +8,9 @@ package main
 // exposes the guard state honestly. It never blocks PAM or login by itself: the
 // guard is an observation/enforcement point owned by the kernel policy, and the
 // Go side only reports, correlates and (when the core advertises the family)
-// arms the sensor.
+// arms the sensor. V6.3.0 AP-1 added action 3 (DENY_INODE_UNTRUSTED): the same
+// kernel verdict as action 1, but decided by the executable-inode trust gate
+// instead of the spoofable comm allowlist. It is labelled accordingly.
 
 import (
 	"errors"
@@ -122,16 +124,31 @@ func (e *XDREngine) consumeCredGuardEvents(events []CoreCredGuardEvent, dropped 
 // recordCredentialGuardDeny creates evidence first, then the incident with an
 // attack-story node. It never issues an active response: the kernel already
 // denied the read, and PAM/login must never be changed from this path.
+//
+// V6.3.0 AP-1: action CredGuardActionDenyInode is the same kernel -EACCES deny
+// but decided by the executable-inode trust gate. It is labelled as an
+// inode-gate denial in the summary, evidence, outcome and attack-story
+// metadata; the incident shape and every action-1/2 behaviour stay identical.
 func (e *XDREngine) recordCredentialGuardDeny(event CoreCredGuardEvent, now time.Time) {
+	inodeGate := event.Action == CredGuardActionDenyInode
+	decidedBy := "comm_allowlist"
+	if inodeGate {
+		decidedBy = "exec_inode_gate"
+	}
 	summary := fmt.Sprintf("Kernel LSM denied a credential-object read: pid=%d uid=%d comm=%s",
 		event.PID, event.UID, event.Comm)
+	if inodeGate {
+		summary = fmt.Sprintf("Kernel executable-inode gate denied a credential-object read: pid=%d uid=%d comm=%s",
+			event.PID, event.UID, event.Comm)
+	}
 	evidenceErr := e.state.RecordEvidence(EvidenceRecord{
 		Severity: "high", Kind: "xdr.credential_read_blocked", Source: "kernel",
-		Message: "Kernel credential-guard DENY recorded before any response: " + summary,
+		Message: "Kernel credential-guard DENY recorded before any response (" + decidedBy + "): " + summary,
 		Target:  fmt.Sprintf("dev:%d:ino:%d:pid:%d", event.Dev, event.Ino, event.PID), Time: now,
 	})
 	metadata := map[string]string{
 		"action":               "deny",
+		"decided_by":           decidedBy,
 		"uid":                  strconv.FormatUint(uint64(event.UID), 10),
 		"pid":                  strconv.Itoa(event.PID),
 		"tgid":                 strconv.Itoa(event.TGID),
@@ -184,6 +201,9 @@ func (e *XDREngine) recordCredentialGuardDeny(event CoreCredGuardEvent, now time
 		}
 	}
 	outcome := "read denied by the kernel LSM before any byte was returned; no active response required"
+	if inodeGate {
+		outcome = "read denied by the kernel executable-inode trust gate before any byte was returned; no active response required"
+	}
 	action := "none"
 	if evidenceErr != nil {
 		// The kernel already denied the read; the incident is still recorded with an

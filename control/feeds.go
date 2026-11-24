@@ -1096,6 +1096,9 @@ type ThreatIntelTelemetry struct {
 	AnnotateVectors             int                   `json:"annotate_vectors"`
 	TotalVectors                int                   `json:"total_vectors"`
 	Feeds                       []FeedGenerationState `json:"feeds"`
+	// AP-9/S09 TUF-grade anti-poisoning projection (capability, epoch,
+	// blocked-update counters, R5 isolation mode, bounded rejection ring).
+	TUF TUFSecurityStatus `json:"tuf"`
 }
 
 type FeedManager struct {
@@ -1146,6 +1149,16 @@ type FeedManager struct {
 	// exposed through PersistentStateIntegrity so the refusal is observable.
 	stateIntegrityEvents []threatIntelStateIntegrityEvent
 	stateIntegrityErr    string
+
+	// AP-9/S09 TUF-grade anti-poisoning projection: capability, high-water
+	// epoch, Last-Known-Good digest, blocked-update counters and a bounded
+	// rejection ring. Guarded by mu; new files own the field layout and logic.
+	tuf tufManagerState
+	// tufEventSink receives the bounded "feed.poisoning_blocked" state events.
+	// It is nil by default (the rejection is still logged and projected through
+	// Telemetry); the status/server owner wires state.AddEvent through
+	// SetTUFEventSink. Guarded by mu.
+	tufEventSink func(Event)
 }
 
 func NewFeedManager(cfg FeedConfig, stateDir ...string) *FeedManager {
@@ -1248,6 +1261,9 @@ func NewFeedManager(cfg FeedConfig, stateDir ...string) *FeedManager {
 	// A file that cannot be authenticated is quarantined and never adopted; the
 	// manager then starts from its safe defaults instead of trusting the file.
 	_ = mgr.loadPersistentState()
+	// AP-9/S09: project the persisted TUF high-water register once at startup.
+	// A corrupt register is reported here and fails the next sync closed.
+	mgr.loadTUFStatusFromRegister()
 	return mgr
 }
 
@@ -1405,6 +1421,7 @@ func (m *FeedManager) Telemetry() ThreatIntelTelemetry {
 		AnnotateVectors:             aCount,
 		TotalVectors:                bCount + cCount + aCount,
 		Feeds:                       feeds,
+		TUF:                         m.tufStatusLocked(),
 	}
 }
 
@@ -2157,6 +2174,17 @@ func (m *FeedManager) syncInternal(ctx context.Context) ([]string, map[string]er
 	successCount := 0
 	failCount := 0
 
+	// AP-9/S09: resolve the threshold envelope, its validity window and the
+	// anti-rollback epoch against the persisted high-water register once for
+	// this sync, before any last-known-good promotion. A gate rejection is
+	// fail-closed: every feed keeps serving its previous generation.
+	tufGate := m.tufPrepareSyncGateLocked(now)
+	tufGuardBlocked := false
+	if tufGate.Active && tufGate.Reject != nil {
+		tufGuardBlocked = true
+		m.recordTUFBlockedLocked(tufErrorReason(tufGate.Reject), "", now)
+	}
+
 	for r := range out {
 		feedState := m.feedStates[r.id]
 		if feedState == nil {
@@ -2216,6 +2244,27 @@ func (m *FeedManager) syncInternal(ctx context.Context) ([]string, map[string]er
 			}
 		}
 
+		// AP-9/S09: the threshold envelope verdict and the local semantic
+		// anti-poisoning guard run after the existing signature/rollback gate and
+		// before the last-known-good promotion. The semantic guard is signature
+		// independent, so it runs even when the TUF capability is unavailable.
+		if guardErr := m.tufScreenFeedPromotionLocked(&tufGate, feedState, r.items); guardErr != nil {
+			failCount++
+			errs[r.url] = guardErr
+			feedState.LastError = guardErr.Error()
+			feedState.ConsecutiveFails++
+			feedState.Status = computeFeedStatus(feedState, snapshot.settings)
+			if tufIsRejection(guardErr) {
+				tufGuardBlocked = true
+				reason := tufErrorReason(guardErr)
+				if reason == "" {
+					reason = TUFReasonSchema
+				}
+				m.recordTUFBlockedLocked(reason, r.id, now)
+			}
+			continue
+		}
+
 		// Valid download: promote to new last-known-good generation
 		successCount++
 		feedState.LastGoodItems = r.items
@@ -2243,6 +2292,25 @@ func (m *FeedManager) syncInternal(ctx context.Context) ([]string, map[string]er
 		}
 	}
 
+	// AP-9/S09: advance the anti-rollback epoch and the Last-Known-Good shadow
+	// only for a sync that accepted the threshold envelope and promoted every
+	// enabled source. On a rejected or partial sync the previous Last-Known-Good
+	// keeps being served and the high-water epoch stays untouched. A commit
+	// failure rolls the promotions back: an unauthenticated epoch advancement
+	// must never be published.
+	if tufGate.Active && tufGate.Reject == nil && !tufGuardBlocked && successCount == len(sources) && failCount == 0 {
+		if commitErr := m.tufCommitSyncLocked(&tufGate, snapshot.settings, now); commitErr != nil {
+			m.restoreLastKnownGoodLocked(tufGate.Restore)
+			for _, source := range sources {
+				errs[source.URL] = NewThreatIntelSecurityException(
+					"TUF high-water register commit failed; feed generation was not activated", commitErr)
+			}
+			failCount += successCount
+			successCount = 0
+			m.recordTUFBlockedLocked(TUFReasonStateCorrupt, "", now)
+		}
+	}
+
 	// Rule 14 / Point 64–67: Correct sync timestamp and status semantics
 	if failCount == 0 && successCount == len(sources) {
 		m.lastSuccessfulSyncAt = now
@@ -2266,6 +2334,49 @@ func (m *FeedManager) syncInternal(ctx context.Context) ([]string, map[string]er
 	_ = m.savePersistentStateLocked()
 
 	return blockUnion, errs
+}
+
+// tufFeedProtectionSnapshot is the S09 semantic-guard adapter for the existing
+// feed vocabulary. It maps one parsed feed generation (the indicator list the
+// pipeline already produces and promotes into LastGoodItems) onto the
+// source-agnostic protection model.
+//
+// Coverage (honest statement):
+//   - Covered: network-indicator feed documents in the ThreatFeedSource
+//     vocabulary (line-oriented and JSON IP/CIDR lists, the artifacts that
+//     FeedManager fetch/verify/activate handles today). BLOCK entries are the
+//     active protection entries and are therefore subject to the 20 % deletion
+//     budget, the immutable-zone deletion check and the global-allow check.
+//     CORRELATE_ONLY / ANNOTATE_ONLY entries are carried as intel entries so
+//     allow/wildcard/regex validation still applies, but they are not counted
+//     as protection entries because they never gate traffic.
+//   - Not covered by this adapter: regex rule documents, advisory/mitigation
+//     documents and allowlist imports. Those pipelines are not wired into
+//     FeedManager.syncInternal in this tree; the guard model is generic and
+//     ready for them, but connecting them needs an owner outside this file set
+//     (reported as an AP-9/S09 integration gap). Feed entries are network
+//     indicators, so the path/regex checks structurally find nothing here: for
+//     this pipeline the diff budget and wildcard/allow checks are the signal.
+func tufFeedProtectionSnapshot(feedID string, action FeedAction, items []string) TUFProtectionSnapshot {
+	kind := TUFKindIntel
+	if action == FeedActionBlock {
+		kind = TUFKindBlockPrefix
+	}
+	entries := make([]TUFProtectionEntry, 0, len(items))
+	for _, item := range items {
+		trimmed := strings.TrimSpace(item)
+		if trimmed == "" {
+			continue
+		}
+		entries = append(entries, TUFProtectionEntry{
+			ID:         "feed:" + feedID + ":" + trimmed,
+			Kind:       kind,
+			Scope:      trimmed,
+			FeedOrigin: feedID,
+			Active:     true,
+		})
+	}
+	return TUFProtectionSnapshot{ID: feedID, Origin: "feed", Entries: entries}
 }
 
 // composeGenerationsLocked rebuilds the three published generations from the
@@ -2820,6 +2931,12 @@ func (m *FeedManager) fetchSourceOnce(ctx context.Context, src ThreatFeedSource,
 	raw, contentType, err := m.fetchFeedRawOnce(ctx, src, snapshot, u)
 	if err != nil {
 		return nil, nil, err
+	}
+	// AP-9/S09/R5 interim isolation: shadow-parse the exact untrusted bytes
+	// before the signed-manifest verifier and the feed parser consume them.
+	shadowMaxEntries, shadowMaxBytes, _ := snapshot.feedBounds(src)
+	if shadowErr := tufShadowValidateFeedBytes(raw, shadowMaxEntries, shadowMaxBytes); shadowErr != nil {
+		return nil, nil, shadowErr
 	}
 	certificate, verifyErr := m.verifyFeedArtifact(src, raw)
 	if verifyErr != nil {

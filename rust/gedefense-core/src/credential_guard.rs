@@ -108,39 +108,39 @@ impl CredentialGuardCore {
         bpf_lsm_active: bool,
     ) -> Result<Self, BoxError> {
         let events = RingBuf::try_from(
-            ebpf.take_map("CRED_GUARD_EVENTS")
+            ebpf.take_map(&crate::chameleon::map_name("CRED_GUARD_EVENTS"))
                 .ok_or("CRED_GUARD_EVENTS missing")?,
         )?;
         let state = AyaArray::try_from(
-            ebpf.take_map("CRED_GUARD_STATE")
+            ebpf.take_map(&crate::chameleon::map_name("CRED_GUARD_STATE"))
                 .ok_or("CRED_GUARD_STATE missing")?,
         )?;
         let files = AyaHashMap::try_from(
-            ebpf.take_map("CRED_GUARD_FILES")
+            ebpf.take_map(&crate::chameleon::map_name("CRED_GUARD_FILES"))
                 .ok_or("CRED_GUARD_FILES missing")?,
         )?;
         let dirs = AyaHashMap::try_from(
-            ebpf.take_map("CRED_GUARD_DIRS")
+            ebpf.take_map(&crate::chameleon::map_name("CRED_GUARD_DIRS"))
                 .ok_or("CRED_GUARD_DIRS missing")?,
         )?;
         let malware_denied_inodes = Arc::new(Mutex::new(AyaHashMap::try_from(
-            ebpf.take_map("MALWARE_DENIED_INODES")
+            ebpf.take_map(&crate::chameleon::map_name("MALWARE_DENIED_INODES"))
                 .ok_or("MALWARE_DENIED_INODES missing")?,
         )?));
         let emitted = PerCpuArray::try_from(
-            ebpf.take_map("CRED_GUARD_EVENTS_EMITTED")
+            ebpf.take_map(&crate::chameleon::map_name("CRED_GUARD_EVENTS_EMITTED"))
                 .ok_or("CRED_GUARD_EVENTS_EMITTED missing")?,
         )?;
         let ring_drops = PerCpuArray::try_from(
-            ebpf.take_map("CRED_GUARD_RING_DROPS")
+            ebpf.take_map(&crate::chameleon::map_name("CRED_GUARD_RING_DROPS"))
                 .ok_or("CRED_GUARD_RING_DROPS missing")?,
         )?;
         let read_failures = PerCpuArray::try_from(
-            ebpf.take_map("CRED_GUARD_READ_FAILURES")
+            ebpf.take_map(&crate::chameleon::map_name("CRED_GUARD_READ_FAILURES"))
                 .ok_or("CRED_GUARD_READ_FAILURES missing")?,
         )?;
         let denied = PerCpuArray::try_from(
-            ebpf.take_map("CRED_GUARD_DENIED")
+            ebpf.take_map(&crate::chameleon::map_name("CRED_GUARD_DENIED"))
                 .ok_or("CRED_GUARD_DENIED missing")?,
         )?;
         let mut core = Self {
@@ -266,7 +266,7 @@ impl CredentialGuardCore {
             eprintln!("credential guard inactive: BPF LSM BTF unavailable");
             return;
         };
-        let Some(program) = ebpf.program_mut(CREDENTIAL_GUARD_PROGRAM) else {
+        let Some(program) = ebpf.program_mut(&crate::chameleon::program_name(CREDENTIAL_GUARD_PROGRAM)) else {
             eprintln!("credential guard program {CREDENTIAL_GUARD_PROGRAM} missing; not attached");
             return;
         };

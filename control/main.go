@@ -17,7 +17,7 @@ import (
 	"time"
 )
 
-const version = "6.2.1"
+const version = "6.3.0"
 
 func detectInterface(requested string) (string, error) {
 	if requested != "" && requested != "auto" {
@@ -93,6 +93,7 @@ func persistPolicy(policy policyPersistence, cfg Config, state *State) error {
 
 func main() {
 	configPath := flag.String("config", "./gedefense.toml", "configuration file")
+	chameleonManifest := flag.String("chameleon-manifest", "", "opt-in GeDefense Chameleon install manifest (default: public identity)")
 	check := flag.Bool("check-config", false, "validate configuration and exit")
 	preflight := flag.Bool("preflight", false, "run service-start preflight and exit")
 	activationPreflight := flag.Bool("preflight-activation", false, "run strict beta activation preflight and exit")
@@ -194,8 +195,25 @@ func main() {
 	if err != nil {
 		log.Fatalf("configuration: %v", err)
 	}
+	// V6.3.0 AP-8: opt-in Chameleon install profile. Empty path = documented
+	// default public identity; a present-but-invalid manifest is fatal so an
+	// operator who opted in never silently gets the public identity. The
+	// installer-provided environment variable is only a discovery fallback for
+	// the packaged control unit (the manifest itself stays a root-owned file).
+	chameleonManifestPath := *chameleonManifest
+	if chameleonManifestPath == "" {
+		chameleonManifestPath = os.Getenv(chameleonManifestEnvVar)
+	}
+	chameleon, err := NewChameleonProfile(chameleonManifestPath)
+	if err != nil {
+		log.Fatalf("chameleon profile: %v", err)
+	}
+	if chameleon.Active() {
+		installChameleonProfile(chameleon)
+		cfg = chameleon.Apply(cfg)
+	}
 	if *userScanFile != "" {
-		result, scanErr := UserMalwareScan("/run/gedefense-scan/scan.sock", *userScanFile, 30*time.Second)
+		result, scanErr := chameleonUserMalwareScan(*userScanFile, 30*time.Second)
 		if scanErr != nil {
 			log.Fatalf("user malware scan: %v", scanErr)
 		}
@@ -322,6 +340,20 @@ func main() {
 	}
 	if err := state.AttachEvidenceLedger(evidence); err != nil {
 		log.Fatalf("evidence ledger verification: %v", err)
+	}
+	// V6.3.0 AP-8: one evidence record for an opt-in Chameleon installation.
+	// Only the non-secret mapping commitment is recorded (install id, salt
+	// fingerprint hash, commitment hash); the full public=neutral mapping lives
+	// in the privileged core's root-only admin audit file and can be re-derived
+	// by the administrator from the signed install manifest.
+	if mapping, ok := chameleon.AuditMapping(); ok {
+		if recordErr := state.RecordEvidence(EvidenceRecord{
+			Severity: "medium", Kind: "chameleon.profile.active", Source: "chameleon",
+			Message: "Opt-in Chameleon Identity Mode is active: kernel program/map identifiers, core/scan sockets and daemon state paths are installation-specific; the real mapping is recoverable by the administrator from the signed install manifest",
+			Target:  fmt.Sprintf("install_id=%s;salt_fingerprint=%s;mapping_sha256=%s", mapping.InstallID, mapping.SaltFingerprint, mapping.MappingHash),
+		}); recordErr != nil {
+			log.Printf("chameleon profile evidence: %v", recordErr)
+		}
 	}
 	// A schema upgrade may raise an operator setting on the operator's behalf. That is
 	// recorded here, once the ledger is attached and before anything enforces the new
@@ -596,6 +628,10 @@ func main() {
 	}
 
 	feeds := NewFeedManager(cfg.Feeds)
+	// AP-9/S09: every TUF anti-poisoning rejection becomes a bounded,
+	// high-severity state event (stable reason code only; no URLs, keys or
+	// signatures). The previous Last-Known-Good generation stays active.
+	feeds.SetTUFEventSink(state.AddEvent)
 	if err := feeds.applyThreatIntelSettings(effectiveThreatIntelSettings(settings.Get()), settings.Get().Revision); err != nil {
 		log.Fatalf("threat intelligence settings: %v", err)
 	}

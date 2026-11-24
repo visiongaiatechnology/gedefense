@@ -20,7 +20,12 @@
 //! The allowlist is a *kernel-side* exact task-name check (auth/system
 //! binaries); task names are spoofable by a local attacker, which is why the
 //! control plane correlates `XDR.CREDENTIAL_READ_BLOCKED` with the XDR exec
-//! sensor. The guard is fail-open while the policy/offsets are unavailable (a
+//! sensor. V6.3.0 AP-1 made the real executable identity the *primary* gate and
+//! demoted this name list to the documented fallback: when the executable-inode
+//! gate is available a deny carries [`CRED_GUARD_ACTION_DENY_INODE`] (the same
+//! `-EACCES` verdict, decided by `TRUSTED_EXEC_INODES`), and the fallback mode is
+//! audited (`FALLBACK_COMM`) instead of being silently equated with the inode
+//! gate. The guard is fail-open while the policy/offsets are unavailable (a
 //! broken guard must never lock out PAM/login), but it reports `active=0` in
 //! `CRED_GUARD_STATUS` instead of claiming enforcement.
 
@@ -32,6 +37,11 @@ pub const CRED_GUARD_ACTION_DENY: u8 = 1;
 /// Event action: audit only (reserved for a future observe mode; the shipped
 /// guard only emits DENY records).
 pub const CRED_GUARD_ACTION_AUDIT: u8 = 2;
+/// V6.3.0 AP-1: the `-EACCES` deny was decided by the executable-inode trust
+/// gate (`TRUSTED_EXEC_INODES`), not by the (spoofable) comm allowlist. The
+/// control plane labels such a deny as an inode-gate denial; the kernel verdict
+/// is byte-for-byte the same `-EACCES` as [`CRED_GUARD_ACTION_DENY`].
+pub const CRED_GUARD_ACTION_DENY_INODE: u8 = 3;
 
 /// `CRED_GUARD_STATE` word layout (ABI 1): epoch 0..31, armed bit 32, magic
 /// 40..47, ABI 48..55. A default/absent word means "not ready": the kernel hook
@@ -242,7 +252,10 @@ pub fn decode_credential_guard_event(bytes: &[u8]) -> Option<CredentialGuardEven
     let reserved: [u8; 3] = bytes[41..44].try_into().ok()?;
     let comm: [u8; 16] = bytes[44..60].try_into().ok()?;
     let reserved2: [u8; 4] = bytes[60..64].try_into().ok()?;
-    if !matches!(action, CRED_GUARD_ACTION_DENY | CRED_GUARD_ACTION_AUDIT)
+    if !matches!(
+        action,
+        CRED_GUARD_ACTION_DENY | CRED_GUARD_ACTION_AUDIT | CRED_GUARD_ACTION_DENY_INODE
+    )
         || ts_ns == 0
         || pid == 0
         || tgid == 0
@@ -346,8 +359,16 @@ mod tests {
             assert!(decode_credential_guard_event(&raw[..len]).is_none(), "{len}");
         }
         let mut bad = sample();
-        bad.action = 3;
+        bad.action = 4;
         assert!(decode_credential_guard_event(&encode(&bad)).is_none());
+        // V6.3.0 AP-1: the inode-gate deny is an additive action value; the
+        // control plane labels it, the kernel verdict stays the same -EACCES.
+        let mut inode_deny = sample();
+        inode_deny.action = CRED_GUARD_ACTION_DENY_INODE;
+        assert_eq!(
+            decode_credential_guard_event(&encode(&inode_deny)),
+            Some(inode_deny)
+        );
         bad = sample();
         bad.pid = 0;
         assert!(decode_credential_guard_event(&encode(&bad)).is_none());

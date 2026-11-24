@@ -36,6 +36,35 @@ pub use worker_guard::*;
 mod xdr_kernel;
 pub use xdr_kernel::*;
 
+// V6.3.0 AP-1: executable-inode trust contract (`TRUSTED_EXEC_INODES`).
+mod exec_inode;
+pub use exec_inode::*;
+
+// V6.3.0 AP-2: attach-time eBPF guard contract (`BPF_GUARD_EVENTS`).
+mod bpf_guard;
+pub use bpf_guard::*;
+
+// V6.3.0 AP-3: cross-view verifier contract (`CROSS_VIEW_EVENTS`).
+mod cross_view;
+pub use cross_view::*;
+
+// V6.3.0 AP-4: io_uring/LKM hook contract (`KERNEL_HOOK_EVENTS`).
+mod kernel_hooks;
+pub use kernel_hooks::*;
+
+// V6.3.0 AP-5: persistence/peripheral contract (`PERSIST_GUARD_EVENTS`).
+mod persistence;
+pub use persistence::*;
+
+// V6.3.0 AP-6: bounded DNS query capture contract (`DNS_CAPTURE_EVENTS`).
+mod dns_capture;
+pub use dns_capture::*;
+
+// V6.3.0 AP-9 (S12): high-priority security ring contract
+// (`SEC_CRIT_EVENTS`) and the shared token-bucket math.
+mod sec_crit;
+pub use sec_crit::*;
+
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct DeceptionAccessEvent {

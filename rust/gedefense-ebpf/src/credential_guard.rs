@@ -21,15 +21,20 @@
 //! Every structural read failure is counted (`CRED_GUARD_READ_FAILURES`) and
 //! audited in the ring, never silently swallowed.
 //!
-//! Allowlist: exact auth/system task names plus `systemd*`/`gedefense*`
-//! prefixes (`gedefense_common::credential_reader_allowed`). Task names are
-//! spoofable by a local attacker; the control plane correlates
-//! `XDR.CREDENTIAL_READ_BLOCKED` with the XDR exec sensor instead of trusting
-//! the name alone.
+//! Allowlist: V6.3.0 AP-1 made the *primary* gate the real executable identity
+//! (`current->task_struct.mm -> mm_struct.exe_file -> file.f_inode ->
+//! inode.i_sb->s_dev / inode.i_ino`) against `TRUSTED_EXEC_INODES`
+//! (`ALLOW_CRED_READ`). The pre-existing exact auth/system task-name allowlist
+//! (`gedefense_common::credential_reader_allowed`) is only a fallback used when
+//! the inode gate is genuinely unavailable (BTF offsets/state missing); that
+//! weaker mode is explicitly audited as `FALLBACK_COMM` and counted, it is never
+//! silently equated with the inode gate. A `prctl(PR_SET_NAME, "sshd")`
+//! masquerade is denied by the inode gate and produces an `OBSERVED_MISMATCH`
+//! event because the comm allowlist would have matched.
 
 use aya_ebpf::{
     helpers::{
-        bpf_get_current_comm, bpf_get_current_pid_tgid, bpf_get_current_uid_gid, bpf_ktime_get_ns,
+        bpf_get_current_pid_tgid, bpf_get_current_uid_gid, bpf_ktime_get_ns,
     },
     macros::{lsm, map},
     maps::{Array, HashMap, PerCpuArray, RingBuf},
@@ -37,12 +42,21 @@ use aya_ebpf::{
 };
 use gedefense_common::{
     credential_identity_key, credential_reader_allowed, kernel_s_dev_to_stat_u32,
-    CredentialGuardEvent, CRED_GUARD_ACTION_DENY, CRED_GUARD_DIR_MAP_ENTRIES,
-    CRED_GUARD_EVENT_RING_BYTES, CRED_GUARD_EVENT_WIRE_BYTES, CRED_GUARD_FILE_MAP_ENTRIES,
-    CRED_GUARD_STATE_ABI, CRED_GUARD_STATE_ABI_SHIFT, CRED_GUARD_STATE_ARMED_SHIFT,
-    CRED_GUARD_STATE_BYTE_MASK, CRED_GUARD_STATE_MAGIC, CRED_GUARD_STATE_MAGIC_SHIFT,
+    CredentialGuardEvent, CRED_GUARD_ACTION_DENY, CRED_GUARD_ACTION_DENY_INODE,
+    CRED_GUARD_DIR_MAP_ENTRIES, CRED_GUARD_EVENT_RING_BYTES, CRED_GUARD_EVENT_WIRE_BYTES,
+    CRED_GUARD_FILE_MAP_ENTRIES, CRED_GUARD_STATE_ABI, CRED_GUARD_STATE_ABI_SHIFT,
+    CRED_GUARD_STATE_ARMED_SHIFT, CRED_GUARD_STATE_BYTE_MASK, CRED_GUARD_STATE_MAGIC,
+    CRED_GUARD_STATE_MAGIC_SHIFT, SEC_CRIT_ACTION_ENFORCE, SEC_CRIT_SOURCE_CRED_GUARD,
 };
-use crate::{titan_offsets, titan_probe, TitanOffsets};
+use crate::sec_crit::{sec_crit_emit, SEC_CRIT_KIND_CRED_DENY};
+use crate::{
+    exec_inode::{
+        current_comm, current_exec_trust, emit_exec_inode_event, emit_exec_inode_fallback_once,
+        note_exec_inode_allowed, note_exec_inode_denied, ttl_inode_denied,
+        EXEC_INODE_CRED_FLAG, EXEC_INODE_DENY_ACTION, EXEC_INODE_MISMATCH_ACTION,
+    },
+    titan_offsets, titan_probe, TitanOffsets,
+};
 
 const EACCES: i32 = 13;
 /// Index of the single guard state word in `CRED_GUARD_STATE`.
@@ -173,6 +187,23 @@ fn emit_credential_event(identity: &[u8; 16], inode_mode: u32, action: u8, comm:
     if !has_nul {
         comm_padded[15] = 0;
     }
+    // V6.3.0 AP-9 (S12): duplicate the enforced DENY into the independent
+    // high-priority ring. This happens *before* the cred-guard ring reservation
+    // so a full bulk/critical-family ring can never hide the deny from the
+    // safety-net channel; the action token documents the kernel decision
+    // (ENFORCE), `detail_code` carries the inode mode for the control plane.
+    if action == CRED_GUARD_ACTION_DENY || action == CRED_GUARD_ACTION_DENY_INODE {
+        sec_crit_emit(
+            SEC_CRIT_SOURCE_CRED_GUARD,
+            SEC_CRIT_KIND_CRED_DENY,
+            SEC_CRIT_ACTION_ENFORCE,
+            inode_mode,
+            dev,
+            ino,
+            comm_padded,
+            [0u8; 8],
+        );
+    }
     let event = CredentialGuardEvent {
         ts_ns,
         dev,
@@ -252,7 +283,20 @@ fn try_credential_guard_file_open(ctx: &LsmContext) -> Result<i32, i32> {
         return Ok(0);
     };
     if unsafe { MALWARE_DENIED_INODES.get(&identity).is_some() } {
-        let comm = bpf_get_current_comm().unwrap_or([0u8; 16]);
+        let comm = current_comm();
+        if !starts_with_bytes(&comm, b"gedefense-") {
+            increment_counter(&CRED_GUARD_DENIED);
+            emit_credential_event(&identity, mode, CRED_GUARD_ACTION_DENY, &comm);
+            return Err(-EACCES);
+        }
+    }
+    // AP-1: TTL-bounded behaviour-carrier locks (`MALWARE_TTL_INODES`) deny the
+    // same way as the pre-existing malware lock above and are audited with the
+    // same credential-deny record. The lock is enforced independently of the
+    // inode gate/BTF state: a locked carrier must not become openable just
+    // because the trust gate is unavailable.
+    if ttl_inode_denied(&identity) {
+        let comm = current_comm();
         if !starts_with_bytes(&comm, b"gedefense-") {
             increment_counter(&CRED_GUARD_DENIED);
             emit_credential_event(&identity, mode, CRED_GUARD_ACTION_DENY, &comm);
@@ -267,7 +311,7 @@ fn try_credential_guard_file_open(ctx: &LsmContext) -> Result<i32, i32> {
         Some(target) => target,
         None => return Ok(0),
     };
-    let comm = bpf_get_current_comm().unwrap_or([0u8; 16]);
+    let comm = current_comm();
     let mut comm_end = 0usize;
     while comm_end < comm.len() {
         if comm[comm_end] == 0 {
@@ -275,11 +319,57 @@ fn try_credential_guard_file_open(ctx: &LsmContext) -> Result<i32, i32> {
         }
         comm_end += 1;
     }
-    if credential_reader_allowed(&comm[..comm_end]) {
+    let comm_allowlisted = credential_reader_allowed(&comm[..comm_end]);
+    // V6.3.0 AP-1: the executable inode is the primary gate. `None` means the
+    // gate is genuinely unavailable (BTF offsets/state missing, no resolvable
+    // exe_file), not "untrusted": only then does the documented comm allowlist
+    // decide, and the weaker mode is audited at least once per CPU.
+    let Some((exe_identity, trust_flags)) = current_exec_trust() else {
+        emit_exec_inode_fallback_once(&comm);
+        if comm_allowlisted {
+            return Ok(0);
+        }
+        increment_counter(&CRED_GUARD_DENIED);
+        emit_credential_event(&target.0, target.1, CRED_GUARD_ACTION_DENY, &comm);
+        // Deny: the open cannot proceed. The event already names the identity.
+        return Err(-EACCES);
+    };
+    if trust_flags & EXEC_INODE_CRED_FLAG != 0 {
+        note_exec_inode_allowed();
+        if !comm_allowlisted {
+            // Inverse spoof direction: the real executable is trusted while its
+            // task name is not on the comm allowlist. The inode gate wins; the
+            // divergence is still evidence worth surfacing.
+            emit_exec_inode_event(
+                &exe_identity,
+                trust_flags,
+                EXEC_INODE_MISMATCH_ACTION,
+                &comm,
+            );
+        }
         return Ok(0);
     }
+    note_exec_inode_denied();
+    if comm_allowlisted {
+        // prctl(PR_SET_NAME, "sshd") signature: the comm allowlist would have
+        // allowed this read, the real executable identity does not.
+        emit_exec_inode_event(
+            &exe_identity,
+            trust_flags,
+            EXEC_INODE_MISMATCH_ACTION,
+            &comm,
+        );
+    }
+    emit_exec_inode_event(
+        &exe_identity,
+        trust_flags,
+        EXEC_INODE_DENY_ACTION,
+        &comm,
+    );
     increment_counter(&CRED_GUARD_DENIED);
-    emit_credential_event(&target.0, target.1, CRED_GUARD_ACTION_DENY, &comm);
-    // Deny: the open cannot proceed. The event already names the identity.
+    // The deny record carries the inode-gate action value so the control plane
+    // can label it as an identity denial instead of a comm-policy denial. The
+    // kernel verdict is the same -EACCES either way.
+    emit_credential_event(&target.0, target.1, CRED_GUARD_ACTION_DENY_INODE, &comm);
     Err(-EACCES)
 }

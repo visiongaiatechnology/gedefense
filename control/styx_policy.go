@@ -150,6 +150,10 @@ func (e *XDREngine) addStyxBeaconEvent(incident XDRIncident) {
 // detector and reports visibility loss honestly (§3.3, §9): an overflow series
 // degrades the sensor; it never becomes a claim that no beacons exist.
 func (e *XDREngine) recordStyxFlowBatch(events []CoreStyxFlowEvent, dropped uint64, now time.Time) {
+	// V6.3.0 AP-6: phase-2 analytics (bidirectional PCR / DNS correlation
+	// context) observe every batch before the beacon detector prunes it. The
+	// phase-2 engines never change an enforcement decision.
+	e.phase2ObserveFlowBatch(events, now)
 	beacon := e.styxBeacon
 	if beacon == nil {
 		return
@@ -300,6 +304,10 @@ type StyxStatus struct {
 	Suppressed    uint64 `json:"suppressed_total"`
 	OverflowTotal uint64 `json:"overflow_total"`
 	Degraded      bool   `json:"degraded"`
+	// V6.3.0 AP-6: the cgroup_skb/ingress RX capability fact
+	// ("available" / "unavailable"). Reporting metadata only; it never changes a
+	// score, an enforcement decision or the Phase-1 asymmetry gate.
+	RxObservation string `json:"rx_observation"`
 
 	EnforcementActive   bool    `json:"enforcement_active"`
 	TelemetryState      string  `json:"telemetry_state"`
@@ -326,6 +334,7 @@ func (e *XDREngine) StyxStatusSnapshot() *StyxStatus {
 		TrackedFlows: beacon.Flows, EventsTotal: beacon.Events, IncidentTotal: beacon.Incidents,
 		Suppressed: beacon.Suppressed, OverflowTotal: beacon.Overflows,
 		Degraded:          beacon.SensorState == "degraded" || flow.TelemetryDegraded,
+		RxObservation:     beacon.RxObservation,
 		EnforcementActive: styxEnforcementActive(sync),
 		TelemetryState:    flow.TelemetryState, TelemetryDegraded: flow.TelemetryDegraded,
 		FlowDropRatio: flow.DropRatio, FlowRingDropsDelta: flow.RingDropsDelta,
@@ -360,7 +369,7 @@ func (e *XDREngine) StyxPolicyStatus() StyxSyncStatus {
 // a nil receiver, so an engine without a detector simply reports unavailable.
 func (e *XDREngine) StyxBeaconSnapshot() StyxBeaconSnapshot {
 	if e == nil || e.styxBeacon == nil {
-		return StyxBeaconSnapshot{SensorState: "unavailable", DNSObservation: "unknown"}
+		return StyxBeaconSnapshot{SensorState: "unavailable", DNSObservation: "unknown", RxObservation: "unavailable"}
 	}
 	return e.styxBeacon.Snapshot()
 }

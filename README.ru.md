@@ -9,8 +9,8 @@
 <sub>*(Примечание: «Entenprise» — это не опечатка, а умышленная игра слов от нем. «Ente» — «утка» и отсылка к Sir Quacksec 🦆)*</sub>
 
 [![License](https://img.shields.io/badge/License-AGPL--3.0--only-blue?style=for-the-badge)](https://www.gnu.org/licenses/agpl-3.0)
-[![Version](https://img.shields.io/badge/Version-6.2.1-orange?style=for-the-badge)](#)
-[![Status](https://img.shields.io/badge/Status-Release_V6_(6.2.1)-brightgreen?style=for-the-badge)](#)
+[![Version](https://img.shields.io/badge/Version-6.3.0-orange?style=for-the-badge)](#)
+[![Status](https://img.shields.io/badge/Status-Release_V6_(6.3.0)-brightgreen?style=for-the-badge)](#)
 [![Installer](https://img.shields.io/badge/Installer-Universal_Linux-green?style=for-the-badge)](#-быстрый-старт)
 [![Platform](https://img.shields.io/badge/Platform-Linux_x86__64-lightgrey?style=for-the-badge&logo=linux)](#)
 [![Data Plane](https://img.shields.io/badge/Data_Plane-Rust_eBPF%2FXDP-red?style=for-the-badge&logo=rust)](#-архитектура)
@@ -32,12 +32,14 @@
 
 <br />
 
-⬇️ **Прямые ссылки на установщики (v6.2.1 / V6):**
-[**OneClick-установщик (`.run`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.2.1/VGT_GeDefense_V6_6.2.1_OneClick.run) · [`.sha256`](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.2.1/VGT_GeDefense_V6_6.2.1_OneClick.run.sha256) · [**Desktop Tray (`.run`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.2.1/GeDefense-6.2.1-Desktop-OneClick.run) · [`.sha256`](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.2.1/GeDefense-6.2.1-Desktop-OneClick.run.sha256) · [**Исходный код (`.zip`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.2.1/VGT_GeDefense_V6_6.2.1_Source.zip) · [**Релиз v6.2.1**](https://github.com/visiongaiatechnology/gedefense/releases/tag/v6.2.1) · [**Результаты тестов (`94.73 / PASS`)**](benchmarks/vgt-hardred-6.2.1/) · [Быстрый старт](#-быстрый-старт)
+⬇️ **Прямые ссылки на установщики (v6.3.0 / V6):**
+[**OneClick-установщик (`.run`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.3.0/VGT_GeDefense_V6_6.3.0_OneClick.run) · [`.sha256`](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.3.0/VGT_GeDefense_V6_6.3.0_OneClick.run.sha256) · [**Desktop Tray (`.run`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.3.0/GeDefense-6.3.0-Desktop-OneClick.run) · [`.sha256`](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.3.0/GeDefense-6.3.0-Desktop-OneClick.run.sha256) · [**Исходный код (`.zip`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.3.0/VGT_GeDefense_V6_6.3.0_Source.zip) · [**Релиз v6.3.0**](https://github.com/visiongaiatechnology/gedefense/releases/tag/v6.3.0) · [**Результаты тестов 6.2.1 (`94.73 / PASS`)**](benchmarks/vgt-hardred-6.2.1/) · [Быстрый старт](#-быстрый-старт)
 
 </div>
 
 ---
+
+> **Атрибуция бенчмарка и честность:** Опубликованные результаты VGT HardRed `94.73 / PASS` и REDHARD ARES 1.2 были измерены на **GeDefense Linux 6.2.1**. **Для V6.3.0 нет нового опубликованного прогона HardRed/ARES**, и новый балл не заявляется; V6.3.0 добавляет описанные в журнале изменений функции сенсоров, защиты от руткитов и самозащиты AP-0…AP-9.
 
 ## 🧭 Быстрая навигация
 
@@ -46,11 +48,11 @@
 | 📊 **Тест VGT HardRed** | `94.73 / 100 · PASS` против OSS+SafeLine (`59.28 / PASS`), OSS+ModSec (`55.40 / FAIL`), SafeLine (`52.92`), Wazuh и CrowdSec | [Результаты](#-бенчмарк-vgt-hardred--сравнение-v621-с-oss-стеком) |
 | 📂 **Папка с результатами** | Все дашборды HardRed и ARES, SARIF, ATT&CK, OCSF и GoTestWAF | [`benchmarks/vgt-hardred-6.2.1/`](benchmarks/vgt-hardred-6.2.1/) |
 | ⚙️ **Воспроизведение и настройки** | Точный профиль `EDR/Hardened Max` и изменения `6.2.0 → 6.2.1` | [Настройки](#-воспроизведение-профиля-max-hardness) |
-| 🔍 **Что такое VGT GeDefense?** | Стек V6.2.1, модули A–E, Titan, Setup Wizard и ПК vs. Сервер | [Обзор](#-что-такое-vgt-gedefense) |
+| 🔍 **Что такое VGT GeDefense?** | Стек V6.3.0, модули A–E, Titan, Setup Wizard и ПК vs. Сервер | [Обзор](#-что-такое-vgt-gedefense) |
 | 🧪 **Verify Yourself** | Тесты Go/Rust и 19 шлюзов статического аудита | [Самопроверка](#-verify-yourself--полный-набор-тестов-и-руководство-по-независимому-аудиту) |
 | 🏛️ **Архитектура и защита** | Домены доверия, eBPF/XDP, Host XDR, StyX и криптография | [Архитектура](#-архитектура) |
 | 🚀 **Быстрый старт и гейты** | OneClick-установка, гейты релизов и ограничения | [Быстрый старт](#-быстрый-старт) |
-| 📋 **Журнал изменений (Changelog)** | Полная история релизов (`v6.2.1` → `v1.0.0-beta.5`) | [Changelog](#-журнал-изменений-changelog) |
+| 📋 **Журнал изменений (Changelog)** | Полная история релизов (`v6.3.0` → `v1.0.0-beta.5`) | [Changelog](#-журнал-изменений-changelog) |
 | 📄 **Лицензия и атрибуция** | `AGPL-3.0-only`, GeoIP/ASN и лицензии третьих сторон | [Лицензия](#-лицензия) |
 
 ---
@@ -255,7 +257,7 @@ VGT GeDefense:
 
 Ни одно единичное срабатывание сигнатуры, фида или поведенческой эвристики **не может авторизовать завершение процесса**. Применение мер (Enforce) требует как минимум двух независимых категорий подтверждения, объективных доказательств и стабильного состояния системы.
 
-### 🛡️ Полный стек возможностей V6.2.1 и модули A–E
+### 🛡️ Полный стек возможностей V6.3.0 и модули A–E
 
 Все подсистемы используют разделённые домены доверия, единый REST API и панели управления. В `observe`/`canary` блокировки V6 выключены; при переходе в `enforce` автоматически включается безопасный базовый профиль (`styx=monitor`, `titan_exec=contain`, `parser_cells=enabled`), а более строгие режимы (**Emergency Lockdown**, **Witness**, `titan_exec=untrusted`, `per_cell` StyX `enforce` и CIS userland-база) включаются администратором явно:
 
@@ -274,7 +276,7 @@ VGT GeDefense:
   - **Эфемерные Parser Cells (`gedefense-cell-helper.service`), Witness и Emergency Lockdown:** Одноразовые песочницы пространств имён/seccomp (`VGTGC2`), внешние Ed25519-чеки, мгновенный XDP/TC drop-latch и блокировка составных BadUSB-устройств (`HID+Storage`/`HID+CDC`).
 - **Мастер настройки (`00`–`08`) и офлайн-шаблон `AGENTS.md`:** Пошаговый мастер в Web UI и read-only-first `AGENTS.md` для локальных CLI-агентов по SSH (`POST /api/v1/settings/{module}/preview` → `PUT`) — без входящего AI-API.
 
-### 💻 Настольный ПК / Рабочая станция vs. 🖥️ Linux-сервер — что защищает V6.2
+### 💻 Настольный ПК / Рабочая станция vs. 🖥️ Linux-сервер — что защищает V6.3.0
 
 | Среда | Ключевые угрозы | Активные механизмы при `enforce` |
 |---|---|---|
@@ -282,7 +284,7 @@ VGT GeDefense:
 | **Linux-сервер (Web / API / Compute)** | L7 SQLi/RCE/веб-шеллы, исходящие C2/утечки из веб-cgroup, дропы в `/tmp`/`/var/www`, шифровальщики, чтение `/etc/shadow` | **L7 Edge/WAF + Kinetic XDP** отбивают сетевой/HTTP-флуд и инъекции; **StyX (`per_cell enforce`)** обрывает egress воркеров; **Titan Exec + Ransomware + On-Write + Credential Guard** пресекают пост-эксплуатацию; **Witness** фиксирует контрольные точки вовне |
 
 > [!WARNING]
-> **СТАТУС РЕЛИЗА И КВАЛИФИКАЦИИ (Версия 6.2.1 / V6).**  
+> **СТАТУС РЕЛИЗА И КВАЛИФИКАЦИИ (Версия 6.3.0 / V6).**  
 > GeDefense V6 активно развивается для тестовых и квалификационных сред. Автоматизированные гейты проверяют воспроизводимость сборки, подписи Ed25519, тесты Go/Rust и статические инварианты безопасности; внешние якоря доверия (публичный CA, RFC3161, CRL/OCSP, инфраструктура подписи фидов) и проверка eBPF-верификатора/NIC XDP остаются обязательным этапом квалификации на целевом хосте. Перед включением `enforce` в продакшене изучите [SECURITY.md](SECURITY.md), [RELEASE-NOTES.md](RELEASE-NOTES.md) и [CHANGELOG.md](CHANGELOG.md).
 
 ---
@@ -576,17 +578,17 @@ Observe ──→ Canary ──→ Enforce
 
 ```bash
 # Загрузить инсталлятор
-wget https://github.com/visiongaiatechnology/gedefense/releases/download/v6.2.1/VGT_GeDefense_V6_6.2.1_OneClick.run
+wget https://github.com/visiongaiatechnology/gedefense/releases/download/v6.3.0/VGT_GeDefense_V6_6.3.0_OneClick.run
 
 # Проверить SHA-256
-sha256sum --check VGT_GeDefense_V6_6.2.1_OneClick.run.sha256
+sha256sum --check VGT_GeDefense_V6_6.3.0_OneClick.run.sha256
 
 # Установить (требуются права root)
-chmod 700 VGT_GeDefense_V6_6.2.1_OneClick.run
-sudo ./VGT_GeDefense_V6_6.2.1_OneClick.run
+chmod 700 VGT_GeDefense_V6_6.3.0_OneClick.run
+sudo ./VGT_GeDefense_V6_6.3.0_OneClick.run
 ```
 
-> **Доступность инсталлятора:** Официальные автономные установочные ассеты v6.2.1 (`VGT_GeDefense_V6_6.2.1_OneClick.run` и `GeDefense-6.2.1-Desktop-OneClick.run`) публикуются вместе с подписанным GitHub Release.
+> **Доступность инсталлятора:** Официальные автономные установочные ассеты v6.3.0 (`VGT_GeDefense_V6_6.3.0_OneClick.run` и `GeDefense-6.3.0-Desktop-OneClick.run`) публикуются вместе с подписанным GitHub Release.
 
 > Инсталлятор и контрольные суммы публикуются только после успешного прохождения всех этапов GitHub CI и квалификационных проверок целевого хоста. Никогда не запускайте непроверенные файлы RUN.
 
@@ -620,7 +622,7 @@ sudo ./VGT_GeDefense_V6_6.2.1_OneClick.run
 
 ---
 
-## 🚧 Известные ограничения (6.2.1 / V6)
+## 🚧 Известные ограничения (6.3.0 / V6)
 
 - Отсутствие поддержки Swarm / Mesh
 - Отсутствие разгрузки QUIC
@@ -642,6 +644,19 @@ sudo ./VGT_GeDefense_V6_6.2.1_OneClick.run
 ---
 
 ## 📋 Журнал изменений (Changelog)
+
+### v6.3.0 — Усиление антишпионских сенсоров, защита от eBPF-руткитов, кросс-вью и режим Chameleon *(Текущий релиз — 24.11.2026)*
+
+- **Статическое musl-ядро и самозащита сенсора (AP-0):** `gedefense-core` поставляется как `static-pie`-бинарник musl без `NEEDED`-библиотек (устраняет поверхность атаки glibc/`LD_PRELOAD`); BPF-pin-guard, учёт потерь ring-буфера и периодический canary-самотест сообщают `XDR.SELF_TAMPER` / `SBC-EVID-08`, а закреплённый eBPF-объект устанавливается только после верификации.
+- **Доверие по inode исполняемого файла (AP-1):** Credential Guard и сенсор ransomware теперь принимают решения по BTF-разрешённой идентичности `task_struct → mm → exe_file → f_inode` (`TRUSTED_EXEC_INODES`), а не по подделываемому `comm`; inode поведенческих носителей (LD_PRELOAD-`.so`, BPF-загрузчики, `memfd`) можно блокировать с TTL/восстановлением и записью хеша в журнал.
+- **eBPF-guard на этапе подключения и bitmap helper'ов (AP-2):** `lsm/bpf_prog`, `sys_enter_bpf` и BTF-гейтованный kprobe `check_helper_call` фиксируют сырые helper-ID до `do_misc_fixups` и строят bitmap риска для каждой программы (`bpf_probe_write_user`, `bpf_override_return`, `bpf_send_signal`) с observe-first-находками `XDR.BPF_ANOMALY` / `XDR.BPF_ROOTKIT_HELPER`.
+- **Кросс-вью верификатор 8 доменов (AP-3):** Итераторы ядра, `NETLINK_SOCK_DIAG` (без вызова `ss`), прямые чтения `/proc/<pid>/stat`, а также перекрёстные проверки LKM/ftrace/map-pin выявляют скрытые BPF-программы, процессы, сокеты, raw-tap без порта, хуки LKM/ftrace и подмену BPF link (только наблюдение).
+- **Хуки io_uring/LKM и целостность персистентности/периферии (AP-4/AP-5):** LSM-хуки и tracepoint'ы io_uring, а также pre-stealth-перехват `module_load`/`init_module`/`finit_module`/`delete_module` (`XDR.IO_URING_ANOMALY`, `XDR.LKM_LOAD`); защита записи/аудита для линкера, `ld.so.preload`, PAM/`sshd`, systemd-генераторов/drop-in и udev-`RUN+=`-персистентности, проверка пакетной БД для библиотек, отображённых в security-критичные бинарники, и сенсоры периферии рабочего стола, браузерных/Keyring-секретов.
+- **StyX фаза 2, DNS-туннелирование и GIEF v1.0/SBC (AP-6):** Реальное наблюдение RX через `cgroup_skb/ingress`, двунаправленная 5-минутная PCR-оценка эксфильтрации (честные `NONE`/`TEMPORAL`), ограниченный перехват UDP/53 с 5-сигнальным анализом DNS-туннелей (≥ 3 одновременных сигнала) и конверт `gief/v1.0` с time-weighted графом сущностей SBC и семействами `SBC-PROV-01`…`SBC-EVID-08`.
+- **Брокер PermitV1, очередь ревью, prune и explainability (AP-7):** Единый брокер `vgt-gedefense-permit-v1` (`AUTHORIZED`/`TOLERATED`/`ANALYST_MODE`, только подавление, никогда авто-kill), персистентная шифрованная TTL-очередь ревью, evidence-first `QUARANTINE_PRUNE`, обязательные поля explainability в каждой XDR-находке и TOLERATED-профили, сохраняющие порог `0.0 %` защитных FP.
+- **Опциональный режим идентичности Chameleon (AP-8):** Профиль по умолчанию отключён: подписанный манифест и равноразмерное нейтральное переименование всех kernel-видимых идентификаторов eBPF-программ/map (174 символа; `bpftool prog list` не показывает строк `gedefense`/`styx`/`titan`); отсутствующий или недействительный манифест завершается отказом, а не молчаливым возвратом к публичной идентичности.
+- **Самозащита ARES (AP-9):** TUF-защита фидов от отравления (`S09`: пороговые подписи 2-из-3 Ed25519, разделение ролей, эпоха anti-rollback, семантический guard, откат к LKG), backpressure против телеметрического DoS (`S12`: ring `SEC_CRIT_EVENTS` 256 КиБ, token buckets, честная отчётность `enforced=false`), RBAC API управления (`R6`: Observer/Operator/Critical-Unlock со step-up-подтверждениями) и anti-truncate witness-priority push (`S08`/`S15`).
+- **Ссылки и честность бенчмарка:** Техническая доказательная база в [`docs/V6.3.0-RELEASE.md`](docs/V6.3.0-RELEASE.md), журнал верификации в [`docs/V6.3.0-VERIFICATION.md`](docs/V6.3.0-VERIFICATION.md). Опубликованные результаты VGT HardRed `94.73 / PASS` и ARES остаются **измерениями 6.2.1**; **для 6.3.0 нет нового опубликованного прогона HardRed/ARES**, и новый балл не заявляется.
 
 ### v6.2.1 — Ядерный поведенческий XDR, блокировка inode в карантине и изоляция сервис-пулов *(Текущий релиз — 23.11.2026)*
 
@@ -955,6 +970,6 @@ sudo python3 scripts/update-geoip-db.py /var/lib/vgt/gedefense/geoip.csv
 
 [![VGT](https://img.shields.io/badge/VisionGaia-Technology-cyan?style=for-the-badge)](https://visiongaiatechnology.de)
 
-*VGT GeDefense 6.2.1 (V6) — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
+*VGT GeDefense 6.3.0 (V6) — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
 
 </div>

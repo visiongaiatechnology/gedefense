@@ -56,6 +56,34 @@ mod credential_guard;
 /// Kernel XDR behavioral tracepoints & probe emitters.
 mod xdr_kernel;
 
+/// V6.3.0 AP-1: executable-inode identity resolution for the credential and
+/// ransomware guards (replaces the spoofable `comm` allowlists).
+mod exec_inode;
+
+/// V6.3.0 AP-2: attach-time eBPF guard (`security_bpf_prog`,
+/// `sys_enter_bpf`, BTF-gated `check_helper_call` helper-risk bitmap).
+mod bpf_guard;
+
+/// V6.3.0 AP-3: cross-view kernel supports (socket AF_PACKET/setsockopt tap,
+/// BTF-gated `bpf_iter` programs).
+mod iter;
+
+/// V6.3.0 AP-4: io_uring tracepoints/LSM hooks and module-load capture.
+mod kernel_hooks;
+
+/// V6.3.0 AP-5: linker/PAM/sshd/peripheral persistence sensors.
+mod persistence;
+
+/// V6.3.0 AP-6: cgroup_skb/ingress RX flow observation (PCR phase 2).
+mod ingress_flow;
+
+/// V6.3.0 AP-6: bounded DNS query capture for tunnelling detection.
+mod dns_capture;
+
+/// V6.3.0 AP-9 (S12): high-priority security evidence ring and telemetry
+/// token buckets used by the bulk emitters.
+mod sec_crit;
+
 const MAX_ALLOWLIST_ENTRIES: u32 = 65_536;
 const EXEC_EVENT_RING_BYTES: u32 = 1 << 20;
 const EGRESS_EVENT_RING_BYTES: u32 = 1 << 20;
@@ -439,7 +467,7 @@ static STYX_RESOLVER_V4: LpmTrie<[u8; 4], u8> =
 static STYX_RESOLVER_V6: LpmTrie<[u8; 16], u8> =
     LpmTrie::with_max_entries(MAX_STYX_RESOLVER_ENTRIES, BPF_F_NO_PREALLOC);
 #[map]
-static STYX_GLOBAL: Array<u64> = Array::with_max_entries(1, 0);
+pub(crate) static STYX_GLOBAL: Array<u64> = Array::with_max_entries(1, 0);
 #[map]
 static STYX_RESOLVED: LruHashMap<u64, [u8; 16]> =
     LruHashMap::with_max_entries(MAX_STYX_RESOLVED_ENTRIES, 0);
@@ -450,11 +478,11 @@ static FLOW_AGG_V4: LruPerCpuHashMap<[u8; 16], [u8; 40]> =
 static FLOW_AGG_V6: LruPerCpuHashMap<[u8; 32], [u8; 40]> =
     LruPerCpuHashMap::with_max_entries(MAX_FLOW_AGG_ENTRIES, 0);
 #[map]
-static FLOW_EVENTS: RingBuf = RingBuf::with_byte_size(MAX_STYX_FLOW_EVENT_BYTES, 0);
+pub(crate) static FLOW_EVENTS: RingBuf = RingBuf::with_byte_size(MAX_STYX_FLOW_EVENT_BYTES, 0);
 #[map]
-static FLOW_EVENTS_EMITTED: PerCpuArray<u64> = PerCpuArray::with_max_entries(1, 0);
+pub(crate) static FLOW_EVENTS_EMITTED: PerCpuArray<u64> = PerCpuArray::with_max_entries(1, 0);
 #[map]
-static FLOW_RING_DROPS: PerCpuArray<u64> = PerCpuArray::with_max_entries(1, 0);
+pub(crate) static FLOW_RING_DROPS: PerCpuArray<u64> = PerCpuArray::with_max_entries(1, 0);
 #[map]
 static FLOW_AGG_INSERT_FAILURES: PerCpuArray<u64> = PerCpuArray::with_max_entries(1, 0);
 #[map]
@@ -2544,6 +2572,18 @@ fn emit_flow_event(
         return;
     }
     let uid = unsafe { bpf_get_socket_uid(ctx.as_ptr().cast()) };
+    // V6.3.0 AP-9 (S12): both aggregate call sites of this single emitter pass
+    // the per-(class, cgroup, uid) flow token bucket before a ring slot is
+    // reserved. A suppressed record is counted, never silently lost, and the
+    // packet verdict above is unaffected (this hook only reports).
+    if !crate::sec_crit::telemetry_budget_allow(
+        gedefense_common::SEC_CRIT_BUCKET_FLOW,
+        cell_cgroup,
+        uid,
+    ) {
+        crate::sec_crit::telemetry_note_suppressed(gedefense_common::SEC_CRIT_BUCKET_FLOW);
+        return;
+    }
     let comm = bpf_get_current_comm().unwrap_or([0u8; EXEC_COMM_BYTES]);
     // Write the record directly into the ring-buffer reservation: a 104-byte
     // stack copy would exceed the 512-byte eBPF stack together with the parse
@@ -3337,12 +3377,25 @@ fn emit_ingress(
 }
 
 #[inline(always)]
-fn increment_counter(counter: &PerCpuArray<u64>) {
+pub(crate) fn increment_counter(counter: &PerCpuArray<u64>) {
     // Every health counter map has exactly one per-CPU slot at key 0 (§4).
     if let Some(ptr) = counter.get_ptr_mut(INGRESS_HEALTH_KEY) {
         let value = unsafe { &mut *ptr };
         *value = value.saturating_add(1);
     }
+}
+
+/// V6.3.0 AP-6: true when the global StyX word enables flow observation. The
+/// ingress RX observer follows the same switch as the egress flow telemetry, so
+/// an operator who disables StyX logging never collects RX flows silently.
+#[inline(always)]
+pub(crate) fn styx_flow_observation_enabled() -> bool {
+    let Some(global) = STYX_GLOBAL.get(STYX_GLOBAL_INDEX) else {
+        return false;
+    };
+    let mode = decode_global_mode(*global);
+    let flags = decode_global_flags(*global);
+    mode != STYX_MODE_OFF || (flags & STYX_FLAG_LOG_FLOWS) != 0
 }
 
 #[inline(always)]

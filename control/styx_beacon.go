@@ -38,7 +38,14 @@ type StyxBeaconConfig struct {
 	Mode                string
 	FlowCapabilityKnown bool
 	// RxObservationAvailable=false in Phase 1: no ingress deltas => no ratio claim.
+	// Phase 2 keeps this Phase-1 gate untouched: the beacon detector still does
+	// not pair ingress deltas into its egress aggregates, so the asymmetry rule
+	// must not claim a ratio. The *capability* fact (the AP-6 cgroup_skb/ingress
+	// observer is attached and is the source of the phase-2 PCR telemetry) is
+	// reported separately through RxObservationCapability; it only enriches
+	// incident metadata/reporting and never changes a score or a decision.
 	RxObservationAvailable, DNSObservationAvailable bool
+	RxObservationCapability                         bool
 	ResolverPrefixes                                []netip.Prefix
 	CanaryCorrelation                               func(cgroupID uint64, pid int, since time.Time) bool
 	Now                                             func() time.Time
@@ -96,6 +103,10 @@ type StyxBeaconSnapshot struct {
 	Flows                                             int
 	Top                                               []StyxBeaconFlowSnapshot
 	Events, Incidents, Suppressed, Dropped, Overflows uint64
+	// RxObservation is the AP-6 ingress RX capability fact ("available" /
+	// "unavailable"); it is reporting metadata only and does not change the
+	// Phase-1 asymmetry gate.
+	RxObservation string
 }
 
 func NewStyxBeaconEngine(cfg StyxBeaconConfig, correlator *IncidentCorrelator, sink func(XDRIncident) error) *StyxBeaconEngine {
@@ -122,6 +133,30 @@ func (b *StyxBeaconEngine) SensorState() string {
 	defer b.mu.Unlock()
 	return b.sensorStateLocked()
 }
+
+// SetRxObservationCapability records the AP-6 ingress RX capability fact
+// (additive, V6.3.0). It is reporting metadata only: the Phase-1
+// `RxObservationAvailable` asymmetry gate is intentionally NOT changed by it,
+// because the beacon detector still does not pair inbound deltas into its
+// egress aggregates. The phase-2 PCR engine is the consumer of real RX data.
+func (b *StyxBeaconEngine) SetRxObservationCapability(available bool) {
+	if b == nil {
+		return
+	}
+	b.mu.Lock()
+	b.cfg.RxObservationCapability = available
+	b.mu.Unlock()
+}
+
+// styxRxObservationText renders the capability fact for incident metadata and
+// snapshots.
+func styxRxObservationText(available bool) string {
+	if available {
+		return "available"
+	}
+	return "unavailable"
+}
+
 func (b *StyxBeaconEngine) sensorStateLocked() string {
 	if !b.cfg.Enabled || !b.cfg.FlowCapabilityKnown {
 		return "unavailable"
@@ -358,7 +393,8 @@ func (b *StyxBeaconEngine) buildIncidentLocked(aggregate *beaconAggregate, now t
 		CausalEdge: EdgeEgressAttempted, EventUUID: incidentID,
 		Metadata: map[string]string{
 			"target_ip": key.dstIP.String(), "cgroup_id": strconv.FormatUint(key.cgroupID, 10),
-			"signals": strings.Join(aggregate.lastSignals, ","),
+			"signals":        strings.Join(aggregate.lastSignals, ","),
+			"rx_observation": styxRxObservationText(b.cfg.RxObservationCapability),
 		},
 	}
 	var storyNodes []AttackStoryNode
@@ -455,13 +491,15 @@ func (b *StyxBeaconEngine) removeLocked(element *list.Element) {
 
 func (b *StyxBeaconEngine) Snapshot() StyxBeaconSnapshot {
 	if b == nil {
-		return StyxBeaconSnapshot{SensorState: "unavailable", DNSObservation: "unknown"}
+		return StyxBeaconSnapshot{SensorState: "unavailable", DNSObservation: "unknown", RxObservation: "unavailable"}
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	snapshot := StyxBeaconSnapshot{
-		SensorState: b.sensorStateLocked(), DNSObservation: "unknown", Flows: len(b.flows),
-		Events: b.events, Incidents: b.emittedIncidents, Suppressed: b.suppressed, Dropped: b.dropped,
+		SensorState: b.sensorStateLocked(), DNSObservation: "unknown",
+		RxObservation: styxRxObservationText(b.cfg.RxObservationCapability),
+		Flows:         len(b.flows),
+		Events:        b.events, Incidents: b.emittedIncidents, Suppressed: b.suppressed, Dropped: b.dropped,
 		Overflows: b.overflowRecords,
 	}
 	if b.cfg.DNSObservationAvailable {
@@ -492,6 +530,7 @@ func (b *StyxBeaconEngine) Snapshot() StyxBeaconSnapshot {
 	snapshot.Top = top
 	return snapshot
 }
+
 // isIgnoredNonExternalFlow suppresses local IPC (loopback), link-local/multicast,
 // and unattributable kernel softirq/timer retransmits (`pid=0` / `swapper/*` / port 0)
 // that otherwise aggregate unrelated timer packets into false BEACON_PERIODICITY hits.

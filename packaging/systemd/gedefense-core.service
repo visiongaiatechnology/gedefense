@@ -59,6 +59,13 @@ SystemCallArchitectures=native
 SystemCallFilter=@system-service bpf perf_event_open pidfd_open pidfd_send_signal fanotify_init fanotify_mark
 SystemCallErrorNumber=EPERM
 ReadOnlyPaths=/opt/vgt/gedefense/current /etc/vgt/gedefense/secrets /etc/vgt/gedefense/malware-hashes.sha256 /home -/sys/kernel/tracing -/sys/kernel/debug/tracing
+# V6.3.0 AP-3 (cross-view) and AP-5 (persistence/peripheral integrity) read the
+# module list and the kernel taint flags to compare them against independent
+# kernel views. ProtectSystem=strict/ProtectKernelTunables already keep these
+# read-only; the explicit grants document the exact read-only surface and prevent
+# a future, broader read from silently widening it. No write, no capability and
+# no address-family is added by this line.
+ReadOnlyPaths=-/sys/module -/proc/modules -/proc/sys/kernel/tainted
 ReadWritePaths=/run/vgt-gedefense /run/gedefense-scan /sys/fs/bpf /var/lib/vgt/gedefense/quarantine /var/lib/vgt/gedefense/canaries
 # M1.1/M1.3 (6.2.0): the four on-write drop roots. They are the exact default
 # `--on-write-watch-root` set of the core; write access is required so the
@@ -105,6 +112,11 @@ ReadWritePaths=-/proc/sys/net/mptcp/enabled
 # capability, address-family or syscall contract is widened.
 ReadWritePaths=-/sys/bus/usb -/sys/bus/thunderbolt/devices -/sys/devices
 ReadWritePaths=-/proc/sys/kernel/kexec_load_disabled -/proc/sys/kernel/sysrq -/proc/sys/kernel/modules_disabled
+# V6.3.0 AP-4: opt-in io_uring/memfd hardening through the existing typed
+# compare-set sysctl broker. `kernel.io_uring_disabled` is never set to 2 by the
+# automatic path (that breaks databases/storage); the operator chooses 0/1/2.
+# The leading "-" keeps hosts without these keys startable.
+ReadWritePaths=-/proc/sys/kernel/io_uring_disabled -/proc/sys/vm/memfd_noexec
 # The kernel lockdown latch (/var/lib/vgt/gedefense/LOCKDOWN.state) is persisted
 # atomically: temporary file plus rename in the same 1770 root:gedefense directory
 # provisioned by tmpfiles. Granting the directory (not a non-existent file) is the

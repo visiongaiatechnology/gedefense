@@ -20,10 +20,14 @@ use aya_ebpf::{
     programs::{RetProbeContext, TracePointContext},
 };
 use gedefense_common::{
-    credential_reader_allowed, ExecArgvEvent, KernelProbeEvent,
-    EXEC_ARGV_EVENT_RING_BYTES, EXEC_ARGV_EVENT_WIRE_BYTES, KERNEL_PROBE_ACTION_AUDIT,
-    KERNEL_PROBE_DETAIL_BYTES, KERNEL_PROBE_EVENT_RING_BYTES, KERNEL_PROBE_EVENT_WIRE_BYTES,
+    credential_reader_allowed, ExecArgvEvent, KernelProbeEvent, EXEC_ARGV_EVENT_RING_BYTES,
+    EXEC_ARGV_EVENT_WIRE_BYTES, KERNEL_PROBE_ACTION_AUDIT, KERNEL_PROBE_DETAIL_BYTES,
+    KERNEL_PROBE_EVENT_RING_BYTES, KERNEL_PROBE_EVENT_WIRE_BYTES,
     KERNEL_PROBE_KIND_CRED_OPENAT, KERNEL_PROBE_KIND_PTRACE, KERNEL_PROBE_KIND_SYMLINK,
+    SEC_CRIT_BUCKET_EXEC_ARGV, SEC_CRIT_BUCKET_KERNEL_PROBE,
+};
+use crate::sec_crit::{
+    telemetry_budget_allow, telemetry_current_cgroup_id, telemetry_note_suppressed,
 };
 
 const EXEC_SLOT_FILENAME_END: usize = 64;
@@ -210,6 +214,22 @@ pub(crate) fn flush_pending_exec_argv(tid: u32, comm: [u8; 16]) {
     let Some(pending) = (unsafe { PENDING_EXEC_ARGV.get(&tid) }) else {
         return;
     };
+    // V6.3.0 AP-9 (S12): bulk telemetry passes the per-(class, cgroup, uid)
+    // token bucket before a ring slot is reserved. A flooding cgroup is
+    // throttled (counted), every other workload keeps its normal rate, and the
+    // dedicated critical rings are unaffected by this path. The bucket is only
+    // charged once a record actually exists (the pending lookup above), so a
+    // flush without a pending exec cannot consume a token.
+    let uid = bpf_get_current_uid_gid() as u32;
+    if !telemetry_budget_allow(
+        SEC_CRIT_BUCKET_EXEC_ARGV,
+        telemetry_current_cgroup_id(),
+        uid,
+    ) {
+        telemetry_note_suppressed(SEC_CRIT_BUCKET_EXEC_ARGV);
+        let _ = PENDING_EXEC_ARGV.remove(&tid);
+        return;
+    }
     let Some(scratch_ptr) = EXEC_ARGV_SCRATCH.get_ptr_mut(0) else {
         let _ = PENDING_EXEC_ARGV.remove(&tid);
         return;
@@ -239,6 +259,16 @@ pub(crate) fn emit_kernel_probe(
         return;
     }
     let uid_gid = bpf_get_current_uid_gid();
+    // V6.3.0 AP-9 (S12): kernel-probe telemetry is bulk telemetry; a flooding
+    // cgroup/uid is throttled per class and the refusal is counted.
+    if !telemetry_budget_allow(
+        SEC_CRIT_BUCKET_KERNEL_PROBE,
+        telemetry_current_cgroup_id(),
+        uid_gid as u32,
+    ) {
+        telemetry_note_suppressed(SEC_CRIT_BUCKET_KERNEL_PROBE);
+        return;
+    }
     let comm = normalize_comm(bpf_get_current_comm().unwrap_or([0u8; 16]));
     let mut detail = [0u8; KERNEL_PROBE_DETAIL_BYTES];
     let mut dlen = 0usize;

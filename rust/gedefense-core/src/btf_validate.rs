@@ -4,7 +4,7 @@
 //! byte offsets, this module decides whether the resolved table may ever be
 //! published to eBPF. Every violation is an `Err` (`unavailable`, no attach).
 
-use crate::btf_offsets::TitanExecOffsets;
+use crate::btf_offsets::{ExecInodeOffsets, TitanExecOffsets};
 
 pub(crate) fn validate_offsets(offsets: &TitanExecOffsets) -> Result<(), String> {let fields = [
         ("linux_binprm.file", offsets.bprm_file_off, 8, offsets.bprm_size),
@@ -59,6 +59,53 @@ pub(crate) fn validate_offsets(offsets: &TitanExecOffsets) -> Result<(), String>
         .any(|size| *size == 0 || *size > 64 * 1024)
     {
         return Err("Titan exec struct size is zero or implausible".to_owned());
+    }
+    Ok(())
+}
+
+/// V6.3.0 AP-1: plausibility gate for the executable-inode identity offsets.
+///
+/// The eBPF gate reads `task_struct.mm`, `mm_struct.exe_file`, `file.f_inode`,
+/// `inode.i_ino`, `inode.i_sb` and `super_block.s_dev` from kernel memory. Every
+/// pointer field must be 8-aligned, non-zero and inside the BTF-reported
+/// structure size; the structure sizes must be plausible; `s_dev` is a 4-byte
+/// field. A single violation is an `Err` and the gate stays fail-open.
+pub(crate) fn validate_exec_inode_offsets(offsets: &ExecInodeOffsets) -> Result<(), String> {
+    // (label, offset, width, struct size, required alignment)
+    let fields = [
+        ("task_struct.mm", offsets.task_mm_off, 8u32, offsets.task_size, 8u32),
+        ("mm_struct.exe_file", offsets.mm_exe_file_off, 8, offsets.mm_size, 8),
+        ("file.f_inode", offsets.file_f_inode_off, 8, offsets.file_size, 8),
+        ("inode.i_ino", offsets.inode_i_ino_off, 8, offsets.inode_size, 8),
+        ("inode.i_sb", offsets.inode_i_sb_off, 8, offsets.inode_size, 8),
+        ("super_block.s_dev", offsets.super_s_dev_off, 4, offsets.super_size, 4),
+    ];
+    for (label, offset, width, size, alignment) in fields {
+        if offset == 0 {
+            return Err(format!("{label}: a zero offset cannot be a real field"));
+        }
+        if offset % alignment != 0 {
+            return Err(format!(
+                "{label}: offset {offset} is not {alignment}-byte aligned"
+            ));
+        }
+        let end = offset
+            .checked_add(width)
+            .ok_or_else(|| format!("{label}: offset overflows"))?;
+        if end > size {
+            return Err(format!("{label}: {offset}+{width} exceeds size {size}"));
+        }
+    }
+    for (label, size) in [
+        ("task_struct", offsets.task_size),
+        ("mm_struct", offsets.mm_size),
+        ("file", offsets.file_size),
+        ("inode", offsets.inode_size),
+        ("super_block", offsets.super_size),
+    ] {
+        if !(8..=64 * 1024).contains(&size) {
+            return Err(format!("{label}: struct size {size} is implausible"));
+        }
     }
     Ok(())
 }

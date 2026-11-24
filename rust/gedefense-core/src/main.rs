@@ -56,6 +56,24 @@ mod titan_exec;
 mod titan_status;
 mod worker_guard;
 mod xdr_kernel;
+// V6.3.0 AP-0/AP-1/AP-2: sensor self-protection, executable-inode trust gate and
+// the attach-time eBPF guard. Each module owns its maps/rings/status; main.rs is
+// only the ABI + dispatch seam.
+mod self_defense;
+mod exec_inode;
+mod bpf_guard;
+// V6.3.0 AP-3/AP-4/AP-5: cross-view verifier, io_uring/LKM hooks and the
+// persistence/peripheral integrity guard.
+mod cross_view;
+mod kernel_hooks;
+mod persistence;
+// V6.3.0 AP-6: ingress RX flow observer (PCR phase 2) and bounded DNS capture.
+mod styx_ingress;
+mod dns_capture;
+// V6.3.0 AP-8/AP-9: opt-in Chameleon install profile and the high-priority
+// security evidence ring / telemetry token buckets.
+mod chameleon;
+mod sec_crit;
 use canary::{collect_canary_roots, CanaryBroker};
 use malware::{handle_user_scan, MalwareScanner};
 #[cfg(test)]
@@ -874,10 +892,13 @@ net.ipv4.tcp_syncookies = 1\n\
 net.ipv6.conf.all.accept_redirects = 0\n\
 net.ipv6.conf.default.accept_redirects = 0\n";
 
-/// M5.1 grows the custom identity space from 10 to 21 control bits. The Go
-/// catalogue uses the same maximum (`0x1f_ffff`); an unknown high bit must be
-/// rejected rather than silently ignored.
-const HARDENING_CUSTOM_MASK: u32 = 0x001f_ffff;
+/// M5.1 grew the custom identity space from 10 to 21 control bits; V6.3.0 AP-4
+/// adds the opt-in `kernel.io_uring_disabled` (bit 22) and `vm.memfd_noexec`
+/// (bit 23) controls. Bit 21 stays intentionally unassigned so the existing
+/// `astraeaos-custom-200000` negative test keeps holding. The Go catalogue uses
+/// the same maximum (`0x00df_ffff`); an unknown high bit must be rejected rather
+/// than silently ignored.
+const HARDENING_CUSTOM_MASK: u32 = 0x00df_ffff;
 
 fn hardening_content(profile: &str) -> Option<String> {
     match profile {
@@ -966,6 +987,13 @@ fn custom_hardening_content(profile: &str) -> Option<String> {
                 ("net.ipv6.conf.default.disable_ipv6", "1"),
             ],
         ),
+        // V6.3.0 AP-4: opt-in io_uring/memfd hardening. These controls are never
+        // part of a shipped profile and never selected automatically; the
+        // operator must opt in. `kernel.io_uring_disabled = 1` keeps io_uring
+        // available to a dedicated group instead of breaking databases/storage
+        // with the global value 2.
+        (1 << 22, &[("kernel.io_uring_disabled", "1")]),
+        (1 << 23, &[("vm.memfd_noexec", "2")]),
     ];
     let mut values = Vec::new();
     for (bit, entries) in controls {
@@ -1459,6 +1487,17 @@ fn sysctl_spec(key: &str) -> Option<(&'static str, &'static [&'static str])> {
             "/proc/sys/kernel/unprivileged_bpf_disabled",
             &["0", "1", "2"],
         )),
+        // V6.3.0 AP-4: io_uring is a real capability (databases, storage, some
+        // HTTP stacks). The sysctl domain is exactly 0/1/2 and the operator
+        // policy stays opt-in; the shipped control-plane recommendation is 1,
+        // never 2 (2 disables io_uring for everyone and breaks those products).
+        "kernel.io_uring_disabled" => {
+            Some(("/proc/sys/kernel/io_uring_disabled", &["0", "1", "2"]))
+        }
+        // V6.3.0 AP-4: memfd execute hardening (kernel 6.3+: 0/1/2). The
+        // hardened recommendation is documented by the control plane; this
+        // typed domain only guards the privileged compare-set path.
+        "vm.memfd_noexec" => Some(("/proc/sys/vm/memfd_noexec", &["0", "1", "2"])),
         // The entry point of a local metadata-trust exploit is often an unprivileged user namespace:
         // without it a process cannot hold CAP_NET_RAW in a namespace it owns, which several kernel
         // packet-socket and netfilter classes need before they are reachable at all. The kernel
@@ -2040,6 +2079,32 @@ struct KernelCore {
     credential_guard: credential_guard::CredentialGuardCore,
     // Kernel XDR behavioral tracepoints & probe emitters.
     xdr_kernel: xdr_kernel::XdrKernelCore,
+    // V6.3.0 AP-0: eBPF pin manifest, synthetic canary self-test and the
+    // bounded self-tamper queue (observability only, never enforcement).
+    self_defense: self_defense::SelfDefenseCore,
+    // V6.3.0 AP-1: executable-inode trust (`TRUSTED_EXEC_INODES`) + TTL malware
+    // inode locks; the kernel guard keys on the real exe inode, not comm.
+    exec_inode: exec_inode::ExecInodeCore,
+    // V6.3.0 AP-2: attach-time eBPF guard (LSM bpf_prog + sys_enter_bpf +
+    // BTF-gated check_helper_call helper-risk bitmap).
+    bpf_guard: bpf_guard::BpfGuardCore,
+    // V6.3.0 AP-3: 8-domain cross-view verifier (eBPF id gap, sock_diag,
+    // /proc cross-view, LKM/ftrace, maps/libraries). Observe-only evidence.
+    cross_view: cross_view::CrossViewCore,
+    // V6.3.0 AP-4: io_uring tracepoints/LSM hooks and pre-stealth LKM capture.
+    kernel_hooks: kernel_hooks::KernelHooksCore,
+    // V6.3.0 AP-5: linker/PAM/sshd/systemd persistence integrity and desktop
+    // peripheral/credential sensors. Observe-only evidence.
+    persistence: persistence::PersistenceCore,
+    // V6.3.0 AP-6: cgroup_skb/ingress RX flow observer (honest
+    // RxObservationAvailable; never drops packets).
+    styx_ingress: styx_ingress::StyxIngressCore,
+    // V6.3.0 AP-6: bounded DNS query capture (the control plane runs the
+    // multi-signal tunnelling analysis).
+    dns_capture: dns_capture::DnsCaptureCore,
+    // V6.3.0 AP-9 (S12): high-priority security evidence ring, independent of
+    // the bulk telemetry rings, plus the aggregated flood-suppression status.
+    sec_crit: sec_crit::SecCritCore,
 }
 
 impl KernelCore {
@@ -2048,8 +2113,21 @@ impl KernelCore {
         iface: &str,
         require_cell_lsm: bool,
         lockdown_state_path: &str,
+        bpf_pin_root: &str,
+        chameleon_manifest: &str,
     ) -> Result<Self, BoxError> {
-        let mut ebpf = Ebpf::load_file(object)?;
+        // V6.3.0 AP-8: an opt-in installation profile either loads the shipped
+        // object unchanged (default) or patches the neutral kernel identifiers
+        // once at load time. A configured-but-invalid manifest is an error so an
+        // operator never silently gets the public identity.
+        let chameleon = chameleon::ChameleonProfile::from_manifest(chameleon_manifest)?;
+        chameleon::install_active(chameleon.clone());
+        let mut ebpf =
+            chameleon::ManagedEbpf::new(chameleon.load_object(object)?);
+        // V6.3.0 AP-0: pin the critical kernel maps before any feature module
+        // consumes its map handle, and take the expected pin manifest. A host
+        // without bpffs degrades to `pins=unavailable`, never fails the core.
+        let self_defense = self_defense::SelfDefenseCore::load(&mut ebpf, bpf_pin_root);
         let xdp_mode = {
             let program: &mut Xdp = ebpf
                 .program_mut("gedefense_xdp")
@@ -2125,6 +2203,13 @@ impl KernelCore {
             CgroupSkbAttachType::Egress,
             CgroupAttachMode::AllowOverride,
         )?;
+        // V6.3.0 AP-6: cgroup_skb/ingress RX flow observer. Observe-only (the
+        // program always returns TC_ACT_OK); an unavailable hook keeps
+        // RxObservationAvailable=false in the control plane and is reported
+        // honestly instead of claiming RX coverage. A fresh cgroup descriptor is
+        // opened because the egress attach consumed the previous one.
+        let ingress_cgroup = File::open("/sys/fs/cgroup")?;
+        let styx_ingress = styx_ingress::StyxIngressCore::attach(&mut ebpf, &ingress_cgroup);
         // §0/§6/P3-Fix: an active BPF LSM is a hard precondition for any attach
         // claim. On a kernel whose `/sys/kernel/security/lsm` list lacks `bpf`,
         // `Lsm::attach` succeeds but the stubs are never called - the old code
@@ -2422,6 +2507,9 @@ impl KernelCore {
             eprintln!("Titan exec STATE/OFFSETS left at fail-safe zero words (offsets invalid)");
         }
         let mut mode = String::from(ingress_mode);
+        if styx_ingress.attached() {
+            mode.push_str("+styx-rx");
+        }
         if cell_lsm_attached {
             mode.push_str("+bpf-lsm-cell");
         }
@@ -2451,8 +2539,33 @@ impl KernelCore {
         let credential_guard =
             credential_guard::CredentialGuardCore::load(&mut ebpf, lsm_btf.as_ref(), bpf_lsm_active)?;
         let xdr_kernel = xdr_kernel::XdrKernelCore::load(&mut ebpf)?;
+        // V6.3.0 AP-1: mandatory EXEC_INODE_* maps, BTF exe-inode offsets and the
+        // default trusted path contract (fail-open when BTF is unavailable, with
+        // an honest `offsets=0` status instead of a false enforcement claim).
+        let exec_inode = exec_inode::ExecInodeCore::load(&mut ebpf)?;
+        // V6.3.0 AP-2: mandatory BPF_GUARD_* maps, optional LSM/TP/kprobe attach;
+        // unsupported hooks are reported as `attached=0`, never as enforcement.
+        let bpf_guard =
+            bpf_guard::BpfGuardCore::load(&mut ebpf, lsm_btf.as_ref(), bpf_lsm_active)?;
+        // V6.3.0 AP-3: cross-view supports (socket-tap ring + counters); the
+        // verifier itself drives the scans from the poll cadence.
+        let cross_view = cross_view::CrossViewCore::load(&mut ebpf)?;
+        // V6.3.0 AP-4: io_uring/LKM hook ladder; unsupported hooks degrade the
+        // status instead of claiming enforcement.
+        let kernel_hooks =
+            kernel_hooks::KernelHooksCore::load(&mut ebpf, lsm_btf.as_ref(), bpf_lsm_active)?;
+        // V6.3.0 AP-5: persistence/peripheral LSM+TP hooks; same honest
+        // degradation contract.
+        let persistence =
+            persistence::PersistenceCore::load(&mut ebpf, lsm_btf.as_ref(), bpf_lsm_active)?;
+        // V6.3.0 AP-6: bounded DNS capture ring/tracepoints; unsupported
+        // tracepoints degrade the status instead of claiming DNS visibility.
+        let dns_capture = dns_capture::DnsCaptureCore::load(&mut ebpf)?;
+        // V6.3.0 AP-9 (S12): mandatory high-priority ring, armed state and the
+        // flood-bucket maps; a stale object must fail loudly.
+        let sec_crit = sec_crit::SecCritCore::load(&mut ebpf)?;
         Ok(Self {
-            _ebpf: ebpf,
+            _ebpf: ebpf.into_inner(),
             exec_events,
             egress_events,
             ingress_events,
@@ -2500,6 +2613,15 @@ impl KernelCore {
             ransom,
             credential_guard,
             xdr_kernel,
+            self_defense,
+            exec_inode,
+            bpf_guard,
+            cross_view,
+            kernel_hooks,
+            persistence,
+            styx_ingress,
+            dns_capture,
+            sec_crit,
         })
     }
 
@@ -3016,7 +3138,7 @@ fn random_styx_epoch() -> Result<(u64, String), BoxError> {
 /// (the caller checked `/sys/kernel/security/lsm`); BTF is parsed once per start.
 fn attach_cell_socket_lsm(ebpf: &mut Ebpf, btf: &Btf) -> Result<(), BoxError> {
     let program: &mut Lsm = ebpf
-        .program_mut("gedefense_cell_socket_create")
+        .program_mut(&chameleon::program_name("gedefense_cell_socket_create"))
         .ok_or("Gaia Cell socket LSM program missing")?
         .try_into()?;
     program.load("socket_create", btf)?;
@@ -3032,7 +3154,7 @@ fn attach_titan_exec_lsm(ebpf: &mut Ebpf, btf: &Btf) -> Result<(), BoxError> {
         ("gedefense_titan_exec_mmap", "mmap_file"),
     ] {
         let program: &mut Lsm = ebpf
-            .program_mut(symbol)
+            .program_mut(&chameleon::program_name(symbol))
             .ok_or_else(|| format!("Titan exec LSM program {symbol} missing"))?
             .try_into()?;
         program.load(hook, btf)?;
@@ -3442,6 +3564,15 @@ fn process_command(
     canary: &CanaryBroker,
     parts: &[&str],
 ) -> Result<String, BoxError> {
+    // V6.3.0 AP-0/AP-1: self-protection and TTL maintenance run on the
+    // control-plane polling cadence. Both are bounded and never block the IPC
+    // response; a slow bpffs stat is capped by the manifest size.
+    core.self_defense.poll(self_defense::unix_millis());
+    core.exec_inode.poll();
+    // V6.3.0 AP-3/AP-5: scheduled cross-view scans and the persistence
+    // integrity diff own bounded cadences; poll() never blocks the IPC path.
+    core.cross_view.poll(self_defense::unix_millis());
+    core.persistence.poll(self_defense::unix_millis());
     match parts {
         ["PING"] => Ok(core.ping_mode()),
         ["CELL_POLICY_EPOCH"] => core.cell_policy_epoch(),
@@ -3525,6 +3656,10 @@ fn process_command(
         ["QUARANTINE_RESTORE", path, object_id, identity] => {
             quarantine.restore_token(path, object_id, &parse_quarantine_identity(identity)?)
         }
+        // V6.3.0 AP-7: signed false-positive vault prune after a verified restore.
+        ["QUARANTINE_PRUNE", object_id, identity] => {
+            quarantine.prune_token(object_id, &parse_quarantine_identity(identity)?)
+        }
         ["XDR_STOP", pid, start, rule] => {
             let pid = pid.parse::<i32>()?;
             let start = start.parse::<u64>()?;
@@ -3562,6 +3697,52 @@ fn process_command(
         ["CANARY_REMOVE", path] => canary.remove_token(path),
         ["CANARY_EVENTS"] => canary.take_events(),
         ["CANARY_STATUS"] => Ok(canary.status()),
+        // V6.3.0 AP-0: kernel sensor self-protection. Observe-only status and a
+        // bounded tamper queue; the control plane owns XDR semantics.
+        ["SELF_GUARD_STATUS"] => Ok(core.self_defense.status()),
+        ["SELF_TAMPER_EVENTS"] => core.self_defense.take_events(),
+        ["SELF_GUARD_SET", state] => core.self_defense.set_enabled_token(state),
+        // V6.3.0 AP-1: executable-inode trust gate + TTL malware inode locks.
+        ["EXEC_INODE_STATUS"] => Ok(core.exec_inode.status()),
+        ["EXEC_INODE_ALLOW_ADD", path, flags] => core.exec_inode.allow_add(path, flags),
+        ["EXEC_INODE_ALLOW_DEL", dev, ino] => core.exec_inode.allow_del(dev, ino),
+        ["EXEC_INODE_CLEAR"] => core.exec_inode.clear(),
+        ["EXEC_INODE_EVENTS"] => core.exec_inode.take_events(),
+        ["MALWARE_INODE_LOCK", dev, ino, ttl] => {
+            core.exec_inode.lock_malware_inode(dev, ino, ttl)
+        }
+        ["MALWARE_INODE_UNLOCK", dev, ino] => core.exec_inode.unlock_malware_inode(dev, ino),
+        ["MALWARE_INODE_STATUS"] => Ok(core.exec_inode.malware_lock_status()),
+        // V6.3.0 AP-2: attach-time eBPF guard (helper-risk bitmap, observe-only).
+        ["BPF_GUARD_EPOCH"] => Ok(core.bpf_guard.epoch()),
+        ["BPF_GUARD_STATUS"] => Ok(core.bpf_guard.status()),
+        ["BPF_GUARD_EVENTS"] => core.bpf_guard.take_events(),
+        ["BPF_GUARD_SET", state] => core.bpf_guard.set_enabled_token(state),
+        // V6.3.0 AP-3: 8-domain cross-view verifier (contradictions are evidence,
+        // never a block).
+        ["CROSS_VIEW_STATUS"] => Ok(core.cross_view.status()),
+        ["CROSS_VIEW_REPORT"] => core.cross_view.report(),
+        ["CROSS_VIEW_EVENTS"] => core.cross_view.take_events(),
+        // V6.3.0 AP-4: io_uring tracepoints/LSM hooks and pre-stealth LKM capture.
+        ["KERNEL_HOOK_EPOCH"] => Ok(core.kernel_hooks.epoch()),
+        ["KERNEL_HOOK_STATUS"] => Ok(core.kernel_hooks.status()),
+        ["KERNEL_HOOK_EVENTS"] => core.kernel_hooks.take_events(),
+        ["KERNEL_HOOK_SET", state] => core.kernel_hooks.set_enabled_token(state),
+        // V6.3.0 AP-5: persistence/peripheral integrity guard.
+        ["PERSIST_GUARD_STATUS"] => Ok(core.persistence.status()),
+        ["PERSIST_GUARD_EVENTS"] => core.persistence.take_events(),
+        ["PERSIST_GUARD_SET", state] => core.persistence.set_enabled_token(state),
+        ["PERSIST_BASELINE"] => core.persistence.baseline(),
+        // V6.3.0 AP-6: phase-2 ingress RX observer and bounded DNS capture.
+        ["STYX_INGRESS_STATUS"] => Ok(core.styx_ingress.status()),
+        ["DNS_SET", state] => core.dns_capture.set_enabled_token(state),
+        ["DNS_EVENTS"] => core.dns_capture.take_events(),
+        ["DNS_STATUS"] => Ok(core.dns_capture.status()),
+        // V6.3.0 AP-9 (S12): independent high-priority security evidence ring and
+        // the aggregated telemetry flood-suppression facts.
+        ["SEC_CRIT_STATUS"] => Ok(core.sec_crit.status()),
+        ["SEC_CRIT_EVENTS"] => core.sec_crit.take_events(),
+        ["SEC_CRIT_SET", state] => core.sec_crit.set_enabled_token(state),
         // Point 5 (§5): the lock-down command surface is dispatched by the
         // crate-root ABI layer; unknown LOCKDOWN_* names stay ERR.
         [command, ..] if command.starts_with("LOCKDOWN_") => {
@@ -3783,6 +3964,13 @@ fn main() -> Result<(), BoxError> {
     let control_user = arg("control-user", "gedefense");
     let malware_hashes = arg("malware-hashes", "/etc/vgt/gedefense/malware-hashes.sha256");
     let lockdown_state_path = arg("lockdown-state", lockdown::DEFAULT_STATE_FILE);
+    // V6.3.0 AP-0/AP-8: neutral, install-time configurable bpffs pin root. The
+    // default keeps the 6.2 layout; Chameleon Mode overrides it via the unit.
+    let bpf_pin_root = arg("bpf-pin-root", "/sys/fs/bpf/gedefense");
+    // V6.3.0 AP-8: opt-in Chameleon install profile. Empty = documented default
+    // public identity; a manifest is only ever provided by an installation that
+    // explicitly opted in.
+    let chameleon_manifest = arg("chameleon-manifest", "");
     eprintln!("GeDefense core startup phase=control-identity");
     let (control_uid, control_gid) = lookup_identity(&control_user)
         .map_err(|error| std::io::Error::other(format!("control identity: {error}")))?;
@@ -3892,10 +4080,13 @@ fn main() -> Result<(), BoxError> {
     let listener = bind_secure_runtime_socket(Path::new(&socket), control_gid, 0o660)
         .map_err(|error| std::io::Error::other(format!("IPC socket hardening: {error}")))?;
     eprintln!("GeDefense core startup phase=xdp-load interface={iface}");
-    let mut core = KernelCore::load(&object, &iface, require_cell_lsm, &lockdown_state_path)
+    let mut core = KernelCore::load(&object, &iface, require_cell_lsm, &lockdown_state_path, &bpf_pin_root, &chameleon_manifest)
         .map_err(|error| {
             std::io::Error::other(format!("kernel data-plane load/attach: {error}"))
         })?;
+    // V6.3.0 AP-0: the canary broker already owns a fanotify instance per
+    // registered decoy; the self-test uses it to prove the sensor chain is live.
+    core.self_defense.attach_canary(canary.clone());
     if let Ok(mut slot) = malware_inode_lock.lock() {
         *slot = Some(core.credential_guard.malware_inode_lock_handle());
     }
@@ -4195,8 +4386,8 @@ mod tests {
         );
         for invalid in [
             "astraeaos-custom-0000",
-            "astraeaos-custom-200000", // above the 21-bit catalogue ceiling
-            "astraeaos-custom-400000", // above the 21-bit catalogue ceiling
+            "astraeaos-custom-200000", // reserved bit 21 stays unassigned
+            "astraeaos-custom-e00000", // above the 0x00df_ffff catalogue ceiling
             "astraeaos-custom-xyz1",
             "astraeaos-custom-001", // shorter than Go's %04x form
         ] {
@@ -4206,6 +4397,26 @@ mod tests {
         // now part of the same closed vocabulary the Go catalogue can emit.
         let high = hardening_content("astraeaos-custom-100000").expect("high custom mask");
         assert!(high.contains("net.ipv6.conf.all.disable_ipv6 = 1\n"));
+        // V6.3.0 AP-4: both opt-in controls select together (bits 22 + 23 =
+        // 0xc00000) and stay out of every shipped profile.
+        let opt_in = hardening_content("astraeaos-custom-c00000").expect("AP-4 custom mask");
+        assert!(opt_in.contains("kernel.io_uring_disabled = 1\n"));
+        assert!(opt_in.contains("vm.memfd_noexec = 2\n"));
+        for shipped in [
+            "linux-server-balanced",
+            "astraeaos-workstation-strict",
+            "astraeaos-cis-l1",
+        ] {
+            let content = hardening_content(shipped).expect("shipped profile");
+            assert!(
+                !content.contains("kernel.io_uring_disabled"),
+                "{shipped} must not switch io_uring hardening on"
+            );
+            assert!(
+                !content.contains("vm.memfd_noexec"),
+                "{shipped} must not switch memfd hardening on"
+            );
+        }
         let cis = hardening_content("astraeaos-cis-l1").expect("CIS profile");
         assert!(cis.contains("net.ipv4.conf.all.rp_filter = 1\n"));
         assert!(cis.contains("fs.protected_hardlinks = 1\n"));

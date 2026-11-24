@@ -37,6 +37,14 @@ type XDRIncident struct {
 	RecordHash       string            `json:"record_hash,omitempty"`
 	ExecutionChainID string            `json:"execution_chain_id,omitempty"`
 	AttackStory      []AttackStoryNode `json:"attack_story,omitempty"`
+	// V6.3.0 AP-6: GIEF v1.0 envelope (capability, correlation quality, SBC
+	// family). Metadata only; it never changes the response decision.
+	GIEF *GIEFEnvelope `json:"gief,omitempty"`
+	// V6.3.0 AP-7: mandatory explainability block of the finding.
+	Explainability *FindingExplainability `json:"explainability,omitempty"`
+	// V6.3.0 AP-7: the PermitV1 decision that authorised a tolerated/downgraded
+	// outcome (absent for findings that were not suppressed).
+	Permit *PermitDecision `json:"permit,omitempty"`
 }
 
 type BehaviorSummary struct {

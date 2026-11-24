@@ -674,6 +674,80 @@ impl QuarantineBroker {
             Err(error) => Err(error.into()),
         }
     }
+
+    /// V6.3.0 AP-7: `QUARANTINE_PRUNE <object_id> <identity>` removes a
+    /// verified false-positive vault object.
+    ///
+    /// The call is deliberately narrower than [`Self::restore_token`]: it takes
+    /// no host path, so it can never resolve, recreate or delete a host file.
+    /// The only mutation is the removal of the derived vault object
+    /// `<object_dir>/<object_id>.qv`.
+    ///
+    /// Verification is two-stage and reuses the existing helpers:
+    /// 1. the bounded vault header is decoded and compared with the caller's
+    ///    identity in constant time ([`constant_time_identity_eq`]); a mismatch
+    ///    is refused before any mutation;
+    /// 2. [`Self::verify_object`] decrypts the object and checks the full
+    ///    ciphertext digest against the identity, so a tampered or truncated
+    ///    vault object can never be pruned as if it were the approved one.
+    ///
+    /// Explicit "not currently restored" check: a successful restore removes
+    /// the vault object at its commit point in every restore branch
+    /// (`remove_object`), therefore a present, verifiable vault object proves
+    /// the object has not been restored. A missing object means it was already
+    /// restored or already pruned; prune refuses instead of guessing so a
+    /// retried or replayed IPC call cannot silently report success twice.
+    pub fn prune_token(&self, object_id: &str, expected: &FileIdentity) -> Result<String, BoxError> {
+        validate_object_id(object_id)?;
+        let path = self.object_path(object_id)?;
+        let metadata = match fs::symlink_metadata(&path) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                return Err(
+                    "quarantine object is not present in the vault (already pruned or restored)"
+                        .into(),
+                );
+            }
+            Err(error) => return Err(error.into()),
+        };
+        // The object path is derived from the validated object id, but a
+        // symlink planted at that name would still redirect the removal (and
+        // the verification read). Refuse anything that is not the expected
+        // regular vault file.
+        if metadata.file_type().is_symlink() || !metadata.is_file() {
+            return Err("quarantine object must be a regular non-symlink file".into());
+        }
+        self.verify_prune_identity(object_id, expected)?;
+        // Only the vault object is removed; no host path is ever decoded here.
+        self.remove_object(object_id)?;
+        Ok("pruned".to_owned())
+    }
+
+    /// Re-validates the stored object binding before a prune may delete it.
+    fn verify_prune_identity(
+        &self,
+        object_id: &str,
+        expected: &FileIdentity,
+    ) -> Result<(), BoxError> {
+        let path = self.object_path(object_id)?;
+        let mut input = OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_CLOEXEC | libc::O_NOFOLLOW)
+            .open(&path)?;
+        let mut header = [0u8; HEADER_BYTES];
+        input.read_exact(&mut header)?;
+        let (stored, _nonce_prefix) = decode_header(&header)?;
+        // The header/stored identity comparison is constant time even though the
+        // digest is not secret: the caller receives one indistinguishable refusal
+        // for every mismatch position.
+        if !constant_time_identity_eq(&stored, expected) {
+            return Err("quarantine object identity mismatch".into());
+        }
+        // Full content verification reuses the existing verifier: decrypt every
+        // chunk, authenticate the AEAD tags and compare the plaintext digest.
+        self.verify_object(object_id, expected)?;
+        Ok(())
+    }
 }
 
 impl Drop for QuarantineBroker {
@@ -915,6 +989,25 @@ fn file_identity_from_metadata(meta: &fs::Metadata, sha256: [u8; 32]) -> Result<
             .ok_or("quarantine modification time overflow")?,
         sha256,
     })
+}
+
+// Constant-time comparison of two file identities.
+//
+// The identity carries no secret, but a caller that can distinguish "first byte
+// differs" from "last byte differs" gains a byte-at-a-time oracle for a digest
+// comparison. The comparison therefore accumulates XOR differences over the
+// canonical encoded identity and only inspects the accumulator once.
+fn constant_time_identity_eq(left: &FileIdentity, right: &FileIdentity) -> bool {
+    let left = left.encode();
+    let right = right.encode();
+    if left.len() != right.len() {
+        return false;
+    }
+    let mut difference = 0u8;
+    for (a, b) in left.bytes().zip(right.bytes()) {
+        difference |= a ^ b;
+    }
+    difference == 0
 }
 
 fn stat_matches_identity(stat: &libc::stat, expected: &FileIdentity) -> bool {
@@ -1688,5 +1781,155 @@ mod tests {
                 PathBuf::from(allowed)
             );
         }
+    }
+
+    // -------------------------------------------------------------------
+    // V6.3.0 AP-7: QUARANTINE_PRUNE
+    // -------------------------------------------------------------------
+
+    /// Creates one vaulted object from a temporary source file and returns the
+    /// fixture alongside the broker, the encoded host path and the captured
+    /// identity the prune must match.
+    fn prune_fixture(
+        name: &str,
+        object_id: &str,
+    ) -> (PathBuf, PathBuf, QuarantineBroker, String, FileIdentity) {
+        let root = test_root(name);
+        let source_dir = root.join("source");
+        let object_dir = root.join("vault");
+        fs::create_dir_all(&source_dir).expect("source directory");
+        let source = source_dir.join("false-positive.bin");
+        fs::write(&source, b"prune-false-positive-payload").expect("source write");
+        let broker = QuarantineBroker::new(
+            object_dir.to_str().expect("object directory"),
+            &[0x5a; 32],
+        )
+        .expect("broker");
+        let encoded_path = path_token(&source);
+        let identity =
+            identity_from_token(&broker.inspect_token(&encoded_path).expect("inspect source"));
+        broker
+            .quarantine_token(&encoded_path, object_id, &identity)
+            .expect("quarantine");
+        (root, object_dir, broker, encoded_path, identity)
+    }
+
+    #[test]
+    fn prune_removes_verified_vault_object_and_refuses_a_second_prune() {
+        let object_id = "QV-0123456789abcdef";
+        let (root, object_dir, broker, _encoded_path, identity) =
+            prune_fixture("prune-success", object_id);
+        let object = object_dir.join(format!("{object_id}.qv"));
+        assert!(object.exists(), "fixture object missing before prune");
+
+        assert_eq!(
+            broker
+                .prune_token(object_id, &identity)
+                .expect("verified false-positive must prune"),
+            "pruned"
+        );
+        assert!(!object.exists(), "the vault object must be removed");
+        assert!(
+            !object_dir.join(format!(".{object_id}.tmp")).exists(),
+            "prune must not leave temporary objects behind"
+        );
+
+        // The object is gone (already pruned or restored); a replay must be
+        // refused instead of reporting a second successful prune.
+        let error = broker
+            .prune_token(object_id, &identity)
+            .expect_err("double prune must fail closed");
+        assert!(error.to_string().contains("not present"), "{error}");
+        fs::remove_dir_all(&root).expect("test cleanup");
+    }
+
+    #[test]
+    fn prune_refuses_identity_mismatch_without_removing_the_object() {
+        let object_id = "QV-0011223344556677";
+        let (root, object_dir, broker, _encoded_path, identity) =
+            prune_fixture("prune-mismatch", object_id);
+        let object = object_dir.join(format!("{object_id}.qv"));
+        let mut wrong = identity.clone();
+        wrong.sha256[0] ^= 0x01;
+
+        let error = broker
+            .prune_token(object_id, &wrong)
+            .expect_err("a mismatched identity must never prune");
+        assert!(
+            error.to_string().contains("identity mismatch"),
+            "unexpected refusal: {error}"
+        );
+        assert!(object.exists(), "a refused prune must not remove the object");
+        // The object stays verifiable with its real identity.
+        assert_eq!(
+            broker
+                .verify_object(object_id, &identity)
+                .expect("object still verifies"),
+            "verified"
+        );
+        fs::remove_dir_all(&root).expect("test cleanup");
+    }
+
+    #[test]
+    fn prune_refuses_an_object_that_was_already_restored() {
+        let object_id = "QV-fedcba9876543210";
+        let (root, object_dir, broker, encoded_path, identity) =
+            prune_fixture("prune-restored", object_id);
+        broker
+            .restore_token(&encoded_path, object_id, &identity)
+            .expect("restore");
+        // A successful restore removes the vault object in every branch; the
+        // explicit "not currently restored" check is exactly this absence.
+        assert!(!object_dir.join(format!("{object_id}.qv")).exists());
+        let error = broker
+            .prune_token(object_id, &identity)
+            .expect_err("a restored object cannot be pruned");
+        assert!(error.to_string().contains("not present"), "{error}");
+        fs::remove_dir_all(&root).expect("test cleanup");
+    }
+
+    #[test]
+    fn prune_rejects_invalid_object_ids() {
+        let object_id = "QV-0123456789abcdef";
+        let (root, _object_dir, broker, _encoded_path, identity) =
+            prune_fixture("prune-invalid-id", object_id);
+        for invalid in [
+            "",
+            "QV-0123",
+            "QV-0123456789ABCDEF",
+            "../0123456789abcdef",
+            "QV-0123456789abcdeg",
+        ] {
+            assert!(
+                broker.prune_token(invalid, &identity).is_err(),
+                "invalid object id accepted for prune: {invalid:?}"
+            );
+        }
+        // The valid object is untouched by the rejected calls.
+        assert_eq!(
+            broker
+                .verify_object(object_id, &identity)
+                .expect("object still verifies"),
+            "verified"
+        );
+        fs::remove_dir_all(&root).expect("test cleanup");
+    }
+
+    #[test]
+    fn prune_refuses_a_symlink_planted_in_the_vault() {
+        let object_id = "QV-abcdef0123456789";
+        let (root, object_dir, broker, _encoded_path, identity) =
+            prune_fixture("prune-symlink", object_id);
+        let object = object_dir.join(format!("{object_id}.qv"));
+        let outside = root.join("outside.bin");
+        fs::write(&outside, b"outside").expect("outside file");
+        fs::remove_file(&object).expect("remove fixture object");
+        std::os::unix::fs::symlink(&outside, &object).expect("vault symlink fixture");
+        assert!(
+            broker.prune_token(object_id, &identity).is_err(),
+            "a symlink planted in the vault must not be pruned"
+        );
+        assert!(outside.exists(), "the symlink target must stay untouched");
+        fs::remove_dir_all(&root).expect("test cleanup");
     }
 }

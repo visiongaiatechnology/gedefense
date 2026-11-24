@@ -37,11 +37,14 @@ func TestParseCoreCredGuardEventsBoundedAndStrict(t *testing.T) {
 		"0|4242:4242:1000:8:123456:1:1700000000000000000",                // missing comm
 		"0|4242:4242:1000:8:123456:1:1700000000000000000:6375726c:extra", // extra field
 		"0|0:4242:1000:8:123456:1:1700000000000000000:",                  // zero pid
-		"0|4242:4242:1000:8:123456:3:1700000000000000000:",               // unknown action
-		"0|4242:4242:1000:8:0:1:1700000000000000000:",                    // zero inode
-		"0|4242:4242:1000:8:123456:1:0:",                                 // zero timestamp
-		"0|4242:4242:1000:8:123456:1:1700000000000000000:6",              // odd comm hex
-		"0|4242:4242:1000:8:123456:1:1700000000000000000:00",             // NUL comm
+		// Action 3 is valid since V6.3.0 AP-1 (kernel inode-gate denial); the
+		// rejecting decoder must still refuse any action outside 1..=3.
+		"0|4242:4242:1000:8:123456:4:1700000000000000000:",   // unknown action
+		"0|4242:4242:1000:8:123456:0:1700000000000000000:",   // action 0
+		"0|4242:4242:1000:8:0:1:1700000000000000000:",        // zero inode
+		"0|4242:4242:1000:8:123456:1:0:",                     // zero timestamp
+		"0|4242:4242:1000:8:123456:1:1700000000000000000:6",  // odd comm hex
+		"0|4242:4242:1000:8:123456:1:1700000000000000000:00", // NUL comm
 		"0|" + strings.Repeat("4", maxCredGuardPayloadBytes),
 	}
 	for _, response := range invalid {

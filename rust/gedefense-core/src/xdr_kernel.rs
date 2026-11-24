@@ -73,11 +73,11 @@ fn decode_c_slot(raw: &[u8]) -> Vec<u8> {
 impl XdrKernelCore {
     pub(crate) fn load(ebpf: &mut Ebpf) -> Result<Self, BoxError> {
         let exec_argv_events = RingBuf::try_from(
-            ebpf.take_map("EXEC_ARGV_EVENTS")
+            ebpf.take_map(&crate::chameleon::map_name("EXEC_ARGV_EVENTS"))
                 .ok_or("EXEC_ARGV_EVENTS missing")?,
         )?;
         let kernel_probe_events = RingBuf::try_from(
-            ebpf.take_map("KERNEL_PROBE_EVENTS")
+            ebpf.take_map(&crate::chameleon::map_name("KERNEL_PROBE_EVENTS"))
                 .ok_or("KERNEL_PROBE_EVENTS missing")?,
         )?;
         let mut core = Self {
@@ -106,7 +106,7 @@ impl XdrKernelCore {
 
     fn attach_tracepoints(&mut self, ebpf: &mut Ebpf) {
         for (prog_name, category, tp_name) in TRACEPOINTS {
-            let Some(program) = ebpf.program_mut(prog_name) else {
+            let Some(program) = ebpf.program_mut(&crate::chameleon::program_name(prog_name)) else {
                 eprintln!("XDR kernel tracepoint {prog_name} missing; skipped");
                 continue;
             };
@@ -139,7 +139,7 @@ impl XdrKernelCore {
 
     fn attach_kretprobes(&mut self, ebpf: &mut Ebpf) {
         for (prog_name, symbol) in KRETPROBES {
-            let Some(program) = ebpf.program_mut(prog_name) else {
+            let Some(program) = ebpf.program_mut(&crate::chameleon::program_name(prog_name)) else {
                 eprintln!("XDR kernel kretprobe {prog_name} missing; skipped");
                 continue;
             };

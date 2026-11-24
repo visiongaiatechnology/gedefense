@@ -116,7 +116,33 @@ var sysctlControlDefinitions = map[string]sysctlControlDefinition{
 	"network.ipv6-disable": {Mask: 1 << 20, Values: map[string]string{
 		"net.ipv6.conf.all.disable_ipv6": "1", "net.ipv6.conf.default.disable_ipv6": "1",
 	}},
+	// ---------------------------------------------------------------- AP-4
+	// V6.3.0 AP-4: io_uring syscall-bypass closure and memfd exec hardening. Both
+	// controls are strictly opt-in: no shipped profile references them, because
+	// both are context-dependent kernel behaviour changes.
+	//
+	// kernel.io_uring_disabled=1 restricts ring creation to CAP_SYS_ADMIN / the
+	// io_uring_group. That is the only recommended hardening target. The value 2
+	// disables io_uring entirely and breaks databases, storage stacks and
+	// uring-based runtimes, so 2 is NEVER a default and never the recommendation;
+	// the value domain stays selectable only by an explicit operator decision.
+	"kernel.io-uring": {Mask: 1 << 22, Values: map[string]string{
+		"kernel.io_uring_disabled": "1",
+	}},
+	// vm.memfd_noexec=2 denies executing code from executable memfds (the
+	// hardened opt-in against fileless/memfd loaders). Some JIT/launcher
+	// workflows that rely on memfd execution stop working, so it is opt-in.
+	"vm.memfd-noexec": {Mask: 1 << 23, Values: map[string]string{
+		"vm.memfd_noexec": "2",
+	}},
 }
+
+// sysctlControlReservedMaskBits is the catalogue identity bit that stays
+// deliberately unassigned. The AP-4 control allocation skips it: the M5.1
+// regression test pins `astraeaos-custom-200000` as an invalid persistent state,
+// so the audit trail of custom profile names must not silently become valid. The
+// mask ceiling is therefore 0x00df_ffff (bits 0..20 + 22 + 23), not contiguous.
+const sysctlControlReservedMaskBits uint32 = 1 << 21
 
 // sysctlControlMaskCeiling is the OR of every control identity bit. The
 // persistent hardening state may only carry a custom mask built from this
@@ -127,6 +153,128 @@ func sysctlControlMaskCeiling() uint32 {
 		ceiling |= definition.Mask
 	}
 	return ceiling
+}
+
+// ------------------------------------------------------------ recommendations
+
+// Hardening recommendation schedules.
+const (
+	// sysctlAppliesLive is a runtime sysctl the typed transaction engine can
+	// preview/apply/verify/reverse.
+	sysctlAppliesLive = "live"
+	// sysctlAppliesReboot is a kernel boot parameter (or otherwise immutable at
+	// runtime): documented, never written by the transaction engine.
+	sysctlAppliesReboot = "reboot"
+	// sysctlAppliesLockdown is owned by the existing lockdown subsystem: the
+	// recommendation is informational so a second live apply path is not created.
+	sysctlAppliesLockdown = "lockdown"
+)
+
+// SysctlHardeningRecommendation is one documented hardening recommendation. A
+// managed recommendation is additionally reachable through the typed sysctl
+// transaction engine (managed==true and the key/value appears in
+// sysctlControlDefinitions); an unmanaged recommendation is informational only
+// and must never be written by the transaction engine.
+type SysctlHardeningRecommendation struct {
+	Key           string   `json:"key"`
+	Recommended   string   `json:"recommended"`
+	AllowedValues []string `json:"allowed_values"`
+	Applies       string   `json:"applies"`
+	Managed       bool     `json:"managed"`
+	OptIn         bool     `json:"opt_in"`
+	Rationale     string   `json:"rationale"`
+}
+
+// sysctlHardeningRecommendations is the V6.3.0 AP-4 hardening schedule. It
+// deliberately does not duplicate the catalogue: the two io_uring/memfd entries
+// point at the managed controls above, the two informational entries document
+// controls the platform must NOT apply live (boot parameter / existing lockdown
+// path).
+var sysctlHardeningRecommendations = []SysctlHardeningRecommendation{
+	{
+		Key:           "kernel.io_uring_disabled",
+		Recommended:   "1",
+		AllowedValues: []string{"0", "1", "2"},
+		Applies:       sysctlAppliesLive,
+		Managed:       true,
+		OptIn:         true,
+		Rationale: "1 restricts io_uring ring creation to CAP_SYS_ADMIN and the io_uring_group; " +
+			"the hardened default is opt-in because io_uring is a legitimate performance interface. " +
+			"2 disables io_uring entirely and breaks databases, storage stacks and uring-based " +
+			"runtimes, so 2 is never the default and never the recommendation.",
+	},
+	{
+		Key:           "vm.memfd_noexec",
+		Recommended:   "2",
+		AllowedValues: []string{"0", "1", "2"},
+		Applies:       sysctlAppliesLive,
+		Managed:       true,
+		OptIn:         true,
+		Rationale: "2 denies executing code from executable memfds (fileless/memfd loader hardening); " +
+			"opt-in because JIT and launcher workflows that rely on memfd execution stop working.",
+	},
+	{
+		Key:           "module.sig_enforce",
+		Recommended:   "1",
+		AllowedValues: []string{"0", "1"},
+		Applies:       sysctlAppliesReboot,
+		Managed:       false,
+		OptIn:         true,
+		Rationale: "enforce signed kernel modules. This is a kernel boot parameter " +
+			"(module.sig_enforce=1) and cannot be changed at runtime; it is documented here as an " +
+			"informational recommendation only and is never written by the transaction engine.",
+	},
+	{
+		Key:           "kernel.kexec_load_disabled",
+		Recommended:   "1",
+		AllowedValues: []string{"0", "1"},
+		Applies:       sysctlAppliesLockdown,
+		Managed:       false,
+		OptIn:         false,
+		Rationale: "disable kexec loading (kexec-based bootkit prevention). The existing lockdown " +
+			"path owns this control; it is documented here for operator guidance only and no second " +
+			"live apply path is created.",
+	},
+}
+
+// sysctlHardeningRecommendationCatalogue returns a defensive copy of the
+// recommendation schedule for the API projection.
+func sysctlHardeningRecommendationCatalogue() []SysctlHardeningRecommendation {
+	out := make([]SysctlHardeningRecommendation, 0, len(sysctlHardeningRecommendations))
+	for _, recommendation := range sysctlHardeningRecommendations {
+		copied := recommendation
+		copied.AllowedValues = append([]string(nil), recommendation.AllowedValues...)
+		out = append(out, copied)
+	}
+	return out
+}
+
+// sysctlHardeningRecommendationFor returns one recommendation by sysctl key.
+func sysctlHardeningRecommendationFor(key string) (SysctlHardeningRecommendation, bool) {
+	for _, recommendation := range sysctlHardeningRecommendations {
+		if recommendation.Key != key {
+			continue
+		}
+		copied := recommendation
+		copied.AllowedValues = append([]string(nil), recommendation.AllowedValues...)
+		return copied, true
+	}
+	return SysctlHardeningRecommendation{}, false
+}
+
+// sysctlHardeningValueAllowed reports whether one value is inside the documented
+// value domain of a recommended key. Unknown keys and empty values are invalid.
+func sysctlHardeningValueAllowed(key, value string) bool {
+	recommendation, ok := sysctlHardeningRecommendationFor(key)
+	if !ok {
+		return false
+	}
+	for _, allowed := range recommendation.AllowedValues {
+		if allowed == value {
+			return true
+		}
+	}
+	return false
 }
 
 type SysctlCore interface {

@@ -90,20 +90,104 @@ type XDREngine struct {
 	ransomLastOverflow    time.Time
 	// M2.4: kernel credential guard integration (same interface pattern as the
 	// ransomware sensor, so the synthetic-answer tests need no socket).
-	credCore              credGuardCore
-	credMu                sync.Mutex
-	credStatus            CoreCredGuardStatus
-	credStatusAt          time.Time
-	credStatusErr         string
-	credCapabilityKnown   bool
-	credSeen              map[string]time.Time
-	credArmedRequested    bool
-	credLastOverflow      time.Time
-	probeCore             xdrKernelCore
-	probeMu               sync.Mutex
-	probeSeen             map[string]time.Time
-	styxLastPrune         time.Time
-	styxLastOverflowEvent time.Time
+	credCore            credGuardCore
+	credMu              sync.Mutex
+	credStatus          CoreCredGuardStatus
+	credStatusAt        time.Time
+	credStatusErr       string
+	credCapabilityKnown bool
+	credSeen            map[string]time.Time
+	credArmedRequested  bool
+	credLastOverflow    time.Time
+	// V6.3.0 AP-0: kernel sensor self-protection (eBPF pin manifest, synthetic
+	// canary self-test, bounded self-tamper queue) plus the ring-drop watchdog
+	// that turns silent high-priority ring drops into SBC-EVID-08 evidence.
+	selfGuardCore            selfGuardCore
+	selfGuardMu              sync.Mutex
+	selfGuardStatus          CoreSelfGuardStatus
+	selfGuardStatusAt        time.Time
+	selfGuardStatusErr       string
+	selfGuardCapabilityKnown bool
+	selfGuardSeen            map[string]time.Time
+	selfGuardArmedRequested  bool
+	selfGuardLastOverflow    time.Time
+	selfGuardDropBaselines   map[string]uint64
+	// V6.3.0 AP-1: executable-inode trust gate. The kernel keys on the real exe
+	// inode; this projection only correlates name/path mismatch evidence.
+	execInodeCore            execInodeCore
+	execInodeMu              sync.Mutex
+	execInodeStatus          CoreExecInodeStatus
+	execInodeStatusAt        time.Time
+	execInodeStatusErr       string
+	execInodeCapabilityKnown bool
+	execInodeSeen            map[string]time.Time
+	execInodeLastOverflow    time.Time
+	// V6.3.0 AP-2: attach-time eBPF guard (helper-risk bitmap, observe-only).
+	bpfGuardCore            bpfGuardCore
+	bpfGuardMu              sync.Mutex
+	bpfGuardStatus          CoreBpfGuardStatus
+	bpfGuardStatusAt        time.Time
+	bpfGuardStatusErr       string
+	bpfGuardCapabilityKnown bool
+	bpfGuardSeen            map[string]time.Time
+	bpfGuardArmedRequested  bool
+	bpfGuardLastOverflow    time.Time
+	bpfGuardEpoch           string
+	// V6.3.0 AP-3: cross-view verifier (independent kernel/userland views).
+	crossViewCore            crossViewCore
+	crossViewMu              sync.Mutex
+	crossViewStatus          CoreCrossViewStatus
+	crossViewStatusAt        time.Time
+	crossViewStatusErr       string
+	crossViewCapabilityKnown bool
+	crossViewSeen            map[string]time.Time
+	crossViewLastOverflow    time.Time
+	// V6.3.0 AP-4: io_uring/LKM hook observations.
+	kernelHooksCore            kernelHooksCore
+	kernelHooksMu              sync.Mutex
+	kernelHooksStatus          CoreKernelHookStatus
+	kernelHooksStatusAt        time.Time
+	kernelHooksStatusErr       string
+	kernelHooksCapabilityKnown bool
+	kernelHooksSeen            map[string]time.Time
+	kernelHooksArmedRequested  bool
+	kernelHooksEpoch           string
+	kernelHooksLastOverflow    time.Time
+	// V6.3.0 AP-5: persistence/peripheral integrity guard.
+	persistenceCore            persistenceCore
+	persistenceMu              sync.Mutex
+	persistenceStatus          CorePersistenceStatus
+	persistenceStatusAt        time.Time
+	persistenceStatusErr       string
+	persistenceCapabilityKnown bool
+	persistenceSeen            map[string]time.Time
+	persistenceArmedRequested  bool
+	persistenceLastOverflow    time.Time
+	// V6.3.0 AP-6: StyX phase-2 (bidirectional PCR, IdleHint coupling), bounded
+	// DNS tunnelling capture and the GIEF v1.0 / SBC finding envelopes.
+	styxPhase2 *StyxPhase2Engine
+	dnsTunnel  *DNSTunnelEngine
+	gief       *GIEFEngine
+	sbc        *SBCFusionEngine
+	// V6.3.0 AP-7: unified PermitV1 broker and the persistent review queue.
+	permits     *PermitBroker
+	reviewQueue *ReviewQueue
+	// V6.3.0 AP-9 (S12): independent high-priority security evidence ring and
+	// the aggregated telemetry flood-suppression facts.
+	secCrit                *SecCritEngine
+	secCritCore            secCritCore
+	secCritMu              sync.Mutex
+	secCritStatus          CoreSecCritStatus
+	secCritStatusAt        time.Time
+	secCritStatusErr       string
+	secCritCapabilityKnown bool
+	secCritSeen            map[string]time.Time
+	secCritLastOverflow    time.Time
+	probeCore               xdrKernelCore
+	probeMu                 sync.Mutex
+	probeSeen               map[string]time.Time
+	styxLastPrune           time.Time
+	styxLastOverflowEvent   time.Time
 	// POINT 1 / P1-T5: the Titan exec-gate policy syncer and the bounded kernel
 	// decision drain. The syncer owns its own retry/epoch loop like the StyX one;
 	// everything below is the read-only projection behind the API, guarded by
@@ -125,16 +209,16 @@ type XDREngine struct {
 	// POINT 5 / P5-T3: the Emergency Lockdown engine observes the incident stream
 	// through appendIncident. It is optional: without it the XDR path is unchanged
 	// and no lockdown event is ever created.
-	lockdown      *LockdownEngine
-	morpheus      *MorpheusRASP
-	airlock       *AirlockInspector
+	lockdown       *LockdownEngine
+	morpheus       *MorpheusRASP
+	airlock        *AirlockInspector
 	l7Recent       *L7CorrelationStore
 	chronos        *ChronosScanner
 	chronosRunning atomic.Bool
 	degraded       bool
-	degradeWhy    string
-	degradeCauses map[string]string
-	recoveryGate  chan struct{}
+	degradeWhy     string
+	degradeCauses  map[string]string
+	recoveryGate   chan struct{}
 	// updateWindow is the only sanctioned way to replace this installation's own binaries
 	// while XDR runs. It is opened exclusively by BeginSignedUpdateWindow after a signed
 	// release manifest verified; see selfTamper/checkProtected.
@@ -392,6 +476,18 @@ func NewXDREngine(cfg Config, state *State, core *CoreClient, feeds *FeedManager
 		titanExecCapability: titanExecCapabilityUnknown,
 	}
 	e.recoveryGate <- struct{}{}
+	// V6.3.0 AP-6/AP-7: the phase-2 analytics, GIEF/SBC envelopes, PermitV1
+	// broker and review queue are constructed inert. They enrich evidence and
+	// can only suppress/downgrade - never create or escalate - a response.
+	e.styxPhase2 = NewStyxPhase2Engine()
+	e.dnsTunnel = NewDNSTunnelEngine()
+	e.gief = NewGIEFEngine()
+	e.sbc = NewSBCFusionEngine()
+	e.permits = NewPermitBroker()
+	e.reviewQueue = NewReviewQueue()
+	// V6.3.0 AP-9 (S12): the high-priority ring engine is inert until the core
+	// advertises the family; it can never create or escalate a response.
+	e.secCrit = NewSecCritEngine()
 	if core != nil {
 		// M2.2: the same privileged client implements the RANSOM_* family; the
 		// interface keeps the freeze/escalation contract testable without a socket.
@@ -399,11 +495,23 @@ func NewXDREngine(cfg Config, state *State, core *CoreClient, feeds *FeedManager
 		// M2.4: the credential guard lives on the same authenticated channel.
 		e.credCore = core
 		e.probeCore = core
-	}
+		// V6.3.0: sensor self-protection (AP-0), executable-inode trust (AP-1)
+		// and the attach-time eBPF guard (AP-2) ride the same authenticated
+		// VGT3 channel; each family keeps its own cadence and retry state.
+		e.selfGuardCore = core
+		e.execInodeCore = core
+		e.bpfGuardCore = core
+		// V6.3.0 AP-9 (S12): the high-priority security ring rides the same
+		// authenticated channel.
+		e.secCritCore = core
+		// V6.3.0 AP-3/AP-4/AP-5: cross-view, io_uring/LKM hooks and
+		// persistence/peripheral integrity ride the same authenticated channel.
+		e.crossViewCore = core
+		e.kernelHooksCore = core
+		e.persistenceCore = core	}
 	if err := logger.Healthy(); err != nil {
 		e.markDegradedCause("incident_log", "incident log integrity failure: "+err.Error())
-	} else if err := e.restoreIncidentHistory(); err != nil {
-		// The history could not be restored. Saying so is better than showing an empty
+	} else if err := e.restoreIncidentHistory(); err != nil {		// The history could not be restored. Saying so is better than showing an empty
 		// forensic view that looks like a host nothing has ever happened to.
 		e.markDegradedCause("incident_log", "incident history could not be restored: "+err.Error())
 	}
@@ -859,6 +967,21 @@ func (e *XDREngine) Run(ctx context.Context) {
 	// 10 s status).
 	var credGuardDrainRetryAfter time.Time
 	var credGuardStatusRetryAfter time.Time
+	// V6.3.0: independent cadence per new kernel family so a slow status query
+	// can never delay another sensor's drain.
+	var selfGuardRetryAfter time.Time
+	var execInodeRetryAfter time.Time
+	var bpfGuardRetryAfter time.Time
+	var crossViewRetryAfter time.Time
+	var kernelHooksRetryAfter time.Time
+	var persistenceRetryAfter time.Time
+	// V6.3.0 AP-6/AP-7 cadences (phase-2 analytics, DNS, permit maintenance).
+	var styxPhase2RetryAfter time.Time
+	var dnsTunnelRetryAfter time.Time
+	var permitRetryAfter time.Time
+	// V6.3.0 AP-9 (S12): high-priority ring cadence and SBC corroboration drain.
+	var secCritRetryAfter time.Time
+	var sbcCorroborationRetryAfter time.Time
 	var execArgvRetryAfter time.Time
 	var kernelProbeRetryAfter time.Time
 	for {
@@ -1078,6 +1201,32 @@ func (e *XDREngine) Run(ctx context.Context) {
 			if runtime.XDREnabled && e.credCore != nil && e.credCapabilityKnown && !now.Before(credGuardDrainRetryAfter) {
 				events, dropped, credErr := e.credCore.CredGuardEvents()
 				credGuardDrainRetryAfter = now.Add(e.consumeCredGuardEvents(events, dropped, credErr, now))
+			}
+			// V6.3.0 AP-0/AP-1/AP-2: sensor self-protection, executable-inode trust
+			// and the attach-time eBPF guard. Each family owns its retry state.
+			selfGuardRetryAfter = e.pollSelfGuard(runtime, now, selfGuardRetryAfter)
+			execInodeRetryAfter = e.pollExecInode(runtime, now, execInodeRetryAfter)
+			bpfGuardRetryAfter = e.pollBpfGuard(runtime, now, bpfGuardRetryAfter)
+			// V6.3.0 AP-3/AP-4/AP-5: cross-view, io_uring/LKM and persistence/
+			// peripheral families. Each owns its cadence and failure isolation.
+			crossViewRetryAfter = e.pollCrossView(runtime, now, crossViewRetryAfter)
+			kernelHooksRetryAfter = e.pollKernelHooks(runtime, now, kernelHooksRetryAfter)
+			persistenceRetryAfter = e.pollPersistence(runtime, now, persistenceRetryAfter)
+			// V6.3.0 AP-6/AP-7: phase-2 PCR/IdleHint analytics, DNS tunnelling
+			// and PermitV1 maintenance. All are bounded and failure-isolated.
+			styxPhase2RetryAfter = e.pollStyxPhase2(runtime, now, styxPhase2RetryAfter)
+			dnsTunnelRetryAfter = e.pollDnsTunnel(runtime, now, dnsTunnelRetryAfter)
+			permitRetryAfter = e.pollPermits(runtime, now, permitRetryAfter)
+			// V6.3.0 AP-9 (S12): drain the high-priority security ring; its
+			// cadence is independent of the bulk telemetry drains above.
+			secCritRetryAfter = e.pollSecCrit(runtime, now, secCritRetryAfter)
+			// V6.3.0 AP-6: drain bounded SBC corroboration events evidence-first.
+			if e.sbc != nil && !now.Before(sbcCorroborationRetryAfter) {
+				if _, err := e.recordSBCCorroborations(now); err != nil {
+					e.state.AddEvent(Event{Severity: "warning", Kind: "xdr.sbc_corroboration_failed",
+						Source: "xdr", Message: boundedStyxText(err)})
+				}
+				sbcCorroborationRetryAfter = now.Add(5 * time.Second)
 			}
 			if runtime.XDREnabled && e.probeCore != nil && !now.Before(execArgvRetryAfter) {
 				var nextDelay time.Duration
@@ -1474,11 +1623,26 @@ func (e *XDREngine) evaluate(p ProcessSample, conns []NetConnection, source stri
 	if decision.Score < runtime.AlertScore || len(decision.RuleIDs) == 0 {
 		return
 	}
+	// V6.3.0 AP-7: consult the PermitV1 broker before any active response is
+	// planned. A matching permit can only suppress or downgrade — it never
+	// authorizes a response, never raises the decision and never bypasses the
+	// kill gate, which has already been applied by combineMatches above.
+	permitDecision := e.evaluatePermitBroker(p, decision)
+	if permitDecision != nil && permitDecision.TrustLevel == permitTrustAuthorized {
+		e.recordAuthorizedPermitOutcome(p, decision, permitDecision)
+		return
+	}
 	decision.Decision = "alert"
 	if decision.ResponseScore >= runtime.KillScore && decision.KillSignals >= 2 {
 		decision.Decision = "kill"
 	} else if decision.ResponseScore >= runtime.ContainScore {
 		decision.Decision = "contain"
+	}
+	if permitDecision != nil {
+		// V6.3.0 AP-7: a TOLERATED / ANALYST_MODE permit keeps the evidence and
+		// the scores but suppresses the active response. The helper is
+		// suppression-only and can never elevate the decision.
+		decision = applyPermitDecision(decision, permitDecision)
 	}
 	finger := fmt.Sprintf("%d:%d:%s:%s", p.PID, p.StartTicks, strings.Join(decision.RuleIDs, ","), decision.Remote)
 	if !e.claimFingerprint(finger) {
@@ -1539,6 +1703,11 @@ func (e *XDREngine) evaluate(p ProcessSample, conns []NetConnection, source stri
 		Decision: decision.Decision, Action: "none", Outcome: "observed",
 		ExecutionChainID: execChainID, AttackStory: storyNodes, EvidenceRoot: recordHash,
 	}
+	if permitDecision != nil {
+		// V6.3.0 AP-7: attach the bounded permit metadata to the downgraded
+		// finding (absent for findings no permit explained).
+		incident.Permit = permitDecision
+	}
 	incident.Action, incident.Outcome = e.respond(incident)
 	e.appendIncident(incident)
 	e.state.AddEvent(Event{Severity: severity, Kind: "xdr." + incident.Decision, Source: source, Message: incident.Summary + " [" + strings.Join(incident.RuleIDs, ",") + "]", Target: fmt.Sprintf("pid:%d", p.PID)})
@@ -1578,6 +1747,18 @@ func (e *XDREngine) appendIncident(incident XDRIncident) {
 	// the same normalised severity as the state and the case store, otherwise the same
 	// incident reads differently in the log, in the dashboard and in the case list.
 	incident.Severity = strings.ToLower(strings.TrimSpace(incident.Severity))
+	// V6.3.0 AP-6/AP-7: attach the GIEF v1.0 envelope and the mandatory
+	// explainability block before the forensic log record is sealed. Both are
+	// metadata only: score, decision and action are never changed here.
+	incident = e.attachGIEFEnvelope(incident)
+	incident = e.attachFindingExplainability(incident)
+	// V6.3.0 AP-9 (S08/S15): self-tamper/evidence findings go to the out-of-band
+	// witness before the local forensic record is written, so a later local
+	// truncation cannot erase the only copy.
+	e.pushCriticalWitness(incident)
+	// V6.3.0 AP-7: offer the sealed finding to the persistent review queue.
+	// Storage failures degrade the queue; they never fail the XDR path.
+	e.enqueueReviewFinding(incident)
 	if e.logger != nil {
 		if hash, err := e.logger.Append(incident); err == nil {
 			incident.RecordHash = hash

@@ -921,10 +921,15 @@ func (m *FeedManager) resolveSignedSnapshotSource(ctx context.Context, source Th
 
 	raw, downloadErr := m.downloadFeedRaw(ctx, source, snapshot)
 	if downloadErr == nil && int64(len(raw)) <= maxBytes {
-		if items, parseErr := parseFeedRaw(source, raw, "", snapshot.settings.Validation, maxEntries); parseErr == nil && len(items) > 0 {
-			result.raw = raw
-			result.items = items
-			return result
+		// AP-9/S09/R5 interim isolation: the downloaded bytes are shadow-parsed
+		// before they are parsed or signed. A document that fails the bounded
+		// shadow parse falls through to the reusable signed snapshot.
+		if shadowErr := tufShadowValidateFeedBytes(raw, maxEntries, maxBytes); shadowErr == nil {
+			if items, parseErr := parseFeedRaw(source, raw, "", snapshot.settings.Validation, maxEntries); parseErr == nil && len(items) > 0 {
+				result.raw = raw
+				result.items = items
+				return result
+			}
 		}
 	}
 
@@ -935,6 +940,10 @@ func (m *FeedManager) resolveSignedSnapshotSource(ctx context.Context, source Th
 			return result
 		}
 		result.err = fmt.Errorf("feed produced no indicators and no reusable signed snapshot exists: %w", snapshotErr)
+		return result
+	}
+	if shadowErr := tufShadowValidateFeedBytes(existing, maxEntries, maxBytes); shadowErr != nil {
+		result.err = fmt.Errorf("reused feed snapshot rejected by the bounded shadow parser: %w", shadowErr)
 		return result
 	}
 	items, parseErr := parseFeedRaw(source, existing, "", snapshot.settings.Validation, maxEntries)
@@ -1115,6 +1124,11 @@ func (m *FeedManager) fetchSourceFromSnapshot(src ThreatFeedSource, snapshot *th
 	raw, _, err := readFeedSnapshot(policy.snapshotDir, src.ID, maxBytes)
 	if err != nil {
 		return nil, nil, err
+	}
+	// AP-9/S09/R5 interim isolation: a signed snapshot is still untrusted bytes
+	// at the parser boundary, so it is shadow-parsed before verification/parsing.
+	if shadowErr := tufShadowValidateFeedBytes(raw, maxEntries, maxBytes); shadowErr != nil {
+		return nil, nil, shadowErr
 	}
 	certificate, err := m.verifyFeedArtifact(src, raw)
 	if err != nil {

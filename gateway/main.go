@@ -30,7 +30,7 @@ import (
 	"time"
 )
 
-const version = "6.2.1-access"
+const version = "6.3.0-access"
 const cookieName = "__Host-vgt_gedefense_session"
 const csrfCookieName = "vgt_gedefense_login_csrf"
 
@@ -374,6 +374,10 @@ type gateway struct {
 	// working.
 	sessions     *sessionRegistry
 	sessionsOnce sync.Once
+	// V6.3.0 AP-9 (R6): password step-up proofs and their bounded brute-force
+	// lockout. Created lazily for the same reason as the session registry.
+	stepUp     *stepUpAuthority
+	stepUpOnce sync.Once
 	// denial reporting to the control plane is de-duplicated so one flood cannot turn
 	// into a request amplification (F-19).
 	denialMu         sync.Mutex
@@ -561,6 +565,10 @@ func (g *gateway) routes() *http.ServeMux {
 	mux.HandleFunc("GET /gateway/session", g.sessionStatus)
 	mux.HandleFunc("POST /gateway/session/rotate", g.rotateSession)
 	mux.HandleFunc("POST /gateway/session/revoke-all", g.revokeAllSessions)
+	// V6.3.0 AP-9 (R6): password re-authentication for the destructive
+	// control-plane actions. It returns an opaque, TTL-bounded, single-use proof
+	// that the browser presents once on the critical request (gateway/stepup.go).
+	mux.HandleFunc("POST /gateway/step-up", g.stepUpRoute)
 	// The mark is served before authentication because the login page needs it. It is a
 	// static embedded image with no user input in its path, so there is nothing to
 	// validate and nothing it can disclose.
@@ -613,6 +621,14 @@ func (g *gateway) newProxy() *httputil.ReverseProxy {
 		// Authorization or the gateway-session header for removal and collapse
 		// every request into one backend rate bucket.
 		stripHopByHopHeaders(r.Header)
+		// V6.3.0 AP-9 (R6): the browser never controls the critical role claim or
+		// the one-time step-up proof. They are always dropped here and the claim is
+		// only re-added from the server-verified value in the request context.
+		for _, header := range []string{
+			gatewayRoleHeader, gatewayStepUpHeader, gatewayClaimTsHeader, gatewayClaimMACHeader, gatewayStepUpProofHeader,
+		} {
+			r.Header.Del(header)
+		}
 		// Trust-boundary reset: the internal backend must never see browser origin,
 		// public cookies, or public forwarding metadata.
 		r.Host = g.backend.Host
@@ -637,6 +653,15 @@ func (g *gateway) newProxy() *httputil.ReverseProxy {
 		// loopback bucket and one session can starve all others.
 		if sessionID, ok := sessionIDFromContext(r.Context()); ok {
 			r.Header.Set(gatewaySessionHeaderName, sessionID+"."+gatewaySessionBinding(g.backendToken, sessionID))
+		}
+		// V6.3.0 AP-9 (R6): the MACed role claim of a verified password step-up.
+		// It is bound to the backend credential the control plane already verifies,
+		// bounded to a 30-second window and replay-bounded by its nonce there.
+		if claim, ok := r.Context().Value(gatewayCriticalClaimKey{}).(gatewayCriticalClaimHeaders); ok {
+			r.Header.Set(gatewayRoleHeader, claim.Role)
+			r.Header.Set(gatewayStepUpHeader, claim.StepUp)
+			r.Header.Set(gatewayClaimTsHeader, formatGatewayUnix(claim.Timestamp))
+			r.Header.Set(gatewayClaimMACHeader, claim.MAC)
 		}
 	}
 	proxy.FlushInterval = -1
@@ -1173,7 +1198,29 @@ func (g *gateway) protectedProxy(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "origin rejected", http.StatusForbidden)
 		return
 	}
-	g.proxy.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), gatewaySessionContextKey{}, session.id)))
+	ctx := context.WithValue(r.Context(), gatewaySessionContextKey{}, session.id)
+	// V6.3.0 AP-9 (R6): a one-time step-up proof elevates exactly one critical
+	// request. It is refused on any other route instead of being silently consumed,
+	// so a browser cannot burn the capability on the wrong call, and the gateway
+	// never attaches a role claim the control plane does not classify as critical.
+	critical := gatewayCriticalRoute(r.Method, r.URL.Path)
+	if !critical && strings.TrimSpace(r.Header.Get(gatewayStepUpProofHeader)) != "" {
+		log.Printf("step-up proof refused on non-critical route method=%q path=%q session=%s", r.Method, r.URL.Path, shortSessionID(session.id))
+		writeGatewayJSONError(w, http.StatusBadRequest, "a step-up proof is only accepted for a critical action")
+		return
+	}
+	if critical {
+		claim, handled := g.criticalClaimForRequest(w, r, session)
+		if handled {
+			if claim.Role == "" {
+				// The refusal has already been written (invalid, expired, replayed
+				// or session-mismatched proof).
+				return
+			}
+			ctx = context.WithValue(ctx, gatewayCriticalClaimKey{}, claim)
+		}
+	}
+	g.proxy.ServeHTTP(w, r.WithContext(ctx))
 }
 
 func (g *gateway) sameOrigin(r *http.Request) bool {

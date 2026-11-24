@@ -1,0 +1,11 @@
+vgt-gedefense-chameleon-v1
+install_id=example-do-not-use-0000
+bpf_name_salt=ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+core_socket=/run/example-chameleon/core.sock
+scan_socket=/run/gedefense-scan/example.sock
+bpf_pin_root=/sys/fs/bpf/example-chameleon
+state_dir=/var/lib/example-chameleon/state
+config_dir=/etc/example-chameleon
+public_port=37000
+backend_port=37001
+neutral_unit_prefix=example

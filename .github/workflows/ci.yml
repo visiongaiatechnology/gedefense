@@ -112,10 +112,10 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.4
       - name: Install native and pinned Rust dependencies
-        run: sudo apt-get update && sudo apt-get install -y clang llvm libelf-dev zlib1g-dev
+        run: sudo apt-get update && sudo apt-get install -y clang llvm libelf-dev zlib1g-dev musl-tools
       - name: Install pinned Rust toolchains
         run: |
-          rustup toolchain install 1.97.1 --profile minimal
+          rustup toolchain install 1.97.1 --profile minimal --target x86_64-unknown-linux-musl
           rustup toolchain install nightly-2026-07-16 --profile minimal --component rust-src
           cargo +1.97.1 install bpf-linker --version 0.10.3 --locked
       - name: Test and build Rust response core and parser-cell helper
@@ -126,6 +126,16 @@ jobs:
           # component; it must pass its tests and be staged for the signed manifest.
           cargo +1.97.1 test --locked --manifest-path rust/Cargo.toml -p gedefense-cell-helper
           cargo +1.97.1 build --locked --release --manifest-path rust/Cargo.toml -p gedefense-cell-helper
+      - name: Build static musl core and verify LD_PRELOAD immunity
+        run: |
+          # V6.3.0 AP-0: the privileged core ships as a static musl binary. A
+          # glibc build is preloadable and therefore a legitimate Symbiote/OrBit
+          # persistence target; the release gate refuses any dynamically linked
+          # core artifact (no dynamic NEEDED entry, statically linked ELF).
+          cargo +1.97.1 build --locked --release --manifest-path rust/Cargo.toml -p gedefense-core --target x86_64-unknown-linux-musl
+          install -m 0755 rust/target/x86_64-unknown-linux-musl/release/gedefense-core dist/gedefense-core-musl
+          ! readelf -d dist/gedefense-core-musl | grep -q 'NEEDED'
+          file dist/gedefense-core-musl | grep -Eq 'statically linked|static-pie linked'
       - name: Build and inspect release eBPF object
         run: |
           cargo +nightly-2026-07-16 build --locked --release --manifest-path rust/Cargo.toml -p gedefense-ebpf --target bpfel-unknown-none -Z build-std=core
@@ -142,6 +152,7 @@ jobs:
           name: rust-release-artifacts
           path: |
             dist/gedefense-core
+            dist/gedefense-core-musl
             dist/gedefense-cell-helper
             dist/gedefense-ebpf
           if-no-files-found: error

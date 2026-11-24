@@ -148,6 +148,19 @@ type APIServer struct {
 	// witnessLimiter is the dedicated push budget. A checkpoint push leaves the
 	// host, so one operator click is fine but a loop of them is not.
 	witnessLimiter *RateLimiter
+	// V6.3.0 AP-9 (R6): management-API role enforcement and the bounded guards
+	// behind it. They are created lazily so a server built as a struct literal
+	// (several tests and tooling do) keeps working unchanged.
+	rbacOnce           sync.Once
+	rbacMu             sync.Mutex
+	rbacReported       map[string]time.Time
+	tokenAuthLockout   *attemptLockout
+	stepUpAuthLockout  *attemptLockout
+	directStepUpNonces *nonceReplayCache
+	gatewayClaimNonces *nonceReplayCache
+	// rbacNow is the injectable clock of the role subsystem; production uses
+	// time.Now, whose readings carry the monotonic clock.
+	rbacNow func() time.Time
 	// Rate limits for the destructive entry-point and isolation actions: one operator click is fine,
 	// a loop of them is not. Confirmation phrases prove intent, the budget proves restraint.
 	mitigationLimiter *RateLimiter
@@ -264,6 +277,12 @@ func NewAPIServer(cfg Config, state *State, core *CoreClient, feeds *FeedManager
 	mux.HandleFunc("POST /api/v1/witness/push", s.auth(s.witnessPush))
 	mux.HandleFunc("POST /api/v1/witness/challenge", s.auth(s.witnessChallenge))
 	mux.HandleFunc("POST /api/v1/witness/import", s.auth(s.witnessImport))
+	// V6.3.0 AP-9 (R6): role discovery and the direct-loopback critical step-up
+	// flow. Both are authenticated like every other operator surface; the mint is
+	// additionally refused for gateway-proxied browser requests, which have to
+	// re-authenticate their password at the gateway instead (docs/V6.3.0-RBAC.md).
+	mux.HandleFunc("GET /api/v1/auth/roles", s.auth(s.requireRole(RoleObserver, s.authRoles)))
+	mux.HandleFunc("POST /api/v1/auth/step-up", s.auth(s.requireRole(RoleOperator, s.authStepUp)))
 	// GeDefense 6.1.0 module A-D surfaces (docs/V6.1.0-BLUEPRINT.md §3.1). GET is
 	// read-only and bounded; POST goes through the same authentication, replay and
 	// evidence gate as every other operator mutation.
@@ -317,6 +336,9 @@ func NewAPIServer(cfg Config, state *State, core *CoreClient, feeds *FeedManager
 	mux.HandleFunc("POST /api/v1/transactions/{id}/reverse", s.auth(s.transactionReverse))
 	mux.HandleFunc("GET /api/v1/quarantine", s.auth(s.quarantineStatus))
 	mux.HandleFunc("POST /api/v1/quarantine/preview", s.auth(s.quarantinePreview))
+	// V6.3.0 AP-7: evidence-first prune of a verified false-positive vault
+	// object (full identity + object-id confirmation required).
+	mux.HandleFunc("POST /api/v1/quarantine/prune", s.auth(s.quarantinePrune))
 	mux.HandleFunc("GET /api/v1/cases", s.auth(s.caseStatus))
 	mux.HandleFunc("POST /api/v1/cases/{id}/status", s.auth(s.caseSetStatus))
 	mux.HandleFunc("GET /api/v1/cells", s.auth(s.cellsStatus))
@@ -390,6 +412,10 @@ func NewAPIServer(cfg Config, state *State, core *CoreClient, feeds *FeedManager
 	mux.HandleFunc("GET /api/v1/overview/connections", s.auth(s.overviewConnections))
 	mux.HandleFunc("POST /api/v1/kinetic/reconcile", s.auth(s.reconcileKinetic))
 	mux.HandleFunc("POST /api/v1/xdr/incidents/{id}/ack", s.auth(s.ackIncident))
+	// V6.3.0 AP-7: persistent review queue (bounded, TTL, deduplicated).
+	mux.HandleFunc("GET /api/v1/xdr/review", s.auth(s.xdrReviewQueue))
+	mux.HandleFunc("POST /api/v1/xdr/review/{id}/ack", s.auth(s.xdrReviewAck))
+	mux.HandleFunc("DELETE /api/v1/xdr/review/{id}", s.auth(s.xdrReviewDelete))
 	mux.HandleFunc("GET /api/v1/xdr/attack-stories", s.auth(s.attackStories))
 	mux.HandleFunc("GET /api/v1/platform/caps", s.auth(s.platformCapabilities))
 	mux.HandleFunc("GET /api/v1/responses", s.auth(s.activeResponses))
@@ -1166,27 +1192,55 @@ func (s *APIServer) auth(next http.HandlerFunc) http.HandlerFunc {
 		s.ensureLimiters()
 		now := time.Now()
 		got := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-		// An empty credential is never a match, whatever the expected token is. tokenEqual("", "")
-		// is true, so a request without an Authorization header would otherwise authenticate the
-		// moment the expected token became empty - which is exactly the state a token file that
-		// cannot be read produces.
-		if got == "" || !tokenEqual(got, s.currentToken()) {
+		// V6.3.0 AP-9 (R6): the presented credential classifies the role. The
+		// operator token keeps its exact precedence and behaviour; the optional
+		// observer credential is only consulted for a token that is not the
+		// operator token. An empty credential is never a match, whatever the
+		// expected token is: tokenEqual("", "") is true, so a request without an
+		// Authorization header would otherwise authenticate the moment the expected
+		// token became empty - which is exactly the state a token file that cannot
+		// be read produces.
+		role, credentialValid := s.classifyCredential(got)
+		if got == "" || !credentialValid {
+			remote := remoteIdentity(r.RemoteAddr)
+			// V6.3.0 AP-9 (R6): bounded brute-force lockout. A source that keeps
+			// presenting unknown credentials is refused with 429 for a fixed window
+			// instead of being able to keep guessing. A valid credential never
+			// reaches this branch, so another source's failures cannot lock the
+			// operator out of their own platform: the lockout bounds guessing, it is
+			// not a second factor.
+			if locked, retryAfter := s.tokenLockout().locked(remote); locked {
+				w.Header().Set("Retry-After", retryAfterSeconds(retryAfter))
+				http.Error(w, "authentication temporarily locked", http.StatusTooManyRequests)
+				return
+			}
 			// Unauthenticated requests and failed attempts draw from the pre-auth budget only.
 			// Exhausting it can no longer lock an authenticated operator console out (F-08).
-			if !s.preAuthLimiter.Allow(remoteIdentity(r.RemoteAddr), now) {
+			if !s.preAuthLimiter.Allow(remote, now) {
 				w.Header().Set("Retry-After", "5")
 				s.recordAuthDenial(r, "authentication rate limit exceeded")
 				http.Error(w, "authentication rate limit exceeded", http.StatusTooManyRequests)
 				return
+			}
+			if _, _, fresh := s.tokenLockout().fail(remote); fresh {
+				s.reportRBACEvent("warning", "rbac.lockout",
+					"Management-API authentication locked out a source after repeated unknown credentials")
 			}
 			s.recordAuthDenial(r, "authorization required")
 			w.Header().Set("WWW-Authenticate", "Bearer")
 			http.Error(w, "authorization required", http.StatusUnauthorized)
 			return
 		}
+		s.tokenLockout().success(remoteIdentity(r.RemoteAddr))
 		if !s.limiter.Allow(s.authenticatedRateIdentity(r, got), now) {
 			w.Header().Set("Retry-After", "2")
 			http.Error(w, "rate limit exceeded", http.StatusTooManyRequests)
+			return
+		}
+		// V6.3.0 AP-9 (R6): role and Critical-Unlock enforcement. It runs after the
+		// credential and rate gates and before the mutation replay/evidence gates,
+		// so a refused request records no operator-mutation intent.
+		if !s.enforceManagementRole(w, r, role, s.currentToken()) {
 			return
 		}
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
@@ -1228,7 +1282,7 @@ func (s *APIServer) auth(next http.HandlerFunc) http.HandlerFunc {
 				}
 			}
 		}
-		next(w, r)
+		next(w, withRole(r, role))
 	}
 }
 

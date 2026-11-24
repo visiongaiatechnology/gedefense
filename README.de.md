@@ -7,8 +7,8 @@
 ### Linux Security Fabric - Your Entenprise System
 
 [![License](https://img.shields.io/badge/License-AGPL--3.0--only-blue?style=for-the-badge)](https://www.gnu.org/licenses/agpl-3.0)
-[![Version](https://img.shields.io/badge/Version-6.2.1-orange?style=for-the-badge)](#)
-[![Status](https://img.shields.io/badge/Status-Release_V6_(6.2.1)-brightgreen?style=for-the-badge)](#)
+[![Version](https://img.shields.io/badge/Version-6.3.0-orange?style=for-the-badge)](#)
+[![Status](https://img.shields.io/badge/Status-Release_V6_(6.3.0)-brightgreen?style=for-the-badge)](#)
 [![Installer](https://img.shields.io/badge/Installer-Universal_Linux-green?style=for-the-badge)](#-schnellstart)
 [![Platform](https://img.shields.io/badge/Platform-Linux_x86__64-lightgrey?style=for-the-badge&logo=linux)](#)
 [![Data Plane](https://img.shields.io/badge/Data_Plane-Rust_eBPF%2FXDP-red?style=for-the-badge&logo=rust)](#-architektur)
@@ -30,12 +30,14 @@
 
 <br />
 
-⬇️ **Direkt-Installer (v6.2.1 / V6):**
-[**OneClick-Installer (`.run`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.2.1/VGT_GeDefense_V6_6.2.1_OneClick.run) · [`.sha256`](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.2.1/VGT_GeDefense_V6_6.2.1_OneClick.run.sha256) · [**Desktop-Tray (`.run`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.2.1/GeDefense-6.2.1-Desktop-OneClick.run) · [`.sha256`](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.2.1/GeDefense-6.2.1-Desktop-OneClick.run.sha256) · [**Quellarchiv (`.zip`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.2.1/VGT_GeDefense_V6_6.2.1_Source.zip) · [**Release v6.2.1**](https://github.com/visiongaiatechnology/gedefense/releases/tag/v6.2.1) · [**Benchmark-Ergebnisse (`94.73 / PASS`)**](benchmarks/vgt-hardred-6.2.1/) · [Schnellstart](#-schnellstart)
+⬇️ **Direkt-Installer (v6.3.0 / V6):**
+[**OneClick-Installer (`.run`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.3.0/VGT_GeDefense_V6_6.3.0_OneClick.run) · [`.sha256`](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.3.0/VGT_GeDefense_V6_6.3.0_OneClick.run.sha256) · [**Desktop-Tray (`.run`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.3.0/GeDefense-6.3.0-Desktop-OneClick.run) · [`.sha256`](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.3.0/GeDefense-6.3.0-Desktop-OneClick.run.sha256) · [**Quellarchiv (`.zip`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.3.0/VGT_GeDefense_V6_6.3.0_Source.zip) · [**Release v6.3.0**](https://github.com/visiongaiatechnology/gedefense/releases/tag/v6.3.0) · [**Benchmark-Ergebnisse 6.2.1 (`94.73 / PASS`)**](benchmarks/vgt-hardred-6.2.1/) · [Schnellstart](#-schnellstart)
 
 </div>
 
 ---
+
+> **Benchmark-Zuordnung & Ehrlichkeit:** Die veröffentlichten VGT-HardRed-`94.73 / PASS`- und REDHARD-ARES-1.2-Ergebnisse wurden auf **GeDefense Linux 6.2.1** gemessen. **Für V6.3.0 gibt es keinen neuen veröffentlichten HardRed-/ARES-Benchmark-Lauf** und es wird kein neuer Score behauptet; V6.3.0 ergänzt die im Changelog dokumentierten Sensor-, Rootkit-Verteidigungs- und Selbstschutzfunktionen AP-0…AP-9.
 
 ## 🧭 Schnellnavigation
 
@@ -44,11 +46,11 @@
 | 📊 **VGT HardRed Benchmark** | `94.73 / 100 · PASS` vs. OSS+SafeLine (`59.28 / PASS`), OSS+ModSec (`55.40 / FAIL`), SafeLine (`52.92`), Wazuh & CrowdSec | [Ergebnisse](#-vgt-hardred-benchmark--v621-vs-oss-stack-evaluation) |
 | 📂 **Rohdaten & Nachweise** | Alle HardRed- & ARES-Dashboards, SARIF-, ATT&CK-, OCSF- & GoTestWAF-Reports | [`benchmarks/vgt-hardred-6.2.1/`](benchmarks/vgt-hardred-6.2.1/) |
 | ⚙️ **Reproduktion & Settings** | Exakte `EDR/Hardened Max`-Konfiguration & `6.2.0 → 6.2.1`-Delta | [Konfiguration](#-reproduktion-des-benchmark-profils-max-hardness) |
-| 🔍 **Was ist VGT GeDefense?** | V6.2.1-Stack, Module A–E, Titan, Setup-Wizard & PC vs. Server | [Überblick](#-was-ist-vgt-gedefense) |
+| 🔍 **Was ist VGT GeDefense?** | V6.3.0-Stack, Module A–E, Titan, Setup-Wizard & PC vs. Server | [Überblick](#-was-ist-vgt-gedefense) |
 | 🧪 **Verify Yourself** | Native Go/Rust-Testsuiten & 19 Sicherheits-Audit-Gates | [Selbstprüfung](#-verify-yourself--vollständige-test-suite--selbstaudit-leitfaden) |
 | 🏛️ **Architektur & Fabric** | Vertrauensdomänen, eBPF/XDP, Host-XDR, StyX & Kryptografie | [Architektur](#-architektur) |
 | 🚀 **Schnellstart & Gates** | OneClick-Installer, Release-Gates & bekannte Grenzen | [Schnellstart](#-schnellstart) |
-| 📋 **Changelog** | Vollständige Historie (`v6.2.1` → `v1.0.0-beta.5`) | [Changelog](#-changelog) |
+| 📋 **Changelog** | Vollständige Historie (`v6.3.0` → `v1.0.0-beta.5`) | [Changelog](#-changelog) |
 | 📄 **Lizenz & Attributionen** | `AGPL-3.0-only`, GeoIP/ASN & Drittanbieter-Lizenzen | [Lizenz](#-lizenz) |
 
 ---
@@ -274,7 +276,7 @@ VGT GeDefense:
 
 Ein einzelner Regex-, Feed-, Verhaltens- oder Maskierungs-Treffer **kann niemals eine Prozessbeendigung autorisieren**. Enforce erfordert mindestens zwei unabhängige autorisierte Kategorien, objektive Broker-Evidenz und einen nicht-degradierten Systemzustand.
 
-### 🛡️ Vollständiger V6.2.1-Funktionsumfang & Module A–E
+### 🛡️ Vollständiger V6.3.0-Funktionsumfang & Module A–E
 
 Alle Subsysteme teilen sich getrennte Vertrauensdomänen, REST-APIs und Dashboard-Panels. In `observe`/`canary` bleibt aktives V6-Blocking deaktiviert; beim Wechsel auf `enforce` greift automatisch die sichere Basis (`styx=monitor`, `titan_exec=contain`, `parser_cells=enabled`), während strengere Stufen (**Emergency Lockdown**, **Witness**, `titan_exec=untrusted`, Per-Cell-StyX `enforce` und CIS-Userland-Baseline) bewusste Operator-Entscheidungen bleiben:
 
@@ -293,7 +295,7 @@ Alle Subsysteme teilen sich getrennte Vertrauensdomänen, REST-APIs und Dashboar
   - **Ephemere Parser-Zellen (`gedefense-cell-helper.service`), Witness & Emergency Lockdown:** Isolierte Einweg-Sandboxes (`VGTGC2`), off-host Ed25519-Checkpoints, XDP/TC-Notaus und Composite-BadUSB-Filter (`HID+Storage`/`HID+CDC`).
 - **Geführter Setup-Wizard (`00`–`08`) & Offline-`AGENTS.md`-Workflow:** Integrierte Checkliste im Dashboard plus Read-only-first-`AGENTS.md` für lokale CLI-Agenten über SSH (`POST /api/v1/settings/{module}/preview` → `PUT`) — bewusst ohne Remote-KI-API.
 
-### 💻 Desktop-PC / Workstation vs. 🖥️ Linux-Server — Was V6.2 schützt
+### 💻 Desktop-PC / Workstation vs. 🖥️ Linux-Server — Was V6.3.0 schützt
 
 | Einsatzszenario | Zentrale abgewehrte Bedrohungen | Aktive Kontrollen unter `enforce` |
 |---|---|---|
@@ -301,7 +303,7 @@ Alle Subsysteme teilen sich getrennte Vertrauensdomänen, REST-APIs und Dashboar
 | **Linux-Server (Web / API / Compute)** | L7-SQLi/RCE/Webshell-Ingress, ausgehende C2-/Exfiltration aus Web-Cgroups, `/tmp`-/`/var/www`-Drops, Ransomware-Bursts, `/etc/shadow`-Zugriffe | **L7 Edge/WAF + Kinetic XDP** droppen Netz-/HTTP-Angriffe; **StyX (`per_cell enforce`)** blockt kompromittierten Worker-Egress; **Titan Exec + Ransomware + On-Write + Credential Guard** stoppen Post-Exploitation; **Witness** ankert Evidenz extern |
 
 > [!WARNING]
-> **RELEASE- & QUALIFIKATIONSSTATUS (Version 6.2.1 / V6).**  
+> **RELEASE- & QUALIFIKATIONSSTATUS (Version 6.3.0 / V6).**  
 > GeDefense V6 befindet sich in aktiver Weiterentwicklung für Test- und Qualifizierungsumgebungen. Automatisierte Gates prüfen Build-Provenance, Ed25519-Signaturen, Go-/Rust-Suites und statische Sicherheitsinvarianten; externe Vertrauensanker (öffentliche CA-Signatur, RFC3161-Zeitstempel, CRL/OCSP, Feed-Signatur-PKI) sowie zielkernel-spezifische Verifier-/NIC-XDP-Tests bleiben Host-Qualifikationsschritte. Bitte vor produktivem `enforce`-Einsatz [SECURITY.md](SECURITY.md), [RELEASE-NOTES.md](RELEASE-NOTES.md) und [CHANGELOG.md](CHANGELOG.md) prüfen.
 
 ---
@@ -595,17 +597,17 @@ Ist die Gaia Cells-Laufzeit **nicht vorhanden**, meldet der Adapter `runtime_not
 
 ```bash
 # Installer herunterladen
-wget https://github.com/visiongaiatechnology/gedefense/releases/download/v6.2.1/VGT_GeDefense_V6_6.2.1_OneClick.run
+wget https://github.com/visiongaiatechnology/gedefense/releases/download/v6.3.0/VGT_GeDefense_V6_6.3.0_OneClick.run
 
 # SHA-256 verifizieren
-sha256sum --check VGT_GeDefense_V6_6.2.1_OneClick.run.sha256
+sha256sum --check VGT_GeDefense_V6_6.3.0_OneClick.run.sha256
 
 # Installieren (Root erforderlich)
-chmod 700 VGT_GeDefense_V6_6.2.1_OneClick.run
-sudo ./VGT_GeDefense_V6_6.2.1_OneClick.run
+chmod 700 VGT_GeDefense_V6_6.3.0_OneClick.run
+sudo ./VGT_GeDefense_V6_6.3.0_OneClick.run
 ```
 
-> **Installer-Verfügbarkeit:** Die offiziellen v6.2.1 Self-Contained-Installer-Assets (`VGT_GeDefense_V6_6.2.1_OneClick.run` & `GeDefense-6.2.1-Desktop-OneClick.run`) werden mit dem signierten GitHub Release bereitgestellt.
+> **Installer-Verfügbarkeit:** Die offiziellen v6.3.0 Self-Contained-Installer-Assets (`VGT_GeDefense_V6_6.3.0_OneClick.run` & `GeDefense-6.3.0-Desktop-OneClick.run`) werden mit dem signierten GitHub Release bereitgestellt.
 
 > Der Installer und die Prüfsumme werden erst veröffentlicht, nachdem alle GitHub-CI- und konkreten Linux-Host-Qualifikations-Gates bestanden wurden. Führe niemals eine nicht verifizierte RUN-Datei aus.
 
@@ -639,7 +641,7 @@ Die Firewall-Regel für den HTTPS-Gateway-Port (TCP 9843) kann während der Inst
 
 ---
 
-## 🚧 Bekannte Einschränkungen (6.2.1 / V6)
+## 🚧 Bekannte Einschränkungen (6.3.0 / V6)
 
 - Keine Swarm- / Mesh-Unterstützung
 - Kein QUIC-Offloading
@@ -663,6 +665,19 @@ Die Firewall-Regel für den HTTPS-Gateway-Port (TCP 9843) kann während der Inst
 ---
 
 ## 📋 Changelog
+
+### v6.3.0 — Anti-Spyware-Sensor-Härtung, eBPF-Rootkit-Verteidigung, Cross-View & Chameleon-Modus *(Aktueller Release — 24.11.2026)*
+
+- **Statischer musl-Core & Sensor-Selbstschutz (AP-0):** `gedefense-core` wird als `static-pie`-musl-Binary ohne `NEEDED`-Bibliotheken ausgeliefert (beseitigt die glibc-/`LD_PRELOAD`-Angriffsfläche); BPF-Pin-Guard, Ring-Drop-Accounting und ein periodischer Canary-Selbsttest melden `XDR.SELF_TAMPER` / `SBC-EVID-08`, und das gepinnte eBPF-Objekt wird erst nach Verifikation installiert.
+- **Executable-Inode-Vertrauen (AP-1):** Credential Guard und der Ransomware-Sensor entscheiden jetzt anhand der BTF-aufgelösten `task_struct → mm → exe_file → f_inode`-Identität (`TRUSTED_EXEC_INODES`) statt über das spoofbare `comm`; verhaltensbasierte Träger-Inodes (LD_PRELOAD-`.so`, BPF-Loader, `memfd`) lassen sich mit TTL/Restore und aufgezeichnetem Ledger-Hash per Inode sperren.
+- **Attach-Zeit-eBPF-Guard & Helper-Bitmap (AP-2):** `lsm/bpf_prog`, `sys_enter_bpf` und ein BTF-gegateter `check_helper_call`-Kprobe erfassen rohe Helper-IDs vor `do_misc_fixups` und bilden eine Risiko-Bitmap pro Programm (`bpf_probe_write_user`, `bpf_override_return`, `bpf_send_signal`) mit Observe-First-Befunden `XDR.BPF_ANOMALY` / `XDR.BPF_ROOTKIT_HELPER`.
+- **8-Domänen-Cross-View-Verifier (AP-3):** Kernel-Iteratoren, `NETLINK_SOCK_DIAG` (ohne Aufruf von `ss`), direkte `/proc/<pid>/stat`-Reads sowie LKM-/Ftrace-/Map-Pin-Gegenprüfungen erkennen versteckte BPF-Programme, Prozesse, Sockets, portlose Raw-Taps, LKM-/Ftrace-Hooks und BPF-Link-Manipulation (nur beobachtend).
+- **io_uring-/LKM-Hooks & Persistenz-/Peripherie-Integrität (AP-4/AP-5):** io_uring-LSM-Hooks und -Tracepoints plus Pre-Stealth-Erfassung von `module_load`/`init_module`/`finit_module`/`delete_module` (`XDR.IO_URING_ANOMALY`, `XDR.LKM_LOAD`); Schreib-/Audit-Schutz für Linker, `ld.so.preload`, PAM/`sshd`, systemd-Generator/Drop-in und udev-`RUN+=`-Persistenz, Paket-DB-Verifikation für in sicherheitskritische Binaries gemappte Bibliotheken sowie Sensoren für Desktop-Peripherie und Browser-/Keyring-Geheimnisse.
+- **StyX Phase 2, DNS-Tunnelling & GIEF v1.0/SBC (AP-6):** Echte `cgroup_skb/ingress`-RX-Beobachtung, bidirektionale 5-Minuten-PCR-Exfiltrationsbewertung (ehrliches `NONE`/`TEMPORAL`), begrenzte UDP/53-Erfassung mit 5-Signal-DNS-Tunnel-Analyse (≥ 3 gleichzeitige Signale) und ein `gief/v1.0`-Envelope mit zeitgewichtetem SBC-Entitätsgraphen und `SBC-PROV-01`…`SBC-EVID-08`-Familien.
+- **PermitV1-Broker, Review-Queue, Prune & Explainability (AP-7):** Einheitlicher `vgt-gedefense-permit-v1`-Broker (`AUTHORIZED`/`TOLERATED`/`ANALYST_MODE`, rein suppressiv, nie Auto-Kill), persistente verschlüsselte TTL-begrenzte Review-Queue, evidenzfirstes `QUARANTINE_PRUNE`, Pflicht-Explainability-Felder in jedem XDR-Befund und TOLERATED-Profile, die das `0,0 %`-Schutz-FP-Gate erhalten.
+- **Opt-in Chameleon-Identitätsmodus (AP-8):** Standardmäßig deaktiviertes Profil mit signiertem Manifest und gleichlanger neutraler Umbenennung aller kernel-sichtbaren eBPF-Programm-/Map-Identifier (174 Symbole; `bpftool prog list` zeigt keine `gedefense`/`styx`/`titan`-Strings); fehlende oder ungültige Manifeste schlagen hart fehl, statt still zur öffentlichen Identität zurückzukehren.
+- **ARES-Selbstverteidigung (AP-9):** TUF-gleiches Feed-Anti-Poisoning (`S09`: 2-von-3-Ed25519-Schwellensignaturen, Rollentrennung, Anti-Rollback-Epoche, semantischer Guard, LKG-Rollback), Telemetrie-Anti-DoS-Backpressure (`S12`: 256-KiB-`SEC_CRIT_EVENTS`-Ring, Token-Buckets, ehrliche `enforced=false`-Meldung), Management-API-RBAC (`R6`: Observer/Operator/Critical-Unlock mit Step-up-Nachweisen) und Anti-Truncate-Witness-Priority-Push (`S08`/`S15`).
+- **Referenzen & Benchmark-Ehrlichkeit:** Technische Evidenz in [`docs/V6.3.0-RELEASE.md`](docs/V6.3.0-RELEASE.md), Verifikations-Ledger in [`docs/V6.3.0-VERIFICATION.md`](docs/V6.3.0-VERIFICATION.md). Die veröffentlichten VGT-HardRed-`94.73 / PASS`- und ARES-Ergebnisse bleiben **6.2.1-Messungen**; **für 6.3.0 gibt es keinen neuen veröffentlichten HardRed-/ARES-Benchmark-Lauf**, und es wird kein neuer Score behauptet.
 
 ### v6.2.1 — Kernel Behavioral XDR, Inode-Quarantäne-Sperre & Service-Pool-Isolation *(Aktueller Release — 23.11.2026)*
 
@@ -1006,6 +1021,6 @@ Die Karte verwendet **jsVectorMap 1.7.0** (MIT, Copyright © 2020 Mustafa Omar; 
 
 [![VGT](https://img.shields.io/badge/VisionGaia-Technology-cyan?style=for-the-badge)](https://visiongaiatechnology.de)
 
-*VGT GeDefense 6.2.1 (V6) — Universelles Linux Sicherheitsgewebe // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidenz-Ledger // AES-256-GCM verschlüsselter Vault // Reversible Härtung // AstraeaOS-nativer Adapter // Getrennte Vertrauensdomänen // Keine Cloud-Control-Plane // AGPL-3.0-only // Linux x86_64*
+*VGT GeDefense 6.3.0 (V6) — Universelles Linux Sicherheitsgewebe // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidenz-Ledger // AES-256-GCM verschlüsselter Vault // Reversible Härtung // AstraeaOS-nativer Adapter // Getrennte Vertrauensdomänen // Keine Cloud-Control-Plane // AGPL-3.0-only // Linux x86_64*
 
 </div>

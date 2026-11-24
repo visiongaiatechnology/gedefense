@@ -9,8 +9,8 @@
 <sub>*(注：“Entenprise” 并非拼写错误，而是源自德语 “Ente”（鸭子）的双关语，致敬 Sir Quacksec 🦆)*</sub>
 
 [![License](https://img.shields.io/badge/License-AGPL--3.0--only-blue?style=for-the-badge)](https://www.gnu.org/licenses/agpl-3.0)
-[![Version](https://img.shields.io/badge/Version-6.2.1-orange?style=for-the-badge)](#)
-[![Status](https://img.shields.io/badge/Status-Release_V6_(6.2.1)-brightgreen?style=for-the-badge)](#)
+[![Version](https://img.shields.io/badge/Version-6.3.0-orange?style=for-the-badge)](#)
+[![Status](https://img.shields.io/badge/Status-Release_V6_(6.3.0)-brightgreen?style=for-the-badge)](#)
 [![Installer](https://img.shields.io/badge/Installer-Universal_Linux-green?style=for-the-badge)](#-快速上手)
 [![Platform](https://img.shields.io/badge/Platform-Linux_x86__64-lightgrey?style=for-the-badge&logo=linux)](#)
 [![Data Plane](https://img.shields.io/badge/Data_Plane-Rust_eBPF%2FXDP-red?style=for-the-badge&logo=rust)](#-系统架构)
@@ -32,12 +32,14 @@
 
 <br />
 
-⬇️ **安装程序直链下载 (v6.2.1 / V6):**
-[**OneClick 安装程序 (`.run`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.2.1/VGT_GeDefense_V6_6.2.1_OneClick.run) · [`.sha256`](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.2.1/VGT_GeDefense_V6_6.2.1_OneClick.run.sha256) · [**Desktop Tray (`.run`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.2.1/GeDefense-6.2.1-Desktop-OneClick.run) · [`.sha256`](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.2.1/GeDefense-6.2.1-Desktop-OneClick.run.sha256) · [**源码归档 (`.zip`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.2.1/VGT_GeDefense_V6_6.2.1_Source.zip) · [**v6.2.1 发布页**](https://github.com/visiongaiatechnology/gedefense/releases/tag/v6.2.1) · [**基准测试结果 (`94.73 / PASS`)**](benchmarks/vgt-hardred-6.2.1/) · [快速上手](#-快速上手)
+⬇️ **安装程序直链下载 (v6.3.0 / V6):**
+[**OneClick 安装程序 (`.run`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.3.0/VGT_GeDefense_V6_6.3.0_OneClick.run) · [`.sha256`](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.3.0/VGT_GeDefense_V6_6.3.0_OneClick.run.sha256) · [**Desktop Tray (`.run`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.3.0/GeDefense-6.3.0-Desktop-OneClick.run) · [`.sha256`](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.3.0/GeDefense-6.3.0-Desktop-OneClick.run.sha256) · [**源码归档 (`.zip`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.3.0/VGT_GeDefense_V6_6.3.0_Source.zip) · [**v6.3.0 发布页**](https://github.com/visiongaiatechnology/gedefense/releases/tag/v6.3.0) · [**基准测试结果 6.2.1 (`94.73 / PASS`)**](benchmarks/vgt-hardred-6.2.1/) · [快速上手](#-快速上手)
 
 </div>
 
 ---
+
+> **基准归属与诚实声明：** 已发布的 VGT HardRed `94.73 / PASS` 与 REDHARD ARES 1.2 结果是在 **GeDefense Linux 6.2.1** 上实测的。**V6.3.0 没有新的公开 HardRed/ARES 基准测试运行**，也不声称任何新得分；V6.3.0 新增 AP-0…AP-9 传感器、Rootkit 防御与自保护能力，详见变更日志。
 
 ## 🧭 快速导航
 
@@ -46,11 +48,11 @@
 | 📊 **VGT HardRed 基准评测** | `94.73 / 100 · PASS` 对比 OSS+SafeLine (`59.28 / PASS`)、OSS+ModSec (`55.40 / FAIL`)、SafeLine (`52.92`)、Wazuh 与 CrowdSec | [查看结果](#-vgt-hardred-基准测试--v621-对比-oss-组合栈实测评估) |
 | 📂 **测试证据与原始报告** | HardRed 与 ARES 面板、SARIF、ATT&CK、OCSF 与 GoTestWAF 报告 | [`benchmarks/vgt-hardred-6.2.1/`](benchmarks/vgt-hardred-6.2.1/) |
 | ⚙️ **复现配置与环境说明** | 完整 `EDR/Hardened Max` 参数与 `6.2.0 → 6.2.1` 变更说明 | [复现指南](#-如何复现-max-hardness-测试配置) |
-| 🔍 **什么是 VGT GeDefense？** | V6.2.1 架构、模块 A–E、Titan、安装向导与 PC vs. 服务器 | [架构总览](#-什么是-vgt-gedefense) |
+| 🔍 **什么是 VGT GeDefense？** | V6.3.0 架构、模块 A–E、Titan、安装向导与 PC vs. 服务器 | [架构总览](#-什么是-vgt-gedefense) |
 | 🧪 **Verify Yourself** | 原生 Go/Rust 测试套件与 19 道安全审计门禁 | [自主验证](#-verify-yourself--完整测试套件与自主审计指南) |
 | 🏛️ **系统架构与防御矩阵** | 信任域隔离、eBPF/XDP、主机 XDR、StyX 与密码学 | [系统架构](#-系统架构) |
 | 🚀 **快速上手与发布门禁** | 一键安装脚本、发布门禁与已知限制 | [快速上手](#-快速上手) |
-| 📋 **版本更新日志 (Changelog)** | 完整历史记录（`v6.2.1` → `v1.0.0-beta.5`） | [更新日志](#-版本更新日志-changelog) |
+| 📋 **版本更新日志 (Changelog)** | 完整历史记录（`v6.3.0` → `v1.0.0-beta.5`） | [更新日志](#-版本更新日志-changelog) |
 | 📄 **许可证与数据署名** | `AGPL-3.0-only`、GeoIP/ASN 与第三方声明 | [开源许可证](#-开源许可证) |
 
 ---
@@ -255,7 +257,7 @@ VGT GeDefense:
 
 单一的正则表达式、威胁情报命中、行为异常或伪装检测**绝不能单独授权终止进程**。进入 Enforce（强制执行）模式至少需要两个独立的授权类别、客观的仲裁证据以及非降级的系统运行状态。
 
-### 🛡️ GeDefense V6.2.1 全栈防御能力与模块 A–E
+### 🛡️ GeDefense V6.3.0 全栈防御能力与模块 A–E
 
 所有子系统共享隔离信任域、REST API 与 Web 管理面板。在 `observe`/`canary` 阶段 V6 主动阻断默认保持关闭；切换至 `enforce` 时自动开启安全基线（`styx=monitor`、`titan_exec=contain`、`parser_cells=enabled`），而更严格的策略（**Emergency Lockdown**、**Witness**、`titan_exec=untrusted`、按 Cell 启用的 StyX `enforce` 与 CIS 用户态基线）始终由管理员显式启用：
 
@@ -274,7 +276,7 @@ VGT GeDefense:
   - **临时解析隔离单元（`gedefense-cell-helper.service`）、带外 Witness 与 Emergency Lockdown：** 一次性命名空间/seccomp 解析沙箱（`VGTGC2`）、防 SSRF 的 Ed25519 账本外锚、XDP/TC 快速断网锁存及复合 BadUSB 拦截（`HID+Storage`/`HID+CDC`）。
 - **引导式安装向导（`00`–`08`）与离线 `AGENTS.md` 工作流：** 控制台内置分步配置向导，并提供“先只读后变更加固”的 `AGENTS.md` 操作蓝图供管理员通过 SSH 驱动本地 CLI 代理（`POST /api/v1/settings/{module}/preview` → `PUT`），绝不暴露远程 AI 控制接口。
 
-### 💻 桌面 PC / 工作站 vs. 🖥️ Linux 服务器 — V6.2 防护对比
+### 💻 桌面 PC / 工作站 vs. 🖥️ Linux 服务器 — V6.3.0 防护对比
 
 | 部署场景 | 重点缓解威胁 | 开启 `enforce` 后的关键防线 |
 |---|---|---|
@@ -282,7 +284,7 @@ VGT GeDefense:
 | **Linux 服务器（Web / API / 计算）** | L7 HTTP 注入/Webshell 渗透、Web 容器/cgroup 出站外泄、`/tmp`/`/var/www` 投毒、勒索加密破坏、`/etc/shadow` 窃密 | **L7 Edge/WAF + Kinetic XDP** 阻断网络与应用层攻击；**StyX (`per_cell enforce`)** 封死 Web 工作进程异常出站；**Titan Exec + 勒索传感 + On-Write + Credential Guard** 扼杀后渗透；**Witness** 实现账本异地存证 |
 
 > [!WARNING]
-> **发布与资质状态说明（版本 6.2.1 / V6）。**  
+> **发布与资质状态说明（版本 6.3.0 / V6）。**  
 > GeDefense V6 正处于面向测试与资质验证主机的持续演进阶段。自动化发布门禁已完整校验构建溯源、Ed25519 签名、Go/Rust 测试套件与静态安全不变量；外部公共 CA 代码签名、RFC3161 时间戳、吊销列表及目标主机的内核验证器/网卡 XDP 挂载测试仍属于节点级上线前验收项。在生产环境启用 `enforce` 前，请务必阅读 [SECURITY.md](SECURITY.md)、[RELEASE-NOTES.md](RELEASE-NOTES.md) 与 [CHANGELOG.md](CHANGELOG.md)。
 
 ---
@@ -575,17 +577,17 @@ Rust Core **未提供任何通用的系统 Shell、文件系统或 Sysctl 执行
 
 ```bash
 # 下载安装程序
-wget https://github.com/visiongaiatechnology/gedefense/releases/download/v6.2.1/VGT_GeDefense_V6_6.2.1_OneClick.run
+wget https://github.com/visiongaiatechnology/gedefense/releases/download/v6.3.0/VGT_GeDefense_V6_6.3.0_OneClick.run
 
 # 校验 SHA-256 完整性指纹
-sha256sum --check VGT_GeDefense_V6_6.2.1_OneClick.run.sha256
+sha256sum --check VGT_GeDefense_V6_6.3.0_OneClick.run.sha256
 
 # 执行安装（需要 root 权限）
-chmod 700 VGT_GeDefense_V6_6.2.1_OneClick.run
-sudo ./VGT_GeDefense_V6_6.2.1_OneClick.run
+chmod 700 VGT_GeDefense_V6_6.3.0_OneClick.run
+sudo ./VGT_GeDefense_V6_6.3.0_OneClick.run
 ```
 
-> **安装程序可用性：** 官方 v6.2.1 自包含安装程序（`VGT_GeDefense_V6_6.2.1_OneClick.run` 与 `GeDefense-6.2.1-Desktop-OneClick.run`）随签名的 GitHub Release 一同发布。
+> **安装程序可用性：** 官方 v6.3.0 自包含安装程序（`VGT_GeDefense_V6_6.3.0_OneClick.run` 与 `GeDefense-6.3.0-Desktop-OneClick.run`）随签名的 GitHub Release 一同发布。
 
 > 安装包与校验和文件仅在通过全部 GitHub CI 测试及实体 Linux 节点验证后发布。切勿运行未经验签的 RUN 可执行文件。
 
@@ -619,7 +621,7 @@ sudo ./VGT_GeDefense_V6_6.2.1_OneClick.run
 
 ---
 
-## 🚧 当前已知局限（6.2.1 / V6）
+## 🚧 当前已知局限（6.3.0 / V6）
 
 - 暂未集成 Swarm / 集群网格（Mesh）支持
 - 暂不支持 QUIC 协议网络卸载
@@ -641,6 +643,19 @@ sudo ./VGT_GeDefense_V6_6.2.1_OneClick.run
 ---
 
 ## 📋 版本更新日志 (Changelog)
+
+### v6.3.0 — 反间谍传感器加固、eBPF Rootkit 防御、跨视图与变色龙模式 *(当前版本 — 2026-11-24)*
+
+- **静态 musl 核心与传感器自保护（AP-0）：** `gedefense-core` 以 `static-pie` musl 二进制交付，不含 `NEEDED` 库依赖（消除 glibc/`LD_PRELOAD` 攻击面）；BPF pin 守卫、ring 丢弃统计与周期性 canary 自检上报 `XDR.SELF_TAMPER` / `SBC-EVID-08`，固定版本的 eBPF 对象仅在验证通过后安装。
+- **可执行文件 inode 信任（AP-1）：** Credential Guard 与勒索软件传感器改用 BTF 解析的 `task_struct → mm → exe_file → f_inode` 身份（`TRUSTED_EXEC_INODES`）而非可伪装的 `comm` 做信任决策；行为载体 inode（LD_PRELOAD `.so`、BPF 加载器、`memfd`）可执行带 TTL/恢复与账本哈希的 inode 锁定。
+- **加载时 eBPF 守卫与 helper 位图（AP-2）：** `lsm/bpf_prog`、`sys_enter_bpf` 与 BTF 门控的 `check_helper_call` kprobe 在 `do_misc_fixups` 前捕获原始 helper ID，并为每个程序构建风险位图（`bpf_probe_write_user`、`bpf_override_return`、`bpf_send_signal`），产生 observe-first 的 `XDR.BPF_ANOMALY` / `XDR.BPF_ROOTKIT_HELPER` 发现。
+- **8 域跨视图校验器（AP-3）：** 内核迭代器、`NETLINK_SOCK_DIAG`（不调用 `ss`）、直接读取 `/proc/<pid>/stat`，以及 LKM/ftrace/map-pin 交叉校验，检测隐藏的 BPF 程序、进程、套接字、无端口 raw tap、LKM/ftrace 钩子与 BPF link 篡改（仅观察）。
+- **io_uring/LKM 钩子与持久化/外设完整性（AP-4/AP-5）：** io_uring LSM 钩子与 tracepoint，加上对 `module_load`/`init_module`/`finit_module`/`delete_module` 的 pre-stealth 捕获（`XDR.IO_URING_ANOMALY`、`XDR.LKM_LOAD`）；对 linker、`ld.so.preload`、PAM/`sshd`、systemd generator/drop-in 与 udev `RUN+=` 持久化的写入/审计保护，对映射进安全关键二进制的库执行包数据库校验，并新增桌面外设与浏览器/Keyring 机密访问传感器。
+- **StyX 第二阶段、DNS 隧道与 GIEF v1.0/SBC（AP-6）：** 真实 `cgroup_skb/ingress` RX 观测、5 分钟双向 PCR 外泄评分（诚实上报 `NONE`/`TEMPORAL`）、有界 UDP/53 捕获与 5 信号 DNS 隧道分析（≥ 3 个信号同时成立），以及包含时间加权 SBC 实体图和 `SBC-PROV-01`…`SBC-EVID-08` 家族的 `gief/v1.0` 信封。
+- **PermitV1 代理、评审队列、prune 与可解释性（AP-7）：** 统一 `vgt-gedefense-permit-v1` 代理（`AUTHORIZED`/`TOLERATED`/`ANALYST_MODE`，仅做抑制、绝不自动 kill）、持久化加密 TTL 评审队列、evidence-first `QUARANTINE_PRUNE`、每条 XDR 发现的强制可解释字段，以及保持 `0.0 %` 防护误报门槛的 TOLERATED 配置。
+- **可选 Chameleon 身份模式（AP-8）：** 默认关闭：签名清单配置对内核可见的 eBPF 程序/map 标识执行等长中性重命名（174 个符号；`bpftool prog list` 不再显示 `gedefense`/`styx`/`titan` 字符串）；清单缺失或无效时直接失败，绝不静默回退到公开身份。
+- **ARES 自我防御（AP-9）：** TUF 级 feed 防投毒（`S09`：2-of-3 Ed25519 阈值签名、角色分离、防回滚 epoch、语义守卫、LKG 回滚）、遥测抗 DoS 背压（`S12`：256 KiB `SEC_CRIT_EVENTS` ring、令牌桶、诚实上报 `enforced=false`）、管理 API RBAC（`R6`：Observer/Operator/Critical-Unlock 与 step-up 证明）以及 anti-truncate witness 优先推送（`S08`/`S15`）。
+- **参考与基准诚信：** 完整技术证据见 [`docs/V6.3.0-RELEASE.md`](docs/V6.3.0-RELEASE.md)，验证账本见 [`docs/V6.3.0-VERIFICATION.md`](docs/V6.3.0-VERIFICATION.md)。已发布的 VGT HardRed `94.73 / PASS` 与 ARES 结果仍为 **6.2.1 实测**；**V6.3.0 没有新的公开 HardRed/ARES 基准运行**，也不声称任何新得分。
 
 ### v6.2.1 — 内核行为 XDR 探针、Inode 隔离锁与服务进程池隔离 *(当前版本 — 2026-11-23)*
 
@@ -980,6 +995,6 @@ sudo python3 scripts/update-geoip-db.py /var/lib/vgt/gedefense/geoip.csv
 
 [![VGT](https://img.shields.io/badge/VisionGaia-Technology-cyan?style=for-the-badge)](https://visiongaiatechnology.de)
 
-*VGT GeDefense 6.2.1 (V6) — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
+*VGT GeDefense 6.3.0 (V6) — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
 
 </div>

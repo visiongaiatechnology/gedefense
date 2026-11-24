@@ -42,27 +42,27 @@ impl WorkerGuardCore {
     /// object, never for an unavailable tracepoint.
     pub fn load(ebpf: &mut Ebpf) -> Result<Self, BoxError> {
         let state = AyaArray::try_from(
-            ebpf.take_map("WORKER_GUARD_STATE")
+            ebpf.take_map(&crate::chameleon::map_name("WORKER_GUARD_STATE"))
                 .ok_or("WORKER_GUARD_STATE missing")?,
         )?;
         let comms = AyaHashMap::try_from(
-            ebpf.take_map("WORKER_COMMS").ok_or("WORKER_COMMS missing")?,
+            ebpf.take_map(&crate::chameleon::map_name("WORKER_COMMS")).ok_or("WORKER_COMMS missing")?,
         )?;
         let uids = AyaHashMap::try_from(
-            ebpf.take_map("WORKER_UIDS").ok_or("WORKER_UIDS missing")?,
+            ebpf.take_map(&crate::chameleon::map_name("WORKER_UIDS")).ok_or("WORKER_UIDS missing")?,
         )?;
         let events = RingBuf::try_from(
-            ebpf.take_map("WORKER_CRASH_EVENTS").ok_or("WORKER_CRASH_EVENTS missing")?,
+            ebpf.take_map(&crate::chameleon::map_name("WORKER_CRASH_EVENTS")).ok_or("WORKER_CRASH_EVENTS missing")?,
         )?;
         let emitted = PerCpuArray::try_from(
-            ebpf.take_map("WORKER_CRASH_EMITTED")
+            ebpf.take_map(&crate::chameleon::map_name("WORKER_CRASH_EMITTED"))
                 .ok_or("WORKER_CRASH_EMITTED missing")?,
         )?;
         let drops = PerCpuArray::try_from(
-            ebpf.take_map("WORKER_CRASH_RING_DROPS")
+            ebpf.take_map(&crate::chameleon::map_name("WORKER_CRASH_RING_DROPS"))
                 .ok_or("WORKER_CRASH_RING_DROPS missing")?,
         )?;
-        let attached = match ebpf.program_mut("gedefense_worker_signal") {
+        let attached = match ebpf.program_mut(&crate::chameleon::program_name("gedefense_worker_signal")) {
             Some(program) => {
                 let program: &mut TracePoint = program.try_into()?;
                 program.load()?;

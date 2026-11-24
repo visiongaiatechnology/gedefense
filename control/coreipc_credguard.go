@@ -38,6 +38,10 @@ type CoreCredGuardEvent struct {
 const (
 	CredGuardActionDeny  uint8 = 1
 	CredGuardActionAudit uint8 = 2
+	// CredGuardActionDenyInode (V6.3.0 AP-1) is the same kernel -EACCES deny, but
+	// decided by the executable-inode trust gate instead of the comm allowlist.
+	// The control plane labels such a denial as an inode-gate denial.
+	CredGuardActionDenyInode uint8 = 3
 )
 
 // CoreCredGuardStatus mirrors the nine fixed CRED_GUARD_STATUS fields.
@@ -179,7 +183,8 @@ func parseCoreCredGuardEvent(record string) (CoreCredGuardEvent, error) {
 		actionErr != nil || tsErr != nil || pid == 0 || tgid == 0 || ino == 0 || tsNS == 0 {
 		return CoreCredGuardEvent{}, errors.New("core returned invalid credential guard event fields")
 	}
-	if action != uint64(CredGuardActionDeny) && action != uint64(CredGuardActionAudit) {
+	if action != uint64(CredGuardActionDeny) && action != uint64(CredGuardActionAudit) &&
+		action != uint64(CredGuardActionDenyInode) {
 		return CoreCredGuardEvent{}, errors.New("core returned an unknown credential guard action")
 	}
 	comm := ""

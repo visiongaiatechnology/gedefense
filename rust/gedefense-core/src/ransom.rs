@@ -236,24 +236,24 @@ impl RansomCore {
     /// incompatible object, never for an unavailable kprobe.
     pub(crate) fn load(ebpf: &mut Ebpf) -> Result<Self, BoxError> {
         let events = RingBuf::try_from(
-            ebpf.take_map("RANSOM_EVENTS").ok_or("RANSOM_EVENTS missing")?,
+            ebpf.take_map(&crate::chameleon::map_name("RANSOM_EVENTS")).ok_or("RANSOM_EVENTS missing")?,
         )?;
         let state = AyaArray::try_from(
-            ebpf.take_map("RANSOM_STATE").ok_or("RANSOM_STATE missing")?,
+            ebpf.take_map(&crate::chameleon::map_name("RANSOM_STATE")).ok_or("RANSOM_STATE missing")?,
         )?;
         let trusted_comm = AyaHashMap::try_from(
-            ebpf.take_map("RANSOM_TRUSTED_COMM")
+            ebpf.take_map(&crate::chameleon::map_name("RANSOM_TRUSTED_COMM"))
                 .ok_or("RANSOM_TRUSTED_COMM missing")?,
         )?;
         let emitted = PerCpuArray::try_from(
-            ebpf.take_map("RANSOM_EVENTS_EMITTED")
+            ebpf.take_map(&crate::chameleon::map_name("RANSOM_EVENTS_EMITTED"))
                 .ok_or("RANSOM_EVENTS_EMITTED missing")?,
         )?;
         let ring_drops = PerCpuArray::try_from(
-            ebpf.take_map("RANSOM_RING_DROPS").ok_or("RANSOM_RING_DROPS missing")?,
+            ebpf.take_map(&crate::chameleon::map_name("RANSOM_RING_DROPS")).ok_or("RANSOM_RING_DROPS missing")?,
         )?;
         let track_failures = PerCpuArray::try_from(
-            ebpf.take_map("RANSOM_TRACK_FAILURES")
+            ebpf.take_map(&crate::chameleon::map_name("RANSOM_TRACK_FAILURES"))
                 .ok_or("RANSOM_TRACK_FAILURES missing")?,
         )?;
         let queue = Arc::new(Mutex::new(RansomQueue::default()));
@@ -323,7 +323,7 @@ impl RansomCore {
     /// the core alive, and `RANSOM_STATUS` reports `attached=0` honestly.
     fn attach_kprobes(&mut self, ebpf: &mut Ebpf) {
         for (program_name, symbol) in RANSOM_KPROBES {
-            let Some(program) = ebpf.program_mut(program_name) else {
+            let Some(program) = ebpf.program_mut(&crate::chameleon::program_name(program_name)) else {
                 eprintln!("ransomware kprobe program {program_name} missing; sensor stays audit-only");
                 continue;
             };
