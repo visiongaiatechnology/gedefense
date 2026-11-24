@@ -13,7 +13,7 @@ use gedefense_common::{
     PERSIST_KIND_LIBRARY_MMAP, PERSIST_KIND_MEMORY_SCRAPE, PERSIST_KIND_PERIPHERAL_OPEN,
     PERSIST_KIND_PTRACE_ACCESS, PERSIST_KIND_SECRET_OPEN,
 };
-use crate::titan_probe;
+use crate::titan_exec::titan_probe;
 
 use super::events::{increment_counter, write_small_decimal};
 use super::paths::{

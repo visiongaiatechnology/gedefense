@@ -26,7 +26,7 @@ use gedefense_common::{
     PERSIST_STATE_ARMED_SHIFT, PERSIST_STATE_BYTE_MASK, PERSIST_STATE_MAGIC,
     PERSIST_STATE_MAGIC_SHIFT,
 };
-use crate::titan_probe;
+use crate::titan_exec::titan_probe;
 
 use super::{PERSIST_GUARD_OFFSETS, PERSIST_GUARD_STATE};
 

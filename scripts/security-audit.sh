@@ -677,7 +677,7 @@ python3 - "$ROOT" <<'PY'
 from pathlib import Path
 import sys
 root=Path(sys.argv[1])
-ebpf=(root/'rust'/'gedefense-ebpf'/'src'/'main.rs').read_text(encoding='utf-8')
+ebpf=''.join(p.read_text(encoding='utf-8') for p in sorted((root/'rust'/'gedefense-ebpf'/'src').rglob('*.rs')) if p.is_file())
 core=''.join(p.read_text(encoding='utf-8') for p in sorted((root/'rust'/'gedefense-core'/'src').rglob('*.rs')) if p.is_file() and (not p.name.endswith('_tests.rs') or p.name == 'main_tests.rs'))
 xdr=''.join(p.read_text(encoding='utf-8') for p in sorted((root/'control').glob('xdr*.go')) if not p.name.endswith('_test.go'))
 ipc=(root/'control'/'coreipc.go').read_text(encoding='utf-8')
@@ -782,7 +782,7 @@ def need_match(component, text, label, pattern):
 
 common_lib=read('rust/gedefense-common/src/lib.rs')
 common_flow=read('rust/gedefense-common/src/styx_flow.rs')
-ebpf=read('rust/gedefense-ebpf/src/main.rs')
+ebpf=''.join(p.read_text(encoding='utf-8') for p in sorted((root/'rust'/'gedefense-ebpf'/'src').rglob('*.rs')) if p.is_file())
 core=''.join(p.read_text(encoding='utf-8') for p in sorted((root/'rust'/'gedefense-core'/'src').rglob('*.rs')) if p.is_file() and (not p.name.endswith('_tests.rs') or p.name == 'main_tests.rs'))
 core_flow=read('rust/gedefense-core/src/styx_flow.rs')
 ipc=read('control/coreipc.go')
@@ -919,7 +919,7 @@ def need_match(component, text, label, pattern):
 
 common_lib=read('rust/gedefense-common/src/lib.rs')
 common_titan=read('rust/gedefense-common/src/titan_exec.rs')
-ebpf=read('rust/gedefense-ebpf/src/main.rs')
+ebpf=''.join(p.read_text(encoding='utf-8') for p in sorted((root/'rust'/'gedefense-ebpf'/'src').rglob('*.rs')) if p.is_file())
 core=''.join(p.read_text(encoding='utf-8') for p in sorted((root/'rust'/'gedefense-core'/'src').rglob('*.rs')) if p.is_file() and (not p.name.endswith('_tests.rs') or p.name == 'main_tests.rs'))
 core_titan=read('rust/gedefense-core/src/titan_exec.rs')
 btf=''.join(p.read_text(encoding='utf-8') for p in sorted(list((root/'rust'/'gedefense-core'/'src').glob('btf_offsets*.rs')) + list((root/'rust'/'gedefense-core'/'src'/'btf_offsets').rglob('*.rs'))))
@@ -1070,7 +1070,7 @@ def need(component, text, anchor):
     if anchor not in text:
         missing.append(f'{component}: {anchor}')
 
-ebpf=read('rust/gedefense-ebpf/src/main.rs')
+ebpf=''.join(p.read_text(encoding='utf-8') for p in sorted((root/'rust'/'gedefense-ebpf'/'src').rglob('*.rs')) if p.is_file())
 core=''.join(p.read_text(encoding='utf-8') for p in sorted((root/'rust'/'gedefense-core'/'src').rglob('*.rs')) if p.is_file() and (not p.name.endswith('_tests.rs') or p.name == 'main_tests.rs'))
 btf=''.join(p.read_text(encoding='utf-8') for p in sorted(list((root/'rust'/'gedefense-core'/'src').glob('btf_offsets*.rs')) + list((root/'rust'/'gedefense-core'/'src'/'btf_offsets').rglob('*.rs'))))
 
@@ -1482,7 +1482,7 @@ for anchor in (
 # --- ABI-2: eBPF fastpath in XDP, TC-ingress and cgroup egress (§4) ----------
 # Default word 0 = OFF; a foreign magic/ABI/mode or a zero word returns None so
 # the pre-existing verdict path stays byte-identical (fail-safe, no claim).
-ebpf = read('rust/gedefense-ebpf/src/main.rs')
+ebpf = ''.join(p.read_text(encoding='utf-8') for p in sorted((root/'rust'/'gedefense-ebpf'/'src').rglob('*.rs')) if p.is_file())
 for anchor in (
     'static LOCKDOWN_STATE: Array<u64> = Array::with_max_entries(1, 0);',
     'static LOCKDOWN_DROPS: PerCpuArray<u64> = PerCpuArray::with_max_entries(1, 0);',
@@ -2707,7 +2707,7 @@ for anchor in ['static SEC_CRIT_EVENTS', 'static SEC_CRIT_STATE',
 for emitter in ['rust/gedefense-ebpf/src/xdr_kernel.rs',
                 'rust/gedefense-ebpf/src/ingress_flow.rs',
                 'rust/gedefense-ebpf/src/dns_capture.rs',
-                'rust/gedefense-ebpf/src/main.rs']:
+                'rust/gedefense-ebpf/src/styx_egress.rs']:
     need('ap9-s12-budget-' + emitter.rsplit('/', 1)[-1], read(emitter),
          'telemetry_budget_allow')
 for critical in ['rust/gedefense-ebpf/src/credential_guard.rs',

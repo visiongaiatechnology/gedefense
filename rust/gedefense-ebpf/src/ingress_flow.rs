@@ -175,7 +175,7 @@ pub fn gedefense_ingress_flow(ctx: SkBuffContext) -> i32 {
     // The same switch as the egress flow telemetry: an operator who disables
     // StyX logging never collects RX flows silently. When off, the only cost of
     // the attached program is one array lookup.
-    if crate::styx_flow_observation_enabled() {
+    if crate::styx_egress::styx_flow_observation_enabled() {
         observe_ingress_flow(&ctx);
     }
     // 1 = pass at a cgroup_skb hook. There is no drop path in this program on
@@ -188,11 +188,11 @@ pub fn gedefense_ingress_flow(ctx: SkBuffContext) -> i32 {
 /// join the tiny program frame; the caller stays at the 512-byte stack bound.
 #[inline(never)]
 fn observe_ingress_flow(ctx: &SkBuffContext) {
-    let mut packet = crate::EgressPacket::zeroed();
+    let mut packet = crate::styx_egress::EgressPacket::zeroed();
     // Shared bounded L3/L4 parser (see module docs: at a cgroup_skb hook
     // skb->data starts at the network header, so this is the correct parser).
-    if !crate::parse_egress_packet(ctx, &mut packet) {
-        crate::increment_counter(&INGRESS_FLOW_READ_FAILURES);
+    if !crate::styx_egress::parse_egress_packet(ctx, &mut packet) {
+        crate::util::increment_counter(&INGRESS_FLOW_READ_FAILURES);
         return;
     }
     // Phase-2 PCR is a TCP/UDP flow ratio. Fragments, ICMP and other L3
@@ -254,7 +254,7 @@ fn observe_ingress_flow(ctx: &SkBuffContext) {
         }
         // `parse_egress_packet` only constructs 4 or 6; keep the match total
         // without inventing a record for anything else.
-        _ => crate::increment_counter(&INGRESS_FLOW_READ_FAILURES),
+        _ => crate::util::increment_counter(&INGRESS_FLOW_READ_FAILURES),
     }
 }
 
@@ -268,7 +268,7 @@ fn observe_ingress_aggregate<K>(
     map: &LruPerCpuHashMap<K, [u8; 40]>,
     key: &K,
     ctx: &SkBuffContext,
-    packet: &crate::EgressPacket,
+    packet: &crate::styx_egress::EgressPacket,
     cgroup_id: u64,
 ) {
     let now = unsafe { bpf_ktime_get_ns() };
@@ -352,7 +352,7 @@ fn observe_ingress_aggregate<K>(
 fn emit_ingress_flow_event(
     ctx: &SkBuffContext,
     cgroup_id: u64,
-    packet: &crate::EgressPacket,
+    packet: &crate::styx_egress::EgressPacket,
     rx_bytes: u64,
     packets: u32,
     tcp_flags: u8,
@@ -385,7 +385,7 @@ fn emit_ingress_flow_event(
         telemetry_note_suppressed(SEC_CRIT_BUCKET_FLOW);
         return;
     }
-    if let Some(mut entry) = crate::FLOW_EVENTS.reserve::<FlowEvent>(0) {
+    if let Some(mut entry) = crate::maps::FLOW_EVENTS.reserve::<FlowEvent>(0) {
         let event = entry.as_mut_ptr();
         // SAFETY: the reservation is exactly `size_of::<FlowEvent>()` bytes and
         // aligned for the struct. Every field is written through the raw pointer
@@ -423,12 +423,12 @@ fn emit_ingress_flow_event(
             core::ptr::addr_of_mut!((*event).comm).write([0u8; 16]);
         }
         entry.submit(0);
-        crate::increment_counter(&crate::FLOW_EVENTS_EMITTED);
-        crate::increment_counter(&INGRESS_FLOW_EVENTS_EMITTED);
+        crate::util::increment_counter(&crate::maps::FLOW_EVENTS_EMITTED);
+        crate::util::increment_counter(&INGRESS_FLOW_EVENTS_EMITTED);
     } else {
         // Ring full: visibility loss is counted in the shared health counter and
         // the local one; the packet still passes (this program never drops).
-        crate::increment_counter(&crate::FLOW_RING_DROPS);
+        crate::util::increment_counter(&crate::maps::FLOW_RING_DROPS);
     }
 }
 

@@ -53,7 +53,7 @@ use crate::{
     exec_inode::{
         current_exec_trust, EXEC_INODE_RANSOM_FULL_FLAG, EXEC_INODE_RANSOM_POOL_META_FLAG,
     },
-    titan_offsets, titan_probe, TitanOffsets,
+    titan_exec::{titan_offsets, titan_probe, TitanOffsets},
 };
 
 /// Index of the single sensor state word in `RANSOM_STATE`.

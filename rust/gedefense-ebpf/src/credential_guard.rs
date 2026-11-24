@@ -55,7 +55,7 @@ use crate::{
         note_exec_inode_allowed, note_exec_inode_denied, ttl_inode_denied,
         EXEC_INODE_CRED_FLAG, EXEC_INODE_DENY_ACTION, EXEC_INODE_MISMATCH_ACTION,
     },
-    titan_offsets, titan_probe, TitanOffsets,
+    titan_exec::{titan_offsets, titan_probe, TitanOffsets},
 };
 
 const EACCES: i32 = 13;

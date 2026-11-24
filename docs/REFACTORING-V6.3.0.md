@@ -259,5 +259,76 @@ adversarial guard still covers the whole lockdown surface.
 
 Wave 3 commit: `refactor(wave3): split Rust privileged core (structure-only)`.
 
-## Wave 4 — Rust eBPF (`rust/gedefense-ebpf/src/`) — pending
+## Wave 4 — Rust eBPF (`rust/gedefense-ebpf/src/`)
+
+### Wave 4 (2026-11-24) — verifier-critical `main.rs` split
+
+| File | Before | After | Content |
+|---|---:|---:|---|
+| `main.rs` | 3,426 | **84** | `#![no_std]`/`#![no_main]`, 19 `mod` declarations, crate-root `gedefense_exec` tracepoint, panic handler |
+| `maps.rs` | — | 201 | all **48** `#[map]` statics with identical identifiers (only `pub(crate)`), map-sizing consts, wire-size asserts |
+| `net_parse.rs` | — | 636 | `L2Prefix`/`Ipv4Hdr`/`Ipv6Hdr`/`TcpPrefix`/`UdpPrefix`/`IngressWindow` + ingress batch/window helpers (`#[inline(always)]` preserved) |
+| `ingress_xdp.rs` | — | 296 | `gedefense_xdp` (`#[xdp]`), `gedefense_tc_ingress` (`#[classifier]`) + helpers |
+| `styx_egress.rs` | — | 1,195 | `gedefense_egress` (`#[cgroup_skb(egress)]`), egress policy/DNS/veto/flow pipeline incl. `emit_flow_event` with the S12 `telemetry_budget_allow` bulk-budget check, lockdown egress verdicts |
+| `cell_lsm.rs` | — | 133 | `gedefense_cell_socket_create` (`#[lsm(hook="socket_create")]`) + policy helpers |
+| `titan_exec.rs` | — | 966 | `gedefense_titan_exec_bprm` (`#[lsm(hook="bprm_check_security")]`), `gedefense_titan_exec_mmap` (`#[lsm(hook="mmap_file")]`) + Titan types/helpers |
+| `util.rs` | — | 23 | shared `increment_counter`, `MAX_CGROUP_ANCESTOR_LEVELS`, `NS_PER_SECOND`, `EPERM` |
+
+Program/map mapping: all **7 programs that lived in main.rs keep identical names, attributes
+and sections** (`gedefense_xdp`, `gedefense_tc_ingress`, `gedefense_egress`,
+`gedefense_cell_socket_create`, `gedefense_titan_exec_bprm/mmap`; `gedefense_exec`
+intentionally stays at crate root); no map renamed/removed; every `#[inline(always)]` /
+`#[inline(never)]` attribute moved verbatim. Only accepted source changes: `mod`/`use`/
+`pub(crate)` lines; sibling modules (`credential_guard`, `ransom`, `persistence/*`,
+`ingress_flow`) received six minimal `use`/path hunks, no logic edits.
+
+**ELF equivalence:** rebuilt object **473,304 B**, sha256
+`dd647be51668222552dcc19b398e2f6316f8a7485a1dfdf880d6118e1fd20906` (old baseline
+473,168 B / `7b9321b8…`). Sections: **42/42 identical names+count**; program+map symbols:
+**44 programs + 130 maps identical** (kind/section/size/name); `.text`/program/map/`.rodata`
+section sizes byte-identical (no register-allocation drift); size delta confined to `.strtab`:
+nine `#[inline(never)]` internal Rust-mangled subprogram names now carry the `styx_egress`
+module path (not kernel-visible program/map names). The release object in `dist/` was
+rebuilt and installed.
+
+**Real-kernel verifier/attach evidence (WSL2 6.18, root):** with the shipped `dist` object,
+`SEC_CRIT_EBPF_OBJECT=dist/gedefense-ebpf <core test binary> --ignored --nocapture
+s12_real_kernel` → **SMOKE_EXIT=0, `S12 smoke PASS`**: whole object parsed and all 130 maps
+created under the real verifier, exec tracepoints + `check_helper_call` kprobe attached
+(`exec_enter=true exec_flush=true helper_kprobe=true`), critical BPF-guard record survived a
+throttled bulk exec flood (`suppressed=2684`, `drops=0`, `read_failures=0`). Additionally the
+ingress smoke attached the moved `gedefense_ingress_flow` via `cgroup_skb/ingress` and
+observed 9 real ingress records (`rx_bytes=360,273`), and the AP-3 object-load smoke still
+loads/attaches (`kprobe=true`, `tap=1`; its downstream host assertion fails identically with
+the old object → pre-existing WSL condition, not a regression).
+
+**Audit contract (integration owner):** eBPF anchors are now checked over the whole
+`rust/gedefense-ebpf/src/**/*.rs` production tree (both the `read(...)` form and the
+remaining path-form `main.rs` read); the S12 bulk-emitter check now points at
+`styx_egress.rs` for the moved egress budget call (other emitter paths unchanged). Literal
+anchors, nothing weakened; ELF checks in `dist/` pass with the new object.
+
+#### Wave 4 gate evidence (serial, settled tree)
+| Gate | Result |
+|---|---|
+| `cargo +nightly-2026-07-16 check -p gedefense-ebpf --target bpfel-unknown-none -Z build-std=core --locked` | exit 0 |
+| `cargo +nightly-2026-07-16 build --locked --release …` | exit 0; object 473,304 B, deterministic |
+| ELF equivalence vs baseline | sections/symbols identical (see above) |
+| **Real-kernel S12 verifier/attach smoke** | **PASS** (independent integration-owner run on the shipped object) |
+| `cargo +1.97.1 check --locked --target x86_64-unknown-linux-musl -p gedefense-core` (+`--tests`) | exit 0 |
+| Pinned tests | common **97 passed**; core **259 passed / 0 failed / 5 ignored** (unchanged) |
+| `make test` | exit 0, `SECURITY AUDIT PASS` |
+| `make test-race` | exit 0 |
+| `make fuzz-smoke` | **24/24 PASS** |
+| Validators | `validate-linux-integration`, `validate-github-release`, `validate-systemd`, audit PASS |
+| Structure proof | 3,232 non-blank original main.rs lines: 0 missing, each exactly once after normalising `pub(crate)`; 137 new non-blank lines are solely `mod`/`use`/attribute/visibility lines; attributes byte-identical; no allocation/unbounded loop/`&[&str]`/float introduced |
+
+**Documented deviations:** `styx_egress.rs` 1,195, `titan_exec.rs` 966 and
+`net_parse.rs` 636 exceed the 500-line guideline because they are the plan's fixed module
+boundaries; `main.rs` is 84 lines (all remaining root items are entry glue + the exec
+tracepoint); shared constants are grouped in `maps.rs`/`util.rs`.
+
+Wave 4 commit: `refactor(wave4): split eBPF main.rs into verifier-safe modules
+(structure-only)`.
+
 ## Wave 5 — Shell scripts & large test files — pending
