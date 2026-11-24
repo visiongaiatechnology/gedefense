@@ -201,6 +201,63 @@ with new allowlist entries.
 Wave 2 commit: `refactor(wave2): modularize web UI (i18n, app modules, css)
 (structure-only)`.
 
-## Wave 3 — Rust privileged core (`rust/gedefense-core/src/`) — pending
+## Wave 3 — Rust privileged core (`rust/gedefense-core/src/`)
+
+### Wave 3 (2026-11-24) — main.rs, quarantine/canary/malware, btf/lockdown_usb/ransom/process_tree
+
+| Original | Before | Parent after | New child modules |
+|---|---:|---:|---|
+| `main.rs` | 6,732 | **395** | `ebpf_loader` 610 · `kernel_core` 132 · `poller` 243 · `sysctl_broker` 842 · `main_tests` 2,618 (test-only) · `ipc/{mod 8, server 456, dispatch_net 292, dispatch_xdr 59, dispatch_titan 510, dispatch_quarantine 126, dispatch_lockdown 631}` |
+| `quarantine.rs` | 1,935 | **468** | `quarantine/{crypto 275, path_guard 156, store 365, tests 732}` |
+| `canary.rs` | 1,502 | **344** | `canary/{probes 383, watcher 342, manifest 181, tests 314}` |
+| `malware.rs` | 1,158 | **420** | `malware/{fanotify 136, hash_db 70, paths 180, scan 201, tests 219}` |
+| `btf_offsets.rs` | 775 | **30** | `btf_offsets/{layout 62, parser 305, titan 121, exec_inode 76, tests 222}` |
+| `lockdown_usb.rs` | 635 | **26** | `lockdown_usb/{classify 120, policy 238, release 20, uevent 50, tests 227}` |
+| `ransom.rs` | 598 | **59** | `ransom/{policy 98, queue 61, signals 60, watcher 146, core 236}` |
+| `process_tree.rs` | 537 | **27** | `process_tree/{tree 229, signals 237, requests 76}` |
+
+Structure-only: no logic/ABI/wire/error-string/comment changes, no renamed dispatch strings,
+no changed thresholds or golden offsets, no new dependencies (`--locked`). The only source
+edits beyond byte-identical relocation are `pub(crate)`/`pub(super)` visibility markers and
+`mod`/`use`/re-export glue required to move declarations across module boundaries. 119 IPC
+commands were relocated arm-by-arm with family-disjointness proven (no cross-location
+overlap) and the residual match order preserved; `process_command` polls still run first.
+`KernelCore`/`TitanExecGate` moved to `kernel_core.rs`; dispatch moved to `ipc/dispatch_*`;
+ring drains/status helpers to `poller.rs`; aya loading/attach + Chameleon seam to
+`ebpf_loader.rs`; hardening/sysctl allowlist to `sysctl_broker.rs`; IPC transport, HMAC,
+replay guard and router to `ipc/{mod,server}.rs`.
+
+**Documented deviations:** `ipc/dispatch_lockdown.rs` 631 is an additional module (the plan
+had no home for the lockdown ABI glue); `sysctl_broker.rs` 842 exceeds the 700 hard ceiling
+(plan prescribes one broker module; it is the single cohesive hardening-profile +
+managed-file/sysctl allowlist unit); `main_tests.rs` 2,618 is test-only and above the 800
+test-file guideline — it is queued for the wave-5 large-test-file split (it moved the 68
+pre-existing inline tests verbatim). As in earlier splits, moved inline test modules gain one
+`tests::` path segment; the 40 quarantine/canary/malware tests and the 68 main tests still run
+with byte-identical bodies/names (except the path prefix).
+
+**Audit contract (integration owner):** core anchors are now checked over the whole
+`rust/gedefense-core/src/**/*.rs` production tree (`_tests.rs` excluded, `main_tests.rs`
+included for the `rust-core` no-shell guard whose test moved with the entry point); the
+`btf_offsets`, `quarantine`, `malware` and `lockdown_usb` families are aggregated over
+parent + child directories. Anchors stay literal, nothing weakened. The
+`lockdown_modules_never_use_shell_or_kill_primitives` include_str! list was extended with
+the five `lockdown_usb/` child files (verified clean of the five forbidden strings), so the
+adversarial guard still covers the whole lockdown surface.
+
+#### Wave 3 gate evidence (serial, settled tree)
+| Gate | Result |
+|---|---|
+| `cargo +1.97.1 check --locked --target x86_64-unknown-linux-musl -p gedefense-core` (+`--tests`) | exit 0 / exit 0 |
+| `cargo +nightly-2026-07-16 check -p gedefense-ebpf --target bpfel-unknown-none -Z build-std=core --locked` | exit 0 |
+| Pinned tests `cargo +1.97.1 test --locked -p gedefense-common -p gedefense-core` | **exit 0** — common **97 passed / 0 failed**; core **259 passed / 0 failed / 5 ignored** (identical to baseline) |
+| `make test` (Go + node + audit) | **exit 0**, `SECURITY AUDIT PASS` |
+| `make test-race` | exit 0 (cached; Go sources untouched this wave) |
+| `make fuzz-smoke` | **24/24 PASS** |
+| Validators | `validate-linux-integration`, `validate-github-release`, `validate-systemd`, audit PASS |
+| Structure proof | byte-identical relocation proofs per agent: main.rs kept blocks 372 lines + 39 relocated declaration blocks (3,272/3,520 lines; 248 only gained a `pub(crate)` prefix) + 134 dispatch-arm lines byte-identical + 2,604 test lines byte-identical (whitespace-only de-indent); btf 636/636, lockdown 488/488, ransom 482/482, process_tree 410/410 non-blank lines preserved; quarantine/canary/malware: 3,139 non-blank production lines where the only changed originals are exactly 61 visibility lines, test blocks byte-for-byte |
+
+Wave 3 commit: `refactor(wave3): split Rust privileged core (structure-only)`.
+
 ## Wave 4 — Rust eBPF (`rust/gedefense-ebpf/src/`) — pending
 ## Wave 5 — Shell scripts & large test files — pending

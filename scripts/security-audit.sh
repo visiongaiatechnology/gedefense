@@ -300,7 +300,7 @@ import sys
 root=Path(sys.argv[1])
 release=''.join(p.read_text(encoding='utf-8') for p in sorted((root/'control').glob('release*.go')) if not p.name.endswith('_test.go'))
 core_client=(root/'control'/'coreipc.go').read_text(encoding='utf-8')
-core=(root/'rust'/'gedefense-core'/'src'/'main.rs').read_text(encoding='utf-8')
+core=''.join(p.read_text(encoding='utf-8') for p in sorted((root/'rust'/'gedefense-core'/'src').rglob('*.rs')) if p.is_file() and (not p.name.endswith('_tests.rs') or p.name == 'main_tests.rs'))
 settings=''.join(p.read_text(encoding='utf-8') for p in sorted((root/'control').glob('runtime_settings*.go')) if not p.name.endswith('_test.go'))
 rules=(root/'control'/'xdr_rules.go').read_text(encoding='utf-8')
 required={
@@ -520,7 +520,7 @@ for anchor in [
 ]:
     if anchor not in server:
         raise SystemExit('transaction API route missing: '+anchor)
-broker=(root/'rust'/'gedefense-core'/'src'/'main.rs').read_text(encoding='utf-8')
+broker=''.join(p.read_text(encoding='utf-8') for p in sorted((root/'rust'/'gedefense-core'/'src').rglob('*.rs')) if p.is_file() and (not p.name.endswith('_tests.rs') or p.name == 'main_tests.rs'))
 for anchor in [
     'fn sysctl_spec(', 'SYSCTL_GET', 'SYSCTL_SET',
     'sysctl compare-set precondition failed',
@@ -538,8 +538,8 @@ python3 - "$ROOT" <<'PY'
 from pathlib import Path
 import sys
 root=Path(sys.argv[1])
-broker=(root/'rust'/'gedefense-core'/'src'/'main.rs').read_text(encoding='utf-8')
-quarantine=(root/'rust'/'gedefense-core'/'src'/'quarantine.rs').read_text(encoding='utf-8')
+broker=''.join(p.read_text(encoding='utf-8') for p in sorted((root/'rust'/'gedefense-core'/'src').rglob('*.rs')) if p.is_file() and (not p.name.endswith('_tests.rs') or p.name == 'main_tests.rs'))
+quarantine=''.join(p.read_text(encoding='utf-8') for p in sorted(list((root/'rust'/'gedefense-core'/'src').glob('quarantine*.rs')) + list((root/'rust'/'gedefense-core'/'src'/'quarantine').rglob('*.rs'))))
 for anchor in [
     'QUARANTINE_INSPECT', 'QUARANTINE_APPLY', 'QUARANTINE_VERIFY',
     'QUARANTINE_RESTORE', 'HARDENING_GET', 'HARDENING_SET',
@@ -574,8 +574,8 @@ python3 - "$ROOT" <<'PY'
 from pathlib import Path
 import sys
 root=Path(sys.argv[1])
-malware=(root/'rust'/'gedefense-core'/'src'/'malware.rs').read_text(encoding='utf-8')
-core=(root/'rust'/'gedefense-core'/'src'/'main.rs').read_text(encoding='utf-8')
+malware=''.join(p.read_text(encoding='utf-8') for p in sorted(list((root/'rust'/'gedefense-core'/'src').glob('malware*.rs')) + list((root/'rust'/'gedefense-core'/'src'/'malware').rglob('*.rs'))))
+core=''.join(p.read_text(encoding='utf-8') for p in sorted((root/'rust'/'gedefense-core'/'src').rglob('*.rs')) if p.is_file() and (not p.name.endswith('_tests.rs') or p.name == 'main_tests.rs'))
 control=(root/'control'/'coreipc.go').read_text(encoding='utf-8')
 xdr=''.join(p.read_text(encoding='utf-8') for p in sorted((root/'control').glob('xdr*.go')) if not p.name.endswith('_test.go'))
 server=''.join(p.read_text(encoding='utf-8') for p in sorted((root/'control').glob('server*.go')) if not p.name.endswith('_test.go'))
@@ -678,7 +678,7 @@ from pathlib import Path
 import sys
 root=Path(sys.argv[1])
 ebpf=(root/'rust'/'gedefense-ebpf'/'src'/'main.rs').read_text(encoding='utf-8')
-core=(root/'rust'/'gedefense-core'/'src'/'main.rs').read_text(encoding='utf-8')
+core=''.join(p.read_text(encoding='utf-8') for p in sorted((root/'rust'/'gedefense-core'/'src').rglob('*.rs')) if p.is_file() and (not p.name.endswith('_tests.rs') or p.name == 'main_tests.rs'))
 xdr=''.join(p.read_text(encoding='utf-8') for p in sorted((root/'control').glob('xdr*.go')) if not p.name.endswith('_test.go'))
 ipc=(root/'control'/'coreipc.go').read_text(encoding='utf-8')
 packages=(root/'control'/'package_integrity_linux.go').read_text(encoding='utf-8')
@@ -783,7 +783,7 @@ def need_match(component, text, label, pattern):
 common_lib=read('rust/gedefense-common/src/lib.rs')
 common_flow=read('rust/gedefense-common/src/styx_flow.rs')
 ebpf=read('rust/gedefense-ebpf/src/main.rs')
-core=read('rust/gedefense-core/src/main.rs')
+core=''.join(p.read_text(encoding='utf-8') for p in sorted((root/'rust'/'gedefense-core'/'src').rglob('*.rs')) if p.is_file() and (not p.name.endswith('_tests.rs') or p.name == 'main_tests.rs'))
 core_flow=read('rust/gedefense-core/src/styx_flow.rs')
 ipc=read('control/coreipc.go')
 beacon=read('control/styx_beacon.go')
@@ -920,9 +920,9 @@ def need_match(component, text, label, pattern):
 common_lib=read('rust/gedefense-common/src/lib.rs')
 common_titan=read('rust/gedefense-common/src/titan_exec.rs')
 ebpf=read('rust/gedefense-ebpf/src/main.rs')
-core=read('rust/gedefense-core/src/main.rs')
+core=''.join(p.read_text(encoding='utf-8') for p in sorted((root/'rust'/'gedefense-core'/'src').rglob('*.rs')) if p.is_file() and (not p.name.endswith('_tests.rs') or p.name == 'main_tests.rs'))
 core_titan=read('rust/gedefense-core/src/titan_exec.rs')
-btf=read('rust/gedefense-core/src/btf_offsets.rs')
+btf=''.join(p.read_text(encoding='utf-8') for p in sorted(list((root/'rust'/'gedefense-core'/'src').glob('btf_offsets*.rs')) + list((root/'rust'/'gedefense-core'/'src'/'btf_offsets').rglob('*.rs'))))
 ipc=read('control/coreipc.go')
 xdr=''.join(p.read_text(encoding='utf-8') for p in sorted((root/'control').glob('xdr*.go')) if not p.name.endswith('_test.go'))
 settings=read('control/titan_exec_settings.go')
@@ -1071,8 +1071,8 @@ def need(component, text, anchor):
         missing.append(f'{component}: {anchor}')
 
 ebpf=read('rust/gedefense-ebpf/src/main.rs')
-core=read('rust/gedefense-core/src/main.rs')
-btf=read('rust/gedefense-core/src/btf_offsets.rs')
+core=''.join(p.read_text(encoding='utf-8') for p in sorted((root/'rust'/'gedefense-core'/'src').rglob('*.rs')) if p.is_file() and (not p.name.endswith('_tests.rs') or p.name == 'main_tests.rs'))
+btf=''.join(p.read_text(encoding='utf-8') for p in sorted(list((root/'rust'/'gedefense-core'/'src').glob('btf_offsets*.rs')) + list((root/'rust'/'gedefense-core'/'src'/'btf_offsets').rglob('*.rs'))))
 
 need('rust-core', btf, 'pub const OFF_INODE_I_CTIME_NSEC_WIDTH: usize = 28;')
 need('rust-core', btf, 'self.field_ref(inode, &["i_ctime_sec"])')
@@ -1503,9 +1503,9 @@ need_match('rust-ebpf', ebpf, 'cgroup egress consults the lockdown verdict befor
            r'pub fn gedefense_egress\(ctx: SkBuffContext\) -> i32 \{.*?if let Some\(verdict\) = lockdown_egress_verdict\(&ctx\) \{.*?match inspect_egress\(&ctx\)')
 
 # --- ABI-3: core LOCKDOWN_* command family, state file and re-arm (§5) -------
-core = read('rust/gedefense-core/src/main.rs')
+core = ''.join(p.read_text(encoding='utf-8') for p in sorted((root/'rust'/'gedefense-core'/'src').rglob('*.rs')) if p.is_file() and (not p.name.endswith('_tests.rs') or p.name == 'main_tests.rs'))
 lockdown = read('rust/gedefense-core/src/lockdown.rs')
-usb = read('rust/gedefense-core/src/lockdown_usb.rs')
+usb = ''.join(p.read_text(encoding='utf-8') for p in sorted(list((root/'rust'/'gedefense-core'/'src').glob('lockdown_usb*.rs')) + list((root/'rust'/'gedefense-core'/'src'/'lockdown_usb').rglob('*.rs'))))
 uevent = read('rust/gedefense-core/src/lockdown_uevent.rs')
 hardening = read('rust/gedefense-core/src/lockdown_hardening.rs')
 brokers = read('rust/gedefense-core/src/lockdown_brokers.rs')
@@ -2212,7 +2212,7 @@ ebpf_ransom = read('rust/gedefense-ebpf/src/ransom.rs')
 for anchor in ['current_exec_trust()', 'exec_inode_trust_tier',
                'EXEC_INODE_RANSOM_FULL_FLAG', 'EXEC_INODE_RANSOM_POOL_META_FLAG']:
     need('exec-inode-ransom', ebpf_ransom, anchor)
-btf = read('rust/gedefense-core/src/btf_offsets.rs')
+btf = ''.join(p.read_text(encoding='utf-8') for p in sorted(list((root/'rust'/'gedefense-core'/'src').glob('btf_offsets*.rs')) + list((root/'rust'/'gedefense-core'/'src'/'btf_offsets').rglob('*.rs'))))
 for anchor in ['pub struct ExecInodeOffsets', 'pub fn resolve_exec_inode',
                'task_struct.mm', 'mm_struct.exe_file']:
     need('exec-inode-btf', btf, anchor)
@@ -2383,7 +2383,7 @@ for anchor in ['kernel.io_uring_disabled', 'vm.memfd_noexec',
                'sysctlControlReservedMaskBits', '1 << 22', '1 << 23',
                '2 disables io_uring entirely']:
     need('hardening-ap4', hardening, anchor)
-core_main = read('rust/gedefense-core/src/main.rs')
+core_main = ''.join(p.read_text(encoding='utf-8') for p in sorted((root/'rust'/'gedefense-core'/'src').rglob('*.rs')) if p.is_file() and (not p.name.endswith('_tests.rs') or p.name == 'main_tests.rs'))
 for anchor in ['0x00df_ffff', '(1 << 22, &[("kernel.io_uring_disabled", "1")])',
                '(1 << 23, &[("vm.memfd_noexec", "2")])',
                '["KERNEL_HOOK_EVENTS"]', '["CROSS_VIEW_REPORT"]',
@@ -2610,7 +2610,7 @@ for anchor in ['vgt-gedefense-review-queue-v1', 'review-queue.json',
     need('ap7-review-queue', rq, anchor)
 need('ap7-review-tests', read('control/review_queue_test.go'),
      'TestReviewQueueCapacityAndDiskReserveRejections')
-prune_rust = read('rust/gedefense-core/src/quarantine.rs')
+prune_rust = ''.join(p.read_text(encoding='utf-8') for p in sorted(list((root/'rust'/'gedefense-core'/'src').glob('quarantine*.rs')) + list((root/'rust'/'gedefense-core'/'src'/'quarantine').rglob('*.rs'))))
 for anchor in ['pub fn prune_token', 'Ok("pruned".to_owned())']:
     need('ap7-prune-rust', prune_rust, anchor)
 prune_ipc = read('control/coreipc_quarantine_prune.go')
@@ -2634,7 +2634,7 @@ for anchor in ['func (e *XDREngine) attachFindingExplainability',
     need('ap7-explainability', explain, anchor)
 need('ap7-explain-tests', read('control/explainability_test.go'),
      'TestExplainabilityDoesNotMutateDecisionFields')
-core_main = read('rust/gedefense-core/src/main.rs')
+core_main = ''.join(p.read_text(encoding='utf-8') for p in sorted((root/'rust'/'gedefense-core'/'src').rglob('*.rs')) if p.is_file() and (not p.name.endswith('_tests.rs') or p.name == 'main_tests.rs'))
 for anchor in ['["QUARANTINE_PRUNE", object_id, identity]', 'prune_token(']:
     need('ap7-prune-dispatch', core_main, anchor)
 
@@ -2684,8 +2684,8 @@ for anchor in ['func NewChameleonProfile', 'func (p *ChameleonProfile) Active',
     need('ap8-chameleon-control', chameleon_go, anchor)
 need('ap8-chameleon-seam', ''.join(p.read_text(encoding='utf-8') for p in sorted((root/'control').glob('main*.go')) if not p.name.endswith('_test.go')), 'NewChameleonProfile(chameleonManifestPath)')
 need('ap8-chameleon-flag', ''.join(p.read_text(encoding='utf-8') for p in sorted((root/'control').glob('main*.go')) if not p.name.endswith('_test.go')), 'chameleon-manifest')
-need('ap8-chameleon-load', read('rust/gedefense-core/src/main.rs'), 'chameleon::ManagedEbpf::new')
-need('ap8-chameleon-arg', read('rust/gedefense-core/src/main.rs'), '"chameleon-manifest"')
+need('ap8-chameleon-load', ''.join(p.read_text(encoding='utf-8') for p in sorted((root/'rust'/'gedefense-core'/'src').rglob('*.rs')) if p.is_file() and (not p.name.endswith('_tests.rs') or p.name == 'main_tests.rs')), 'chameleon::ManagedEbpf::new')
+need('ap8-chameleon-arg', ''.join(p.read_text(encoding='utf-8') for p in sorted((root/'rust'/'gedefense-core'/'src').rglob('*.rs')) if p.is_file() and (not p.name.endswith('_tests.rs') or p.name == 'main_tests.rs')), '"chameleon-manifest"')
 need('ap8-chameleon-installer', read('scripts/apply-chameleon-profile.sh'),
      'vgt-gedefense-chameleon-v1')
 need('ap8-chameleon-template', read('packaging/templates/chameleon-manifest.example'),
