@@ -298,12 +298,17 @@ func (e *TitanEngine) appendEvent(event TitanEvent) {
 		}
 	}
 	e.recountLocked()
-	document := e.journalDocumentLocked()
 	e.mu.Unlock()
-	if err := e.persistJournal(document); err != nil {
+	e.journalMu.Lock()
+	e.mu.RLock()
+	document := e.journalDocumentLocked()
+	e.mu.RUnlock()
+	persistErr := e.persistJournal(document)
+	e.journalMu.Unlock()
+	if persistErr != nil {
 		e.recordEvidence(EvidenceRecord{
 			Severity: "high", Kind: "titan.journal.persist_failed", Source: "titan",
-			Message: "Titan journal could not be persisted: " + boundedTitanText(err.Error(), 240),
+			Message: "Titan journal could not be persisted: " + boundedTitanText(persistErr.Error(), 240),
 		})
 	}
 }

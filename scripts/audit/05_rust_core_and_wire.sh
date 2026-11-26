@@ -54,7 +54,7 @@ main = helper_sources.get('main.rs', '')
 for anchor in (
     'libc::CLONE_NEWNS', 'libc::CLONE_NEWPID', 'libc::CLONE_NEWIPC', 'libc::CLONE_NEWUTS', 'libc::CLONE_NEWNET',
     'libc::MS_REC | libc::MS_PRIVATE', 'c"tmpfs"', 'hidepid=2',
-    'libc::MS_NOSUID | libc::MS_NODEV | libc::MS_NOEXEC', 'libc::MS_RDONLY', 'libc::chroot',
+    'libc::MS_NOSUID | libc::MS_NODEV | libc::MS_NOEXEC', 'libc::MS_RDONLY', 'libc::SYS_pivot_root',
     'libc::setgroups(0, std::ptr::null())', 'libc::setresgid', 'libc::setresuid',
     'libc::PR_CAPBSET_DROP', 'PR_CAP_AMBIENT', 'libc::PR_SET_NO_NEW_PRIVS',
     'libc::PR_SET_PDEATHSIG', 'libc::umask(0o077)',
@@ -62,6 +62,8 @@ for anchor in (
     'GEDEFENSE_INPUT_FD', 'GEDEFENSE_EXPORT_FD',
 ):
     need('helper-sandbox', sandbox, anchor)
+if 'libc::chroot' in sandbox:
+    missing.append('helper-sandbox: forbidden libc::chroot fallback present')
 need_match('helper-sandbox', sandbox, 'X11 display variables are always refused', r'XAUTHORITY')
 for reserved in ('HOME', 'USER', 'LOGNAME', 'PATH', 'TMPDIR', 'XDG_RUNTIME_DIR', 'WAYLAND_DISPLAY', 'PIPEWIRE_REMOTE'):
     need('helper-sandbox', sandbox, f'"{reserved}"')

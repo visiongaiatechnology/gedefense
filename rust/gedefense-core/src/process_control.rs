@@ -92,6 +92,16 @@ pub(super) fn pidfd_signal(
     if signal != libc::SIGSTOP && signal != libc::SIGKILL && signal != libc::SIGCONT {
         return Err("unsupported signal".into());
     }
+    if let Some(entry) = crate::process_tree::read_proc_entry(pid) {
+        let exe = fs::read_link(format!("/proc/{pid}/exe")).ok();
+        if crate::process_tree::protected_proc_entry(
+            &entry,
+            exe.as_deref(),
+            std::process::id() as i32,
+        ) {
+            return Err("protected PID".into());
+        }
+    }
     if crate::process_tree::proc_start_ticks(pid)? != expected_start {
         return Err("PID identity mismatch before pidfd_open".into());
     }

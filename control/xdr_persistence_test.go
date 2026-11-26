@@ -242,6 +242,30 @@ func TestPersistenceEventClassification(t *testing.T) {
 	if !assessment.InfoOnly {
 		t.Fatalf("same-uid ptrace must stay informational: %+v", assessment)
 	}
+	// Root non-attach NOAUDIT procfs read (mode=13: READ|NOAUDIT|FSCREDS) from a system binary is informational,
+	// while attach/mem (mode=10 / bit 0x02) or /tmp binary must still escalate.
+	rootProcRead := CorePersistenceEvent{TsNS: 2, PID: 12345, TGID: 12345, UID: 0,
+		Class: PersistenceClassUnspecified, Kind: PersistenceKindPtraceAccess,
+		Action: PersistenceActionAudit, DetailCode: uint32(os.Getpid()), Comm: "landscape-sysin", Detail: "13"}
+	if os.Getuid() != 0 {
+		engine.execPathOverride = func(int) string { return "/usr/bin/python3.12" }
+		assessment = engine.assessPersistenceEvent(rootProcRead, status)
+		if !assessment.InfoOnly || assessment.EventKind != "xdr.persistence_proc_read_noaudit" {
+			t.Fatalf("root non-attach NOAUDIT procfs read must stay informational: %+v", assessment)
+		}
+		rootAttach := rootProcRead
+		rootAttach.Detail = "10" // PTRACE_MODE_ATTACH | PTRACE_MODE_FSCREDS
+		assessment = engine.assessPersistenceEvent(rootAttach, status)
+		if assessment.InfoOnly || assessment.RuleID != PersistenceRuleMemory || assessment.Score != 110 {
+			t.Fatalf("cross-uid PTRACE_MODE_ATTACH must still escalate: %+v", assessment)
+		}
+		engine.execPathOverride = func(int) string { return "/tmp/spy" }
+		assessment = engine.assessPersistenceEvent(rootProcRead, status)
+		if assessment.InfoOnly || assessment.RuleID != PersistenceRuleMemory {
+			t.Fatalf("untrusted /tmp binary NOAUDIT read must NOT be exempted: %+v", assessment)
+		}
+		engine.execPathOverride = nil
+	}
 	// Baseline marker is information, never an incident.
 	baseline := CorePersistenceEvent{TsNS: 1, PID: 99, TGID: 99, Kind: PersistenceKindBaseline,
 		Action: PersistenceActionAudit, DetailCode: 5, Comm: "gedefense-core"}
@@ -254,13 +278,32 @@ func TestPersistenceEventClassification(t *testing.T) {
 func TestPersistenceToleratedActors(t *testing.T) {
 	engine := newPersistenceTestEngine(nil)
 	status := persistenceHealthyStatus()
-	tolerated := []string{"dpkg", "apt", "systemd-udevd", "udevadm", "gedefense-core", "systemd-tmpfiles"}
-	for _, comm := range tolerated {
+	managedPaths := map[string]string{
+		"dpkg":             "/usr/bin/dpkg",
+		"apt":              "/usr/bin/apt",
+		"systemd-udevd":    "/usr/lib/systemd/systemd-udevd",
+		"udevadm":          "/usr/bin/udevadm",
+		"gedefense-core":   "/opt/vgt/gedefense/current/libexec/gedefense-core",
+		"systemd-tmpfiles": "/usr/lib/systemd/systemd-tmpfiles",
+	}
+	for comm, exePath := range managedPaths {
+		engine.execPathOverride = func(int) string { return exePath }
 		assessment := engine.assessPersistenceEvent(persistenceIntegrityEvent(comm, PersistenceClassLDPreload, 1), status)
 		if !assessment.Tolerated {
-			t.Fatalf("%q must be TOLERATED for persistence writes: %+v", comm, assessment)
+			t.Fatalf("%q at %q must be TOLERATED for persistence writes: %+v", comm, exePath, assessment)
 		}
 	}
+	// Spoofed comm with unknown or /tmp executable MUST NOT be tolerated.
+	for _, fakeExe := range []string{"unknown", "/tmp/evil-apt", "/dev/shm/gedefense-core"} {
+		engine.execPathOverride = func(int) string { return fakeExe }
+		for _, comm := range []string{"apt", "dpkg", "systemd-udevd", "gedefense-core"} {
+			assessment := engine.assessPersistenceEvent(persistenceIntegrityEvent(comm, PersistenceClassLDPreload, 1), status)
+			if assessment.Tolerated {
+				t.Fatalf("spoofed comm %q with exe %q must NOT be tolerated", comm, fakeExe)
+			}
+		}
+	}
+	engine.execPathOverride = nil
 	// The cores own PID is tolerated regardless of the task name.
 	own := persistenceIntegrityEvent("some-worker", PersistenceClassPAM, 1)
 	own.PID = os.Getpid()

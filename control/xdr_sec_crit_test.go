@@ -455,8 +455,8 @@ func TestSecCritQuotaReportIsHonestAndReportOnly(t *testing.T) {
 	engine.airlock = inspector
 
 	quotas := engine.SecCritQuotaReport()
-	if quotas.Enforced {
-		t.Fatal("report-only quotas claim enforcement")
+	if !quotas.Enforced {
+		t.Fatal("enforced S12 quotas reported Enforced=false")
 	}
 	if quotas.CellHelperConcurrencyLimit != 2 || quotas.CellHelperActive != 3 || quotas.CellHelperOK {
 		t.Fatalf("parser cell quota not detected: %+v", quotas)
@@ -498,5 +498,63 @@ func TestSecCritQuotaReportIsHonestAndReportOnly(t *testing.T) {
 	// Report-only: the projection never touches the owning quota state.
 	if !engine.reviewQueue.loaded {
 		t.Fatal("quota projection mutated the review queue")
+	}
+}
+
+func TestNonFatalSecCritThrottleDoesNotBlockRelease(t *testing.T) {
+	throttleOnly := "S12 telemetry backpressure active: bulk telemetry suppressed by the per-(class,cgroup,uid) token bucket (total=1), high-priority ring drops=0, bucket capacity=4096"
+	if !isNonFatalSecCritThrottleReason(throttleOnly) {
+		t.Fatalf("expected non-fatal bulk throttle reason to pass release gate")
+	}
+	withDrops := "S12 telemetry backpressure active: bulk telemetry suppressed by the per-(class,cgroup,uid) token bucket (total=30), high-priority ring drops=2, bucket capacity=4096"
+	if isNonFatalSecCritThrottleReason(withDrops) {
+		t.Fatalf("high-priority ring drop must continue blocking release gate")
+	}
+	compound := throttleOnly + "; incident log verification failed"
+	if isNonFatalSecCritThrottleReason(compound) {
+		t.Fatalf("compound degrade reason must continue blocking release gate")
+	}
+
+	// Protection, Overview Situation, and Desktop status must agree with Release:
+	// pure S12 bulk throttling with drops=0 keeps enforcement/protection active,
+	// whereas real high-priority ring drops or compound faults immediately degrade.
+	now := time.Now().UTC()
+	throttleSnap := Snapshot{
+		CoreConnected: true,
+		CoreMode:      "xdp_drv",
+		Enforcement:   "enforce",
+		Policy:        PolicyStatus{Verified: true},
+		Evidence:      EvidenceStatus{Enabled: true, Healthy: true},
+		FIM:           FIMStatus{Health: fimHealthVerified},
+		L7:            L7Status{Enabled: true, Mode: "block", Healthy: true},
+		Release:       ReleaseStatus{Phase: ReleasePhaseEnforce, KernelPolicyState: "verified-enforce", Ready: true},
+		XDR:           XDRStatus{Enabled: true, Mode: "enforce", Degraded: true, DegradedReason: throttleOnly},
+	}
+	throttleSnap.Settings.Kinetic.Enabled = true
+	throttleSnap.Settings.Kinetic.EnforcementMode = "block"
+	if isXDROperationallyDegraded(throttleSnap.XDR) {
+		t.Fatalf("pure S12 bulk throttle must not mark XDR operationally degraded")
+	}
+	if prot := deriveProtectionStatus(throttleSnap, "enforce"); !prot.Effective || prot.Level != "full" {
+		t.Fatalf("pure S12 bulk throttle degraded protection posture: %+v", prot)
+	}
+	throttleSnap.Protection = deriveProtectionStatus(throttleSnap, "enforce")
+	if sit := buildOverviewSituation(situationInput{Snap: throttleSnap, Now: now}); sit.Level != "green" {
+		t.Fatalf("pure S12 bulk throttle turned overview situation %q (%+v)", sit.Level, sit.Reasons)
+	}
+	if dec := deriveDesktopStatus(throttleSnap, now, time.Hour); dec.Status != desktopStateSecure {
+		t.Fatalf("pure S12 bulk throttle turned desktop status %q: %s", dec.Status, dec.Reason)
+	}
+
+	dropsSnap := throttleSnap
+	dropsSnap.XDR.DegradedReason = withDrops
+	if !isXDROperationallyDegraded(dropsSnap.XDR) {
+		t.Fatalf("high-priority ring drop must mark XDR operationally degraded")
+	}
+	if prot := deriveProtectionStatus(dropsSnap, "enforce"); prot.Effective {
+		t.Fatalf("high-priority ring drop failed to degrade protection: %+v", prot)
+	}
+	if dec := deriveDesktopStatus(dropsSnap, now, time.Hour); dec.Status != desktopStateWarning {
+		t.Fatalf("high-priority ring drop failed to warn desktop status: %+v", dec)
 	}
 }

@@ -3,14 +3,25 @@
 
 import {
   acknowledgeIncident,
+  ackReviewEntry,
+  deletePermit,
+  deleteReviewEntry,
+  getChameleonStatus,
+  getPermits,
   getProfiles,
+  getReviewQueue,
+  getSBCFusion,
+  getSecCritStatus,
   getStatus,
   getXDRIntegrity,
   recoverXDRIntegrity,
+  revealChameleon,
+  upsertPermit,
   verifyXDRIntegrity
 } from './api.js';
 import { t } from './i18n.js';
-import { byID, el, formatTime, text, toast } from './render.js';
+import { withCriticalStepUp } from './js/navigation.js';
+import { badge, byID, el, formatTime, isXDROperationallyDegraded, text, toast } from './render.js';
 
 let integrityReport = null;
 let lastIntegrityFetch = 0;
@@ -70,6 +81,55 @@ export function initXDRModule() {
       if (button) button.disabled = false;
     }
   });
+
+  byID('reviewQueueRefresh')?.addEventListener('click', () => {
+    refreshV63XDRPanels().catch(err => toast(err.message, 'danger', err.errorID));
+  });
+
+  byID('chameleonRevealBtn')?.addEventListener('click', async () => {
+    try {
+      const res = await withCriticalStepUp(t('chameleon.reveal'), proof =>
+        revealChameleon('Operator Chameleon commitment verification', 'REVEAL CHAMELEON', proof)
+      );
+      if (!res) return;
+      text('chameleonIdentityMeta', `${res.install_id || '---'} · ${res.mapping_hash || '---'}`);
+      toast(t('chameleon.revealed'), 'good');
+    } catch (err) {
+      toast(err.message, 'danger', err.errorID);
+    }
+  });
+
+  byID('permitForm')?.addEventListener('submit', async event => {
+    event.preventDefault();
+    const permitID = String(byID('permitIDInput')?.value || '').trim().toLowerCase();
+    const exePath = String(byID('permitPathInput')?.value || '').trim();
+    const reason = String(byID('permitReasonInput')?.value || '').trim();
+    if (!exePath || !reason) return;
+    if (permitID && !/^[0-9a-f]{32,64}$/.test(permitID) && !/^([0-9a-f]{2}){16,32}$/.test(permitID)) {
+      toast(t('xdr.permits.invalidId') || 'Permit-ID muss leer bleiben (auto) oder 32-64 Hex-Zeichen enthalten.', 'danger');
+      return;
+    }
+    try {
+      const label = permitID || exePath;
+      const outcome = await withCriticalStepUp(`${t('xdr.permits.create')}: ${label}`, proof =>
+        upsertPermit({
+          schema: 'vgt-gedefense-permit-v1',
+          permit_id: permitID,
+          trust_level: 'TOLERATED',
+          path: exePath,
+          reason,
+          scope: { rules: ['XDR.TEMP_EXEC', 'BASELINE.PARENT_MISMATCH'] },
+          auto_invalidate_on: ['binary_changed']
+        }, proof)
+      );
+      if (!outcome) return;
+      byID('permitForm')?.reset();
+      toast(t('xdr.permits.saved'), 'good');
+      await refreshV63XDRPanels();
+    } catch (err) {
+      toast(err.message, 'danger', err.errorID);
+    }
+  });
 }
 
 export async function loadXDRView(snap) {
@@ -102,13 +162,14 @@ export async function loadXDRView(snap) {
   text('profileCount', Number(profileCount).toLocaleString());
   text('warmProfiles', Number(warmCount).toLocaleString());
 
+  const xdrDegraded = isXDROperationallyDegraded(xdr);
   const modeBadge = byID('xdrModeBadge');
   if (modeBadge) {
-    modeBadge.className = `status-pill ${xdr.degraded ? 'danger' : (xdr.mode === 'observe' ? 'warn' : 'good')}`;
-    modeBadge.textContent = xdr.degraded ? 'DEGRADED' : String(xdr.mode || 'observe').toUpperCase();
+    modeBadge.className = `status-pill ${xdrDegraded ? 'danger' : (xdr.mode === 'observe' ? 'warn' : 'good')}`;
+    modeBadge.textContent = xdrDegraded ? 'DEGRADED' : String(xdr.mode || 'observe').toUpperCase();
   }
 
-  if (xdr.degraded || integrityReport?.ledger?.quarantined) {
+  if (xdrDegraded || integrityReport?.ledger?.quarantined) {
     await refreshIntegrityReport();
   } else {
     integrityReport = null;
@@ -116,6 +177,153 @@ export async function loadXDRView(snap) {
   }
 
   renderModernIncidents(snapshot.incidents || []);
+  refreshV63XDRPanels().catch(() => {});
+}
+
+async function refreshV63XDRPanels() {
+  const [secCrit, sbc, chameleon, review, permits] = await Promise.all([
+    getSecCritStatus().catch(() => null),
+    getSBCFusion().catch(() => null),
+    getChameleonStatus().catch(() => null),
+    getReviewQueue(100).catch(() => null),
+    getPermits().catch(() => null)
+  ]);
+  if (secCrit) renderSecCritPanel(secCrit);
+  if (sbc) renderSBCPanel(sbc);
+  if (chameleon) renderChameleonPanel(chameleon);
+  if (review) renderReviewQueue(review);
+  if (permits) renderPermits(permits);
+}
+
+function renderSecCritPanel(secCrit) {
+  const state = String(secCrit?.state || 'unavailable');
+  badge('secCritStateBadge', state.toUpperCase(), state === 'active' ? 'good' : state === 'degraded' ? 'danger' : 'warning');
+  const q = secCrit?.quotas || {};
+  text('secCritQuotaSummary',
+    `enforced=${Boolean(q.enforced)} · events=${Number(secCrit?.events || 0)} · suppressed=${Number(secCrit?.suppressed || 0)} · drops=${Number(secCrit?.drops || 0)}`
+  );
+}
+
+function renderSBCPanel(sbc) {
+  const state = String(sbc?.state || 'unavailable');
+  badge('sbcStateBadge', state.toUpperCase(), state === 'active' ? 'good' : 'warning');
+  text('sbcSummaryMeta',
+    `entities=${Number(sbc?.entities || 0)} · corr=${Number(sbc?.corroboration_events || 0)} · obs=${Number(sbc?.observations || 0)}`
+  );
+}
+
+function renderChameleonPanel(chameleon) {
+  const active = Boolean(chameleon?.active);
+  badge('chameleonStateBadge', active ? 'CHAMELEON' : 'STANDARD', active ? 'good' : '');
+  const meta = active
+    ? `${chameleon.install_id || '---'} · ${chameleon.core_socket || '---'}`
+    : `${chameleon.core_socket || '/run/vgt-gedefense/core.sock'}`;
+  text('chameleonIdentityMeta', meta);
+  const btn = byID('chameleonRevealBtn');
+  if (btn) btn.hidden = !active;
+}
+
+function renderReviewQueue(payload) {
+  const body = byID('reviewQueueRows');
+  if (!body) return;
+  const entries = Array.isArray(payload?.entries) ? payload.entries : [];
+  if (!entries.length) {
+    const row = el('tr');
+    const td = el('td', 'empty-cell', t('xdr.review.empty'));
+    td.colSpan = 5;
+    row.append(td);
+    body.replaceChildren(row);
+    return;
+  }
+  const rows = entries.map(entry => {
+    const row = el('tr');
+    row.append(
+      el('td', 'mono', String(entry.id || '').slice(0, 16)),
+      el('td', 'mono', entry.process || entry.executable || '---'),
+      el('td', `severity-${String(entry.severity || 'info').toLowerCase()}`, String(entry.severity || 'info').toUpperCase()),
+      el('td', 'mono', entry.acknowledged ? 'ACK' : `OPEN (${entry.repeat_count || 1}x)`)
+    );
+    const actions = el('td');
+    if (!entry.acknowledged) {
+      const ackBtn = el('button', 'button button-quiet compact', t('dynamic.acknowledge'));
+      ackBtn.type = 'button';
+      ackBtn.addEventListener('click', async () => {
+        try {
+          const outcome = await withCriticalStepUp(`${t('dynamic.acknowledge')}: ${String(entry.id).slice(0, 12)}`, proof =>
+            ackReviewEntry(entry.id, proof)
+          );
+          if (outcome === null) return;
+          toast(t('toast.incidentAck'), 'good');
+          await refreshV63XDRPanels();
+        } catch (err) {
+          toast(err.message, 'danger', err.errorID);
+        }
+      });
+      actions.append(ackBtn);
+    }
+    const delBtn = el('button', 'button button-danger compact ml-xs', t('xdr.review.delete'));
+    delBtn.type = 'button';
+    delBtn.addEventListener('click', async () => {
+      try {
+        const outcome = await withCriticalStepUp(`${t('xdr.review.delete')}: ${String(entry.id).slice(0, 12)}`, proof =>
+          deleteReviewEntry(entry.id, proof)
+        );
+        if (outcome === null) return;
+        toast(t('xdr.review.deleted'), 'good');
+        await refreshV63XDRPanels();
+      } catch (err) {
+        toast(err.message, 'danger', err.errorID);
+      }
+    });
+    actions.append(delBtn);
+    row.append(actions);
+    return row;
+  });
+  body.replaceChildren(...rows);
+}
+
+function renderPermits(payload) {
+  const report = payload?.report || {};
+  badge('permitBrokerBadge', String(report.signature_status || 'absent').toUpperCase(), report.loaded && !report.corrupt ? 'good' : 'warning');
+  const body = byID('permitRows');
+  if (!body) return;
+  const permits = Array.isArray(payload?.permits) ? payload.permits : [];
+  if (!permits.length) {
+    const row = el('tr');
+    const td = el('td', 'empty-cell', t('xdr.permits.empty'));
+    td.colSpan = 5;
+    row.append(td);
+    body.replaceChildren(row);
+    return;
+  }
+  const rows = permits.map(permit => {
+    const row = el('tr');
+    row.append(
+      el('td', 'mono', permit.permit_id || '---'),
+      el('td', 'mono', permit.path || '---'),
+      el('td', 'mono', permit.trust_level || 'ANALYST_MODE'),
+      el('td', 'mono', formatTime(permit.valid_until))
+    );
+    const action = el('td');
+    const delBtn = el('button', 'button button-danger compact', t('xdr.review.delete'));
+    delBtn.type = 'button';
+    delBtn.addEventListener('click', async () => {
+      try {
+        const outcome = await withCriticalStepUp(`${t('xdr.permits.remove')}: ${permit.permit_id}`, proof =>
+          deletePermit(permit.permit_id, proof)
+        );
+        if (outcome === null) return;
+        toast(t('xdr.permits.deleted'), 'good');
+        await refreshV63XDRPanels();
+      } catch (err) {
+        toast(err.message, 'danger', err.errorID);
+      }
+    });
+    action.append(delBtn);
+    row.append(action);
+    return row;
+  });
+  body.replaceChildren(...rows);
 }
 
 async function refreshIntegrityReport(force = false) {

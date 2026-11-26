@@ -1,0 +1,1888 @@
+[
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 1,
+    "time": "2026-11-26T16:06:52.566426+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "GeDefense Linux 6.3.0 (EDR/Hardened Max)",
+        "uid": "gedefense"
+      }
+    },
+    "finding_info": {
+      "uid": "gedefense:MAL-BENIGN-01",
+      "title": "Clean signed JSON / minified JS asset in sandbox",
+      "desc": "rc=0; xdr.memory_scrape_probe",
+      "types": [
+        "hardred-malware",
+        "Benign Binary & Script Control"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "NONE",
+            "name": "Benign Binary & Script Control"
+          },
+          "tactic": {
+            "name": "None"
+          }
+        }
+      ]
+    },
+    "action_id": 1,
+    "action": "Allowed",
+    "status_id": 3,
+    "unmapped": {
+      "polarity": "benign",
+      "context_maturity": 1,
+      "ttfa_ms": 250.0,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-26T16:06:57.982522+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "GeDefense Linux 6.3.0 (EDR/Hardened Max)",
+        "uid": "gedefense"
+      }
+    },
+    "finding_info": {
+      "uid": "gedefense:MAL-EICAR-DISK-01",
+      "title": "Write EICAR signature file to sandbox and check quarantine/alert",
+      "desc": "disk=BLOCKED_INODE; xdr.credential_read_blocked, xdr.sec_crit_evidence, xdr.witness_priority_unavailable, malware.execution_blocked",
+      "types": [
+        "hardred-malware",
+        "Standard AV/YARA EICAR Disk Drop"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1027",
+            "name": "Standard AV/YARA EICAR Disk Drop"
+          },
+          "tactic": {
+            "name": "Defense Evasion"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 1,
+      "ttfa_ms": 108.76,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-26T16:07:03.938033+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "GeDefense Linux 6.3.0 (EDR/Hardened Max)",
+        "uid": "gedefense"
+      }
+    },
+    "finding_info": {
+      "uid": "gedefense:MAL-EICAR-HTTP-01",
+      "title": "POST EICAR payload over HTTP edge proxy/WAF",
+      "desc": "http=403; l7.block, L7, xdr-dag",
+      "types": [
+        "hardred-malware",
+        "Inline L7 EICAR/Malware Upload"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1105",
+            "name": "Inline L7 EICAR/Malware Upload"
+          },
+          "tactic": {
+            "name": "Command and Control"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 3,
+      "ttfa_ms": 47.26,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 3,
+    "time": "2026-11-26T16:07:09.526620+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "GeDefense Linux 6.3.0 (EDR/Hardened Max)",
+        "uid": "gedefense"
+      }
+    },
+    "finding_info": {
+      "uid": "gedefense:MAL-NESTED-ARCHIVE-01",
+      "title": "8-layer nested ZIP wrapper + clamav-testfiles archive inspection",
+      "desc": "nested=WROTE 808; malware.execution_blocked",
+      "types": [
+        "hardred-malware",
+        "Nested Archive & ClamAV Corpus Inspection"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1027.002",
+            "name": "Nested Archive & ClamAV Corpus Inspection"
+          },
+          "tactic": {
+            "name": "Defense Evasion"
+          }
+        }
+      ]
+    },
+    "action_id": 1,
+    "action": "Allowed",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 1,
+      "ttfa_ms": 41.81,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 5,
+    "time": "2026-11-26T16:07:26.678665+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "GeDefense Linux 6.3.0 (EDR/Hardened Max)",
+        "uid": "gedefense"
+      }
+    },
+    "finding_info": {
+      "uid": "gedefense:EP-FILELESS-MEMFD-01",
+      "title": "In-memory ELF/script execution via memfd_create (/proc/self/fd)",
+      "desc": "rc=0, out={\"probe\": \"memfd-exec\", \"target\": \"/proc/self/fd/3\", \"ok\": false, \"errno\": \"EPERM\", \"exit_code\": -1, \"error\": \"fork/exec /proc/self/fd/3: op; TITAN.EXEC_DENIED, WORKER_GUARD",
+      "types": [
+        "hardred-endpoint",
+        "Fileless Execution (memfd_create)"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1620",
+            "name": "Fileless Execution (memfd_create)"
+          },
+          "tactic": {
+            "name": "Defense Evasion"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 3,
+      "ttfa_ms": 250.0,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-26T16:07:32.344909+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "GeDefense Linux 6.3.0 (EDR/Hardened Max)",
+        "uid": "gedefense"
+      }
+    },
+    "finding_info": {
+      "uid": "gedefense:EP-SHM-EXEC-01",
+      "title": "Executable script staged & executed from /dev/shm/hardred-sandbox",
+      "desc": "rc=0, out={\"probe\": \"shm-exec\", \"target\": \"/dev/shm/hardred-sandbox/shm_exec_test.sh\", \"ok\": false, \"errno\": \"EPERM\", \"exit_code\": -1, \"error\": \"fork/; none",
+      "types": [
+        "hardred-endpoint",
+        "/dev/shm Dropper Execution"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1059.004",
+            "name": "/dev/shm Dropper Execution"
+          },
+          "tactic": {
+            "name": "Execution"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 1,
+      "ttfa_ms": 351.02,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 5,
+    "time": "2026-11-26T16:07:37.699831+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "GeDefense Linux 6.3.0 (EDR/Hardened Max)",
+        "uid": "gedefense"
+      }
+    },
+    "finding_info": {
+      "uid": "gedefense:EP-TMP-ELF-01",
+      "title": "Unverified ELF binary copied to /tmp and executed (TITAN-Exec gate)",
+      "desc": "rc=0, out={\"probe\": \"tmp-exec\", \"target\": \"/tmp/hardred-sandbox/tmpexec/untrusted_exec_test\", \"ok\": false, \"errno\": \"EPERM\", \"exit_code\": -1, \"error\":; TITAN.EXEC_DENIED, WORKER_GUARD",
+      "types": [
+        "hardred-endpoint",
+        "Untrusted Binary Execution (/tmp)"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1204.002",
+            "name": "Untrusted Binary Execution (/tmp)"
+          },
+          "tactic": {
+            "name": "Execution"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 3,
+      "ttfa_ms": 250.0,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-26T16:07:43.281394+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "GeDefense Linux 6.3.0 (EDR/Hardened Max)",
+        "uid": "gedefense"
+      }
+    },
+    "finding_info": {
+      "uid": "gedefense:EP-LPE-KERNEL-01",
+      "title": "Blacklisted SCTP/DCCP socket + AF_PACKET + ptrace + /etc/shadow probe",
+      "desc": "rc=0, out={\"probe\": \"lpe-probe\", \"sctp_socket\": {\"attempted\": true, \"ok\": false, \"errno\": \"EPERM\", \"error\": \"operation not permitted\", \"detail\": \"IPPR; xdr.cross_view_raw_tap_unattributed, xdr.credential_read_blocked, xdr.ptrace_attempt, xdr.kernel_protocol_probe, xdr.kernel_protocol_probe",
+      "types": [
+        "hardred-endpoint",
+        "Kernel LPE & Protocol Attack Surface"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1068",
+            "name": "Kernel LPE & Protocol Attack Surface"
+          },
+          "tactic": {
+            "name": "Privilege Escalation"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 1,
+      "ttfa_ms": 61.67,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 5,
+    "time": "2026-11-26T16:07:48.827793+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "GeDefense Linux 6.3.0 (EDR/Hardened Max)",
+        "uid": "gedefense"
+      }
+    },
+    "finding_info": {
+      "uid": "gedefense:EP-RANSOM-AES-01",
+      "title": "In-place AES-256-GCM encryption of 120 realistic files (TTFA + pre-kill damage)",
+      "desc": "rc=4294967295, out={}; xdr.XDR.RANSOM_ENTROPY_BURST",
+      "types": [
+        "hardred-endpoint",
+        "Ransomware AES-256 Encryption Burst"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1486",
+            "name": "Ransomware AES-256 Encryption Burst"
+          },
+          "tactic": {
+            "name": "Impact"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 1,
+      "ttfa_ms": 355.09,
+      "pre_kill_damage": 7,
+      "pre_kill_total": 120
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 5,
+    "time": "2026-11-26T16:07:54.636029+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "GeDefense Linux 6.3.0 (EDR/Hardened Max)",
+        "uid": "gedefense"
+      }
+    },
+    "finding_info": {
+      "uid": "gedefense:EP-RANSOM-STORM-01",
+      "title": "600-file / 50-batch rapid rename+wipe storm (TTFA + pre-kill damage)",
+      "desc": "rc=4294967295, out={}; xdr.XDR.RANSOM_RENAME_STORM",
+      "types": [
+        "hardred-endpoint",
+        "Ransomware Rename/Wiper Storm"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1485",
+            "name": "Ransomware Rename/Wiper Storm"
+          },
+          "tactic": {
+            "name": "Impact"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 1,
+      "ttfa_ms": 144.09,
+      "pre_kill_damage": 100,
+      "pre_kill_total": 600
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-26T16:07:59.956411+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "GeDefense Linux 6.3.0 (EDR/Hardened Max)",
+        "uid": "gedefense"
+      }
+    },
+    "finding_info": {
+      "uid": "gedefense:EP-LINEAGE-CHILD-01",
+      "title": "Parent spawns child conducting AES-256 burst (child vs tree kill check)",
+      "desc": "rc=4294967295, out={}; xdr.XDR.RANSOM_ENTROPY_BURST",
+      "types": [
+        "hardred-endpoint",
+        "Process Lineage / Child-Kill Resilience"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1059",
+            "name": "Process Lineage / Child-Kill Resilience"
+          },
+          "tactic": {
+            "name": "Execution"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 1,
+      "ttfa_ms": 251.66,
+      "pre_kill_damage": 7,
+      "pre_kill_total": 60
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-26T16:08:05.667092+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "GeDefense Linux 6.3.0 (EDR/Hardened Max)",
+        "uid": "gedefense"
+      }
+    },
+    "finding_info": {
+      "uid": "gedefense:EP-C2-EGRESS-01",
+      "title": "Outbound HTTP egress to 1.1.1.1 from inside php8.3-fpm.service cgroup",
+      "desc": "rc=28, out={}; STYX.POLICY_DROP",
+      "types": [
+        "hardred-endpoint",
+        "Unauthorized C2 Egress (Web Worker Cell)"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1071.001",
+            "name": "Unauthorized C2 Egress (Web Worker Cell)"
+          },
+          "tactic": {
+            "name": "Command and Control"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 3,
+      "ttfa_ms": 250.0,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-26T16:08:12.783408+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "GeDefense Linux 6.3.0 (EDR/Hardened Max)",
+        "uid": "gedefense"
+      }
+    },
+    "finding_info": {
+      "uid": "gedefense:EP-FALCO-01",
+      "title": "Read /etc/shadow by untrusted program",
+      "desc": "rc=0, out={}; xdr.memory_scrape_probe, xdr.credential_read_blocked",
+      "types": [
+        "hardred-endpoint",
+        "Kernel Syscall Behavior (Falco)"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1003.008",
+            "name": "Kernel Syscall Behavior (Falco)"
+          },
+          "tactic": {
+            "name": "Credential Access"
+          }
+        }
+      ]
+    },
+    "action_id": 1,
+    "action": "Allowed",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 1,
+      "ttfa_ms": 220.53,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-26T16:08:17.748285+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "GeDefense Linux 6.3.0 (EDR/Hardened Max)",
+        "uid": "gedefense"
+      }
+    },
+    "finding_info": {
+      "uid": "gedefense:EP-FALCO-02",
+      "title": "Symlink over sensitive /etc target",
+      "desc": "rc=0, out={}; xdr.symlink_over_sensitive",
+      "types": [
+        "hardred-endpoint",
+        "Kernel Syscall Behavior (Falco)"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1036",
+            "name": "Kernel Syscall Behavior (Falco)"
+          },
+          "tactic": {
+            "name": "Defense Evasion"
+          }
+        }
+      ]
+    },
+    "action_id": 1,
+    "action": "Allowed",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 1,
+      "ttfa_ms": 311.25,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-26T16:08:22.130659+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "GeDefense Linux 6.3.0 (EDR/Hardened Max)",
+        "uid": "gedefense"
+      }
+    },
+    "finding_info": {
+      "uid": "gedefense:EP-FALCO-03",
+      "title": "Ptrace process memory / anti-debug syscall",
+      "desc": "rc=0, out={}; xdr.ptrace_attempt",
+      "types": [
+        "hardred-endpoint",
+        "Kernel Syscall Behavior (Falco)"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1055.008",
+            "name": "Kernel Syscall Behavior (Falco)"
+          },
+          "tactic": {
+            "name": "Privilege Escalation"
+          }
+        }
+      ]
+    },
+    "action_id": 1,
+    "action": "Allowed",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 1,
+      "ttfa_ms": 176.2,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 3,
+    "time": "2026-11-26T16:08:27.735045+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "GeDefense Linux 6.3.0 (EDR/Hardened Max)",
+        "uid": "gedefense"
+      }
+    },
+    "finding_info": {
+      "uid": "gedefense:EP-ART-T1087",
+      "title": "Local Account Enumeration (/etc/passwd, id, lastlog) [yaml=True]",
+      "desc": "rc=0, out={}; xdr.alert, xdr.alert, xdr.alert, xdr-dag, xdr-dag",
+      "types": [
+        "hardred-endpoint",
+        "Atomic Red Team Linux TTP"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1087.001",
+            "name": "Atomic Red Team Linux TTP"
+          },
+          "tactic": {
+            "name": "Discovery"
+          }
+        }
+      ]
+    },
+    "action_id": 1,
+    "action": "Allowed",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 3,
+      "ttfa_ms": 193.85,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 3,
+    "time": "2026-11-26T16:08:33.322314+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "GeDefense Linux 6.3.0 (EDR/Hardened Max)",
+        "uid": "gedefense"
+      }
+    },
+    "finding_info": {
+      "uid": "gedefense:EP-ART-T1059",
+      "title": "Base64 Obfuscated Shell Execution [yaml=True]",
+      "desc": "rc=0, out={}; xdr.contain, xdr-dag",
+      "types": [
+        "hardred-endpoint",
+        "Atomic Red Team Linux TTP"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1059.004",
+            "name": "Atomic Red Team Linux TTP"
+          },
+          "tactic": {
+            "name": "Execution"
+          }
+        }
+      ]
+    },
+    "action_id": 1,
+    "action": "Allowed",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 3,
+      "ttfa_ms": 227.49,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 3,
+    "time": "2026-11-26T16:08:38.816272+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "GeDefense Linux 6.3.0 (EDR/Hardened Max)",
+        "uid": "gedefense"
+      }
+    },
+    "finding_info": {
+      "uid": "gedefense:EP-ART-T1053",
+      "title": "Cron Persistence Staging & Cleanup [yaml=True]",
+      "desc": "rc=0, out={}; xdr.alert, xdr.contain, xdr.contain, xdr.alert, xdr.alert",
+      "types": [
+        "hardred-endpoint",
+        "Atomic Red Team Linux TTP"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1053.003",
+            "name": "Atomic Red Team Linux TTP"
+          },
+          "tactic": {
+            "name": "Persistence"
+          }
+        }
+      ]
+    },
+    "action_id": 1,
+    "action": "Allowed",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 3,
+      "ttfa_ms": 98.94,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 3,
+    "time": "2026-11-26T16:08:44.243020+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "GeDefense Linux 6.3.0 (EDR/Hardened Max)",
+        "uid": "gedefense"
+      }
+    },
+    "finding_info": {
+      "uid": "gedefense:EP-ART-T1548",
+      "title": "SUID/Capabilities Enumeration [yaml=True]",
+      "desc": "rc=0, out={}; xdr.alert, xdr.alert, xdr.alert, xdr-dag, xdr-dag",
+      "types": [
+        "hardred-endpoint",
+        "Atomic Red Team Linux TTP"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1548.001",
+            "name": "Atomic Red Team Linux TTP"
+          },
+          "tactic": {
+            "name": "Privilege Escalation"
+          }
+        }
+      ]
+    },
+    "action_id": 1,
+    "action": "Allowed",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 3,
+      "ttfa_ms": 102.05,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 5,
+    "time": "2026-11-26T16:10:32.941540+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "GeDefense Linux 6.3.0 (EDR/Hardened Max)",
+        "uid": "gedefense"
+      }
+    },
+    "finding_info": {
+      "uid": "gedefense:AS-S16-KERNEL-EBPF-01",
+      "title": "Privileged/unprivileged BPF_PROG_LOAD, finit_module boundary & kallsyms exposure",
+      "desc": "scope=IN_SCOPE, outcome=DETECTED_ONLY, rc=0, probe={\"probe\": \"as-ebpf-probe\", \"unpriv_bpf_load\": {\"attempted\": true, \"allowed\": false, \"blocked\": true, \"errno\": \"EPERM\", \"; xdr.bpf_anomaly, xdr.bpf_anomaly, xdr.bpf_anomaly",
+      "types": [
+        "hardred-antispyware",
+        "S16 Kernel Extension & eBPF Rootkit Resilience"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1014",
+            "name": "S16 Kernel Extension & eBPF Rootkit Resilience"
+          },
+          "tactic": {
+            "name": "Defense Evasion"
+          }
+        }
+      ]
+    },
+    "action_id": 1,
+    "action": "Allowed",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 1,
+      "ttfa_ms": 990.83,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-26T16:10:37.148132+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "GeDefense Linux 6.3.0 (EDR/Hardened Max)",
+        "uid": "gedefense"
+      }
+    },
+    "finding_info": {
+      "uid": "gedefense:AS-S17-IOURING-ASYNC-01",
+      "title": "Classic syscall vs raw io_uring async write equivalence inside sandbox",
+      "desc": "scope=IN_SCOPE, outcome=DETECTED_ONLY, rc=0, probe={\"probe\": \"as-io-uring-probe\", \"sandbox\": \"/tmp/hardred-sandbox/uring\", \"classic_file_io\": {\"attempted\": true, \"allowed\"; xdr.kernel_hook_tolerated",
+      "types": [
+        "hardred-antispyware",
+        "S17 Asynchronous I/O & io_uring Resilience"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1059",
+            "name": "S17 Asynchronous I/O & io_uring Resilience"
+          },
+          "tactic": {
+            "name": "Defense Evasion"
+          }
+        }
+      ]
+    },
+    "action_id": 1,
+    "action": "Allowed",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 1,
+      "ttfa_ms": 1083.68,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 5,
+    "time": "2026-11-26T16:10:40.617767+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "GeDefense Linux 6.3.0 (EDR/Hardened Max)",
+        "uid": "gedefense"
+      }
+    },
+    "finding_info": {
+      "uid": "gedefense:AS-S18-CRED-MEM-01",
+      "title": "Synthetic credential fixture + cross-process /proc/pid/mem, process_vm_readv & ptrace",
+      "desc": "scope=IN_SCOPE, outcome=PREVENTED, rc=0, probe={\"probe\": \"as-cred-mem-probe\", \"sandbox\": \"/tmp/hardred-sandbox/cred\", \"synthetic_cred_read\": {\"attempted\": true, \"allow; xdr.memory_scrape_probe, xdr.ptrace_attempt",
+      "types": [
+        "hardred-antispyware",
+        "S18 Credential & Process Memory Protection"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1003.007",
+            "name": "S18 Credential & Process Memory Protection"
+          },
+          "tactic": {
+            "name": "Credential Access"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 1,
+      "ttfa_ms": 1923.72,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-26T16:10:46.040654+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "GeDefense Linux 6.3.0 (EDR/Hardened Max)",
+        "uid": "gedefense"
+      }
+    },
+    "finding_info": {
+      "uid": "gedefense:AS-S19-CROSSVIEW-01",
+      "title": "Masqueraded [kworker] argv[0], unlinked /proc/pid/exe, raw socket & LD_PRELOAD probe",
+      "desc": "scope=IN_SCOPE, outcome=PREVENTED, rc=0, probe={\"probe\": \"as-crossview-probe\", \"sandbox\": \"/tmp/hardred-sandbox/xview\", \"masquerade_spawn\": {\"attempted\": true, \"allowe; xdr.cross_view_raw_tap_unattributed, malware.execution_blocked, TITAN.EXEC_DENIED, WORKER_GUARD",
+      "types": [
+        "hardred-antispyware",
+        "S19 Process, Socket & Kernel Object Integrity"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1036.004",
+            "name": "S19 Process, Socket & Kernel Object Integrity"
+          },
+          "tactic": {
+            "name": "Defense Evasion"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 3,
+      "ttfa_ms": 1010.94,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 5,
+    "time": "2026-11-26T16:10:51.906088+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "GeDefense Linux 6.3.0 (EDR/Hardened Max)",
+        "uid": "gedefense"
+      }
+    },
+    "finding_info": {
+      "uid": "gedefense:AS-S20-SELFINTEGRITY-01",
+      "title": "Unprivileged daemon kill/mem tamper isolation, config protection & 200-event burst survival",
+      "desc": "scope=IN_SCOPE, outcome=PREVENTED, rc=0, probe={\"probe\": \"as-selfintegrity-probe\", \"checked_pids\": 3, \"unpriv_kill_protected\": 3, \"unpriv_proc_mem_blocked\": 3, \"checke; morpheus.memory_scraping_blocked, xdr-dag",
+      "types": [
+        "hardred-antispyware",
+        "S20 Sensor, Agent & Evidence Integrity"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1562.001",
+            "name": "S20 Sensor, Agent & Evidence Integrity"
+          },
+          "tactic": {
+            "name": "Defense Evasion"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 3,
+      "ttfa_ms": 117.32,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-26T16:12:57.862032+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "GeDefense Linux 6.3.0 (EDR/Hardened Max)",
+        "uid": "gedefense"
+      }
+    },
+    "finding_info": {
+      "uid": "gedefense:WAF-SQLI-01",
+      "title": "SQL Injection (WAF-SQLI-01)",
+      "desc": "http=403; l7.block, L7, xdr-dag",
+      "types": [
+        "hardred-waf",
+        "SQL Injection"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1190",
+            "name": "SQL Injection"
+          },
+          "tactic": {
+            "name": "Initial Access"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 3,
+      "ttfa_ms": 40.66,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-26T16:12:59.685855+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "GeDefense Linux 6.3.0 (EDR/Hardened Max)",
+        "uid": "gedefense"
+      }
+    },
+    "finding_info": {
+      "uid": "gedefense:WAF-SQLI-02",
+      "title": "SQL Injection (WAF-SQLI-02)",
+      "desc": "http=403; l7.block, L7, xdr-dag",
+      "types": [
+        "hardred-waf",
+        "SQL Injection"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1190",
+            "name": "SQL Injection"
+          },
+          "tactic": {
+            "name": "Initial Access"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 3,
+      "ttfa_ms": 33.88,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-26T16:13:01.621540+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "GeDefense Linux 6.3.0 (EDR/Hardened Max)",
+        "uid": "gedefense"
+      }
+    },
+    "finding_info": {
+      "uid": "gedefense:WAF-SQLI-03",
+      "title": "SQL Injection (WAF-SQLI-03)",
+      "desc": "http=403; l7.block, L7, xdr-dag",
+      "types": [
+        "hardred-waf",
+        "SQL Injection"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1190",
+            "name": "SQL Injection"
+          },
+          "tactic": {
+            "name": "Initial Access"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 3,
+      "ttfa_ms": 46.23,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-26T16:13:07.299101+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "GeDefense Linux 6.3.0 (EDR/Hardened Max)",
+        "uid": "gedefense"
+      }
+    },
+    "finding_info": {
+      "uid": "gedefense:WAF-XSS-01",
+      "title": "Cross-Site Scripting (WAF-XSS-01)",
+      "desc": "http=403; l7.block, L7, xdr-dag",
+      "types": [
+        "hardred-waf",
+        "Cross-Site Scripting"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1059.007",
+            "name": "Cross-Site Scripting"
+          },
+          "tactic": {
+            "name": "Execution"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 3,
+      "ttfa_ms": 42.47,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-26T16:13:12.930602+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "GeDefense Linux 6.3.0 (EDR/Hardened Max)",
+        "uid": "gedefense"
+      }
+    },
+    "finding_info": {
+      "uid": "gedefense:WAF-XSS-02",
+      "title": "Cross-Site Scripting (WAF-XSS-02)",
+      "desc": "http=403; l7.block, L7, xdr-dag",
+      "types": [
+        "hardred-waf",
+        "Cross-Site Scripting"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1059.007",
+            "name": "Cross-Site Scripting"
+          },
+          "tactic": {
+            "name": "Execution"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 3,
+      "ttfa_ms": 48.91,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-26T16:13:18.352460+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "GeDefense Linux 6.3.0 (EDR/Hardened Max)",
+        "uid": "gedefense"
+      }
+    },
+    "finding_info": {
+      "uid": "gedefense:WAF-LFI-01",
+      "title": "Path Traversal / LFI (WAF-LFI-01)",
+      "desc": "http=403; xdr.memory_scrape_probe, l7.block, L7, xdr-dag",
+      "types": [
+        "hardred-waf",
+        "Path Traversal / LFI"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1083",
+            "name": "Path Traversal / LFI"
+          },
+          "tactic": {
+            "name": "Discovery"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 3,
+      "ttfa_ms": 44.76,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-26T16:13:24.247693+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "GeDefense Linux 6.3.0 (EDR/Hardened Max)",
+        "uid": "gedefense"
+      }
+    },
+    "finding_info": {
+      "uid": "gedefense:WAF-LFI-02",
+      "title": "Double-Encoded Traversal (WAF-LFI-02)",
+      "desc": "http=403; l7.block, L7, xdr-dag",
+      "types": [
+        "hardred-waf",
+        "Double-Encoded Traversal"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1083",
+            "name": "Double-Encoded Traversal"
+          },
+          "tactic": {
+            "name": "Discovery"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 3,
+      "ttfa_ms": 38.46,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-26T16:13:29.736316+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "GeDefense Linux 6.3.0 (EDR/Hardened Max)",
+        "uid": "gedefense"
+      }
+    },
+    "finding_info": {
+      "uid": "gedefense:WAF-RCE-01",
+      "title": "OS Command Injection (WAF-RCE-01)",
+      "desc": "http=403; l7.block, L7, xdr-dag",
+      "types": [
+        "hardred-waf",
+        "OS Command Injection"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1059.004",
+            "name": "OS Command Injection"
+          },
+          "tactic": {
+            "name": "Execution"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 3,
+      "ttfa_ms": 45.02,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-26T16:13:35.233294+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "GeDefense Linux 6.3.0 (EDR/Hardened Max)",
+        "uid": "gedefense"
+      }
+    },
+    "finding_info": {
+      "uid": "gedefense:WAF-RCE-02",
+      "title": "PHP Webshell Payload (WAF-RCE-02)",
+      "desc": "http=403; l7.block, L7, xdr-dag",
+      "types": [
+        "hardred-waf",
+        "PHP Webshell Payload"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1505.003",
+            "name": "PHP Webshell Payload"
+          },
+          "tactic": {
+            "name": "Persistence"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 3,
+      "ttfa_ms": 102.61,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-26T16:13:40.819218+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "GeDefense Linux 6.3.0 (EDR/Hardened Max)",
+        "uid": "gedefense"
+      }
+    },
+    "finding_info": {
+      "uid": "gedefense:WAF-SSTI-01",
+      "title": "Server-Side Template Injection (WAF-SSTI-01)",
+      "desc": "http=403; l7.block, L7, xdr-dag",
+      "types": [
+        "hardred-waf",
+        "Server-Side Template Injection"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1190",
+            "name": "Server-Side Template Injection"
+          },
+          "tactic": {
+            "name": "Initial Access"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 3,
+      "ttfa_ms": 34.25,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-26T16:13:46.084952+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "GeDefense Linux 6.3.0 (EDR/Hardened Max)",
+        "uid": "gedefense"
+      }
+    },
+    "finding_info": {
+      "uid": "gedefense:WAF-XXE-01",
+      "title": "XML External Entity (WAF-XXE-01)",
+      "desc": "http=None; xdr.egress_blocked, xdr.egress_blocked, xdr.egress_blocked, xdr.kinetic_block, kinetic.block_applied",
+      "types": [
+        "hardred-waf",
+        "XML External Entity"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1190",
+            "name": "XML External Entity"
+          },
+          "tactic": {
+            "name": "Initial Access"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 3,
+      "ttfa_ms": 34.32,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-26T16:13:54.280025+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "GeDefense Linux 6.3.0 (EDR/Hardened Max)",
+        "uid": "gedefense"
+      }
+    },
+    "finding_info": {
+      "uid": "gedefense:WAF-SSRF-01",
+      "title": "Cloud Metadata SSRF (WAF-SSRF-01)",
+      "desc": "http=403; l7.block, L7, xdr-dag",
+      "types": [
+        "hardred-waf",
+        "Cloud Metadata SSRF"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1552.005",
+            "name": "Cloud Metadata SSRF"
+          },
+          "tactic": {
+            "name": "Credential Access"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 3,
+      "ttfa_ms": 36.65,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-26T16:13:57.928872+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "GeDefense Linux 6.3.0 (EDR/Hardened Max)",
+        "uid": "gedefense"
+      }
+    },
+    "finding_info": {
+      "uid": "gedefense:WAF-SCAN-01",
+      "title": "Exploit Scanner UA / Sensitive File (WAF-SCAN-01)",
+      "desc": "http=403; l7.block, L7, xdr-dag",
+      "types": [
+        "hardred-waf",
+        "Exploit Scanner UA / Sensitive File"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1595.002",
+            "name": "Exploit Scanner UA / Sensitive File"
+          },
+          "tactic": {
+            "name": "Reconnaissance"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 3,
+      "ttfa_ms": 33.7,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-26T16:14:03.368786+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "GeDefense Linux 6.3.0 (EDR/Hardened Max)",
+        "uid": "gedefense"
+      }
+    },
+    "finding_info": {
+      "uid": "gedefense:WAF-FAILOPEN-01",
+      "title": "Oversized Body Inspection Check (WAF-FAILOPEN-01)",
+      "desc": "http=403; l7.block, L7, xdr-dag",
+      "types": [
+        "hardred-waf",
+        "Oversized Body Inspection Check"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1190",
+            "name": "Oversized Body Inspection Check"
+          },
+          "tactic": {
+            "name": "Initial Access"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 3,
+      "ttfa_ms": 127.57,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-26T16:14:11.911124+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "GeDefense Linux 6.3.0 (EDR/Hardened Max)",
+        "uid": "gedefense"
+      }
+    },
+    "finding_info": {
+      "uid": "gedefense:NET-BRUTE-HTTP-01",
+      "title": "Rapid HTTP credential spraying (/wp-login.php 25x)",
+      "desc": "blocked_or_dropped=20/25; xdr.kinetic_block, kinetic.block_applied, l7.block, kinetic_strike, kinetic_strike",
+      "types": [
+        "hardred-netids",
+        "HTTP Auth Brute-Force"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1110.001",
+            "name": "HTTP Auth Brute-Force"
+          },
+          "tactic": {
+            "name": "Credential Access"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 3,
+      "ttfa_ms": 43.85,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-26T16:14:25.744394+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "GeDefense Linux 6.3.0 (EDR/Hardened Max)",
+        "uid": "gedefense"
+      }
+    },
+    "finding_info": {
+      "uid": "gedefense:NET-VELOCITY-01",
+      "title": "High-concurrency connection & request flood (240 req @ 28 threads)",
+      "desc": "blocked_or_dropped=192/240; xdr.memory_scrape_probe, xdr.egress_blocked, xdr.egress_blocked, xdr.egress_blocked, xdr.egress_blocked",
+      "types": [
+        "hardred-netids",
+        "HTTP/L4 Velocity Burst"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1499.002",
+            "name": "HTTP/L4 Velocity Burst"
+          },
+          "tactic": {
+            "name": "Impact"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 3,
+      "ttfa_ms": 91.49,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-26T16:14:46.413641+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "GeDefense Linux 6.3.0 (EDR/Hardened Max)",
+        "uid": "gedefense"
+      }
+    },
+    "finding_info": {
+      "uid": "gedefense:NET-PORTSCAN-01",
+      "title": "16-port TCP connect scan -> Kinetic XDP / Firewall Ban verification",
+      "desc": "post_scan_banned=True, open_blocked=True; xdr.kinetic_block, kinetic.block_applied, kinetic_strike, xdr.kinetic_block, kinetic.block_applied",
+      "types": [
+        "hardred-netids",
+        "Multi-Port Reconnaissance"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1046",
+            "name": "Multi-Port Reconnaissance"
+          },
+          "tactic": {
+            "name": "Discovery"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 3,
+      "ttfa_ms": 106.42,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  }
+]

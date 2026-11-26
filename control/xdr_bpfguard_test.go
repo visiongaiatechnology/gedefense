@@ -155,6 +155,13 @@ func TestBpfGuardHelperAggregationEscalatesToRootkitWithinOneHour(t *testing.T) 
 
 func TestBpfGuardToleratedLoadersNeverCreateIncidents(t *testing.T) {
 	engine := newBpfGuardTestEngine(&fakeBpfGuardCore{})
+	engine.execPathOverride = func(pid int) string {
+		if idx := pid - 900000; idx >= 0 && idx < 4 {
+			names := []string{"bpftrace", "perf", "falco", "cargo"}
+			return "/usr/bin/" + names[idx]
+		}
+		return "unknown"
+	}
 	now := time.Now().UTC()
 	tolerated := bpfGuardToleratedLoaderComms()
 	if len(tolerated) == 0 {
@@ -176,6 +183,18 @@ func TestBpfGuardToleratedLoadersNeverCreateIncidents(t *testing.T) {
 	if incidents := engine.state.Snapshot().Incidents; len(incidents) != 0 {
 		t.Fatalf("tolerated loaders produced %d incidents: %+v", len(incidents), incidents)
 	}
+	// Spoofing comm via prctl() from /tmp or an unknown path MUST NOT be tolerated.
+	for _, comm := range []string{"go", "bpftrace", "gedefense-core"} {
+		if tol, _ := engine.bpfGuardEventTolerated(syntheticBpfGuardEvent(BpfGuardActionHelperRisk, 999500, 3, 1700000000000000100, comm)); tol {
+			t.Fatalf("spoofed comm %q with unresolved path was tolerated", comm)
+		}
+	}
+	engine.execPathOverride = func(int) string { return "/tmp/evil-loader" }
+	for _, comm := range []string{"go", "bpftrace", "gedefense-core"} {
+		if tol, _ := engine.bpfGuardEventTolerated(syntheticBpfGuardEvent(BpfGuardActionHelperRisk, 999501, 3, 1700000000000000101, comm)); tol {
+			t.Fatalf("spoofed comm %q from /tmp/evil-loader was tolerated", comm)
+		}
+	}
 	found := false
 	for _, event := range engine.state.Snapshot().Events {
 		if event.Kind == "xdr.bpf_guard_tolerated" {
@@ -193,6 +212,13 @@ func TestBpfGuardOwnProcessAndHelperPredicates(t *testing.T) {
 	tolerated, reason := engine.bpfGuardEventTolerated(CoreBpfGuardEvent{PID: os.Getpid(), Comm: "gedefense-control"})
 	if !tolerated || reason != "own control process" {
 		t.Fatalf("own process was not tolerated: %v %q", tolerated, reason)
+	}
+	coreClient := &CoreClient{}
+	coreClient.peerPID.Store(42424)
+	engine.core = coreClient
+	tolerated, reason = engine.bpfGuardEventTolerated(CoreBpfGuardEvent{PID: 42424, Comm: "gedefense-core"})
+	if !tolerated || reason != "own core daemon" {
+		t.Fatalf("verified core daemon PID was not tolerated: %v %q", tolerated, reason)
 	}
 	if !bpfGuardPathUnderAny("/tmp/loader", bpfGuardTempPathPrefixes) ||
 		!bpfGuardPathUnderAny("/dev/shm/x", bpfGuardTempPathPrefixes) ||
@@ -356,5 +382,17 @@ func TestBpfGuardCommandAndProgramTypeNamesAreBounded(t *testing.T) {
 	}
 	if got := bpfGuardHelperIDsText([BpfGuardHelperBitsPerEvent]uint32{0, 0, 0, 0}); got != "none" {
 		t.Fatalf("empty helper ids rendered %q", got)
+	}
+}
+
+func TestBpfGuardInodeResolutionTolerationFailClosed(t *testing.T) {
+	if resolved := resolveToleratedPathByInode("../bash", 1, 1); resolved != "" {
+		t.Fatalf("path traversal comm resolved to %q", resolved)
+	}
+	if resolved := resolveToleratedPathByInode("bash", 1, 1); resolved != "" {
+		t.Fatalf("non-tolerated comm resolved to %q", resolved)
+	}
+	if resolved := resolveToleratedPathByInode("systemd", 0, 123); resolved != "" {
+		t.Fatalf("zero device resolved to %q", resolved)
 	}
 }

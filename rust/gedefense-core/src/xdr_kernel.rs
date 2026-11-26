@@ -4,17 +4,21 @@
 //!   `sys_enter_symlinkat`, and `socket_create` blacklisted protocol denies)
 
 use aya::{
-    maps::{MapData, RingBuf},
+    maps::{MapData, PerCpuArray, RingBuf},
     programs::{KProbe, TracePoint},
     Ebpf,
 };
 use gedefense_common::{decode_exec_argv_event, decode_kernel_probe_event};
+use std::collections::VecDeque;
 use std::error::Error;
 
 type BoxError = Box<dyn Error + Send + Sync + 'static>;
 
 const MAX_EXEC_ARGV_EVENTS_PER_RESPONSE: usize = 32;
-const MAX_EXEC_ARGV_PAYLOAD_BYTES: usize = 56_000;
+// Must stay comfortably below `crate::ipc::server::MAX_RESPONSE_BYTES` (24 KiB)
+// so a drained batch never hits "response truncated" on the wire (F-03).
+const MAX_EXEC_ARGV_PAYLOAD_BYTES: usize = 20_000;
+const MAX_PENDING_STASH_RECORDS: usize = 64;
 const MAX_KERNEL_PROBE_EVENTS_PER_RESPONSE: usize = 32;
 const MAX_KERNEL_PROBE_PAYLOAD_BYTES: usize = 12_000;
 
@@ -49,6 +53,8 @@ const KRETPROBES: &[(&str, &str)] = &[("gedefense_getname_flags_ret", "getname_f
 pub(crate) struct XdrKernelCore {
     exec_argv_events: RingBuf<MapData>,
     kernel_probe_events: RingBuf<MapData>,
+    exec_argv_drops: Option<PerCpuArray<MapData, u64>>,
+    kernel_probe_drops: Option<PerCpuArray<MapData, u64>>,
     attached_execve: bool,
     attached_ptrace: bool,
     attached_openat: bool,
@@ -56,6 +62,8 @@ pub(crate) struct XdrKernelCore {
     attached_getname_ret: bool,
     rejected_exec_argv: u64,
     rejected_probes: u64,
+    pending_exec_argv: VecDeque<String>,
+    pending_kernel_probes: VecDeque<String>,
 }
 
 fn decode_c_slot(raw: &[u8]) -> Vec<u8> {
@@ -80,9 +88,17 @@ impl XdrKernelCore {
             ebpf.take_map(&crate::chameleon::map_name("KERNEL_PROBE_EVENTS"))
                 .ok_or("KERNEL_PROBE_EVENTS missing")?,
         )?;
+        let exec_argv_drops = ebpf
+            .take_map(&crate::chameleon::map_name("EXEC_ARGV_DROPS"))
+            .and_then(|map| PerCpuArray::try_from(map).ok());
+        let kernel_probe_drops = ebpf
+            .take_map(&crate::chameleon::map_name("KERNEL_PROBE_DROPS"))
+            .and_then(|map| PerCpuArray::try_from(map).ok());
         let mut core = Self {
             exec_argv_events,
             kernel_probe_events,
+            exec_argv_drops,
+            kernel_probe_drops,
             attached_execve: false,
             attached_ptrace: false,
             attached_openat: false,
@@ -90,6 +106,8 @@ impl XdrKernelCore {
             attached_getname_ret: false,
             rejected_exec_argv: 0,
             rejected_probes: 0,
+            pending_exec_argv: VecDeque::new(),
+            pending_kernel_probes: VecDeque::new(),
         };
         core.attach_tracepoints(ebpf);
         core.attach_kretprobes(ebpf);
@@ -166,6 +184,23 @@ impl XdrKernelCore {
         let mut records = Vec::with_capacity(MAX_EXEC_ARGV_EVENTS_PER_RESPONSE);
         let mut total_bytes = 0usize;
         while records.len() < MAX_EXEC_ARGV_EVENTS_PER_RESPONSE {
+            if let Some(stashed) = self.pending_exec_argv.front() {
+                let sep = usize::from(!records.is_empty());
+                if total_bytes.saturating_add(sep).saturating_add(stashed.len())
+                    > MAX_EXEC_ARGV_PAYLOAD_BYTES
+                {
+                    if !records.is_empty() {
+                        break;
+                    }
+                    let _ = self.pending_exec_argv.pop_front();
+                    self.rejected_exec_argv = self.rejected_exec_argv.saturating_add(1);
+                    continue;
+                }
+                let stashed = self.pending_exec_argv.pop_front().unwrap();
+                total_bytes = total_bytes.saturating_add(sep).saturating_add(stashed.len());
+                records.push(stashed);
+                continue;
+            }
             let Some(item) = self.exec_argv_events.next() else {
                 break;
             };
@@ -200,6 +235,11 @@ impl XdrKernelCore {
             if total_bytes.saturating_add(sep).saturating_add(record.len())
                 > MAX_EXEC_ARGV_PAYLOAD_BYTES
             {
+                if records.is_empty() || self.pending_exec_argv.len() >= MAX_PENDING_STASH_RECORDS {
+                    self.rejected_exec_argv = self.rejected_exec_argv.saturating_add(1);
+                } else {
+                    self.pending_exec_argv.push_back(record);
+                }
                 break;
             }
             total_bytes = total_bytes.saturating_add(sep).saturating_add(record.len());
@@ -216,6 +256,23 @@ impl XdrKernelCore {
         let mut records = Vec::with_capacity(MAX_KERNEL_PROBE_EVENTS_PER_RESPONSE);
         let mut total_bytes = 0usize;
         while records.len() < MAX_KERNEL_PROBE_EVENTS_PER_RESPONSE {
+            if let Some(stashed) = self.pending_kernel_probes.front() {
+                let sep = usize::from(!records.is_empty());
+                if total_bytes.saturating_add(sep).saturating_add(stashed.len())
+                    > MAX_KERNEL_PROBE_PAYLOAD_BYTES
+                {
+                    if !records.is_empty() {
+                        break;
+                    }
+                    let _ = self.pending_kernel_probes.pop_front();
+                    self.rejected_probes = self.rejected_probes.saturating_add(1);
+                    continue;
+                }
+                let stashed = self.pending_kernel_probes.pop_front().unwrap();
+                total_bytes = total_bytes.saturating_add(sep).saturating_add(stashed.len());
+                records.push(stashed);
+                continue;
+            }
             let Some(item) = self.kernel_probe_events.next() else {
                 break;
             };
@@ -241,6 +298,13 @@ impl XdrKernelCore {
             if total_bytes.saturating_add(sep).saturating_add(record.len())
                 > MAX_KERNEL_PROBE_PAYLOAD_BYTES
             {
+                if records.is_empty()
+                    || self.pending_kernel_probes.len() >= MAX_PENDING_STASH_RECORDS
+                {
+                    self.rejected_probes = self.rejected_probes.saturating_add(1);
+                } else {
+                    self.pending_kernel_probes.push_back(record);
+                }
                 break;
             }
             total_bytes = total_bytes.saturating_add(sep).saturating_add(record.len());
@@ -251,5 +315,27 @@ impl XdrKernelCore {
         } else {
             Ok(records.join(","))
         }
+    }
+
+    fn sum_percpu_drops(map: Option<&PerCpuArray<MapData, u64>>) -> u64 {
+        map.and_then(|counter| crate::KernelCore::per_cpu_counter_sum(counter).ok())
+            .unwrap_or(0)
+    }
+
+    pub(crate) fn status(&self) -> String {
+        let exec_argv_drops = Self::sum_percpu_drops(self.exec_argv_drops.as_ref());
+        let kernel_probe_drops = Self::sum_percpu_drops(self.kernel_probe_drops.as_ref());
+        format!(
+            "execve={}|ptrace={}|openat={}|symlinkat={}|getname_ret={}|exec_argv_drops={}|kernel_probe_drops={}|rejected_exec_argv={}|rejected_probes={}",
+            self.attached_execve,
+            self.attached_ptrace,
+            self.attached_openat,
+            self.attached_symlinkat,
+            self.attached_getname_ret,
+            exec_argv_drops,
+            kernel_probe_drops,
+            self.rejected_exec_argv,
+            self.rejected_probes,
+        )
     }
 }

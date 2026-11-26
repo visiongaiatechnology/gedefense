@@ -52,8 +52,9 @@ const (
 	// observerTokenSuffix and criticalKeySuffix are the convention-based adjacent
 	// credential locations. No configuration schema change is required: both are
 	// derived from the existing dashboard token file path.
-	observerTokenSuffix = ".observer"
-	criticalKeySuffix   = ".critical"
+	observerTokenSuffix   = ".observer"
+	criticalKeySuffix     = ".critical"
+	gatewayClaimKeySuffix = ".gateway-claim"
 
 	// rbacCredentialMaxBytes bounds any adjacent credential file. A token file is
 	// a few dozen bytes; anything larger is not one.
@@ -177,6 +178,16 @@ func criticalManagementAction(method, path string) (string, bool) {
 		if reviewID := strings.TrimPrefix(path, "/api/v1/xdr/review/"); reviewID != "" && !strings.Contains(reviewID, "/") {
 			return "review-delete", true
 		}
+	case method == http.MethodPost && path == "/api/v1/xdr/permits":
+		return "permit-upsert", true
+	case method == http.MethodDelete && strings.HasPrefix(path, "/api/v1/xdr/permits/"):
+		if permitID := strings.TrimPrefix(path, "/api/v1/xdr/permits/"); permitID != "" && !strings.Contains(permitID, "/") {
+			return "permit-delete", true
+		}
+	case method == http.MethodPost && path == "/api/v1/chameleon/reveal":
+		return "chameleon-reveal", true
+	case method == http.MethodPost && path == "/api/v1/xdr/update-window/override":
+		return "update-window-override", true
 	}
 	return "", false
 }

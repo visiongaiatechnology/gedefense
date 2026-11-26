@@ -301,6 +301,16 @@ impl CrossViewCore {
             }
             match read_proc_stat(pid) {
                 Ok(_) => {
+                    if let Some(tgid) = read_proc_tgid(pid) {
+                        if tgid != pid
+                            && second
+                                .as_ref()
+                                .is_some_and(|pids| pids.contains(&tgid))
+                        {
+                            self.evidence_pids.remove(&pid);
+                            continue;
+                        }
+                    }
                     findings += 1;
                     self.enqueue(hidden_process_event(
                         now_ms,

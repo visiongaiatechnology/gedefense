@@ -299,27 +299,66 @@ func (g *gateway) parseSessionCookie(r *http.Request) (string, time.Time, bool) 
 	return fields[1], time.Unix(expiry, 0).UTC(), true
 }
 
+// validateOrRotate resolves a live server-side session under r.mu. If allowRotate
+// is true and the rotation interval elapsed, the session ID is rotated in-place
+// and an immutable snapshot copy is returned so callers never race with concurrent
+// rotations or lose cookies on w == nil checks (LIN-H02).
+func (r *sessionRegistry) validateOrRotate(id string, allowRotate bool) (*gatewaySession, bool, bool) {
+	now := r.now()
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	session, ok := r.sessions[id]
+	if !ok {
+		return nil, false, false
+	}
+	if session.id != id {
+		if session.previousID != id || !now.Before(session.previousValidUntil) {
+			delete(r.sessions, id)
+			return nil, false, false
+		}
+	}
+	if !now.Before(session.expires) || now.Sub(session.lastSeen) > r.idle || now.Sub(session.created) > r.absolute {
+		r.deleteLocked(session)
+		return nil, false, false
+	}
+	rotated := false
+	if allowRotate && now.Sub(session.rotatedAt) >= sessionRotationInterval {
+		nextID, err := randomSessionID()
+		if err == nil {
+			if previous := session.previousID; previous != "" {
+				delete(r.sessions, previous)
+			}
+			session.previousID = session.id
+			session.previousValidUntil = now.Add(sessionRotationGrace)
+			delete(r.sessions, session.id)
+			session.id = nextID
+			session.rotatedAt = now
+			r.sessions[nextID] = session
+			r.sessions[session.previousID] = session
+			rotated = true
+		}
+	}
+	session.lastSeen = now
+	snapshot := *session
+	return &snapshot, rotated, true
+}
+
 // validateSession resolves a cookie to a live server-side session (rotation-aware when a
-// response writer is supplied) and returns the session for context attribution.
+// response writer is supplied) and returns an immutable session snapshot for context attribution.
 func (g *gateway) validateSession(w http.ResponseWriter, r *http.Request) (*gatewaySession, bool) {
 	id, _, ok := g.parseSessionCookie(r)
 	if !ok {
 		return nil, false
 	}
 	g.ensureSessions()
-	session, ok := g.sessions.validate(id)
-	if !ok {
+	snapshot, rotated, live := g.sessions.validateOrRotate(id, w != nil)
+	if !live {
 		return nil, false
 	}
-	if time.Since(session.rotatedAt) >= sessionRotationInterval {
-		if rotated, err := g.sessions.rotate(session); err == nil {
-			if w != nil {
-				http.SetCookie(w, g.sessionCookie(rotated))
-			}
-			session = rotated
-		}
+	if rotated && w != nil {
+		http.SetCookie(w, g.sessionCookie(snapshot))
 	}
-	return session, true
+	return snapshot, true
 }
 
 func (g *gateway) sessionCookie(session *gatewaySession) *http.Cookie {

@@ -150,10 +150,12 @@ func TestKernelHookModulePathAndToolPolicy(t *testing.T) {
 		{"module tooling managed path", "insmod", "/usr/sbin/insmod", "bash", false, true},
 		{"module tooling temp path", "insmod", "/tmp/insmod", "bash", false, false},
 		{"module tooling unresolved path", "insmod", "unknown", "bash", false, false},
-		{"modprobe comm is tolerated", "modprobe", "unknown", "", false, true},
+		{"modprobe managed path is tolerated", "modprobe", "/usr/sbin/modprobe", "", false, true},
+		{"modprobe unresolved path is not tolerated", "modprobe", "unknown", "", false, false},
 		{"modprobe from a temp path is not tolerated", "modprobe", "/tmp/modprobe", "bash", false, false},
 		{"systemd comm is tolerated", "systemd", "/usr/lib/systemd/systemd", "", false, true},
-		{"own core process", "gedefense-core", "/usr/sbin/gedefense-core", "", false, true},
+		{"own core process", "gedefense-core", "/opt/vgt/gedefense/current/libexec/gedefense-core", "", false, true},
+		{"spoofed core comm from temp is not tolerated", "gedefense-core", "/tmp/evil", "", false, false},
 		{"own core process comm", "weird", "unknown", "", true, true},
 		{"shell loader", "evil", "/tmp/evil.ko", "bash", false, false},
 		{"developer loader", "cargo", "/usr/bin/cargo", "bash", false, false},
@@ -168,6 +170,12 @@ func TestKernelHookModulePathAndToolPolicy(t *testing.T) {
 	}
 	// Tolerated module loads must not create an incident; untrusted ones must.
 	engine := newKernelHooksTestEngine(&fakeKernelHooksCore{})
+	engine.execPathOverride = func(pid int) string {
+		if pid == 999990 {
+			return "/usr/sbin/modprobe"
+		}
+		return "/tmp/evil"
+	}
 	now := time.Now().UTC()
 	engine.consumeKernelHookEvents([]CoreKernelHookEvent{
 		syntheticKernelHookEvent(KernelHookKindModuleLoad, 999990, 1700000000000000100, "modprobe", "ok_module"),
@@ -210,13 +218,19 @@ func TestKernelHookIoUringUnusualPolicy(t *testing.T) {
 			t.Fatal("an unusual io_uring observation must carry a trigger")
 		}
 	}
-	if tolerated, _ := kernelHookIoUringTolerated("mariadbd", false); !tolerated {
+	if tolerated, _ := kernelHookIoUringTolerated("mariadbd", "/usr/sbin/mariadbd", false); !tolerated {
 		t.Fatal("a known legitimate io_uring consumer must be tolerated")
 	}
-	if tolerated, _ := kernelHookIoUringTolerated("gedefense-core", false); !tolerated {
+	if tolerated, _ := kernelHookIoUringTolerated("mariadbd", "unknown", false); tolerated {
+		t.Fatal("spoofed io_uring consumer with unresolved path must not be tolerated")
+	}
+	if tolerated, _ := kernelHookIoUringTolerated("gedefense-core", "/opt/vgt/gedefense/current/libexec/gedefense-core", false); !tolerated {
 		t.Fatal("the privileged core's own io_uring usage must be tolerated")
 	}
-	if tolerated, _ := kernelHookIoUringTolerated("weird", false); tolerated {
+	if tolerated, _ := kernelHookIoUringTolerated("gedefense-core", "/tmp/evil", false); tolerated {
+		t.Fatal("spoofed core comm under /tmp must not be tolerated")
+	}
+	if tolerated, _ := kernelHookIoUringTolerated("weird", "/usr/bin/weird", false); tolerated {
 		t.Fatal("an unknown io_uring user must not be tolerated")
 	}
 }

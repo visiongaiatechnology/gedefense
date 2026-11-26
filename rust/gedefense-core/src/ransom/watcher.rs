@@ -93,8 +93,9 @@ fn process_ring_item(raw: &[u8], queue: &Mutex<RansomQueue>) {
         return;
     }
     // FP guard: never freeze or queue for tree-kill a group that contains a
-    // trusted package/build/service comm or a protected core/init/systemd task.
-    let exempt = match process_tree::process_group_has_trusted_comm(pgid, TRUSTED_COMMS) {
+    // verified trusted package/build/service executable (backed by /proc/<pid>/exe)
+    // or a protected core/init/systemd task (LIN-H04).
+    let exempt = match process_tree::process_group_has_verified_trusted_exe(pgid, TRUSTED_COMMS) {
         Ok(true) => Ok(true),
         Ok(false) => process_tree::process_group_has_protected_target(pgid),
         Err(error) => Err(error),

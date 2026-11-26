@@ -149,10 +149,8 @@ func (b *PermitBroker) UpsertPermit(permit *PermitV1) error {
 	if err := validatePermitV1(permit, b.now()); err != nil {
 		return err
 	}
-	if permit.Signature != permitSignatureAbsent {
-		if err := b.admitPermitTrustLocked(permit); err != nil {
-			return err
-		}
+	if err := b.admitPermitTrustLocked(permit); err != nil {
+		return err
 	}
 	next := make(map[string]*PermitV1, len(b.permits)+1)
 	for id, existing := range b.permits {

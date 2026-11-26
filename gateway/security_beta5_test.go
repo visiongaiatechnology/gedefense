@@ -290,6 +290,20 @@ func TestAuthenticatedMutationRequiresExactOrigin(t *testing.T) {
 		}
 	}
 
+	for _, site := range []string{"cross-site", "same-site"} {
+		req, _ := http.NewRequest(http.MethodPost, front.URL+"/api/v1/settings", strings.NewReader(`{}`))
+		req.Header.Set("Origin", front.URL)
+		req.Header.Set("Sec-Fetch-Site", site)
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusForbidden {
+			t.Fatalf("sec-fetch-site=%q status=%d", site, resp.StatusCode)
+		}
+	}
+
 	req, _ := http.NewRequest(http.MethodPost, front.URL+"/api/v1/settings", strings.NewReader(`{}`))
 	req.Header.Set("Origin", front.URL)
 	resp, err := client.Do(req)

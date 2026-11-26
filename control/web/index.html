@@ -37,7 +37,7 @@
         </div>
         <div class="brand-copy">
           <strong class="brand-title">GeDefense</strong>
-          <small class="brand-sub" data-i18n="brand.sub">LINUX DEFENSE // V6</small>
+          <small class="brand-sub" data-i18n="brand.sub">LINUX DEFENSE // V6.3</small>
         </div>
       </div>
 
@@ -108,6 +108,11 @@
             <svg viewBox="0 0 24 24" class="nav-icon-svg"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
             <b data-i18n="nav.xdr">GeDefense XDR</b>
           </button>
+          <button class="nav-item" type="button" data-view="antispyware">
+            <svg viewBox="0 0 24 24" class="nav-icon-svg"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            <b data-i18n="nav.antispyware">Antispyware</b>
+            <span class="nav-badge-l7">AP-9</span>
+          </button>
           <button class="nav-item" type="button" data-view="kinetic">
             <svg viewBox="0 0 24 24" class="nav-icon-svg"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
             <b data-i18n="nav.kinetic">Kinetic Defense</b>
@@ -168,7 +173,7 @@
         </div>
 
         <div class="nav-group">
-          <span class="nav-group-title" data-i18n="v61.v6.group">V6 FABRIC</span>
+          <span class="nav-group-title" data-i18n="v61.v6.group">V6.3 FABRIC</span>
           <button class="nav-item" type="button" data-view="styx">
             <svg viewBox="0 0 24 24" class="nav-icon-svg"><path d="M3 7c3.5 0 3.5 5 7 5s3.5-5 7-5M3 17c3.5 0 3.5-5 7-5s3.5 5 7 5"/></svg>
             <b data-i18n="v61.v6.styx.title">StyX Egress</b>
@@ -2555,6 +2560,173 @@
               </table>
             </div>
           </article>
+
+          <div class="grid-3 mt-lg">
+            <article class="glass-panel panel-padded">
+              <div class="section-head flex-between">
+                <div>
+                  <p class="eyebrow" data-i18n="xdr.secCrit.kicker">HIGH-PRIORITY RING</p>
+                  <h3 class="m-0" data-i18n="xdr.secCrit.heading">S12 SecCrit &amp; Quotas</h3>
+                </div>
+                <span id="secCritStateBadge" class="badge">UNKNOWN</span>
+              </div>
+              <p id="secCritQuotaSummary" class="fs-xs text-muted mt-sm font-mono">---</p>
+            </article>
+
+            <article class="glass-panel panel-padded">
+              <div class="section-head flex-between">
+                <div>
+                  <p class="eyebrow" data-i18n="xdr.sbc.kicker">CROSS-DOMAIN FUSION</p>
+                  <h3 class="m-0" data-i18n="xdr.sbc.heading">SBC Corroboration</h3>
+                </div>
+                <span id="sbcStateBadge" class="badge">UNKNOWN</span>
+              </div>
+              <p id="sbcSummaryMeta" class="fs-xs text-muted mt-sm font-mono">---</p>
+            </article>
+
+            <article class="glass-panel panel-padded">
+              <div class="section-head flex-between">
+                <div>
+                  <p class="eyebrow" data-i18n="chameleon.kicker">INSTALL IDENTITY</p>
+                  <h3 class="m-0" data-i18n="chameleon.heading">Chameleon Mode</h3>
+                </div>
+                <span id="chameleonStateBadge" class="badge">STANDARD</span>
+              </div>
+              <p id="chameleonIdentityMeta" class="fs-xs text-muted mt-sm font-mono">---</p>
+              <button id="chameleonRevealBtn" class="button button-quiet mt-sm" type="button" data-i18n="chameleon.reveal">Mapping-Commitment prüfen</button>
+            </article>
+          </div>
+
+          <article class="glass-panel panel-padded mt-lg">
+            <div class="section-head flex-between">
+              <div>
+                <p class="eyebrow" data-i18n="xdr.review.kicker">FALSE-POSITIVE TRIAGE</p>
+                <h3 class="m-0" data-i18n="xdr.review.heading">Persistente Review-Queue</h3>
+              </div>
+              <button id="reviewQueueRefresh" class="button button-quiet" type="button" data-i18n="xdr.review.refresh">Aktualisieren</button>
+            </div>
+            <div class="table-wrap mt-md">
+              <table>
+                <thead>
+                  <tr>
+                    <th data-i18n="table.id">ID</th>
+                    <th data-i18n="table.process">Prozess</th>
+                    <th data-i18n="table.severity">Severity</th>
+                    <th data-i18n="table.status">Status</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="reviewQueueRows"></tbody>
+              </table>
+            </div>
+          </article>
+
+          <article class="glass-panel panel-padded mt-lg">
+            <div class="section-head flex-between">
+              <div>
+                <p class="eyebrow" data-i18n="xdr.permits.kicker">TRUST BROKER</p>
+                <h3 class="m-0" data-i18n="xdr.permits.heading">PermitV1 Allowlist-Objekte</h3>
+              </div>
+              <span id="permitBrokerBadge" class="badge">ABSENT</span>
+            </div>
+            <form id="permitForm" class="flex-row-wrap gap-md mt-md">
+              <label class="flex-1">
+                <span data-i18n="xdr.permits.idLabel">Permit-ID</span>
+                <input id="permitIDInput" class="mono" placeholder="auto (32-hex)" maxlength="64">
+              </label>
+              <label class="flex-1">
+                <span data-i18n="xdr.permits.pathLabel">Binary-Pfad</span>
+                <input id="permitPathInput" class="mono" placeholder="/usr/bin/custom-tool" maxlength="512" required>
+              </label>
+              <label class="flex-1">
+                <span data-i18n="xdr.permits.reasonLabel">Begründung</span>
+                <input id="permitReasonInput" maxlength="240" required>
+              </label>
+              <button class="button button-primary items-end" type="submit" data-i18n="xdr.permits.create">Permit speichern</button>
+            </form>
+            <div class="table-wrap mt-md">
+              <table>
+                <thead>
+                  <tr>
+                    <th data-i18n="table.id">ID</th>
+                    <th data-i18n="table.executable">Executable</th>
+                    <th data-i18n="table.status">Trust</th>
+                    <th data-i18n="table.time">Gültig bis</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="permitRows"></tbody>
+              </table>
+            </div>
+          </article>
+        </section>
+
+        <!-- 7B. ANTISPYWARE ARCHITECTURE & TELEMETRY VIEW -->
+        <section class="view v61-view" data-page="antispyware" aria-labelledby="antispywareHeading" hidden>
+          <div class="view-context-bar v61-context glass-panel">
+            <div>
+              <p class="eyebrow m-0" data-i18n="antispyware.eyebrow">ANTISPYWARE &amp; ANTI-ROOTKIT // AP-0 – AP-9</p>
+              <h2 id="antispywareHeading" data-i18n="antispyware.title">Antispyware</h2>
+              <p class="view-context-desc" data-i18n="antispyware.desc">Vollständige Übersicht aller integrierten Linux-Antispyware-, Anti-Rootkit- und Kernel-Telemetrie-Module (AP-0 bis AP-9), ihrer gemeinsamen Aktivierungskopplung und ihrer konkreten Auslöse- und Sperrmechanismen.</p>
+            </div>
+            <div class="view-context-actions v61-actions">
+              <span id="antispywarePill" class="status-pill muted">—</span>
+              <button id="antispywareRefreshBtn" class="button button-quiet" type="button" data-i18n="antispyware.refresh">Aktualisieren</button>
+              <button id="antispywareOpenXdrBtn" class="button button-primary" type="button" data-i18n="antispyware.openXdr">XDR öffnen</button>
+            </div>
+          </div>
+
+          <div class="defense-telemetry" role="group" data-i18n-aria="antispyware.rail">
+            <div class="telemetry-group">
+              <h3 class="telemetry-title" data-i18n="antispyware.group.posture">SENSOR-ABDECKUNG</h3>
+              <dl class="telemetry-list">
+                <div class="telemetry-row"><dt data-i18n="antispyware.kpi.planes">Aktive Ebenen</dt><dd id="antispywarePlanesKpi" class="font-mono">—</dd></div>
+                <div class="telemetry-row"><dt data-i18n="antispyware.kpi.sensor">XDR &amp; On-Access</dt><dd id="antispywareSensorKpi" class="font-mono">—</dd></div>
+                <div class="telemetry-row"><dt data-i18n="antispyware.kpi.selfGuard">AP-0 SelfGuard</dt><dd id="antispywareSelfGuardKpi" class="font-mono">—</dd></div>
+              </dl>
+              <p class="telemetry-note" data-i18n="antispyware.note.posture">AP-0 (musl Core + eBPF-Pin-Integrität + Canary-Probe) schützt Sensorik und Control Plane vor Benutzer- und Kernel-Manipulation.</p>
+            </div>
+            <div class="telemetry-group">
+              <h3 class="telemetry-title" data-i18n="antispyware.group.enforcement">KERNEL &amp; QUOTAS</h3>
+              <dl class="telemetry-list">
+                <div class="telemetry-row"><dt data-i18n="antispyware.kpi.execInode">BTF exec_inode</dt><dd id="antispywareExecInodeKpi" class="font-mono">—</dd></div>
+                <div class="telemetry-row"><dt data-i18n="antispyware.kpi.credGuard">CredentialGuard</dt><dd id="antispywareCredGuardKpi" class="font-mono">—</dd></div>
+                <div class="telemetry-row"><dt data-i18n="antispyware.kpi.secCrit">S12 SEC_CRIT</dt><dd id="antispywareSecCritKpi" class="font-mono">—</dd></div>
+              </dl>
+              <p class="telemetry-note" data-i18n="antispyware.note.enforcement">exec_inode, CredentialGuard (-EACCES) und der priorisierte S12-Evidenzkanal sichern Zugangsdaten und Forensik unter Last.</p>
+            </div>
+          </div>
+
+          <article class="glass-panel panel-padded v61-panel">
+            <div class="section-head">
+              <p class="eyebrow m-0" data-i18n="antispyware.matrix.kicker">CO-ACTIVATION &amp; TRIGGER MATRIX</p>
+              <h3 data-i18n="antispyware.matrix.title">Zusammenspiel, Kopplung &amp; Auslöser</h3>
+              <p class="fs-xs text-muted" data-i18n="antispyware.matrix.desc">Live-Abgleich aller Antispyware-Subsysteme: welche Ebenen gemeinsam scharfgeschaltet werden, welche Angriffsindikatoren sie auslösen und welche Kernel-/Control-Aktion folgt.</p>
+            </div>
+            <div class="v61-table-wrap">
+              <table class="v61-table">
+                <thead>
+                  <tr>
+                    <th data-i18n="antispyware.matrix.colLayer">Modul / Ebene</th>
+                    <th data-i18n="antispyware.matrix.colCoactivate">Aktiviert gemeinsam mit</th>
+                    <th data-i18n="antispyware.matrix.colTriggers">Was es auslöst</th>
+                    <th data-i18n="antispyware.matrix.colAction">Reaktion &amp; Sperrwirkung</th>
+                    <th data-i18n="antispyware.matrix.colState">Live-Status</th>
+                  </tr>
+                </thead>
+                <tbody id="antispywareMatrixBody"></tbody>
+              </table>
+            </div>
+          </article>
+
+          <div class="v61-panel">
+            <div class="section-head mb-sm">
+              <p class="eyebrow m-0" data-i18n="antispyware.guide.kicker">ARCHITECTURE DEEP DIVE</p>
+              <h3 data-i18n="antispyware.guide.title">Integrierte Antispyware-Module im Detail (AP-0 – AP-9)</h3>
+              <p class="fs-xs text-muted" data-i18n="antispyware.guide.desc">Jede Karte erklärt Aufgabe, Aktivierungsabhängigkeiten, exakte Auslösekriterien und Live-Telemetrie des jeweiligen Subsystems.</p>
+            </div>
+          </div>
+          <div id="antispywareCardsRoot" class="v61-view"></div>
         </section>
 
         <!-- KINETIC DEFENSE LIVE VIEW -->
@@ -3947,6 +4119,27 @@
         </div>
       </div>
     </form>
+  </dialog>
+
+  <dialog id="stepUpDialog" class="modal-dialog">
+    <div class="modal-card">
+      <div class="modal-header">
+        <p class="eyebrow" data-i18n="stepUp.kicker">CRITICAL UNLOCK STEP-UP</p>
+        <h3 class="modal-title" data-i18n="stepUp.title">Kritische Aktion bestätigen</h3>
+        <p id="stepUpActionLabel" class="modal-subtitle mono"></p>
+      </div>
+      <form id="stepUpForm" class="auth-form" autocomplete="off">
+        <label class="auth-field">
+          <span class="auth-label" data-i18n="stepUp.passwordLabel">Operator-Passwort</span>
+          <input id="stepUpPassword" name="stepup_password" type="password" minlength="12" maxlength="1024" required autocomplete="current-password">
+        </label>
+        <p id="stepUpState" class="auth-state" role="status" aria-live="polite"></p>
+        <div class="modal-action-row">
+          <button id="stepUpConfirm" class="button button-danger" type="submit" data-i18n="stepUp.confirm">Freigeben und ausführen</button>
+          <button class="button button-quiet" type="button" data-dialog-close data-i18n="dialog.close">Schließen</button>
+        </div>
+      </form>
+    </div>
   </dialog>
 
   <dialog id="authDialog" class="modal-dialog auth-dialog">

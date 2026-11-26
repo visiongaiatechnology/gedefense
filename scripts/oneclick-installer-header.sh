@@ -54,6 +54,7 @@ readonly PARSER_PROFILE_FILE="${CONFIG_DIR}/parser-profiles.conf"
 readonly PARSER_PROFILE_TEMPLATE="/usr/share/gedefense/parser-profiles.conf"
 readonly CELL_HELPER_SOCKET="/run/vgt-gedefense/cell-helper.sock"
 readonly CELL_HELPER_UNIT="gedefense-cell-helper.service"
+CORE_SOCKET="/run/vgt-gedefense/core.sock"
 readonly CAPTURE_HELPER_SOCKET="/run/vgt-gedefense-capture/capture.sock"
 readonly CAPTURE_HELPER_UNIT="gedefense-capture-helper.service"
 readonly POLICY_STATE_FILE="${STATE}/policy.json"
@@ -103,6 +104,7 @@ PUBLIC_PORT="${PUBLIC_PORT_DEFAULT}"
 INTERFACE=""
 MANAGEMENT_ALLOWLIST=""
 ALLOW_DOWNGRADE=0
+ENABLE_CHAMELEON=${GEDEFENSE_CHAMELEON:-0}
 INSTALLED_VERSION=""
 NEXT_FLOOR=""
 EFFECTIVE_TRUST_MODE=""
@@ -369,8 +371,9 @@ parse_args(){
   for argument in "$@"; do
     case $argument in
       --allow-downgrade) ALLOW_DOWNGRADE=1 ;;
+      --chameleon) ENABLE_CHAMELEON=1 ;;
       -h|--help)
-        printf 'VGT GeDefense %s installer\n\nOptions:\n  --allow-downgrade  explicit recovery downgrade (still blocked below the release floor)\n  --help\n' "$PRODUCT_VERSION"
+        printf 'VGT GeDefense %s installer\n\nOptions:\n  --allow-downgrade  explicit recovery downgrade (still blocked below the release floor)\n  --chameleon        enable opt-in Chameleon Identity Mode with neutral local installation names\n  --help\n' "$PRODUCT_VERSION"
         exit 0 ;;
       *) fail "Unknown argument: $argument" ;;
     esac
@@ -823,6 +826,19 @@ PY
   fi
   chown gedefense:gedefense "$TOKEN_FILE"; chmod 0600 "$TOKEN_FILE"
   [[ $(stat -c '%U:%G:%a' "$TOKEN_FILE") == 'gedefense:gedefense:600' ]] || fail "Gateway-Token-Rechte konnten nicht gesetzt werden."
+
+  local claim_file="${TOKEN_FILE}.gateway-claim"
+  if [[ ! -f $claim_file || -L $claim_file || $(stat -c %s -- "$claim_file" 2>/dev/null || echo 0) -lt 32 ]]; then
+    tmp=$(mktemp -- "${claim_file}.new.XXXXXXXX")
+    if ! head -c 32 /dev/urandom > "$tmp" || [[ $(stat -c %s -- "$tmp" 2>/dev/null || echo 0) -ne 32 ]]; then
+      rm -f -- "$tmp"
+      fail "Gateway-Claim-Schlüssel konnte nicht erzeugt werden."
+    fi
+    chown gedefense:gedefense "$tmp"; chmod 0600 "$tmp"
+    mv -fT -- "$tmp" "$claim_file"
+  fi
+  chown gedefense:gedefense "$claim_file"; chmod 0600 "$claim_file"
+  [[ $(stat -c '%U:%G:%a' "$claim_file") == 'gedefense:gedefense:600' ]] || fail "Gateway-Claim-Schlüssel-Rechte konnten nicht gesetzt werden."
 }
 
 prepare_secrets(){
@@ -1081,6 +1097,7 @@ backup_activation_state(){
   backup_path "$STORAGE_KEY_FILE" storage-master.key
   backup_path "$PASSWORD_FILE" access-password
   backup_path "$TOKEN_FILE" dashboard.token
+  backup_path "${TOKEN_FILE}.gateway-claim" dashboard.token.gateway-claim
   backup_path "$XDR_KEY_FILE" xdr-log.key
   backup_path "$RUNTIME_KEY_FILE" runtime-settings.key
   backup_path "$SESSION_KEY_FILE" access-session.key
@@ -1290,14 +1307,15 @@ activate_release(){
   if [[ -n $OLD_CURRENT ]]; then ln -s -- "$OLD_CURRENT" "$PREVIOUS"; fi
   rm -f -- "$CURRENT"; ln -s -- "$RELEASE" "$CURRENT"
   install_units
+  apply_chameleon_opt_in
   systemctl daemon-reload
   verify_units
   systemctl reset-failed gedefense-bpffs.service gedefense-core.service "${CAPTURE_HELPER_UNIT}" gedefense-control.service gedefense-access.service "${CELL_HELPER_UNIT}" || true
   systemctl enable gedefense-bpffs.service gedefense-core.service "${CAPTURE_HELPER_UNIT}" gedefense-control.service gedefense-access.service "${CELL_HELPER_UNIT}" >/dev/null
   systemctl start gedefense-bpffs.service
   systemctl start gedefense-core.service
-  for _ in $(seq 1 40); do [[ -S /run/vgt-gedefense/core.sock ]] && break; sleep .5; done
-  [[ -S /run/vgt-gedefense/core.sock ]] || { journalctl -u gedefense-core.service -n 100 --no-pager | tee -a "$LOG_FILE"; fail "Rust-Core-Socket wurde nicht erstellt."; }
+  for _ in $(seq 1 40); do [[ -S $CORE_SOCKET ]] && break; sleep .5; done
+  [[ -S $CORE_SOCKET ]] || { journalctl -u gedefense-core.service -n 100 --no-pager | tee -a "$LOG_FILE"; fail "Rust-Core-Socket wurde nicht erstellt ($CORE_SOCKET)."; }
   # POINT 2: the helper is optional infrastructure (default parser_cells.enabled=
   # false). Start it, but never roll back the whole stack when the sandbox cannot
   # start on this host: parser cells then stay runtime-unavailable (fail-closed)
@@ -1345,8 +1363,8 @@ activate_release(){
   printf '%s\n' "$status" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["core_connected"] is True, d; parts=str(d.get("core_mode") or "").split("+"); assert parts[0] in ("native","generic") and all(p=="bpf-lsm-cell" or p.startswith(("titan-exec:","lockdown:")) for p in parts[1:]), d; print("authenticated core/xdp status:",d["core_mode"])' | tee -a "$LOG_FILE"
   "$CURRENT/bin/gedefense-access" --listen="127.0.0.1:0" --backend="http://127.0.0.1:${BACKEND_PORT}" --public-host="${PUBLIC_HOST}:${PUBLIC_PORT}" --password-file="$PASSWORD_FILE" --session-key-file="$SESSION_KEY_FILE" --backend-token-file="$TOKEN_FILE" --tls-cert="$CERT_FILE" --tls-key="$TLS_KEY_FILE" --self-test-backend | tee -a "$LOG_FILE"
   systemctl start gedefense-access.service
-  for _ in $(seq 1 40); do curl -kfsS --resolve "${PUBLIC_HOST}:${PUBLIC_PORT}:127.0.0.1" "https://${PUBLIC_HOST}:${PUBLIC_PORT}/gateway/livez" >/dev/null 2>&1 && break; sleep .5; done
-  curl -kfsS --resolve "${PUBLIC_HOST}:${PUBLIC_PORT}:127.0.0.1" "https://${PUBLIC_HOST}:${PUBLIC_PORT}/gateway/livez" | tee -a "$LOG_FILE"
+  for _ in $(seq 1 40); do curl -fsS --cacert "$CERT_FILE" --resolve "${PUBLIC_HOST}:${PUBLIC_PORT}:127.0.0.1" "https://${PUBLIC_HOST}:${PUBLIC_PORT}/gateway/livez" >/dev/null 2>&1 && break; sleep .5; done
+  curl -fsS --cacert "$CERT_FILE" --resolve "${PUBLIC_HOST}:${PUBLIC_PORT}:127.0.0.1" "https://${PUBLIC_HOST}:${PUBLIC_PORT}/gateway/livez" | tee -a "$LOG_FILE"
   systemctl is-active --quiet gedefense-core.service
   systemctl is-active --quiet gedefense-control.service
   systemctl is-active --quiet gedefense-access.service
@@ -1425,6 +1443,28 @@ archive_old_latch(){
     rm -f -- "$latch"
     log "Alte Control-only-Sperre revisionssicher archiviert: $archive"
   done
+}
+
+apply_chameleon_opt_in(){
+  [[ $ENABLE_CHAMELEON == 1 ]] || return 0
+  local helper="$PAYLOAD/scripts/apply-chameleon-profile.sh"
+  [[ -x $helper && ! -L $helper ]] || fail "Chameleon-Installer-Helper fehlt im Payload: $helper"
+  local hex_id install_id
+  hex_id=$(head -c 6 /dev/urandom | od -An -tx1 | tr -d ' \n')
+  [[ ${#hex_id} -eq 12 ]] || fail "Chameleon Install-ID konnte nicht erzeugt werden."
+  install_id="gdn-${hex_id}"
+  CORE_SOCKET="/run/${install_id}/core.sock"
+  "$helper" \
+    --install-id="$install_id" \
+    --state-dir="$STATE" \
+    --config-dir="$CONFIG_DIR" \
+    --core-socket="$CORE_SOCKET" \
+    --scan-socket="/run/gedefense-scan/${install_id}.sock" \
+    --bpf-pin-root="/sys/fs/bpf/${install_id}" \
+    --backend-port="$BACKEND_PORT" \
+    --public-port="$PUBLIC_PORT" \
+    --unit-prefix="$install_id"
+  log "Opt-in Chameleon Identity Mode angewendet (install_id=${install_id}, core_socket=${CORE_SOCKET})."
 }
 
 main(){

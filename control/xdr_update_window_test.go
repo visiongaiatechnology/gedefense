@@ -26,6 +26,7 @@ func signedReleaseFixture(t *testing.T) (installRoot, artifactDir, manifestPath,
 		"gedefense-control":     "signed-control-v2",
 		"gedefense-access":      "signed-access-v2",
 		"gedefense-core":        "signed-core-v2",
+		"gedefense-cell-helper": "signed-cell-helper-v2",
 		"gedefense-ebpf":        "signed-ebpf-v2",
 		"sbom.spdx.json":        `{"spdx": "v2"}`,
 		"build-provenance.json": `{"builder": "test"}`,
@@ -56,6 +57,7 @@ func signedReleaseFixture(t *testing.T) (installRoot, artifactDir, manifestPath,
 		filepath.Join("bin", "gedefense-control"):           "old-control-v1",
 		filepath.Join("bin", "gedefense-access"):            "old-access-v1",
 		filepath.Join("libexec", "gedefense-core"):          "old-core-v1",
+		filepath.Join("libexec", "gedefense-cell-helper"):   "old-cell-helper-v1",
 		filepath.Join("lib", "gedefense", "gedefense-ebpf"): "old-ebpf-v1",
 	}
 	for relative, body := range installed {
@@ -74,10 +76,11 @@ func signedReleaseFixture(t *testing.T) (installRoot, artifactDir, manifestPath,
 func installSignedReleaseArtifacts(t *testing.T, installRoot, artifactDir string) {
 	t.Helper()
 	targets := map[string]string{
-		"gedefense-control": filepath.Join(installRoot, "bin", "gedefense-control"),
-		"gedefense-access":  filepath.Join(installRoot, "bin", "gedefense-access"),
-		"gedefense-core":    filepath.Join(installRoot, "libexec", "gedefense-core"),
-		"gedefense-ebpf":    filepath.Join(installRoot, "lib", "gedefense", "gedefense-ebpf"),
+		"gedefense-control":     filepath.Join(installRoot, "bin", "gedefense-control"),
+		"gedefense-access":      filepath.Join(installRoot, "bin", "gedefense-access"),
+		"gedefense-core":        filepath.Join(installRoot, "libexec", "gedefense-core"),
+		"gedefense-cell-helper": filepath.Join(installRoot, "libexec", "gedefense-cell-helper"),
+		"gedefense-ebpf":        filepath.Join(installRoot, "lib", "gedefense", "gedefense-ebpf"),
 	}
 	for artifact, target := range targets {
 		body, err := os.ReadFile(filepath.Join(artifactDir, artifact))
@@ -173,12 +176,25 @@ func TestUnauthorizedOwnComponentReplacementIsSelfTamper(t *testing.T) {
 // TestSignedUpdateWindowAllowsTheDeployment is the sanctioned counterpart: a verified signed
 // release manifest opens a bounded window, and the exact bytes it names may replace the own
 // components without being recorded as tampering.
+func newUpdateWindowEnginePinned(t *testing.T, publicPath string) (*XDREngine, *State) {
+	t.Helper()
+	engine, state := newUpdateWindowEngine(t)
+	if publicPath != "" {
+		raw, err := os.ReadFile(publicPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		engine.pinnedReleaseKey = ed25519.PublicKey(raw)
+	}
+	return engine, state
+}
+
 func TestSignedUpdateWindowAllowsTheDeployment(t *testing.T) {
 	installRoot, artifactDir, manifestPath, publicPath := signedReleaseFixture(t)
-	engine, state := newUpdateWindowEngine(t)
+	engine, state := newUpdateWindowEnginePinned(t, publicPath)
 	engine.captureProtected(productArtifactPaths())
-	if len(engine.protected) != 4 {
-		t.Fatalf("expected four protected release artifacts, got %d", len(engine.protected))
+	if len(engine.protected) != 5 {
+		t.Fatalf("expected five protected release artifacts, got %d", len(engine.protected))
 	}
 
 	if err := engine.BeginSignedUpdateWindow(manifestPath, publicPath, artifactDir, "planned 5.2 package update", time.Minute); err != nil {
@@ -209,7 +225,7 @@ func TestSignedUpdateWindowAllowsTheDeployment(t *testing.T) {
 			applied++
 		}
 	}
-	if applied != 4 {
+	if applied != 5 {
 		t.Fatalf("expected one deployment record per signed artifact, got %d", applied)
 	}
 
@@ -221,10 +237,24 @@ func TestSignedUpdateWindowAllowsTheDeployment(t *testing.T) {
 	}
 }
 
+// TestUpdateWindowRejectsUnpinnedReleaseKey proves F-01 is closed: even if a caller passes a
+// freshly generated keypair matching a manifest they signed themselves, BeginSignedUpdateWindow
+// verifies exclusively against the pinned release trust anchor.
+func TestUpdateWindowRejectsUnpinnedReleaseKey(t *testing.T) {
+	_, artifactDir, manifestPath, publicPath := signedReleaseFixture(t)
+	engine, _ := newUpdateWindowEngine(t)
+	if err := engine.BeginSignedUpdateWindow(manifestPath, publicPath, artifactDir, "attacker key attempt", time.Minute); err == nil {
+		t.Fatal("an unpinned caller-supplied release key opened the update window")
+	}
+	if engine.SignedUpdateWindowActive() {
+		t.Fatal("a rejected unpinned manifest left an open update window")
+	}
+}
+
 // TestSignedUpdateWindowRefusesAnUnverifiedManifest keeps the window itself untamperable.
 func TestSignedUpdateWindowRefusesAnUnverifiedManifest(t *testing.T) {
 	_, artifactDir, manifestPath, publicPath := signedReleaseFixture(t)
-	engine, _ := newUpdateWindowEngine(t)
+	engine, _ := newUpdateWindowEnginePinned(t, publicPath)
 
 	// A file that is not a signed release manifest must not open anything.
 	bogus := filepath.Join(t.TempDir(), "bogus.json")
@@ -256,7 +286,7 @@ func TestSignedUpdateWindowRefusesAnUnverifiedManifest(t *testing.T) {
 func TestUpdateWindowDoesNotAuthorizeOtherBytes(t *testing.T) {
 	installRoot, artifactDir, manifestPath, publicPath := signedReleaseFixture(t)
 	core := filepath.Join(installRoot, "libexec", "gedefense-core")
-	engine, state := newUpdateWindowEngine(t)
+	engine, state := newUpdateWindowEnginePinned(t, publicPath)
 	engine.captureProtected(productArtifactPaths())
 	if err := engine.BeginSignedUpdateWindow(manifestPath, publicPath, artifactDir, "planned update", time.Minute); err != nil {
 		t.Fatal(err)
@@ -278,7 +308,7 @@ func TestUpdateWindowDoesNotAuthorizeOtherBytes(t *testing.T) {
 // TestAnExpiredUpdateWindowNoLongerCoversChanges proves the window is bounded in time.
 func TestAnExpiredUpdateWindowNoLongerCoversChanges(t *testing.T) {
 	installRoot, artifactDir, manifestPath, publicPath := signedReleaseFixture(t)
-	engine, state := newUpdateWindowEngine(t)
+	engine, state := newUpdateWindowEnginePinned(t, publicPath)
 	engine.captureProtected(productArtifactPaths())
 	if err := engine.BeginSignedUpdateWindow(manifestPath, publicPath, artifactDir, "planned update", time.Minute); err != nil {
 		t.Fatal(err)

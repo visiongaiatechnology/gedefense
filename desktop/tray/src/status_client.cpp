@@ -13,6 +13,10 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#ifdef Q_OS_LINUX
+#include <sys/socket.h>
+#include <unistd.h>
+#endif
 
 namespace gedefense {
 namespace {
@@ -277,6 +281,20 @@ void StatusClient::onConnected()
     {
         return;
     }
+#ifdef Q_OS_LINUX
+    const qintptr sd = m_socket->socketDescriptor();
+    struct ucred peerCred{};
+    socklen_t credLen = sizeof(peerCred);
+    const uid_t selfUid = ::geteuid();
+    if (sd < 0 ||
+        ::getsockopt(static_cast<int>(sd), SOL_SOCKET, SO_PEERCRED, &peerCred, &credLen) != 0 ||
+        credLen != sizeof(peerCred) ||
+        (peerCred.uid != selfUid && peerCred.uid != 0))
+    {
+        reportFailure(FailureKind::AccessDenied, reasonFor(FailureKind::AccessDenied));
+        return;
+    }
+#endif
     const QByteArray request(kRequestLine, static_cast<qsizetype>(sizeof(kRequestLine) - 1));
     if (m_socket->write(request) != request.size())
     {

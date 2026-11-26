@@ -380,11 +380,19 @@ func TestHardeningDeceptionPolicyReconcilesGrid(t *testing.T) {
 
 func TestHardeningRASPPolicyExemptsOnlyNamedTools(t *testing.T) {
 	rasp := NewMorpheusRASP("", nil, nil)
+	toolPath := "/usr/bin/env"
+	toolName := "env"
+	if info, err := os.Stat(toolPath); err != nil || !info.Mode().IsRegular() {
+		t.Skipf("system root-owned binary %s unavailable on host", toolPath)
+	}
 	rasp.ApplyPolicy(HardeningRASPSettings{
-		Enabled: true, ProtectedNames: []string{"vault"}, TrustedDebuggers: []string{"gdb"}, ContainmentEnabled: true,
+		Enabled: true, ProtectedNames: []string{"vault"}, TrustedDebuggers: []string{toolName}, ContainmentEnabled: true,
 	})
-	if event, err := rasp.InspectProcess(ProcessSample{PID: 10, Comm: "gdb", Cmdline: "gdb -p 1 -- /etc/vault"}); event != nil || err != nil {
+	if event, err := rasp.InspectProcess(ProcessSample{PID: 10, UID: 0, Comm: toolName, Exe: toolPath, Cmdline: toolName + " -p 1 -- /etc/vault"}); event != nil || err != nil {
 		t.Fatalf("trusted debugger was not exempt: %+v %v", event, err)
+	}
+	if _, err := rasp.InspectProcess(ProcessSample{PID: 13, UID: 0, Comm: toolName, Exe: "", Cmdline: toolName + " -p 1 -- /etc/vault"}); err == nil {
+		t.Fatal("process with missing executable identity must not be exempt")
 	}
 	if _, err := rasp.InspectProcess(ProcessSample{PID: 11, Comm: "frida", Cmdline: "frida -- /etc/vault"}); err == nil {
 		t.Fatal("an untrusted scraper was not contained")

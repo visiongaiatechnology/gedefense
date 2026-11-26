@@ -94,6 +94,7 @@ pub(crate) fn dispatch(
 ) -> Result<Option<String>, BoxError> {
     let result = match parts {
         ["MALWARE_EVENTS"] => scanner.take_events(),
+        ["MALWARE_STATUS"] => Ok(scanner.status()),
         ["MALWARE_SCAN", path] => scanner.inspect_token(path),
         ["QUARANTINE_INSPECT", path] => quarantine.inspect_token(path),
         ["QUARANTINE_APPLY", path, object_id, identity] => {

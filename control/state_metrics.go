@@ -377,11 +377,12 @@ func deriveProtectionStatus(snap Snapshot, releaseXDRMode string) ProtectionStat
 	if xdrMode == "" {
 		xdrMode = strings.TrimSpace(snap.XDR.Mode)
 	}
-	xdrActive := snap.XDR.Enabled && xdrMode == "enforce" && !snap.XDR.Degraded
+	xdrDegraded := isXDROperationallyDegraded(snap.XDR)
+	xdrActive := snap.XDR.Enabled && xdrMode == "enforce" && !xdrDegraded
 	status.Domains = append(status.Domains, ProtectionDomain{Name: "xdr", Active: xdrActive, Mode: xdrMode})
 	if !snap.XDR.Enabled {
 		status.Gaps = append(status.Gaps, "xdr_disabled")
-	} else if snap.XDR.Degraded {
+	} else if xdrDegraded {
 		status.Gaps = append(status.Gaps, "xdr_degraded")
 	} else if xdrMode != "enforce" {
 		switch xdrMode {

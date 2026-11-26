@@ -299,7 +299,13 @@ fn capture_user_query(buf_ptr: u64, length: u64, via_sendmsg: bool) -> Option<()
     // so the record contains exactly the documented content.
     let tail_len = dns_capture_tail_len(wire_len);
     let tail_start = wire_len - tail_len;
-    if unsafe {
+    if tail_start + DNS_CAPTURE_QNAME_TAIL_BYTES <= DNS_QNAME_WINDOW_BYTES {
+        let mut idx = 0usize;
+        while idx < DNS_CAPTURE_QNAME_TAIL_BYTES {
+            scratch.qname_tail[idx] = scratch.window[(tail_start + idx) & WINDOW_MASK];
+            idx += 1;
+        }
+    } else if unsafe {
         bpf_probe_read_user_buf(
             buf_ptr
                 .wrapping_add(DNS_HEADER_BYTES as u64)

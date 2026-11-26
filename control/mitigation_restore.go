@@ -199,10 +199,18 @@ func mitigationCatalogueTarget(key string) (mitigationTarget, bool) {
 // host that cannot reach its core yet must still come up and protect everything else. An
 // unauthenticated or non-catalogued record is refused instead of applied (F-19).
 func (g *MitigationGuard) Restore() error {
-	raw, err := os.ReadFile(g.statePath())
+	statePath := g.statePath()
+	info, err := os.Lstat(statePath)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
 	}
+	if err != nil {
+		return fmt.Errorf("mitigation state could not be inspected: %w", err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() || info.Size() > 64<<10 {
+		return errors.New("mitigation state file violates regular-file or size boundary")
+	}
+	raw, err := os.ReadFile(statePath)
 	if err != nil {
 		return fmt.Errorf("mitigation state could not be read: %w", err)
 	}

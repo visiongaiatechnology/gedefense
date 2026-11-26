@@ -262,9 +262,11 @@ func validateWitnessEndpoint(endpoint string) error {
 	return nil
 }
 
-// witnessIPAllowed rejects loopback, unspecified, link-local, multicast and
-// cloud metadata addresses while still permitting explicit RFC1918 LAN targets
-// for self-hosted witness relays.
+var witnessCGNATPrefix = netip.MustParsePrefix("100.64.0.0/10")
+
+// witnessIPAllowed rejects loopback, unspecified, link-local, CGNAT/cloud
+// metadata and multicast addresses while still permitting explicit RFC1918 LAN
+// targets for self-hosted witness relays.
 func witnessIPAllowed(ip netip.Addr) bool {
 	ip = ip.Unmap()
 	return ip.IsValid() &&
@@ -273,6 +275,7 @@ func witnessIPAllowed(ip netip.Addr) bool {
 		!ip.IsMulticast() &&
 		!ip.IsLinkLocalUnicast() &&
 		!ip.IsLinkLocalMulticast() &&
+		!witnessCGNATPrefix.Contains(ip) &&
 		ip != witnessEC2MetadataV6
 }
 

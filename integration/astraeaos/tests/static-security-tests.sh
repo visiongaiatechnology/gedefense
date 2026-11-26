@@ -114,6 +114,7 @@ require_contains "$app" 'printf '\''%s'\'' "$first" >"$pwfile"' "desktop app wri
 require_contains "$access_dropin" '--backend=http://127.0.0.1:9844' "access backend targets the internal control port 9844"
 require_contains "$access_dropin" '--password-file=/etc/vgt/gedefense-access/access-password' "access reads the gateway-owned password record"
 require_contains "$access_dropin" '--backend-token-file=/var/lib/vgt/gedefense-access/state/backend-token' "access reads the ExecStartPre-provisioned token copy"
+require_contains "$access_dropin" '--claim-key-file=/var/lib/vgt/gedefense-access/state/gateway-claim.key' "access carries the dedicated gateway-claim HMAC key"
 require_contains "$access_dropin" '--session-key-file=/var/lib/vgt/gedefense-access/state/access-session.key' "access session key lives in the gateway state directory"
 require_contains "$access_dropin" '--tls-cert=/etc/vgt/gedefense-access/access.crt' "access certificate comes from the gateway-owned directory"
 require_absent "$access_dropin" 'ExecStartPre=' "drop-in must not clear the base unit's root provisioning steps"

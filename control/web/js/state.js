@@ -22,6 +22,7 @@ import {
   formatRate,
   formatTime,
   formatUptime,
+  isXDROperationallyDegraded,
   renderEvents,
   renderIncidents,
   renderReleaseBlockers,
@@ -112,7 +113,7 @@ function updateSnapshot(data) {
     if (data.feed_fingerprint) {
       detailParts.push(String(data.feed_fingerprint).slice(0, 8));
     }
-    text('overviewFeedDetail', detailParts.join(' Â· ') || t('metric.threatFeedsDetail'));
+    text('overviewFeedDetail', detailParts.join(' · ') || t('metric.threatFeedsDetail'));
   } else {
     text('overviewFeedDetail', t('metric.threatFeedsDetail'));
   }
@@ -180,7 +181,7 @@ function updateSnapshot(data) {
 
   if (data.core_connected) {
     text('coreMetric', t('dynamic.online'));
-    text('coreDetail', `XDP ${data.core_mode} Â· ${t('dynamic.allowlist', { state: data.allowlist_ready ? 'SYNC' : t('dynamic.blocked') })}`);
+    text('coreDetail', `XDP ${data.core_mode} · ${t('dynamic.allowlist', { state: data.allowlist_ready ? 'SYNC' : t('dynamic.blocked') })}`);
     text('shieldState', data.enforcement === 'enforce' ? t('dynamic.kernelShield') : t('dynamic.observeFabric'));
     text('coreMode', t('dynamic.authVgt', { mode: data.core_mode }));
   } else {
@@ -202,19 +203,22 @@ function updateSnapshot(data) {
   // nominal platform either: the posture is restricted, and the badge has to say which.
   const releaseDegraded = String(release.phase || '') === 'degraded';
   const enforcementRetained = String(release.kernel_policy_state || '') === 'verified-enforce';
-  const degraded = Boolean(xdr.degraded) || (data.policy && !policy.verified) || !coverageNominal || Boolean(release.emergency_stop);
+  const xdrDegraded = isXDROperationallyDegraded(xdr);
+  const degraded = xdrDegraded || (data.policy && !policy.verified) || !coverageNominal || Boolean(release.emergency_stop);
   const restricted = !degraded && releaseDegraded;
   const nominal = data.core_connected && !degraded && !restricted;
   const stateKey = nominal ? 'dynamic.nominal' : restricted ? 'dynamic.restricted' : degraded ? 'dynamic.degraded' : 'dynamic.controlOnly';
   badge('systemBadge', t(stateKey), nominal ? 'good' : restricted ? 'warning' : degraded ? 'danger' : 'warning');
   text('sidebarState', t(stateKey));
-  const modes = `${String(data.enforcement || 'observe').toUpperCase()} Â· ${String(xdr.mode || 'observe').toUpperCase()}`;
-  text('sidebarMode', restricted && enforcementRetained ? `${modes} Â· ${t('dynamic.enforcementRetained')}` : modes);
+  const netMode = String(data.enforcement || 'observe').toUpperCase();
+  const xdrMode = String(xdr.mode || 'observe').toUpperCase();
+  const modes = `NET ${netMode} · XDR ${xdrMode}`;
+  text('sidebarMode', restricted && enforcementRetained ? `${modes} · ${t('dynamic.enforcementRetained')}` : modes);
   byID('sidebarPulse').className = `status-dot${nominal ? '' : restricted ? ' warning' : degraded ? ' danger' : ' warning'}`;
   byID('heroPulse').className = byID('sidebarPulse').className;
 
-  text('xdrMetric', xdr.enabled ? (xdr.degraded ? t('dynamic.degraded') : String(xdr.mode || 'observe').toUpperCase()) : t('dynamic.disabled'));
-  text('xdrDetail', xdr.degraded ? xdr.degraded_reason || t('dynamic.disabled') : `${xdr.sensor || 'sensor'} Â· ${t('dynamic.incidents', { value: number(xdr.incidents_total) })}`);
+  text('xdrMetric', xdr.enabled ? (xdrDegraded ? t('dynamic.degraded') : String(xdr.mode || 'observe').toUpperCase()) : t('dynamic.disabled'));
+  text('xdrDetail', xdrDegraded ? xdr.degraded_reason || t('dynamic.disabled') : `${xdr.sensor || 'sensor'} · ${t('dynamic.incidents', { value: number(xdr.incidents_total) })}`);
   renderMalwareProtection();
   text('anomalyCount', number(xdr.anomalies_total));
   text('xdrProcesses', number(xdr.processes));
@@ -227,12 +231,12 @@ function updateSnapshot(data) {
   if (qDropEl) {
     qDropEl.textContent = qDrops > 0
       ? t('dynamic.drops', { value: number(qDrops) })
-      : `${number(qDrops)} Drops Â· optimal`;
+      : `${number(qDrops)} Drops · optimal`;
     qDropEl.className = qDrops > 0 ? 'text-danger font-semibold' : 'text-muted';
   }
   text('profileCount', number(behavior.profiles ?? xdr.profiles_total ?? 0));
   text('warmProfiles', number(behavior.warm_profiles ?? xdr.profiles_warm ?? 0));
-  badge('xdrModeBadge', String(xdr.mode || 'disabled').toUpperCase(), xdr.degraded ? 'danger' : xdr.mode === 'enforce' ? 'good' : 'warning');
+  badge('xdrModeBadge', String(xdr.mode || 'disabled').toUpperCase(), xdrDegraded ? 'danger' : xdr.mode === 'enforce' ? 'good' : 'warning');
   badge('behaviorIntegrity', behavior.integrity_ok ? t('dynamic.macVerified') : t('dynamic.integrityFailure'), behavior.integrity_ok ? 'good' : 'danger');
 
   badge('enforcementBadge', String(data.enforcement || 'observe').toUpperCase(), data.enforcement === 'enforce' ? 'good' : 'warning');
@@ -241,20 +245,20 @@ function updateSnapshot(data) {
   text('policyGeneration', number(policy.generation));
   text('policyUpdated', formatTime(policy.updated_at));
 
-  text('incidentIntegrity', xdr.degraded && String(xdr.degraded_reason || '').includes('incident') ? t('dynamic.quarantined') : t('dynamic.verified'));
-  text('incidentDetail', xdr.degraded ? xdr.degraded_reason || t('dynamic.degraded') : t('dynamic.hmacChain'));
+  text('incidentIntegrity', xdrDegraded && String(xdr.degraded_reason || '').includes('incident') ? t('dynamic.quarantined') : t('dynamic.verified'));
+  text('incidentDetail', xdrDegraded ? xdr.degraded_reason || t('dynamic.degraded') : t('dynamic.hmacChain'));
   text('incidentCount', number(xdr.incidents_total));
   text('actionCount', number(xdr.actions_total));
 
   badge('nodeModeBadge', String(data.node_mode || 'standalone').toUpperCase());
   text('systemNode', data.node_name || '---');
-  text('systemUptime', `${formatUptime(data.uptime_seconds)} Â· ${data.version || ''}`);
+  text('systemUptime', `${formatUptime(data.uptime_seconds)} · ${data.version || ''}`);
   text('systemCore', data.core_connected ? t('dynamic.online') : t('dynamic.offline'));
-  text('systemCoreDetail', data.core_connected ? `XDP ${data.core_mode} Â· VGT3 HMAC Â· ${t('dynamic.allowlist', { state: data.allowlist_ready ? 'SYNC' : t('dynamic.blocked') })}` : t('dynamic.safeMode'));
-  text('systemXdr', xdr.enabled ? (xdr.degraded ? t('dynamic.degraded') : t('dynamic.online')) : t('dynamic.disabled'));
-  text('systemXdrDetail', `${xdr.sensor || '---'} Â· ${t('dynamic.protectedObjects', { value: number(xdr.protected_objects) })}`);
+  text('systemCoreDetail', data.core_connected ? `XDP ${data.core_mode} · VGT3 HMAC · ${t('dynamic.allowlist', { state: data.allowlist_ready ? 'SYNC' : t('dynamic.blocked') })}` : t('dynamic.safeMode'));
+  text('systemXdr', xdr.enabled ? (xdrDegraded ? t('dynamic.degraded') : t('dynamic.online')) : t('dynamic.disabled'));
+  text('systemXdrDetail', `${xdr.sensor || '---'} · ${t('dynamic.protectedObjects', { value: number(xdr.protected_objects) })}`);
   text('systemPolicy', policy.verified ? t('dynamic.verified') : t('dynamic.failed'));
-  text('systemPolicyDetail', `${policy.signer || t('dynamic.noSigner')} Â· ${t('dynamic.generation', { value: number(policy.generation) })}`);
+  text('systemPolicyDetail', `${policy.signer || t('dynamic.noSigner')} · ${t('dynamic.generation', { value: number(policy.generation) })}`);
   text('systemBehavior', behavior.integrity_ok ? t('dynamic.verified') : t('dynamic.failed'));
   text('systemBehaviorDetail', t('dynamic.profilesWarm', { profiles: number(behavior.profiles), warm: number(behavior.warm_profiles) }));
   text('systemFeeds', number(data.feed_vectors));

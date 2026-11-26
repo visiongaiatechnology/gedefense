@@ -8,9 +8,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const web = path.join(repo, 'control', 'web');
 const i18nPath = path.join(web, 'i18n.js');
-const i18nSource = fs.readFileSync(i18nPath, 'utf8');
-const moduleURL = `data:text/javascript;base64,${Buffer.from(i18nSource).toString('base64')}`;
-const { catalogs, SUPPORTED_LANGUAGES } = await import(moduleURL);
+const { catalogs, SUPPORTED_LANGUAGES } = await import(pathToFileURL(i18nPath).href);
 
 const fail = message => {
   process.stderr.write(`i18n validation failed: ${message}\n`);
@@ -41,9 +39,11 @@ const used = new Set();
 const html = fs.readFileSync(path.join(web, 'index.html'), 'utf8');
 for (const match of html.matchAll(/data-i18n(?:-placeholder|-aria|-title)?=["']([^"']+)["']/g)) used.add(match[1]);
 
-for (const entry of fs.readdirSync(web, { withFileTypes: true })) {
+for (const entry of fs.readdirSync(web, { recursive: true, withFileTypes: true })) {
   if (!entry.isFile() || !entry.name.endsWith('.js') || entry.name === 'i18n.js') continue;
-  const source = fs.readFileSync(path.join(web, entry.name), 'utf8');
+  const parent = entry.parentPath || web;
+  if (path.basename(parent) === 'i18n') continue;
+  const source = fs.readFileSync(path.join(parent, entry.name), 'utf8');
   for (const match of source.matchAll(/\bt\(["']([^"']+)["']/g)) used.add(match[1]);
 }
 

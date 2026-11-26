@@ -144,10 +144,12 @@ impl CrossViewCore {
                         let Some(function) = ftrace_line_function(line) else {
                             continue;
                         };
-                        // Our own `sk_attach_filter` kprobe shows up in
-                        // enabled_functions on kernels with kprobes-on-ftrace;
-                        // that is self-induced evidence, never a rootkit hook.
-                        if self.kprobe_attached && function == SK_ATTACH_FILTER_SYMBOL {
+                        // Our own `sk_attach_filter` kprobe and `bpf_guard`'s `bpf_prog`
+                        // LSM hook show up in enabled_functions via ftrace trampolines;
+                        // those are self-induced evidence, never rootkit hooks.
+                        if (self.kprobe_attached && function == SK_ATTACH_FILTER_SYMBOL)
+                            || (self.bpf_guard_lsm_attached && function == BPF_LSM_BPF_PROG_SYMBOL)
+                        {
                             continue;
                         }
                         if let Some(index) = FTRACE_SENSITIVE_TARGETS

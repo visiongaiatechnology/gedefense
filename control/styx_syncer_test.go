@@ -271,10 +271,11 @@ func TestStyxPolicySyncerPushOrderIsFailSafe(t *testing.T) {
 		}
 	}
 	ordered := []string{
-		"global:0:0", "global:1:1", "mode:set:100:2:96", "mode:set:200:1:72",
+		"global:0:0", "mode:set:100:2:96", "mode:set:200:1:72",
 		"allow:add:4:cell:100:198.51.100.0/24:0:65535:0",
 		"allow:add:4:cell:100:203.0.113.10/32:443:443:1",
 		"resolver:add:4:9.9.9.9/32", "resolver:add:6:2001:db8::1/128",
+		"global:1:1",
 	}
 	for index := 1; index < len(ordered); index++ {
 		if positions[ordered[index-1]] >= positions[ordered[index]] {

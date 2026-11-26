@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/csv"
 	"encoding/hex"
 	"encoding/json"
@@ -123,11 +124,22 @@ type geoCacheEntry struct {
 	Generation uint64
 }
 
+type geoV4Entry struct {
+	addr    uint32
+	metaIdx uint32
+}
+
+type geoV6Entry struct {
+	addr    [16]byte
+	metaIdx uint32
+}
+
 type GeoResolver struct {
 	updateKeys  []ed25519.PublicKey
 	mu          sync.RWMutex
-	v4          map[int]map[netip.Addr]GeoRecord
-	v6          map[int]map[netip.Addr]GeoRecord
+	meta        []GeoRecord
+	v4          [33][]geoV4Entry
+	v6          [129][]geoV6Entry
 	v4Lens      []int
 	v6Lens      []int
 	status      GeoStatus
@@ -206,10 +218,33 @@ func (r *GeoResolver) Load(path string) error {
 	reader := csv.NewReader(io.LimitReader(f, maxGeoIPCSVBytes+1))
 	reader.FieldsPerRecord = -1
 	reader.ReuseRecord = true
-	v4 := make(map[int]map[netip.Addr]GeoRecord)
-	v6 := make(map[int]map[netip.Addr]GeoRecord)
+	var v4 [33][]geoV4Entry
+	var v6 [129][]geoV6Entry
 	lengths4 := make(map[int]struct{})
 	lengths6 := make(map[int]struct{})
+	strIntern := make(map[string]string, 16384)
+	intern := func(s string) string {
+		if s == "" {
+			return ""
+		}
+		if cached, ok := strIntern[s]; ok {
+			return cached
+		}
+		cloned := strings.Clone(s)
+		strIntern[cloned] = cloned
+		return cloned
+	}
+	metaMap := make(map[GeoRecord]uint32, 65536)
+	var meta []GeoRecord
+	addMeta := func(g GeoRecord) uint32 {
+		if idx, ok := metaMap[g]; ok {
+			return idx
+		}
+		idx := uint32(len(meta))
+		metaMap[g] = idx
+		meta = append(meta, g)
+		return idx
+	}
 	count := 0
 	row := 0
 	for {
@@ -251,43 +286,60 @@ func (r *GeoResolver) Load(path string) error {
 		if err != nil || lon < -180 || lon > 180 {
 			return fmt.Errorf("geoip CSV row %d has invalid longitude", row)
 		}
-		geo := GeoRecord{CountryCode: code, Country: country, Latitude: lat, Longitude: lon}
+		geo := GeoRecord{
+			CountryCode: intern(code),
+			Country:     intern(country),
+			Latitude:    lat,
+			Longitude:   lon,
+		}
 		if len(record) > 5 {
-			geo.ASN = strings.TrimSpace(record[5])
-			if len(geo.ASN) > 32 {
-				geo.ASN = truncateUTF8Bytes(geo.ASN, 32)
+			asn := strings.TrimSpace(record[5])
+			if len(asn) > 32 {
+				asn = truncateUTF8Bytes(asn, 32)
 			}
+			geo.ASN = intern(asn)
 		}
 		if len(record) > 6 {
-			geo.ASName = strings.TrimSpace(record[6])
-			if len(geo.ASName) > 128 {
-				geo.ASName = truncateUTF8Bytes(geo.ASName, 128)
+			asName := strings.TrimSpace(record[6])
+			if len(asName) > 128 {
+				asName = truncateUTF8Bytes(asName, 128)
 			}
+			geo.ASName = intern(asName)
 		}
+		metaIdx := addMeta(geo)
 		bits := prefix.Bits()
 		addr := prefix.Addr()
-		if addr.Is4() {
-			if v4[bits] == nil {
-				v4[bits] = make(map[netip.Addr]GeoRecord)
-			}
-			v4[bits][addr] = geo
+		if addr.Is4() && bits >= 0 && bits <= 32 {
+			b4 := addr.As4()
+			v4[bits] = append(v4[bits], geoV4Entry{
+				addr:    binary.BigEndian.Uint32(b4[:]),
+				metaIdx: metaIdx,
+			})
 			lengths4[bits] = struct{}{}
-		} else {
-			if v6[bits] == nil {
-				v6[bits] = make(map[netip.Addr]GeoRecord)
-			}
-			v6[bits][addr] = geo
+		} else if bits >= 0 && bits <= 128 {
+			v6[bits] = append(v6[bits], geoV6Entry{
+				addr:    addr.As16(),
+				metaIdx: metaIdx,
+			})
 			lengths6[bits] = struct{}{}
 		}
 		count++
 	}
 	v4Lens := sortedPrefixLengths(lengths4)
 	v6Lens := sortedPrefixLengths(lengths6)
+	for _, bits := range v4Lens {
+		v4[bits] = sortAndDedupeGeoV4(v4[bits])
+	}
+	for _, bits := range v6Lens {
+		v6[bits] = sortAndDedupeGeoV6(v6[bits])
+	}
+	compactMeta := make([]GeoRecord, len(meta))
+	copy(compactMeta, meta)
 	now := time.Now().UTC()
 
 	modified := info.ModTime().UTC()
 	r.mu.Lock()
-	r.v4, r.v6, r.v4Lens, r.v6Lens = v4, v6, v4Lens, v6Lens
+	r.meta, r.v4, r.v6, r.v4Lens, r.v6Lens = compactMeta, v4, v6, v4Lens, v6Lens
 	r.status = GeoStatus{Loaded: true, Path: path, Entries: count, LoadedAt: &now, SourceModifiedAt: &modified, CacheCapacity: geoCacheCapacity,
 		SidecarVerified: true, UpdateSigned: len(r.updateKeys) > 0}
 	r.generation.Add(1)
@@ -436,6 +488,76 @@ func sortedPrefixLengths(in map[int]struct{}) []int {
 	return out
 }
 
+func sortAndDedupeGeoV4(entries []geoV4Entry) []geoV4Entry {
+	if len(entries) <= 1 {
+		return entries
+	}
+	sort.SliceStable(entries, func(i, j int) bool {
+		return entries[i].addr < entries[j].addr
+	})
+	write := 0
+	for i := 0; i < len(entries); i++ {
+		if i+1 < len(entries) && entries[i+1].addr == entries[i].addr {
+			continue
+		}
+		entries[write] = entries[i]
+		write++
+	}
+	out := make([]geoV4Entry, write)
+	copy(out, entries[:write])
+	return out
+}
+
+func sortAndDedupeGeoV6(entries []geoV6Entry) []geoV6Entry {
+	if len(entries) <= 1 {
+		return entries
+	}
+	sort.SliceStable(entries, func(i, j int) bool {
+		return bytes.Compare(entries[i].addr[:], entries[j].addr[:]) < 0
+	})
+	write := 0
+	for i := 0; i < len(entries); i++ {
+		if i+1 < len(entries) && entries[i+1].addr == entries[i].addr {
+			continue
+		}
+		entries[write] = entries[i]
+		write++
+	}
+	out := make([]geoV6Entry, write)
+	copy(out, entries[:write])
+	return out
+}
+
+func maskGeoV4(addr uint32, bits int) uint32 {
+	if bits <= 0 {
+		return 0
+	}
+	if bits >= 32 {
+		return addr
+	}
+	return addr & (^uint32(0) << (32 - bits))
+}
+
+func maskGeoV6(addr [16]byte, bits int) [16]byte {
+	if bits <= 0 {
+		return [16]byte{}
+	}
+	if bits >= 128 {
+		return addr
+	}
+	full := bits / 8
+	rem := bits % 8
+	for i := full + 1; i < 16; i++ {
+		addr[i] = 0
+	}
+	if rem == 0 {
+		addr[full] = 0
+	} else {
+		addr[full] &= ^byte(0xff >> rem)
+	}
+	return addr
+}
+
 func (r *GeoResolver) Lookup(ip net.IP) (GeoRecord, bool) {
 	if r == nil || ip == nil {
 		return GeoRecord{}, false
@@ -458,20 +580,46 @@ func (r *GeoResolver) Lookup(ip net.IP) (GeoRecord, bool) {
 	}
 
 	r.mu.RLock()
-	var table map[int]map[netip.Addr]GeoRecord
-	var lengths []int
-	if addr.Is4() {
-		table, lengths = r.v4, r.v4Lens
-	} else {
-		table, lengths = r.v6, r.v6Lens
-	}
 	var result GeoRecord
 	found := false
-	for _, bits := range lengths {
-		key := netip.PrefixFrom(addr, bits).Masked().Addr()
-		if geo, exists := table[bits][key]; exists {
-			result, found = geo, true
-			break
+	if addr.Is4() {
+		b4 := addr.As4()
+		raw := binary.BigEndian.Uint32(b4[:])
+		for _, bits := range r.v4Lens {
+			if bits < 0 || bits > 32 {
+				continue
+			}
+			key := maskGeoV4(raw, bits)
+			table := r.v4[bits]
+			idx := sort.Search(len(table), func(i int) bool {
+				return table[i].addr >= key
+			})
+			if idx < len(table) && table[idx].addr == key {
+				metaIdx := int(table[idx].metaIdx)
+				if metaIdx >= 0 && metaIdx < len(r.meta) {
+					result, found = r.meta[metaIdx], true
+					break
+				}
+			}
+		}
+	} else {
+		raw := addr.As16()
+		for _, bits := range r.v6Lens {
+			if bits < 0 || bits > 128 {
+				continue
+			}
+			key := maskGeoV6(raw, bits)
+			table := r.v6[bits]
+			idx := sort.Search(len(table), func(i int) bool {
+				return bytes.Compare(table[i].addr[:], key[:]) >= 0
+			})
+			if idx < len(table) && table[idx].addr == key {
+				metaIdx := int(table[idx].metaIdx)
+				if metaIdx >= 0 && metaIdx < len(r.meta) {
+					result, found = r.meta[metaIdx], true
+					break
+				}
+			}
 		}
 	}
 	lookupGeneration := r.generation.Load()

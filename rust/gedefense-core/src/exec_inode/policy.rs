@@ -14,11 +14,59 @@ impl ExecInodeCore {
             let flags = EXEC_INODE_ALLOW_CRED_READ | EXEC_INODE_ALLOW_RANSOM_FULL;
             self.insert_default_path(path, flags);
         }
+        // V6.3.0 AP-1 fix: `/opt/vgt/gedefense/current` is an upgrade symlink, so
+        // `openat2(RESOLVE_NO_SYMLINKS)` intentionally rejects it. Derive the
+        // concrete release root from the kernel-resolved `/proc/self/exe` target
+        // so packaged `gedefense-control`, `gedefense-core`, and `gedefense-cell-helper`
+        // binaries resolve without following symlinks and are never locked out of
+        // `/etc/vgt/gedefense/secrets/*`.
+        for path in Self::sibling_release_binaries() {
+            if let Some(s) = path.to_str() {
+                let flags = EXEC_INODE_ALLOW_CRED_READ | EXEC_INODE_ALLOW_RANSOM_FULL;
+                self.insert_default_path(s, flags);
+            }
+        }
         for path in SYSTEM_RANSOM_PATHS {
             self.insert_default_path(path, EXEC_INODE_ALLOW_RANSOM_FULL);
         }
         for path in POOL_SERVICE_PATHS {
             self.insert_default_path(path, EXEC_INODE_ALLOW_RANSOM_POOL_META);
+        }
+    }
+
+    fn sibling_release_binaries() -> Vec<PathBuf> {
+        let mut out = Vec::new();
+        if let Ok(self_exe) = fs::read_link("/proc/self/exe") {
+            if let Some(release_root) = self_exe.parent().and_then(|p| p.parent()) {
+                out.push(release_root.join("bin/gedefense-control"));
+                out.push(release_root.join("libexec/gedefense-core"));
+                out.push(release_root.join("libexec/gedefense-cell-helper"));
+            }
+        }
+        out
+    }
+
+    /// Registers GeDefense's own executables in `SELF_DAEMON_INODES` so they can
+    /// quarantine malware-locked inodes without any spoofable `comm` allowlist.
+    pub(super) fn populate_self_daemon_inodes(&mut self) {
+        let Some(ref mut map) = self.self_daemons else {
+            return;
+        };
+        let mut candidates: Vec<PathBuf> = Self::sibling_release_binaries();
+        candidates.push(PathBuf::from("/usr/bin/gedefense-control"));
+        if let Ok(self_exe) = fs::read_link("/proc/self/exe") {
+            candidates.push(self_exe);
+        }
+        for path in candidates {
+            if let Ok((dev, ino)) = resolve_executable_identity(&path) {
+                let key = exec_inode_key(dev, ino);
+                if let Err(error) = map.insert(&key, 1u8, 0) {
+                    eprintln!(
+                        "exec-inode gate: self-daemon insert for {} failed: {error}",
+                        path.display()
+                    );
+                }
+            }
         }
     }
 }

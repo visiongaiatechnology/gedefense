@@ -327,8 +327,8 @@ func (s ChronosFabricSettings) policy() chronosPolicy {
 }
 
 func (c *ChronosScanner) policySnapshot() chronosPolicy {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.policyMu.RLock()
+	defer c.policyMu.RUnlock()
 	policy := c.policy
 	if policy.maxFiles <= 0 {
 		policy = defaultIntegrityFabricSettings(Config{}).Chronos.policy()
@@ -346,9 +346,9 @@ func (c *ChronosScanner) ApplyPolicy(settings ChronosFabricSettings) error {
 	if len(settings.Roots) > 0 && !equalStringSlices(settings.Roots, c.Roots()) {
 		return fmt.Errorf("Chronos roots are restart-class: the resumable checkpoint is bound to the current root set")
 	}
-	c.mu.Lock()
+	c.policyMu.Lock()
 	c.policy = settings.policy()
-	c.mu.Unlock()
+	c.policyMu.Unlock()
 	return nil
 }
 
@@ -365,8 +365,8 @@ func (c *ChronosScanner) Roots() []string {
 	if c == nil {
 		return nil
 	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.policyMu.RLock()
+	defer c.policyMu.RUnlock()
 	return append([]string(nil), c.roots...)
 }
 

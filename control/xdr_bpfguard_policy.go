@@ -56,7 +56,7 @@ var bpfGuardShellComms = map[string]struct{}{
 
 // bpfGuardToleratedPathPrefixes are installation-managed executable roots.
 var bpfGuardToleratedPathPrefixes = []string{
-	"/usr/bin/", "/usr/sbin/", "/usr/local/bin/", "/opt/",
+	"/usr/bin/", "/usr/sbin/", "/usr/local/bin/", "/opt/", "/usr/lib/systemd/", "/usr/libexec/",
 }
 
 // bpfGuardTempPathPrefixes are the writable drop roots that make a BPF loader

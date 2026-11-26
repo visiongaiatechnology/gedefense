@@ -488,10 +488,16 @@ func (g *gateway) login(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/login?lang="+lang, http.StatusSeeOther)
 		return
 	}
-	if g.password.algorithm != "argon2id" && g.passwordPath != "" {
-		if err := persistArgon2PasswordRecord(g.passwordPath, password); err != nil {
+	g.passwordMu.RLock()
+	needMigration := g.password.algorithm != "argon2id" && g.passwordPath != ""
+	g.passwordMu.RUnlock()
+	if needMigration {
+		if migrated, err := persistAndParseArgon2PasswordRecord(g.passwordPath, password); err != nil {
 			log.Printf("password record migration to Argon2id failed: %v", err)
 		} else {
+			g.passwordMu.Lock()
+			g.password = migrated
+			g.passwordMu.Unlock()
 			log.Printf("password record migrated to Argon2id")
 		}
 	}
@@ -579,6 +585,11 @@ func (g *gateway) sameOrigin(r *http.Request) bool {
 }
 
 func (g *gateway) sameOriginRequired(r *http.Request) bool {
+	if sfs := strings.TrimSpace(r.Header.Get("Sec-Fetch-Site")); sfs != "" {
+		if strings.EqualFold(sfs, "cross-site") || strings.EqualFold(sfs, "same-site") {
+			return false
+		}
+	}
 	origin := strings.TrimSpace(r.Header.Get("Origin"))
 	if origin == "" || origin == "null" {
 		return false

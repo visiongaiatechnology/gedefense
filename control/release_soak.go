@@ -142,7 +142,8 @@ func (r *ReleaseController) recoverIfGatesPassLocked() {
 	if r.status.NominalSince == nil {
 		return
 	}
-	if elapsed := r.nominalElapsed(); elapsed < time.Duration(releaseCfg.MinimumObserveSeconds)*time.Second {
+	requiredSoak := time.Duration(releaseCfg.MinimumObserveSeconds+releaseCfg.MinimumCanarySeconds) * time.Second
+	if elapsed := r.nominalElapsed(); elapsed < requiredSoak {
 		return
 	}
 	if len(r.currentBlockersLocked(ReleasePhaseEnforce, false)) > 0 {

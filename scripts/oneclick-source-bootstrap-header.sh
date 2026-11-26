@@ -329,9 +329,10 @@ build_go_release(){
 
 make_inner_payload(){
   local payload="$WORK/fullstack-payload" go_build="$WORK/go-build"
-  mkdir -p "$payload/bin" "$payload/rust" "$payload/share" "$payload/systemd" "$payload/tmpfiles" "$payload/templates" "$payload/integration/linux" "$payload/integration/nginx"
+  mkdir -p "$payload/bin" "$payload/rust" "$payload/share" "$payload/systemd" "$payload/tmpfiles" "$payload/templates" "$payload/scripts" "$payload/integration/linux" "$payload/integration/nginx"
   install -m 0755 "$go_build/gedefense-control" "$payload/bin/gedefense-control"
   install -m 0755 "$go_build/gedefense-access" "$payload/bin/gedefense-access"
+  install -m 0755 "$SOURCE_ROOT/scripts/apply-chameleon-profile.sh" "$payload/scripts/apply-chameleon-profile.sh"
   cp -a "$SOURCE_ROOT/rust/." "$payload/rust/"
   rm -rf "$payload/rust/target"
   for f in README.md VALIDATION.md SECURITY.md THIRD-PARTY-LICENSES.md CRYPTOGRAPHY.md TOOLCHAINS.lock; do install -m 0644 "$SOURCE_ROOT/$f" "$payload/share/$f"; done

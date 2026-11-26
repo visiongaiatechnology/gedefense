@@ -65,7 +65,7 @@ impl SelfDefenseCore {
             self.canary_due_ms = now_ms.saturating_add(CANARY_TEST_INTERVAL_MS);
             return;
         };
-        let path = Path::new(crate::canary::DEFAULT_CANARY_ROOT).join(SELF_TEST_DECOY_NAME);
+        let path = broker.primary_root().join(SELF_TEST_DECOY_NAME);
         let path_token = URL_SAFE_NO_PAD.encode(path.as_os_str().as_bytes());
         let content_token = URL_SAFE_NO_PAD.encode(DECOY_CONTENT);
         let spawn = thread::Builder::new()
@@ -171,27 +171,31 @@ pub(super) fn run_canary_self_test(
             };
         }
     };
-    // The decoy access is queued before the open returns, so a bounded number of
-    // drains must find it. Draining is shared with the control plane's
-    // CANARY_EVENTS poll; the queue length is sampled as a corroborating sensor
-    // fact so a concurrent legit drain cannot fake a dead watcher.
-    let queued_after = parse_canary_status(&broker.status())
-        .map(|(_, queued)| queued)
-        .unwrap_or(queued_before);
-    let mut observed = false;
-    for _ in 0..CANARY_DRAIN_ATTEMPTS {
-        match broker.take_events() {
-            Ok(batch) => {
-                if canary_batch_observed(&batch, &path, probe_pid) {
-                    observed = true;
-                    break;
+    // The decoy access is recorded before fanotify returns FAN_ALLOW to the probe
+    // child. Check the dedicated self-test channel first so concurrent Go
+    // CANARY_EVENTS IPC polling cannot race with self-defense verification.
+    let mut observed = broker.consume_self_test_hit(&path, probe_pid);
+    if !observed {
+        let queued_after = parse_canary_status(&broker.status())
+            .map(|(_, queued)| queued)
+            .unwrap_or(queued_before);
+        for _ in 0..CANARY_DRAIN_ATTEMPTS {
+            match broker.take_events() {
+                Ok(batch) => {
+                    if canary_batch_observed(&batch, &path, probe_pid) {
+                        observed = true;
+                        break;
+                    }
                 }
+                Err(_) => break,
             }
-            Err(_) => break,
+        }
+        if !observed && queued_after > queued_before {
+            observed = true;
         }
     }
     let _ = broker.remove_token(&path_token);
-    if observed || queued_after > queued_before {
+    if observed {
         CanaryOutcome::Success
     } else {
         CanaryOutcome::SensorFailure {

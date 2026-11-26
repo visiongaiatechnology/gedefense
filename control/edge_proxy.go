@@ -106,7 +106,7 @@ func (s *APIServer) syncEdgeProxy() (edgeproxy.Status, string) {
 	s.ensureEdgeSink()
 	cfg := s.edgeProxyConfig()
 	if err := v61Edge.Sync(cfg); err != nil {
-		return v61Edge.Status(), err.Error()
+		return v61Edge.Status(), "edge proxy synchronization failed"
 	}
 	return v61Edge.Status(), ""
 }
@@ -160,7 +160,7 @@ func (s *APIServer) edgeProxyRestart(w http.ResponseWriter, r *http.Request) {
 	cfg := s.edgeProxyConfig()
 	v61Edge.Stop()
 	if err := v61Edge.Sync(cfg); err != nil {
-		writePublicError(w, http.StatusConflict, "edge proxy restart failed: "+err.Error())
+		writePublicError(w, http.StatusConflict, "edge proxy restart failed")
 		return
 	}
 	status := v61Edge.Status()

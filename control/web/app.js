@@ -86,6 +86,7 @@ import {
 } from './js/views_xdr_spyware.js';
 import { bindLogsAuditActions } from './js/views_logs_audit.js';
 import { initTitanModule } from './js/views_titan_styx.js';
+import { initAntispywareModule } from './js/views_antispyware.js';
 
 // authorizeSession presents a candidate key and verifies it before claiming anything.
 //
@@ -393,6 +394,7 @@ function initialize() {
   try { initKineticModule(); } catch (_) {}
   try { initThreatIntelModule(); } catch (_) {}
   try { initXDRModule(); } catch (_) {}
+  try { initAntispywareModule(); } catch (_) {}
   try { initTitanModule(); } catch (_) {}
   // The V6.1 modules bind their refresh/action controls before the settings
   // workbench mounts, so the shared confirmation dialog exists before the first

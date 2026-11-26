@@ -52,7 +52,7 @@ use crate::sec_crit::{sec_crit_emit, SEC_CRIT_KIND_CRED_DENY};
 use crate::{
     exec_inode::{
         current_comm, current_exec_trust, emit_exec_inode_event, emit_exec_inode_fallback_once,
-        note_exec_inode_allowed, note_exec_inode_denied, ttl_inode_denied,
+        is_own_daemon_exec, note_exec_inode_allowed, note_exec_inode_denied, ttl_inode_denied,
         EXEC_INODE_CRED_FLAG, EXEC_INODE_DENY_ACTION, EXEC_INODE_MISMATCH_ACTION,
     },
     titan_exec::{titan_offsets, titan_probe, TitanOffsets},
@@ -228,27 +228,6 @@ fn emit_credential_event(identity: &[u8; 16], inode_mode: u32, action: u8, comm:
     }
 }
 
-#[inline(always)]
-fn starts_with_bytes(haystack: &[u8], prefix: &[u8]) -> bool {
-    if haystack.len() < prefix.len() {
-        return false;
-    }
-    let mut i = 0usize;
-    while i < prefix.len() {
-        let Some(&a) = haystack.get(i) else {
-            return false;
-        };
-        let Some(&b) = prefix.get(i) else {
-            return false;
-        };
-        if a != b {
-            return false;
-        }
-        i += 1;
-    }
-    true
-}
-
 #[lsm(hook = "file_open")]
 pub fn gedefense_credential_guard_file_open(ctx: LsmContext) -> i32 {
     match try_credential_guard_file_open(&ctx) {
@@ -282,26 +261,22 @@ fn try_credential_guard_file_open(ctx: &LsmContext) -> Result<i32, i32> {
     let Some((identity, mode)) = inode_identity(inode, &offsets) else {
         return Ok(0);
     };
-    if unsafe { MALWARE_DENIED_INODES.get(&identity).is_some() } {
+    if unsafe { MALWARE_DENIED_INODES.get(&identity).is_some() } && !is_own_daemon_exec() {
         let comm = current_comm();
-        if !starts_with_bytes(&comm, b"gedefense-") {
-            increment_counter(&CRED_GUARD_DENIED);
-            emit_credential_event(&identity, mode, CRED_GUARD_ACTION_DENY, &comm);
-            return Err(-EACCES);
-        }
+        increment_counter(&CRED_GUARD_DENIED);
+        emit_credential_event(&identity, mode, CRED_GUARD_ACTION_DENY, &comm);
+        return Err(-EACCES);
     }
     // AP-1: TTL-bounded behaviour-carrier locks (`MALWARE_TTL_INODES`) deny the
     // same way as the pre-existing malware lock above and are audited with the
     // same credential-deny record. The lock is enforced independently of the
     // inode gate/BTF state: a locked carrier must not become openable just
     // because the trust gate is unavailable.
-    if ttl_inode_denied(&identity) {
+    if ttl_inode_denied(&identity) && !is_own_daemon_exec() {
         let comm = current_comm();
-        if !starts_with_bytes(&comm, b"gedefense-") {
-            increment_counter(&CRED_GUARD_DENIED);
-            emit_credential_event(&identity, mode, CRED_GUARD_ACTION_DENY, &comm);
-            return Err(-EACCES);
-        }
+        increment_counter(&CRED_GUARD_DENIED);
+        emit_credential_event(&identity, mode, CRED_GUARD_ACTION_DENY, &comm);
+        return Err(-EACCES);
     }
     if !guard_active() {
         return Ok(0);

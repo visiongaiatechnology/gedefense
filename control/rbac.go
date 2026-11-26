@@ -51,7 +51,7 @@ func (s *APIServer) classifyCredential(token string) (Role, bool) {
 // enforceManagementRole applies the method rule and the critical-action rule to
 // one authenticated request. A false return means the response was already
 // written; the caller must not run the handler.
-func (s *APIServer) enforceManagementRole(w http.ResponseWriter, r *http.Request, role Role, operatorToken string) bool {
+func (s *APIServer) enforceManagementRole(w http.ResponseWriter, r *http.Request, role Role, token string) bool {
 	if role < RoleOperator && r.Method != http.MethodGet && r.Method != http.MethodHead {
 		s.reportRBACEventOnce("observer-mutation:"+rbacRemoteFingerprint(r.RemoteAddr), "warning", "rbac.denied",
 			"A read-only observer credential attempted a mutating management request; the request was refused")
@@ -61,22 +61,35 @@ func (s *APIServer) enforceManagementRole(w http.ResponseWriter, r *http.Request
 	if _, critical := criticalManagementAction(r.Method, r.URL.Path); !critical {
 		return true
 	}
-	return s.enforceCriticalAction(w, r, operatorToken)
+	return s.enforceCriticalAction(w, r, token)
+}
+
+// criticalLockoutIdentity isolates critical-unlock lockouts by attested gateway
+// session when requests arrive through the dashboard gateway (F-10), preventing
+// a single session's failures from locking out every other operator on 127.0.0.1.
+func (s *APIServer) criticalLockoutIdentity(r *http.Request, token string) string {
+	if requestIsGatewayProxied(r) {
+		if sessionID, ok := s.attestedGatewaySession(r, token); ok {
+			return "gw-session:" + sessionID
+		}
+		return "gw-peer:" + remoteIdentity(r.RemoteAddr)
+	}
+	return "direct:" + remoteIdentity(r.RemoteAddr)
 }
 
 // enforceCriticalAction is the Critical-Unlock gate. The lockout check happens
 // first so a source that keeps presenting invalid proofs cannot keep probing;
 // a successful proof clears the source's failure history.
-func (s *APIServer) enforceCriticalAction(w http.ResponseWriter, r *http.Request, operatorToken string) bool {
+func (s *APIServer) enforceCriticalAction(w http.ResponseWriter, r *http.Request, token string) bool {
 	now := s.rbacClock()
-	remote := remoteIdentity(r.RemoteAddr)
+	remote := s.criticalLockoutIdentity(r, token)
 	lock := s.stepUpLockout()
 	if locked, retryAfter := lock.locked(remote); locked {
 		w.Header().Set("Retry-After", retryAfterSeconds(retryAfter))
 		writeRBACRefusal(w, http.StatusTooManyRequests, "critical unlock is temporarily locked after repeated failures")
 		return false
 	}
-	failure := s.authorizeCriticalAction(r, operatorToken, now)
+	failure := s.authorizeCriticalAction(r, now)
 	if failure == nil {
 		lock.success(remote)
 		return true
@@ -106,7 +119,7 @@ func (s *APIServer) enforceCriticalAction(w http.ResponseWriter, r *http.Request
 // authorizeCriticalAction verifies exactly one of the two step-up paths. The
 // paths are mutually exclusive: a gateway-proxied request may only use the
 // gateway claim, and a direct request may only use the direct proof.
-func (s *APIServer) authorizeCriticalAction(r *http.Request, operatorToken string, now time.Time) *criticalAuthFailure {
+func (s *APIServer) authorizeCriticalAction(r *http.Request, now time.Time) *criticalAuthFailure {
 	if r == nil {
 		return &criticalAuthFailure{reason: "missing request"}
 	}
@@ -116,7 +129,12 @@ func (s *APIServer) authorizeCriticalAction(r *http.Request, operatorToken strin
 		return &criticalAuthFailure{reason: "critical action requires a loopback peer"}
 	}
 	if requestIsGatewayProxied(r) {
-		_, failure := s.verifyGatewayCriticalClaim(r, operatorToken, now)
+		claimKey, err := s.gatewayClaimKey()
+		if err != nil {
+			return &criticalAuthFailure{reason: "gateway critical claim key is unavailable", unavailable: true}
+		}
+		defer zeroRBACBytes(claimKey)
+		_, failure := s.verifyGatewayCriticalClaim(r, claimKey, now)
 		if failure.reason == "" {
 			return nil
 		}
@@ -197,10 +215,20 @@ func (s *APIServer) writeRBACRoles(w http.ResponseWriter, role Role) {
 	}
 	criticalAvailable := false
 	reasons := make([]string, 0, 2)
-	if key, err := s.criticalStepUpKey(); err == nil && len(key) >= criticalKeyMinBytes {
-		criticalAvailable = true
-	} else {
-		reasons = append(reasons, "the optional critical step-up key file is not provisioned")
+	if key, err := s.criticalStepUpKey(); err == nil {
+		if len(key) >= criticalKeyMinBytes {
+			criticalAvailable = true
+		}
+		zeroRBACBytes(key)
+	}
+	if claimKey, err := s.gatewayClaimKey(); err == nil {
+		if len(claimKey) >= criticalKeyMinBytes {
+			criticalAvailable = true
+		}
+		zeroRBACBytes(claimKey)
+	}
+	if !criticalAvailable {
+		reasons = append(reasons, "neither a direct critical step-up key nor a gateway critical claim key is provisioned")
 	}
 	if !observerAvailable {
 		reasons = append(reasons, "the optional observer credential file is not provisioned")
@@ -218,7 +246,7 @@ func (s *APIServer) writeRBACRoles(w http.ResponseWriter, role Role) {
 			},
 			"critical_unlock": map[string]any{
 				"available": criticalAvailable,
-				"permits":   "quarantine prune, review acknowledgement and review deletion",
+				"permits":   "quarantine prune, review acknowledgement/deletion, permit changes, chameleon reveal and update override",
 				"step_up":   "a fresh, single-use proof: direct loopback token or gateway password re-authentication claim",
 			},
 		},
@@ -226,6 +254,10 @@ func (s *APIServer) writeRBACRoles(w http.ResponseWriter, role Role) {
 			"POST /api/v1/quarantine/prune",
 			"POST /api/v1/xdr/review/{id}/ack",
 			"DELETE /api/v1/xdr/review/{id}",
+			"POST /api/v1/xdr/permits",
+			"DELETE /api/v1/xdr/permits/{id}",
+			"POST /api/v1/chameleon/reveal",
+			"POST /api/v1/xdr/update-window/override",
 		},
 		"step_up": map[string]any{
 			"direct_ttl_seconds":           int(criticalStepUpTTL.Seconds()),

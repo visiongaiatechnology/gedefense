@@ -87,9 +87,18 @@ func InspectRequest(r *http.Request, cfg Config, allowed map[string]bool) Verdic
 	// non-chunked Transfer-Encoding, is ambiguous and is refused rather than
 	// forwarded. Go's parser already rejects most of these; the explicit check
 	// keeps the edge verdict independent of parser version.
-	if r.ProtoMajor == 1 && r.Header.Get("Transfer-Encoding") != "" {
-		if r.ContentLength >= 0 || !strings.EqualFold(strings.TrimSpace(r.Header.Get("Transfer-Encoding")), "chunked") {
-			return Verdict{Blocked: true, Status: http.StatusBadRequest, Reason: "ambiguous_body_framing"}
+	if r.ProtoMajor == 1 {
+		hasTE := len(r.TransferEncoding) > 0 || r.Header.Get("Transfer-Encoding") != ""
+		if hasTE {
+			if r.ContentLength >= 0 || len(r.TransferEncoding) > 1 {
+				return Verdict{Blocked: true, Status: http.StatusBadRequest, Reason: "ambiguous_body_framing"}
+			}
+			if len(r.TransferEncoding) == 1 && !strings.EqualFold(strings.TrimSpace(r.TransferEncoding[0]), "chunked") {
+				return Verdict{Blocked: true, Status: http.StatusBadRequest, Reason: "ambiguous_body_framing"}
+			}
+			if rawTE := r.Header.Get("Transfer-Encoding"); rawTE != "" && !strings.EqualFold(strings.TrimSpace(rawTE), "chunked") {
+				return Verdict{Blocked: true, Status: http.StatusBadRequest, Reason: "ambiguous_body_framing"}
+			}
 		}
 	}
 	return Verdict{Status: http.StatusOK}

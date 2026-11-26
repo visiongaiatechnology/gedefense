@@ -1,0 +1,6 @@
+contender_id,contender_label,design_resilience,runtime_resilience,adaptive_adversarial_resilience,novel_focus_score,self_protection_focus_score,design_cap_applied,ref_kampf_der_giganten_calibrated,ref_hardred_v1_overall,ref_hardred_v1_gate,attack_paths_discovered,attack_paths_validated,attack_chains_interrupted,pre_kill_damage_avg_ratio,false_positives_count,multi_seed_mean,multi_seed_stddev,multi_seed_variance
+gedefense,GeDefense Linux 6.3.0,86.9,96.52,87.7,90.6,90.0,False,68.2,90.09,PASS,54,54,54,0.1161,0,87.89,0.0953,0.0091
+oss-safeline,OSS Best-of-Breed + SafeLine WAF,58.2,48.61,53.32,58.8,53.12,False,,56.41,PASS,54,54,33,1.0,0,53.5,0.0918,0.0084
+safeline,Chaitin SafeLine WAF CE 9.4.7,53.6,42.5,35.33,50.8,53.12,False,,50.41,PASS,54,54,27,1.0,0,35.51,0.0918,0.0084
+wazuh,Wazuh HIDS/SIEM,65.1,15.28,27.93,57.0,66.25,False,65.1,47.72,CONDITIONAL,54,54,3,1.0,3,28.12,0.0953,0.0091
+crowdsec,CrowdSec IPS/CTI,59.8,42.5,30.6,51.2,53.75,False,59.8,24.73,FAIL,54,54,27,1.0,0,30.78,0.0918,0.0084

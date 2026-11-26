@@ -250,6 +250,12 @@ use super::super::modtrace::*;
         assert_eq!(ftrace_line_function(""), None);
         assert!(FTRACE_SENSITIVE_TARGETS.contains(&"__x64_sys_getdents64"));
         assert!(FTRACE_SENSITIVE_TARGETS.contains(&"sk_attach_filter"));
+        assert!(FTRACE_SENSITIVE_TARGETS.contains(&BPF_LSM_BPF_PROG_SYMBOL));
+        assert_eq!(
+            parse_proc_status_tgid("Name:\tgedefense-contr\nTgid:\t1425\nPid:\t1437\n"),
+            Some(1425)
+        );
+        assert_eq!(parse_proc_status_tgid("Name:\tinit\nTgid:\t0\n"), None);
     }
 
     #[test]
@@ -330,6 +336,20 @@ use super::super::modtrace::*;
             validate_pin_root("/sys/fs/bpf/gedefense/"),
             Some("/sys/fs/bpf/gedefense".to_owned())
         );
+        // Kernel bpf_map_info.name is NUL-terminated in 16 bytes (15 usable chars).
+        assert!(pin_matches_kernel_object_name(
+            "WORKER_CRASH_EVENTS",
+            "WORKER_CRASH_EV"
+        ));
+        assert!(pin_matches_kernel_object_name(
+            "TITAN_EXEC_POLICY",
+            "TITAN_EXEC_POLI"
+        ));
+        assert!(pin_matches_kernel_object_name("EXEC_EVENTS", "EXEC_EVENTS"));
+        assert!(!pin_matches_kernel_object_name(
+            "TITAN_EXEC_POLICY",
+            "EVIL_TAMPERED_M"
+        ));
     }
 
     #[test]

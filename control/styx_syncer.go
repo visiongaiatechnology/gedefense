@@ -363,16 +363,7 @@ func (s *styxPolicySyncer) applyPlan(ctx context.Context, plan styxPolicyPlan, e
 		return nil
 	}
 
-	// Step 2 (enabled path): configured global mode. At this point the host-wide
-	// default is off; any failure here therefore leaves the host in the safe state.
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	if err := s.core.StyxGlobal(plan.Mode, plan.GlobalFlags); err != nil {
-		return fmt.Errorf("apply styX global mode %s: %w", styxModeName(plan.Mode), err)
-	}
-
-	// Step 3: per-cell modes and flags, then removal of entries no longer desired.
+	// Step 2: per-cell modes and flags, then removal of entries no longer desired.
 	desiredCells := make(map[uint64]styxCellPlan, len(plan.Cells))
 	for _, cell := range plan.Cells {
 		desiredCells[cell.CgroupID] = cell
@@ -450,6 +441,15 @@ func (s *styxPolicySyncer) applyPlan(ctx context.Context, plan styxPolicyPlan, e
 		if err := s.core.StyxResolverDel(resolver.Family, resolver.CIDR); err != nil {
 			return fmt.Errorf("delete stale styX resolver %s: %w", resolver.CIDR, err)
 		}
+	}
+	// Step 6: enable global StyX mode ONLY after per-cell policies, allowlists,
+	// and DNS/DoT resolvers are synchronized so kernel traffic never encounters an
+	// enabled global policy over empty tables (LIN-H06).
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := s.core.StyxGlobal(plan.Mode, plan.GlobalFlags); err != nil {
+		return fmt.Errorf("apply styX global mode %s: %w", styxModeName(plan.Mode), err)
 	}
 	return nil
 }

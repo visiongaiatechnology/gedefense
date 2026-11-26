@@ -11,7 +11,7 @@ import (
 
 const (
 	maxExecArgvEventsPerResponse   = 32
-	maxExecArgvPayloadBytes        = 56000
+	maxExecArgvPayloadBytes        = 20000
 	maxKernelProbeEventsPerReply   = 32
 	maxKernelProbePayloadBytes     = 12000
 	KernelProbeKindPtrace      uint8 = 1
@@ -61,6 +61,18 @@ func (c *CoreClient) xdrKernelCommand(unavailable error, cmd string) (string, er
 	return response, nil
 }
 
+type CoreXdrKernelStatus struct {
+	ExecveAttached   bool
+	PtraceAttached   bool
+	OpenatAttached   bool
+	SymlinkAttached  bool
+	GetnameAttached  bool
+	ExecArgvDrops    uint64
+	KernelProbeDrops uint64
+	RejectedExecArgv uint64
+	RejectedProbes   uint64
+}
+
 func (c *CoreClient) ExecArgvEvents() ([]CoreExecArgvEvent, error) {
 	response, err := c.xdrKernelCommand(ErrExecArgvUnavailable, "EXEC_ARGV_EVENTS")
 	if err != nil {
@@ -75,6 +87,79 @@ func (c *CoreClient) KernelProbeEvents() ([]CoreKernelProbeEvent, error) {
 		return nil, err
 	}
 	return parseCoreKernelProbeEvents(response)
+}
+
+func (c *CoreClient) XdrKernelStatus() (CoreXdrKernelStatus, error) {
+	response, err := c.xdrKernelCommand(ErrKernelProbeUnavailable, "XDR_KERNEL_STATUS")
+	if err != nil {
+		return CoreXdrKernelStatus{}, err
+	}
+	return parseCoreXdrKernelStatus(response)
+}
+
+func parseCoreXdrKernelStatus(response string) (CoreXdrKernelStatus, error) {
+	if len(response) == 0 || len(response) > 1024 {
+		return CoreXdrKernelStatus{}, errors.New("core returned an invalid xdr-kernel status")
+	}
+	parts := strings.Split(response, "|")
+	if len(parts) != 9 {
+		return CoreXdrKernelStatus{}, errors.New("core returned a malformed xdr-kernel status")
+	}
+	kv := make(map[string]string, 9)
+	for _, part := range parts {
+		k, v, ok := strings.Cut(part, "=")
+		if !ok {
+			return CoreXdrKernelStatus{}, errors.New("core returned a malformed xdr-kernel status field")
+		}
+		kv[k] = v
+	}
+	parseBool := func(name string) (bool, error) {
+		switch kv[name] {
+		case "true", "1":
+			return true, nil
+		case "false", "0":
+			return false, nil
+		default:
+			return false, fmt.Errorf("invalid xdr-kernel boolean %s", name)
+		}
+	}
+	parseU64 := func(name string) (uint64, error) {
+		val, err := strconv.ParseUint(kv[name], 10, 64)
+		if err != nil {
+			return 0, fmt.Errorf("invalid xdr-kernel counter %s", name)
+		}
+		return val, nil
+	}
+	var status CoreXdrKernelStatus
+	var err error
+	if status.ExecveAttached, err = parseBool("execve"); err != nil {
+		return CoreXdrKernelStatus{}, err
+	}
+	if status.PtraceAttached, err = parseBool("ptrace"); err != nil {
+		return CoreXdrKernelStatus{}, err
+	}
+	if status.OpenatAttached, err = parseBool("openat"); err != nil {
+		return CoreXdrKernelStatus{}, err
+	}
+	if status.SymlinkAttached, err = parseBool("symlinkat"); err != nil {
+		return CoreXdrKernelStatus{}, err
+	}
+	if status.GetnameAttached, err = parseBool("getname_ret"); err != nil {
+		return CoreXdrKernelStatus{}, err
+	}
+	if status.ExecArgvDrops, err = parseU64("exec_argv_drops"); err != nil {
+		return CoreXdrKernelStatus{}, err
+	}
+	if status.KernelProbeDrops, err = parseU64("kernel_probe_drops"); err != nil {
+		return CoreXdrKernelStatus{}, err
+	}
+	if status.RejectedExecArgv, err = parseU64("rejected_exec_argv"); err != nil {
+		return CoreXdrKernelStatus{}, err
+	}
+	if status.RejectedProbes, err = parseU64("rejected_probes"); err != nil {
+		return CoreXdrKernelStatus{}, err
+	}
+	return status, nil
 }
 
 func parseCoreExecArgvEvents(response string) ([]CoreExecArgvEvent, error) {

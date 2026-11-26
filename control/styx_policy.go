@@ -6,8 +6,12 @@ package main
 // incidents go through the existing XDR appendIncident/respond path.
 
 import (
+	"errors"
 	"fmt"
+	"net"
 	"net/netip"
+	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -42,6 +46,9 @@ func (e *XDREngine) applyStyxBeaconSettings(settings RuntimeSettings) {
 			resolverPrefixes = append(resolverPrefixes, prefix)
 		}
 	}
+	allowPrefixes := parseAllowlistPrefixes(append(append([]string(nil), settings.ManagementAllowlist...), e.cfg.Defense.Allowlist...))
+	localPrefixes := localHostInterfacePrefixes()
+	now := time.Now().UTC()
 	e.styxBeacon.mu.Lock()
 	e.styxBeacon.cfg.Enabled = plan.Enabled
 	// The detector must mirror the effective global mode: mode=off means the
@@ -49,12 +56,91 @@ func (e *XDREngine) applyStyxBeaconSettings(settings RuntimeSettings) {
 	// claiming an active sensor over empty telemetry.
 	e.styxBeacon.cfg.Mode = plan.ModeName
 	e.styxBeacon.cfg.ResolverPrefixes = resolverPrefixes
-	// Phase 1 has no DNS attribution (docs §2, §8.2 signal 3) and no ingress (rx)
-	// delta telemetry (§2 Phase 2); claiming either would fire signals the
-	// detector cannot prove (signal 2 may then only use volume + canary context).
-	e.styxBeacon.cfg.DNSObservationAvailable = false
+	e.styxBeacon.cfg.AllowPrefixes = allowPrefixes
+	e.styxBeacon.cfg.LocalPrefixSource = localHostInterfacePrefixes
+	e.styxBeacon.cfg.KernelSoftirqCheck = linuxIsKernelThread
+	e.styxBeacon.localPrefixes = localPrefixes
+	e.styxBeacon.localPrefixRefreshedAt = now
+	// DNSObservationAvailable mirrors the real runtime DNS_CAPTURE_* channel
+	// (false until armed + tracepoints attached, then enables real STYX.EGRESS.DIRECT_IP).
+	e.styxBeacon.cfg.DNSObservationAvailable = e.DNSObservationAvailable()
 	e.styxBeacon.cfg.RxObservationAvailable = false
 	e.styxBeacon.mu.Unlock()
+}
+
+// localHostInterfacePrefixes returns single-host (/32 or /128) prefixes for
+// every non-loopback unicast address currently bound to a local network
+// interface on this machine. Using exact host masks avoids suppressing sibling
+// peers in the same subnet while eliminating DIRECT_IP_NO_DNS false positives
+// on daemon self-traffic across arbitrary servers and devices.
+func localHostInterfacePrefixes() []netip.Prefix {
+	addrs, err := net.InterfaceAddrs()
+	if err != nil || len(addrs) == 0 {
+		return nil
+	}
+	prefixes := make([]netip.Prefix, 0, len(addrs))
+	for _, raw := range addrs {
+		ipNet, ok := raw.(*net.IPNet)
+		if !ok || ipNet == nil || ipNet.IP == nil {
+			continue
+		}
+		addr, ok := netip.AddrFromSlice(ipNet.IP)
+		if !ok {
+			continue
+		}
+		addr = addr.Unmap()
+		if !addr.IsValid() || addr.IsUnspecified() || addr.IsLoopback() {
+			continue
+		}
+		prefixes = append(prefixes, netip.PrefixFrom(addr, addr.BitLen()))
+	}
+	return prefixes
+}
+
+// linuxIsKernelThread verifies via procfs that pid is an authentic Linux kernel
+// thread (PPID 2 and no userspace /proc/<pid>/exe), preventing unprivileged
+// tasks from spoofing ksoftirqd/* via prctl(PR_SET_NAME).
+func linuxIsKernelThread(pid int) bool {
+	if pid <= 2 {
+		return false
+	}
+	if _, err := os.Readlink(fmt.Sprintf("/proc/%d/exe", pid)); err == nil {
+		return false
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return false
+	}
+	statBytes, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
+	if err != nil {
+		return false
+	}
+	line := string(statBytes)
+	closeParen := strings.LastIndexByte(line, ')')
+	if closeParen < 0 || closeParen+2 >= len(line) {
+		return false
+	}
+	fields := strings.Fields(line[closeParen+2:])
+	if len(fields) < 2 {
+		return false
+	}
+	ppid, err := strconv.Atoi(fields[1])
+	return err == nil && ppid == 2
+}
+
+func parseAllowlistPrefixes(entries []string) []netip.Prefix {
+	prefixes := make([]netip.Prefix, 0, len(entries))
+	for _, raw := range entries {
+		trimmed := strings.TrimSpace(raw)
+		if trimmed == "" {
+			continue
+		}
+		if prefix, err := netip.ParsePrefix(trimmed); err == nil {
+			prefixes = append(prefixes, prefix.Masked())
+		} else if addr, addrErr := netip.ParseAddr(trimmed); addrErr == nil {
+			addr = addr.Unmap()
+			prefixes = append(prefixes, netip.PrefixFrom(addr, addr.BitLen()))
+		}
+	}
+	return prefixes
 }
 
 // setStyxBeaconCapability records the negotiated core capability on the detector.

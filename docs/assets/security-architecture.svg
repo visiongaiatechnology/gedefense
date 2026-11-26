@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 620" width="1200" height="620" role="img" aria-label="GeDefense Linux 6.3.0 Trust Domain Separation and 7-Tier Security Architecture">
+  <defs>
+    <linearGradient id="archBg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#07111e"/>
+      <stop offset="100%" stop-color="#0b1b30"/>
+    </linearGradient>
+    <marker id="arrowCyan" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 1 L 10 5 L 0 9 z" fill="#38bdf8"/>
+    </marker>
+    <marker id="arrowAmber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 1 L 10 5 L 0 9 z" fill="#fbbf24"/>
+    </marker>
+  </defs>
+
+  <rect width="1200" height="620" rx="18" fill="url(#archBg)"/>
+  <rect x="16" y="16" width="1168" height="588" rx="14" fill="none" stroke="#1e3a5f" stroke-width="1.5"/>
+
+  <text x="40" y="54" fill="#f8fafc" font-family="Segoe UI, Inter, Arial, sans-serif" font-size="25" font-weight="800">GeDefense Linux 6.3.0 — Trust Domains &amp; Security Data Flow</text>
+  <text x="40" y="78" fill="#94a3b8" font-family="Segoe UI, Inter, Arial, sans-serif" font-size="13.5">Privilege-separated architecture: unprivileged perimeter, loopback-only control plane, capability-split capture/parser helpers, static musl core &amp; kernel eBPF/LSM</text>
+
+  <!-- Tier 1: Gateway + UI -->
+  <rect x="40" y="102" width="540" height="100" rx="10" fill="#0d223a" stroke="#38bdf8" stroke-width="1.5"/>
+  <text x="60" y="128" fill="#38bdf8" font-family="Segoe UI, Inter, Arial, sans-serif" font-size="15" font-weight="800">TRUST DOMAIN 1 · PUBLIC ACCESS GATEWAY (:9843)</text>
+  <text x="60" y="149" fill="#e2e8f0" font-family="Segoe UI, Inter, Arial, sans-serif" font-size="12.5">Unprivileged `gedefense-access` · Go TLS 1.3 (ML-KEM PQ hybrid) · Argon2id · CSRF</text>
+  <text x="60" y="169" fill="#94a3b8" font-family="Segoe UI, Inter, Arial, sans-serif" font-size="12">RBAC (Observer / Operator / Critical Step-Up) · Signed `.gateway-claim` · Zero backend exposure</text>
+  <text x="60" y="188" fill="#64748b" font-family="Segoe UI, Inter, Arial, sans-serif" font-size="11">Native Web Dashboard: Vanilla JS/CSS · Strict CSP · Local GeoIP/jsVectorMap · 0 CDN</text>
+
+  <!-- Helper sidecar -->
+  <rect x="640" y="102" width="520" height="100" rx="10" fill="#0e2036" stroke="#a78bfa" stroke-width="1.5"/>
+  <text x="660" y="128" fill="#a78bfa" font-family="Segoe UI, Inter, Arial, sans-serif" font-size="15" font-weight="800">ISOLATED PRIVILEGED HELPERS (ZERO STATE ACCESS)</text>
+  <text x="660" y="149" fill="#e2e8f0" font-family="Segoe UI, Inter, Arial, sans-serif" font-size="12.5">`gedefense-capture-helper`: CAP_NET_RAW + CAP_NET_ADMIN only · IPAddressDeny=any</text>
+  <text x="660" y="169" fill="#94a3b8" font-family="Segoe UI, Inter, Arial, sans-serif" font-size="12">Read-only AF_PACKET / CN_PROC records via SO_PEERCRED `capture.sock` (0600)</text>
+  <text x="660" y="188" fill="#cbd5e1" font-family="Segoe UI, Inter, Arial, sans-serif" font-size="11.5">`gedefense-cell-helper`: Ephemeral seccomp/namespace parser cells (`burn after use`)</text>
+
+  <!-- Arrow Tier 1 -> Tier 2 -->
+  <line x1="310" y1="202" x2="310" y2="236" stroke="#38bdf8" stroke-width="2" marker-end="url(#arrowCyan)"/>
+  <text x="322" y="224" fill="#7dd3fc" font-family="Segoe UI, Inter, Arial, sans-serif" font-size="11">Loopback HTTPS/HTTP 127.0.0.1:9844 + Bearer + HMAC claim</text>
+
+  <line x1="890" y1="202" x2="890" y2="236" stroke="#fbbf24" stroke-width="2" marker-end="url(#arrowAmber)"/>
+  <text x="655" y="224" fill="#fcd34d" font-family="Segoe UI, Inter, Arial, sans-serif" font-size="11">Bounded read-only telemetry / burn-cell verdict</text>
+
+  <!-- Tier 2: Control Plane -->
+  <rect x="40" y="240" width="1120" height="106" rx="10" fill="#0d223a" stroke="#10b981" stroke-width="1.5"/>
+  <text x="60" y="267" fill="#34d399" font-family="Segoe UI, Inter, Arial, sans-serif" font-size="15" font-weight="800">TRUST DOMAIN 2 · CONTROL PLANE (`gedefense-control` · `127.0.0.1:9844` · UID `gedefense` · 0 Linux Capabilities)</text>
+  <text x="60" y="290" fill="#e2e8f0" font-family="Segoe UI, Inter, Arial, sans-serif" font-size="12.5">Host XDR &amp; SBC Graph Fusion · Native L7 WAF (`inspect.sock`/`edge.sock`) · Policy &amp; Release Gates (`Observe -> Canary -> Enforce`)</text>
+  <text x="60" y="311" fill="#94a3b8" font-family="Segoe UI, Inter, Arial, sans-serif" font-size="12">PermitV1 Broker · Ed25519 Monotone Evidence Ledger · AES-256-GCM FIM Baselines · 2-of-3 TUF Feed Guard · Out-of-Band Witness Push</text>
+  <text x="60" y="331" fill="#fbbf24" font-family="Segoe UI, Inter, Arial, sans-serif" font-size="11.5">Web-Evidence Isolation Barrier: Web L7 findings carry `AlertOnly: true` (`ResponseScore: 0`) — cannot trigger SIGKILL without independent host evidence</text>
+
+  <!-- Arrow Tier 2 -> Tier 3 -->
+  <line x1="600" y1="346" x2="600" y2="380" stroke="#38bdf8" stroke-width="2" marker-end="url(#arrowCyan)"/>
+  <text x="615" y="368" fill="#7dd3fc" font-family="Segoe UI, Inter, Arial, sans-serif" font-size="11">VGT3 Signed IPC (`/run/vgt-gedefense/core.sock` · HMAC-SHA-256 + timestamp + nonce + SO_PEERCRED)</text>
+
+  <!-- Tier 3: Response Core -->
+  <rect x="40" y="384" width="1120" height="92" rx="10" fill="#0d223a" stroke="#f59e0b" stroke-width="1.5"/>
+  <text x="60" y="410" fill="#fbbf24" font-family="Segoe UI, Inter, Arial, sans-serif" font-size="15" font-weight="800">TRUST DOMAIN 3 · PRIVILEGED RESPONSE CORE (`gedefense-core` · Static-PIE musl · 0 `NEEDED` · Root + Bounded Caps)</text>
+  <text x="60" y="432" fill="#e2e8f0" font-family="Segoe UI, Inter, Arial, sans-serif" font-size="12.5">eBPF/LSM Map Pin Manager (`23 CRITICAL_MAPS`) · 8-Domain CrossView · Fanotify Exec/Write + Archive Scanner · AES-256-GCM Vault</text>
+  <text x="60" y="453" fill="#94a3b8" font-family="Segoe UI, Inter, Arial, sans-serif" font-size="12">`pidfd_open` Verified Tree Containment · Sysctl Compare-and-Set with Auto-Rollback · Zero generic shell interface</text>
+
+  <!-- Arrow Tier 3 -> Tier 4 -->
+  <line x1="600" y1="476" x2="600" y2="508" stroke="#38bdf8" stroke-width="2" marker-end="url(#arrowCyan)"/>
+  <text x="615" y="496" fill="#7dd3fc" font-family="Segoe UI, Inter, Arial, sans-serif" font-size="11">/sys/fs/bpf/gedefense + RingBuf (`FLOW_EVENTS` 16 MiB · `SEC_CRIT_EVENTS` 256 KiB)</text>
+
+  <!-- Tier 4: Kernel Data Plane -->
+  <rect x="40" y="512" width="1120" height="72" rx="10" fill="#081423" stroke="#ef4444" stroke-width="1.5"/>
+  <text x="60" y="537" fill="#f87171" font-family="Segoe UI, Inter, Arial, sans-serif" font-size="15" font-weight="800">TRUST DOMAIN 4 · KERNEL DATA PLANE (`gedefense-ebpf` · Rust `no_std`)</text>
+  <text x="60" y="558" fill="#e2e8f0" font-family="Segoe UI, Inter, Arial, sans-serif" font-size="12">XDP Ingress (250k LPM rules before sk_buff) · cgroup_skb Ingress/Egress (StyX PCR) · BPF-LSM (bprm, mmap, file_open, bpf_prog, socket_create, ptrace, io_uring)</text>
+  <text x="60" y="574" fill="#94a3b8" font-family="Segoe UI, Inter, Arial, sans-serif" font-size="11">Ransom Kprobes (vfs_write/rename/unlink) · Kernel Module &amp; DNS Tracepoints · BTF `exec_inode` Resolution · Optional Chameleon Symbol Renaming</text>
+</svg>

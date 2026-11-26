@@ -339,3 +339,24 @@ func TestGeoIPCanonicalSidecarTamperReplayRejected(t *testing.T) {
 		t.Fatalf("legacy sha256sum sidecar was rejected: %+v", r.Status())
 	}
 }
+
+func TestGeoResolverDuplicateCIDRKeepsLastRowAndMatchesV6(t *testing.T) {
+	path := writeGeoFixture(t, strings.Join([]string{
+		"network,country_code,country_name,latitude,longitude,asn,as_name",
+		"1.1.1.0/24,US,United States,37.751,-97.822,AS13335,First",
+		"1.1.1.0/24,AU,Australia,-33.868,151.209,AS13335,Cloudflare",
+		"2606:4700:4700::/48,AU,Australia,-33.868,151.209,AS13335,Cloudflare",
+	}, "\n")+"\n")
+	r := NewGeoResolver(path)
+	if !r.Status().Loaded || r.Status().Entries != 3 {
+		t.Fatalf("unexpected status: %+v", r.Status())
+	}
+	geo4, ok := r.Lookup(net.ParseIP("1.1.1.1"))
+	if !ok || geo4.CountryCode != "AU" || geo4.ASName != "Cloudflare" {
+		t.Fatalf("duplicate IPv4 CIDR did not keep last entry: ok=%v geo=%#v", ok, geo4)
+	}
+	geo6, ok := r.Lookup(net.ParseIP("2606:4700:4700::1111"))
+	if !ok || geo6.CountryCode != "AU" || geo6.ASN != "AS13335" {
+		t.Fatalf("IPv6 LPM lookup failed: ok=%v geo=%#v", ok, geo6)
+	}
+}

@@ -261,6 +261,12 @@ func (s *APIServer) recordKineticBlockContext(event KineticEvent, entry BlockEnt
 				delete(s.kineticContextSeen, key)
 			}
 		}
+		for key := range s.kineticContextSeen {
+			if len(s.kineticContextSeen) <= 4096 {
+				break
+			}
+			delete(s.kineticContextSeen, key)
+		}
 	}
 	s.kineticContextMu.Unlock()
 	ports, services, source := kineticResolveBlockedService(entry.Target)

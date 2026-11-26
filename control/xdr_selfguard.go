@@ -345,6 +345,7 @@ func (e *XDREngine) recordSelfTamperFact(fact selfTamperFact, now time.Time) {
 	evidenceErr := e.state.RecordEvidence(evidence)
 	incident := buildSelfTamperIncident(fact, evidenceErr, now)
 	e.appendIncident(incident)
+	e.recordLocalSecCritMirror("self-guard", fact.kind, now)
 	e.state.AddEvent(Event{
 		Time: now, Severity: "critical", Kind: "xdr.self_tamper", Source: "integrity",
 		Message: incident.Summary + "; " + incident.Outcome, Target: target,

@@ -18,7 +18,21 @@ import (
 	"time"
 )
 
-const releaseManifestDomain = "VGT-GEDEFENSE-RELEASE-MANIFEST-V1\n"
+const (
+	releaseManifestDomain = "VGT-GEDEFENSE-RELEASE-MANIFEST-V1\n"
+	// Pinned release signing public key (release/gedefense-release-2026-10-25.ed25519.pub,
+	// RELEASE-KEYS.md ed25519:e011a96c7c6ab4f6). Update windows accept only manifests
+	// verified against this pinned release trust anchor, never caller-chosen keys.
+	pinnedReleasePublicKeyHex = "e011a96c7c6ab4f6b0d8c80edcb414c0593d675c2fb65494cffe7f53ac621b6e"
+)
+
+func pinnedReleasePublicKey() (ed25519.PublicKey, error) {
+	raw, err := hex.DecodeString(pinnedReleasePublicKeyHex)
+	if err != nil || len(raw) != ed25519.PublicKeySize {
+		return nil, errors.New("pinned release public key is invalid")
+	}
+	return ed25519.PublicKey(raw), nil
+}
 
 type ReleaseArtifact struct {
 	SHA256 string `json:"sha256"`
@@ -131,13 +145,13 @@ func buildReleaseEnvelope(dir string) (ReleaseManifestEnvelope, error) {
 }
 
 func loadReleaseKeyPair(privatePath, publicPath string) (ed25519.PrivateKey, ed25519.PublicKey, error) {
-	privateRaw, err := os.ReadFile(privatePath)
-	if err != nil {
-		return nil, nil, err
-	}
 	privateInfo, err := os.Lstat(privatePath)
 	if err != nil || !privateInfo.Mode().IsRegular() || privateInfo.Mode()&os.ModeSymlink != 0 || privateInfo.Mode().Perm()&0o077 != 0 {
 		return nil, nil, errors.New("release private key must be a non-symlink 0600 regular file")
+	}
+	privateRaw, err := os.ReadFile(privatePath)
+	if err != nil {
+		return nil, nil, err
 	}
 	publicInfo, err := os.Lstat(publicPath)
 	if err != nil || !publicInfo.Mode().IsRegular() || publicInfo.Mode()&os.ModeSymlink != 0 {
@@ -251,12 +265,48 @@ func validateReleaseEnvelope(envelope ReleaseManifestEnvelope) error {
 	return nil
 }
 
+// VerifyPinnedReleaseManifest verifies manifestPath against the pinned trust
+// anchor publicKey (never trusting a caller-chosen public key). When publicPath
+// is supplied, it must be a valid regular key file whose exact bytes match the
+// pinned trust anchor.
+func VerifyPinnedReleaseManifest(manifestPath, publicPath, artifactDir string, pinnedPublicKey ed25519.PublicKey) (SignedReleaseManifest, error) {
+	return verifyReleaseManifestWithKey(manifestPath, publicPath, artifactDir, pinnedPublicKey, true)
+}
+
 func VerifyReleaseManifest(manifestPath, publicPath, artifactDir string) (SignedReleaseManifest, error) {
-	manifestRaw, err := strictManifestBytes(manifestPath)
+	publicRaw, err := strictPublicReleaseKey(publicPath)
 	if err != nil {
 		return SignedReleaseManifest{}, err
 	}
-	publicRaw, err := strictPublicReleaseKey(publicPath)
+	return verifyReleaseManifestWithKey(manifestPath, "", artifactDir, ed25519.PublicKey(publicRaw), false)
+}
+
+func verifyReleaseManifestWithKey(manifestPath, publicPath, artifactDir string, publicKey ed25519.PublicKey, requireArtifactDir bool) (SignedReleaseManifest, error) {
+	if len(publicKey) != ed25519.PublicKeySize {
+		return SignedReleaseManifest{}, errors.New("pinned release public key is unavailable")
+	}
+	if publicPath != "" {
+		supplied, err := strictPublicReleaseKey(publicPath)
+		if err != nil {
+			return SignedReleaseManifest{}, err
+		}
+		if !ed25519.PublicKey(supplied).Equal(publicKey) {
+			return SignedReleaseManifest{}, errors.New("release public key does not match the pinned release trust anchor")
+		}
+	}
+	if requireArtifactDir && strings.TrimSpace(artifactDir) == "" {
+		return SignedReleaseManifest{}, errors.New("release artifact directory is required")
+	}
+	if artifactDir != "" {
+		dirInfo, err := os.Lstat(artifactDir)
+		if err != nil {
+			return SignedReleaseManifest{}, err
+		}
+		if !dirInfo.IsDir() || dirInfo.Mode()&os.ModeSymlink != 0 {
+			return SignedReleaseManifest{}, errors.New("release artifact directory must be a non-symlink directory")
+		}
+	}
+	manifestRaw, err := strictManifestBytes(manifestPath)
 	if err != nil {
 		return SignedReleaseManifest{}, err
 	}
@@ -273,7 +323,7 @@ func VerifyReleaseManifest(manifestPath, publicPath, artifactDir string) (Signed
 	if err := validateReleaseEnvelope(document.Envelope); err != nil {
 		return SignedReleaseManifest{}, err
 	}
-	expectedSigner := fmt.Sprintf("ed25519:%x", publicRaw[:8])
+	expectedSigner := fmt.Sprintf("ed25519:%x", publicKey[:8])
 	if document.Signer != expectedSigner {
 		return SignedReleaseManifest{}, errors.New("release manifest signer fingerprint mismatch")
 	}
@@ -282,7 +332,7 @@ func VerifyReleaseManifest(manifestPath, publicPath, artifactDir string) (Signed
 		return SignedReleaseManifest{}, err
 	}
 	signature, err := base64.RawURLEncoding.DecodeString(document.Signature)
-	if err != nil || len(signature) != ed25519.SignatureSize || !ed25519.Verify(ed25519.PublicKey(publicRaw), append([]byte(releaseManifestDomain), payload...), signature) {
+	if err != nil || len(signature) != ed25519.SignatureSize || !ed25519.Verify(publicKey, append([]byte(releaseManifestDomain), payload...), signature) {
 		return SignedReleaseManifest{}, errors.New("release manifest signature verification failed")
 	}
 	if artifactDir != "" {

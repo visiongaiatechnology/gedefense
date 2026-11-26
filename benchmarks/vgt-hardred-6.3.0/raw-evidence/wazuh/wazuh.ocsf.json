@@ -1,0 +1,830 @@
+[
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 1,
+    "time": "2026-11-26T12:58:09.039716+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "Wazuh (Max Rules + FIM + Auditd + Active Response)",
+        "uid": "wazuh"
+      }
+    },
+    "finding_info": {
+      "uid": "wazuh:MAL-BENIGN-01",
+      "title": "Clean signed JSON / minified JS asset in sandbox",
+      "desc": "rc=0; 554:File added to the system.",
+      "types": [
+        "hardred-malware",
+        "Benign Binary & Script Control"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "NONE",
+            "name": "Benign Binary & Script Control"
+          },
+          "tactic": {
+            "name": "None"
+          }
+        }
+      ]
+    },
+    "action_id": 1,
+    "action": "Allowed",
+    "status_id": 3,
+    "unmapped": {
+      "polarity": "benign",
+      "context_maturity": 2,
+      "ttfa_ms": 31.87,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-26T12:58:12.247811+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "Wazuh (Max Rules + FIM + Auditd + Active Response)",
+        "uid": "wazuh"
+      }
+    },
+    "finding_info": {
+      "uid": "wazuh:MAL-EICAR-DISK-01",
+      "title": "Write EICAR signature file to sandbox and check quarantine/alert",
+      "desc": "disk=STILL_PRESENT; 554:File added to the system.",
+      "types": [
+        "hardred-malware",
+        "Standard AV/YARA EICAR Disk Drop"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1027",
+            "name": "Standard AV/YARA EICAR Disk Drop"
+          },
+          "tactic": {
+            "name": "Defense Evasion"
+          }
+        }
+      ]
+    },
+    "action_id": 1,
+    "action": "Allowed",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 2,
+      "ttfa_ms": 22.87,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 3,
+    "time": "2026-11-26T12:58:22.061121+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "Wazuh (Max Rules + FIM + Auditd + Active Response)",
+        "uid": "wazuh"
+      }
+    },
+    "finding_info": {
+      "uid": "wazuh:MAL-NESTED-ARCHIVE-01",
+      "title": "8-layer nested ZIP wrapper + clamav-testfiles archive inspection",
+      "desc": "nested=WROTE 813; 554:File added to the system.",
+      "types": [
+        "hardred-malware",
+        "Nested Archive & ClamAV Corpus Inspection"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1027.002",
+            "name": "Nested Archive & ClamAV Corpus Inspection"
+          },
+          "tactic": {
+            "name": "Defense Evasion"
+          }
+        }
+      ]
+    },
+    "action_id": 1,
+    "action": "Allowed",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 2,
+      "ttfa_ms": 17.62,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 1,
+    "time": "2026-11-26T12:58:49.462003+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "Wazuh (Max Rules + FIM + Auditd + Active Response)",
+        "uid": "wazuh"
+      }
+    },
+    "finding_info": {
+      "uid": "wazuh:EP-BENIGN-01",
+      "title": "Trusted dpkg-query, tar backup, os-release read, SHA-256 hash",
+      "desc": "rc=0, out={\"ok\": true, \"sha256\": \"5dcee1d66c49e929\"}; 554:File added to the system., 554:File added to the system.",
+      "types": [
+        "hardred-endpoint",
+        "Benign Admin Workload"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "NONE",
+            "name": "Benign Admin Workload"
+          },
+          "tactic": {
+            "name": "None"
+          }
+        }
+      ]
+    },
+    "action_id": 1,
+    "action": "Allowed",
+    "status_id": 3,
+    "unmapped": {
+      "polarity": "benign",
+      "context_maturity": 2,
+      "ttfa_ms": 606.09,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-26T12:59:01.398143+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "Wazuh (Max Rules + FIM + Auditd + Active Response)",
+        "uid": "wazuh"
+      }
+    },
+    "finding_info": {
+      "uid": "wazuh:EP-SHM-EXEC-01",
+      "title": "Executable script staged & executed from /dev/shm/hardred-sandbox",
+      "desc": "rc=0, out={\"probe\": \"shm-exec\", \"target\": \"/dev/shm/hardred-sandbox/shm_exec_test.sh\", \"ok\": true, \"exit_code\": 0, \"stdout\": \"SHM_OK\", \"elapsed_ms\": 2; 554:File added to the system.",
+      "types": [
+        "hardred-endpoint",
+        "/dev/shm Dropper Execution"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1059.004",
+            "name": "/dev/shm Dropper Execution"
+          },
+          "tactic": {
+            "name": "Execution"
+          }
+        }
+      ]
+    },
+    "action_id": 1,
+    "action": "Allowed",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 2,
+      "ttfa_ms": 110.23,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 5,
+    "time": "2026-11-26T12:59:05.040523+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "Wazuh (Max Rules + FIM + Auditd + Active Response)",
+        "uid": "wazuh"
+      }
+    },
+    "finding_info": {
+      "uid": "wazuh:EP-TMP-ELF-01",
+      "title": "Unverified ELF binary copied to /tmp and executed (TITAN-Exec gate)",
+      "desc": "rc=0, out={\"probe\": \"tmp-exec\", \"target\": \"/tmp/hardred-sandbox/tmpexec/untrusted_exec_test\", \"ok\": true, \"exit_code\": 0, \"elapsed_ms\": 19.148}; 554:File added to the system.",
+      "types": [
+        "hardred-endpoint",
+        "Untrusted Binary Execution (/tmp)"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1204.002",
+            "name": "Untrusted Binary Execution (/tmp)"
+          },
+          "tactic": {
+            "name": "Execution"
+          }
+        }
+      ]
+    },
+    "action_id": 1,
+    "action": "Allowed",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 2,
+      "ttfa_ms": 45.38,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-26T12:59:08.350985+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "Wazuh (Max Rules + FIM + Auditd + Active Response)",
+        "uid": "wazuh"
+      }
+    },
+    "finding_info": {
+      "uid": "wazuh:EP-LPE-KERNEL-01",
+      "title": "Blacklisted SCTP/DCCP socket + AF_PACKET + ptrace + /etc/shadow probe",
+      "desc": "rc=0, out={\"probe\": \"lpe-probe\", \"sctp_socket\": {\"attempted\": true, \"ok\": true, \"detail\": \"IPPROTO_SCTP\", \"elapsed_ms\": 158.301}, \"dccp_socket\": {\"att; none",
+      "types": [
+        "hardred-endpoint",
+        "Kernel LPE & Protocol Attack Surface"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1068",
+            "name": "Kernel LPE & Protocol Attack Surface"
+          },
+          "tactic": {
+            "name": "Privilege Escalation"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 1,
+      "ttfa_ms": 1043.28,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 5,
+    "time": "2026-11-26T12:59:13.694759+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "Wazuh (Max Rules + FIM + Auditd + Active Response)",
+        "uid": "wazuh"
+      }
+    },
+    "finding_info": {
+      "uid": "wazuh:EP-RANSOM-AES-01",
+      "title": "In-place AES-256-GCM encryption of 120 realistic files (TTFA + pre-kill damage)",
+      "desc": "rc=0, out={\"probe\": \"aes-ransom\", \"sandbox\": \"/tmp/hardred-sandbox/aes\", \"requested_count\": 120, \"completed_count\": 120, \"mean_entropy_before\": 4.8444; 554:File added to the system., 554:File added to the system., 554:File added to the system., 550:Integrity checksum changed.",
+      "types": [
+        "hardred-endpoint",
+        "Ransomware AES-256 Encryption Burst"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1486",
+            "name": "Ransomware AES-256 Encryption Burst"
+          },
+          "tactic": {
+            "name": "Impact"
+          }
+        }
+      ]
+    },
+    "action_id": 1,
+    "action": "Allowed",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 2,
+      "ttfa_ms": 170.81,
+      "pre_kill_damage": 120,
+      "pre_kill_total": 120
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 5,
+    "time": "2026-11-26T12:59:29.715198+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "Wazuh (Max Rules + FIM + Auditd + Active Response)",
+        "uid": "wazuh"
+      }
+    },
+    "finding_info": {
+      "uid": "wazuh:EP-RANSOM-STORM-01",
+      "title": "600-file / 50-batch rapid rename+wipe storm (TTFA + pre-kill damage)",
+      "desc": "rc=0, out={\"probe\": \"rename-storm\", \"sandbox\": \"/tmp/hardred-sandbox/storm\", \"requested_count\": 600, \"completed_count\": 600, \"batches\": 12, \"progress_; 554:File added to the system., 554:File added to the system., 554:File added to the system., 554:File added to the system.",
+      "types": [
+        "hardred-endpoint",
+        "Ransomware Rename/Wiper Storm"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1485",
+            "name": "Ransomware Rename/Wiper Storm"
+          },
+          "tactic": {
+            "name": "Impact"
+          }
+        }
+      ]
+    },
+    "action_id": 1,
+    "action": "Allowed",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 2,
+      "ttfa_ms": 164.03,
+      "pre_kill_damage": 600,
+      "pre_kill_total": 600
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-26T12:59:44.749131+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "Wazuh (Max Rules + FIM + Auditd + Active Response)",
+        "uid": "wazuh"
+      }
+    },
+    "finding_info": {
+      "uid": "wazuh:EP-LINEAGE-CHILD-01",
+      "title": "Parent spawns child conducting AES-256 burst (child vs tree kill check)",
+      "desc": "rc=0, out={\"probe\": \"child-kill-test\", \"sandbox\": \"/tmp/hardred-sandbox/child\", \"child_pid\": 7504, \"status\": {\"exited\": true, \"exit_code\": 0, \"signale; 554:File added to the system., 554:File added to the system., 554:File added to the system., 554:File added to the system.",
+      "types": [
+        "hardred-endpoint",
+        "Process Lineage / Child-Kill Resilience"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1059",
+            "name": "Process Lineage / Child-Kill Resilience"
+          },
+          "tactic": {
+            "name": "Execution"
+          }
+        }
+      ]
+    },
+    "action_id": 1,
+    "action": "Allowed",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 2,
+      "ttfa_ms": 3306.34,
+      "pre_kill_damage": 60,
+      "pre_kill_total": 60
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-26T12:59:56.132898+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "Wazuh (Max Rules + FIM + Auditd + Active Response)",
+        "uid": "wazuh"
+      }
+    },
+    "finding_info": {
+      "uid": "wazuh:EP-C2-EGRESS-01",
+      "title": "Outbound HTTP egress to 1.1.1.1 from inside php8.3-fpm.service cgroup",
+      "desc": "rc=0, out={}; 554:File added to the system., 554:File added to the system.",
+      "types": [
+        "hardred-endpoint",
+        "Unauthorized C2 Egress (Web Worker Cell)"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1071.001",
+            "name": "Unauthorized C2 Egress (Web Worker Cell)"
+          },
+          "tactic": {
+            "name": "Command and Control"
+          }
+        }
+      ]
+    },
+    "action_id": 1,
+    "action": "Allowed",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 2,
+      "ttfa_ms": 750.0,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-26T13:00:13.390923+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "Wazuh (Max Rules + FIM + Auditd + Active Response)",
+        "uid": "wazuh"
+      }
+    },
+    "finding_info": {
+      "uid": "wazuh:EP-FALCO-02",
+      "title": "Symlink over sensitive /etc target",
+      "desc": "rc=0, out={}; 554:File added to the system., 554:File added to the system., 554:File added to the system., 554:File added to the system.",
+      "types": [
+        "hardred-endpoint",
+        "Kernel Syscall Behavior (Falco)"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1036",
+            "name": "Kernel Syscall Behavior (Falco)"
+          },
+          "tactic": {
+            "name": "Defense Evasion"
+          }
+        }
+      ]
+    },
+    "action_id": 1,
+    "action": "Allowed",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 2,
+      "ttfa_ms": 2885.28,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 3,
+    "time": "2026-11-26T13:00:42.777319+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "Wazuh (Max Rules + FIM + Auditd + Active Response)",
+        "uid": "wazuh"
+      }
+    },
+    "finding_info": {
+      "uid": "wazuh:EP-ART-T1053",
+      "title": "Cron Persistence Staging & Cleanup [yaml=True]",
+      "desc": "rc=0, out={}; 2832:Crontab entry changed., 2832:Crontab entry changed.",
+      "types": [
+        "hardred-endpoint",
+        "Atomic Red Team Linux TTP"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1053.003",
+            "name": "Atomic Red Team Linux TTP"
+          },
+          "tactic": {
+            "name": "Persistence"
+          }
+        }
+      ]
+    },
+    "action_id": 1,
+    "action": "Allowed",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 2,
+      "ttfa_ms": 443.4,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 5,
+    "time": "2026-11-26T13:01:05.453838+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "Wazuh (Max Rules + FIM + Auditd + Active Response)",
+        "uid": "wazuh"
+      }
+    },
+    "finding_info": {
+      "uid": "wazuh:AS-S16-KERNEL-EBPF-01",
+      "title": "Privileged/unprivileged BPF_PROG_LOAD, finit_module boundary & kallsyms exposure",
+      "desc": "scope=NOT_IMPLEMENTED, outcome=DETECTED_ONLY, rc=0, probe={\"probe\": \"as-ebpf-probe\", \"unpriv_bpf_load\": {\"attempted\": true, \"allowed\": false, \"blocked\": true, \"errno\": \"EPERM\", \"; 554:File added to the system.",
+      "types": [
+        "hardred-antispyware",
+        "S16 Kernel Extension & eBPF Rootkit Resilience"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1014",
+            "name": "S16 Kernel Extension & eBPF Rootkit Resilience"
+          },
+          "tactic": {
+            "name": "Defense Evasion"
+          }
+        }
+      ]
+    },
+    "action_id": 1,
+    "action": "Allowed",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 2,
+      "ttfa_ms": 1249.49,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-26T13:01:12.936337+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "Wazuh (Max Rules + FIM + Auditd + Active Response)",
+        "uid": "wazuh"
+      }
+    },
+    "finding_info": {
+      "uid": "wazuh:AS-S17-IOURING-ASYNC-01",
+      "title": "Classic syscall vs raw io_uring async write equivalence inside sandbox",
+      "desc": "scope=NOT_IMPLEMENTED, outcome=DETECTED_ONLY, rc=0, probe={\"probe\": \"as-io-uring-probe\", \"sandbox\": \"/tmp/hardred-sandbox/uring\", \"classic_file_io\": {\"attempted\": true, \"allowed\"; 554:File added to the system., 554:File added to the system.",
+      "types": [
+        "hardred-antispyware",
+        "S17 Asynchronous I/O & io_uring Resilience"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1059",
+            "name": "S17 Asynchronous I/O & io_uring Resilience"
+          },
+          "tactic": {
+            "name": "Defense Evasion"
+          }
+        }
+      ]
+    },
+    "action_id": 1,
+    "action": "Allowed",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 2,
+      "ttfa_ms": 66.38,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 5,
+    "time": "2026-11-26T13:01:19.624997+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "Wazuh (Max Rules + FIM + Auditd + Active Response)",
+        "uid": "wazuh"
+      }
+    },
+    "finding_info": {
+      "uid": "wazuh:AS-S18-CRED-MEM-01",
+      "title": "Synthetic credential fixture + cross-process /proc/pid/mem, process_vm_readv & ptrace",
+      "desc": "scope=IN_SCOPE, outcome=DETECTED_ONLY, rc=0, probe={\"probe\": \"as-cred-mem-probe\", \"sandbox\": \"/tmp/hardred-sandbox/cred\", \"synthetic_cred_read\": {\"attempted\": true, \"allow; 554:File added to the system.",
+      "types": [
+        "hardred-antispyware",
+        "S18 Credential & Process Memory Protection"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1003.007",
+            "name": "S18 Credential & Process Memory Protection"
+          },
+          "tactic": {
+            "name": "Credential Access"
+          }
+        }
+      ]
+    },
+    "action_id": 1,
+    "action": "Allowed",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 2,
+      "ttfa_ms": 70.81,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-26T13:01:32.277447+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "Wazuh (Max Rules + FIM + Auditd + Active Response)",
+        "uid": "wazuh"
+      }
+    },
+    "finding_info": {
+      "uid": "wazuh:AS-S19-CROSSVIEW-01",
+      "title": "Masqueraded [kworker] argv[0], unlinked /proc/pid/exe, raw socket & LD_PRELOAD probe",
+      "desc": "scope=IN_SCOPE, outcome=DETECTED_ONLY, rc=0, probe={\"probe\": \"as-crossview-probe\", \"sandbox\": \"/tmp/hardred-sandbox/xview\", \"masquerade_spawn\": {\"attempted\": true, \"allowe; 554:File added to the system., 553:File deleted.",
+      "types": [
+        "hardred-antispyware",
+        "S19 Process, Socket & Kernel Object Integrity"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1036.004",
+            "name": "S19 Process, Socket & Kernel Object Integrity"
+          },
+          "tactic": {
+            "name": "Defense Evasion"
+          }
+        }
+      ]
+    },
+    "action_id": 1,
+    "action": "Allowed",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 2,
+      "ttfa_ms": 1155.73,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-26T13:08:59.279188+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "Wazuh (Max Rules + FIM + Auditd + Active Response)",
+        "uid": "wazuh"
+      }
+    },
+    "finding_info": {
+      "uid": "wazuh:NET-BRUTE-SSH-01",
+      "title": "SSH failed login burst (18 attempts -> IP ban test)",
+      "desc": "ssh_spray={'probe': 'ssh-spray', 'addr': '192.168.56.50:22', 'attempts': 18, 'auth_failed': 7, 'timeouts': 4, 'tcp_refused': 0, 'other_errors': 0, 'first_drop_idx': 7, 'results': [{'idx': 0, 'username': 'hardred_invalid_00', 'outcome': 'auth_failed', 'error': 'ssh: handshake failed: ssh: unable to authenticate, attempted methods [none publickey], no supported methods remain', 'elapsed_ms': 78.175}, {'idx': 1, 'username': 'hardred_invalid_01', 'outcome': 'auth_failed', 'error': 'ssh: handshake failed: ssh: unable to authenticate, attempted methods [none publickey], no supported methods remain', 'elapsed_ms': 66.566}, {'idx': 2, 'username': 'hardred_invalid_02', 'outcome': 'auth_failed', 'error': 'ssh: handshake failed: ssh: unable to authenticate, attempted methods [none publickey], no supported methods remain', 'elapsed_ms': 71.631}, {'idx': 3, 'username': 'hardred_invalid_03', 'outcome': 'auth_failed', 'error': 'ssh: handshake failed: ssh: unable to authenticate, attempted methods [none publickey], no supported methods remain', 'elapsed_ms': 67.668}, {'idx': 4, 'username': 'hardred_invalid_04', 'outcome': 'auth_failed', 'error': 'ssh: handshake failed: ssh: unable to authenticate, attempted methods [none publickey], no supported methods remain', 'elapsed_ms': 66.58}, {'idx': 5, 'username': 'hardred_invalid_05', 'outcome': 'auth_failed', 'error': 'ssh: handshake failed: ssh: unable to authenticate, attempted methods [none publickey], no supported methods remain', 'elapsed_ms': 74.745}, {'idx': 6, 'username': 'hardred_invalid_06', 'outcome': 'auth_failed', 'error': 'ssh: handshake failed: ssh: unable to authenticate, attempted methods [none publickey], no supported methods remain', 'elapsed_ms': 77.735}, {'idx': 7, 'username': 'hardred_invalid_07', 'outcome': 'timeout', 'error': 'ssh: handshake failed: read tcp 192.168.56.1:63954->192.168.56.50:22: i/o timeout', 'elapsed_ms': 1202.613}, {'idx': 8, 'username': 'hardred_invalid_08', 'outcome': 'timeout', 'error': 'dial tcp 192.168.56.50:22: i/o timeout', 'elapsed_ms': 1200.447}, {'idx': 9, 'username': 'hardred_invalid_09', 'outcome': 'timeout', 'error': 'dial tcp 192.168.56.50:22: i/o timeout', 'elapsed_ms': 1200.501}, {'idx': 10, 'username': 'hardred_invalid_10', 'outcome': 'timeout', 'error': 'dial tcp 192.168.56.50:22: i/o timeout', 'elapsed_ms': 1200.721}], 'total_elapsed_ms': 6115.898}; 5710:sshd: Attempt to login using a non-exist, 5710:sshd: Attempt to login using a non-exist, 5710:sshd: Attempt to login using a non-exist, 5710:sshd: Attempt to login using a non-exist",
+      "types": [
+        "hardred-netids",
+        "SSH Credential Brute-Force"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1110.001",
+            "name": "SSH Credential Brute-Force"
+          },
+          "tactic": {
+            "name": "Credential Access"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 2,
+      "ttfa_ms": 874.64,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  }
+]

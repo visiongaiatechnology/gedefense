@@ -183,9 +183,27 @@ impl Drop for NetlinkSource {
 impl UeventSource for NetlinkSource {
     fn next(&mut self) -> Poll {
         let mut buffer = [0u8; UEVENT_RECV_MAX];
-        // SAFETY: buffer is writable for its full length and the fd is open.
-        let rc = unsafe { libc::recv(self.fd, buffer.as_mut_ptr().cast(), buffer.len(), 0) };
+        // SAFETY: zeroed sockaddr_nl receives kernel sender address to reject spoofed userspace nl_pid != 0.
+        let mut sender: libc::sockaddr_nl = unsafe { std::mem::zeroed() };
+        let mut addr_len = std::mem::size_of::<libc::sockaddr_nl>() as libc::socklen_t;
+        // SAFETY: buffer and sender are writable for their declared lengths and self.fd is open.
+        let rc = unsafe {
+            libc::recvfrom(
+                self.fd,
+                buffer.as_mut_ptr().cast(),
+                buffer.len(),
+                0,
+                (&mut sender as *mut libc::sockaddr_nl).cast(),
+                &mut addr_len,
+            )
+        };
         if rc >= 0 {
+            if addr_len < std::mem::size_of::<libc::sockaddr_nl>() as libc::socklen_t
+                || sender.nl_family != libc::AF_NETLINK as u16
+                || sender.nl_pid != 0
+            {
+                return Poll::Timeout;
+            }
             let length = rc as usize;
             if length == 0 || length > buffer.len() {
                 return Poll::Closed;

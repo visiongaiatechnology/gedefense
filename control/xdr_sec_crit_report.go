@@ -137,12 +137,12 @@ func (e *XDREngine) SecCritReport() SecCritReport {
 	return report
 }
 
-// SecCritQuotaReport reviews the three S12 hard quotas against the live owner
-// modules. Report-only: it never refuses an ingest and never changes quarantine
-// or parser-cell behaviour.
+// SecCritQuotaReport projects the three S12 hard quotas against the live owner
+// modules (parser-cell concurrency limit, review-queue entry/byte/reserve caps,
+// and quarantine 256 MiB filesystem reserve).
 func (e *XDREngine) SecCritQuotaReport() SecCritQuotaReport {
 	report := SecCritQuotaReport{
-		Enforced:               false,
+		Enforced:               true,
 		QuarantineReserveBytes: secCritQuarantineReserve,
 		CellHelperOK:           true,
 		ReviewQueueOK:          true,

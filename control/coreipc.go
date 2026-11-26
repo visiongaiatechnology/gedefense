@@ -41,7 +41,17 @@ type CoreClient struct {
 	// than behind a mutex on the IPC hot path. The administrable System namespace
 	// can retune it without a restart.
 	timeoutNanos atomic.Int64
+	peerPID      atomic.Int64
 	key          []byte
+}
+
+// CorePID returns the kernel-verified peer PID (SO_PEERCRED) of the connected
+// gedefense-core daemon, or 0 before the first successful IPC exchange.
+func (c *CoreClient) CorePID() int {
+	if c == nil {
+		return 0
+	}
+	return int(c.peerPID.Load())
 }
 
 func NewCoreClient(socket, keyPath string, timeout time.Duration) (*CoreClient, error) {
@@ -154,6 +164,15 @@ func (c *CoreClient) command(parts ...string) (string, error) {
 		return "", err
 	}
 	defer conn.Close()
+	if unixConn, ok := conn.(*net.UnixConn); ok {
+		if rawConn, rawErr := unixConn.SyscallConn(); rawErr == nil {
+			_ = rawConn.Control(func(fd uintptr) {
+				if ucred, uerr := syscall.GetsockoptUcred(int(fd), syscall.SOL_SOCKET, syscall.SO_PEERCRED); uerr == nil && ucred.Pid > 0 {
+					c.peerPID.Store(int64(ucred.Pid))
+				}
+			})
+		}
+	}
 	if err := conn.SetDeadline(time.Now().Add(c.deadline())); err != nil {
 		return "", fmt.Errorf("core IPC deadline configuration failed: %w", err)
 	}
@@ -287,12 +306,68 @@ func (c *CoreClient) CellLSMEvents() ([]CoreCellLSMDenyEvent, error) {
 	return parseCoreCellLSMDenyEvents(response)
 }
 
+type CoreMalwareStatus struct {
+	State     string
+	Failures  uint64
+	Dropped   uint64
+	LastError string
+}
+
 func (c *CoreClient) MalwareEvents() (CoreMalwareEventBatch, error) {
 	response, err := c.command("MALWARE_EVENTS")
 	if err != nil {
 		return CoreMalwareEventBatch{}, err
 	}
 	return parseCoreMalwareEvents(response)
+}
+
+func (c *CoreClient) MalwareStatus() (CoreMalwareStatus, error) {
+	response, err := c.command("MALWARE_STATUS")
+	if err != nil {
+		return CoreMalwareStatus{}, err
+	}
+	return parseCoreMalwareStatus(response)
+}
+
+func parseCoreMalwareStatus(response string) (CoreMalwareStatus, error) {
+	if len(response) == 0 || len(response) > 1024 {
+		return CoreMalwareStatus{}, errors.New("core returned an invalid malware status length")
+	}
+	parts := strings.Split(response, "|")
+	if len(parts) != 4 {
+		return CoreMalwareStatus{}, errors.New("core returned a malformed malware status")
+	}
+	kv := make(map[string]string, 4)
+	for _, part := range parts {
+		k, v, ok := strings.Cut(part, "=")
+		if !ok {
+			return CoreMalwareStatus{}, errors.New("core returned a malformed malware status field")
+		}
+		kv[k] = v
+	}
+	switch kv["state"] {
+	case "starting", "online", "degraded":
+	default:
+		return CoreMalwareStatus{}, errors.New("core returned an unknown malware status state")
+	}
+	failures, err := strconv.ParseUint(kv["failures"], 10, 64)
+	if err != nil {
+		return CoreMalwareStatus{}, errors.New("core returned invalid malware failure count")
+	}
+	dropped, err := strconv.ParseUint(kv["dropped"], 10, 64)
+	if err != nil {
+		return CoreMalwareStatus{}, errors.New("core returned invalid malware dropped count")
+	}
+	errBytes, err := hex.DecodeString(kv["error"])
+	if err != nil || len(errBytes) > 256 {
+		return CoreMalwareStatus{}, errors.New("core returned invalid malware error string")
+	}
+	return CoreMalwareStatus{
+		State:     kv["state"],
+		Failures:  failures,
+		Dropped:   dropped,
+		LastError: string(errBytes),
+	}, nil
 }
 
 func UserMalwareScan(socketPath, path string, timeout time.Duration) (MalwareScanResult, error) {

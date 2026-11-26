@@ -29,6 +29,10 @@ impl ExecInodeCore {
             ebpf.take_map(&crate::chameleon::map_name("MALWARE_TTL_INODES"))
                 .ok_or("MALWARE_TTL_INODES missing")?,
         )?;
+        let self_daemons = ebpf
+            .take_map(&crate::chameleon::map_name("SELF_DAEMON_INODES"))
+            .map(AyaHashMap::try_from)
+            .transpose()?;
         let allowed = PerCpuArray::try_from(
             ebpf.take_map(&crate::chameleon::map_name("EXEC_INODE_ALLOWED"))
                 .ok_or("EXEC_INODE_ALLOWED missing")?,
@@ -55,6 +59,7 @@ impl ExecInodeCore {
             offsets,
             trusted,
             ttl,
+            self_daemons,
             allowed,
             denied,
             emitted,
@@ -73,6 +78,7 @@ impl ExecInodeCore {
         // Policy first, then offsets, then the armed state word last: the kernel
         // gate can only match a fully published map, never a half-loaded one.
         core.populate_default_trust();
+        core.populate_self_daemon_inodes();
         // A gate that resolved no credential reader is NOT armed: on a minimal
         // host without any known auth binary every credential read would be
         // denied (a login lockout through the back door). Fail-open with

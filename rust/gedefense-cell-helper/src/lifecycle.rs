@@ -161,7 +161,7 @@ impl CellRegistry {
         if self.active_count() >= self.max_cells { return Err(ErrorCode::CellLimit); }
         let profile = config::find_profile(profiles, &req.profile_id)?.clone();
         let input = InputMeta { token: req.input_token.clone(), sha256: req.input_sha256.clone(), size: req.input_size };
-        let input_path = config::validate_input(staging_inputs, &input, gedefense_uid, profile.max_input_bytes)?;
+        let (input_path, input_file) = config::validate_input_fd(staging_inputs, &input, gedefense_uid, profile.max_input_bytes)?;
         let limits = Limits::clamp_for(&profile, req.ttl_seconds, req.max_rss_bytes, req.max_pids);
         let uuid = self.new_uuid()?;
         let generation = self.next_generation();
@@ -177,6 +177,7 @@ impl CellRegistry {
             uuid: uuid.clone(), generation, profile_id: profile.id.clone(), binary: profile.binary.clone(),
             binary_sha256: profile.sha256.clone(), argv: profile.argv.clone(), env_allow: profile.env_allow.clone(),
             wayland: profile.wayland, pipewire: profile.pipewire, input_path: input_path.clone(),
+            input_fd: Some(std::sync::Arc::new(std::os::fd::OwnedFd::from(input_file))),
             input_size: req.input_size, input_sha256: req.input_sha256.clone(), input_token: req.input_token.clone(),
             export_fd: export_target.fd(), export_path: export_target.path().to_path_buf(), limits,
             uid: DEFAULT_CELL_UID, gid: DEFAULT_CELL_GID, root_dir: root_dir.clone(),
@@ -187,7 +188,7 @@ impl CellRegistry {
         };
         let cgroup_id = match self.cg_attach(&cgroup_path, handle.pid) {
             Ok(id) => id,
-            Err(code) => { let _ = crate::sandbox::kill(&handle); self.cg_remove(&cgroup_path); let _ = fs::remove_file(export_target.path()); return Err(code); }
+            Err(code) => { let _ = crate::sandbox::kill(&handle); self.cg_remove(&cgroup_path); let _ = fs::remove_file(export_target.path()); let _ = fs::remove_dir_all(&root_dir); return Err(code); }
         };
         let expires_at = now.wall_s.saturating_add(limits.ttl_seconds);
         let mut handle = handle;
@@ -343,12 +344,20 @@ impl CellRegistry {
     }
     fn cg_kill(&mut self, path: &Path, pid: i32) {
         let _ = cg_write(path, "cgroup.kill", "1");
-        // SAFETY: SIGKILL to the cell PID; ESRCH/EPERM ignored (cgroup.kill is
-        // authoritative, this is belt-and-braces).
+        // SAFETY: SIGKILL + non-blocking waitpid reap so burned cells do not accumulate
+        // zombies against LimitNPROC=512 (LIN-M04).
         if pid > 0 { unsafe { libc::kill(pid, libc::SIGKILL) }; }
         for _ in 0..50 {
+            if pid > 0 {
+                let mut status: libc::c_int = 0;
+                unsafe { libc::waitpid(pid, &mut status, libc::WNOHANG) };
+            }
             if fs::read_to_string(path.join("cgroup.procs")).map(|s| s.trim().is_empty()).unwrap_or(true) { break; }
             std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        if pid > 0 {
+            let mut status: libc::c_int = 0;
+            unsafe { libc::waitpid(pid, &mut status, libc::WNOHANG) };
         }
     }
     fn cg_remove(&mut self, path: &Path) {

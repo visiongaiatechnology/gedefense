@@ -272,11 +272,9 @@ func (p bootTrustProbe) checkOperatorSignedFile(unixPath string) error {
 	if info.Mode().Perm()&0o022 != 0 {
 		return errors.New("operator-signed file is group or world writable")
 	}
-	if os.Geteuid() == 0 {
-		stat, ok := fileInfoUid(info)
-		if !ok || stat != 0 {
-			return errors.New("operator-signed file is not owned by root")
-		}
+	stat, ok := fileInfoUid(info)
+	if !ok || stat != 0 {
+		return errors.New("operator-signed file is not owned by root")
 	}
 	return nil
 }

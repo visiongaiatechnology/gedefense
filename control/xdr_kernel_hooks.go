@@ -197,11 +197,14 @@ func (e *XDREngine) consumeKernelHookEvents(events []CoreKernelHookEvent, droppe
 // the matching XDR rule.
 func (e *XDREngine) recordKernelHookFinding(event CoreKernelHookEvent, now time.Time) {
 	path, deleted := kernelHookProcessEvidence(event.PID)
+	if e != nil && e.execPathOverride != nil {
+		path = e.execPathOverride(event.PID)
+	}
 	_, parentComm := kernelHookParentInfo(event.PID)
-	// TOLERATED: our own control process (own pid) and the privileged core
-	// daemon (comm/executable identity; the exact core pid is not transported
-	// over VGT3 today).
-	coreProcess := kernelHookIsCoreComm(event.Comm) || (e != nil && e.selfPID > 0 && event.PID == e.selfPID)
+	// TOLERATED: our own control process (own verified pid) or the privileged
+	// core daemon running from its installation path (never spoofable comm alone).
+	coreProcess := (e != nil && e.selfPID > 0 && event.PID == e.selfPID) ||
+		(kernelHookIsCoreComm(event.Comm) && kernelHookIsOwnExecutablePath(path))
 	if KernelHookKindIsModule(event.Kind) {
 		if tolerated, reason := kernelHookModuleTolerated(event.Comm, path, parentComm, coreProcess); tolerated {
 			e.addKernelHookToleratedEvent(event, now, reason)
@@ -211,7 +214,7 @@ func (e *XDREngine) recordKernelHookFinding(event CoreKernelHookEvent, now time.
 		return
 	}
 	if KernelHookKindIsIoUring(event.Kind) {
-		if tolerated, reason := kernelHookIoUringTolerated(event.Comm, coreProcess); tolerated {
+		if tolerated, reason := kernelHookIoUringTolerated(event.Comm, path, coreProcess); tolerated {
 			// `submit_req` is sampled per second; a tolerated process must not
 			// produce an info event per second either.
 			if event.Kind != KernelHookKindIoUringSubmit {
@@ -387,52 +390,66 @@ func (e *XDREngine) recordKernelHookIncident(
 	}
 }
 
+func kernelHookIsOwnExecutablePath(path string) bool {
+	if path == "" || path == "unknown" || kernelHookPathUnderAny(path, kernelHooksTempPathPrefixes) {
+		return false
+	}
+	return strings.HasPrefix(path, "/opt/vgt/gedefense/") ||
+		strings.HasPrefix(path, "/usr/sbin/gedefense-") ||
+		strings.HasPrefix(path, "/usr/bin/gedefense-")
+}
+
 // kernelHookModuleTolerated is the single TOLERATED policy enforcement point for
 // module-load records. `path` is the loader executable (`unknown` when the
 // process already exited), `parentComm` the parent task name ("" when unknown).
+// Never trusts `comm` alone when `path` is unresolved or under a writable root.
 func kernelHookModuleTolerated(comm, path, parentComm string, coreProcess bool) (bool, string) {
 	if coreProcess {
 		return true, "own privileged core process"
 	}
+	if path == "" || path == "unknown" || kernelHookPathUnderAny(path, kernelHooksTempPathPrefixes) {
+		return false, ""
+	}
 	comm = strings.ToLower(strings.TrimSpace(comm))
 	parentComm = strings.ToLower(strings.TrimSpace(parentComm))
-	if _, ok := kernelHooksCoreComms[comm]; ok {
+	if _, ok := kernelHooksCoreComms[comm]; ok && kernelHookIsOwnExecutablePath(path) {
 		return true, "own privileged core process"
 	}
-	if parentComm != "" {
+	managed := kernelHookPathUnderAny(path, kernelHooksManagedPathPrefixes) ||
+		strings.HasPrefix(path, "/usr/lib/systemd/") || strings.HasPrefix(path, "/lib/systemd/")
+	if parentComm != "" && managed {
 		if _, ok := kernelHooksToleratedModuleParents[parentComm]; ok {
 			return true, "boot, package or module-tooling parent"
 		}
 	}
 	if _, tool := kernelHooksModuleToolComms[comm]; tool {
-		if kernelHookPathUnderAny(path, kernelHooksManagedPathPrefixes) {
+		if managed {
 			return true, "module tooling from an installation-managed path"
 		}
-		// Without a resolvable executable a bare `insmod` could be a copy in
-		// /tmp; keep it untrusted rather than guessing.
 		return false, ""
 	}
-	if _, ok := kernelHooksToleratedModuleComms[comm]; ok {
-		if kernelHookPathUnderAny(path, kernelHooksTempPathPrefixes) {
-			// A binary merely named like a package tool but executing from a
-			// writable drop root is not the package tool.
-			return false, ""
-		}
+	if _, ok := kernelHooksToleratedModuleComms[comm]; ok && managed {
 		return true, "package manager or module tooling"
 	}
 	return false, ""
 }
 
 // kernelHookIoUringTolerated is the TOLERATED policy for the io_uring family.
-func kernelHookIoUringTolerated(comm string, coreProcess bool) (bool, string) {
+// Requires verified installation-managed path; rejects spoofed comm under /tmp or unknown.
+func kernelHookIoUringTolerated(comm, path string, coreProcess bool) (bool, string) {
 	if coreProcess {
 		return true, "own privileged core process"
 	}
+	if path == "" || path == "unknown" || kernelHookPathUnderAny(path, kernelHooksTempPathPrefixes) {
+		return false, ""
+	}
 	comm = strings.ToLower(strings.TrimSpace(comm))
-	if _, ok := kernelHooksCoreComms[comm]; ok {
+	if _, ok := kernelHooksCoreComms[comm]; ok && kernelHookIsOwnExecutablePath(path) {
 		return true, "own privileged core process"
 	}
-	if _, ok := kernelHooksToleratedIoUringComms[comm]; ok {
+	managed := kernelHookPathUnderAny(path, kernelHooksManagedPathPrefixes) ||
+		strings.HasPrefix(path, "/usr/lib/systemd/") || strings.HasPrefix(path, "/lib/systemd/")
+	if _, ok := kernelHooksToleratedIoUringComms[comm]; ok && managed {
 		return true, "known legitimate io_uring consumer"
 	}
 	return false, ""

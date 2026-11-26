@@ -22,15 +22,14 @@ import (
 )
 
 const (
-	// rbacGatewayBackendToken is both the operator token the control plane knows and
-	// the backend credential the gateway presents; the claim MAC is keyed on it.
+	// rbacGatewayBackendToken is the backend bearer credential presented by the gateway.
 	rbacGatewayBackendToken = "0123456789abcdef0123456789abcdef"
-	// rbacGatewayClaimVector is the pinned cross-component claim MAC. The control
-	// plane's verifier and this gateway producer must both reproduce it byte for
-	// byte: HMAC-SHA256(key, domain + "critical|password|1700000000|abcdef...") with
-	// key = rbacGatewayBackendToken.
+	// rbacGatewayClaimVector is the pinned cross-component claim MAC for the
+	// fixed 32-byte test vector key "0123456789abcdef0123456789abcdef".
 	rbacGatewayClaimVector = "4ac29c78b0f3bc6fde1a802d90bccd02b7b689b8b58b28df0e670ec1aa7680df"
 )
+
+var rbacGatewayClaimKey = []byte("gway-claim-key-0123456789abcdef!")
 
 type rbacGatewayBackendCall struct {
 	method string
@@ -72,6 +71,7 @@ func newRBACGatewayFixture(t *testing.T) *rbacGatewayFixture {
 		password:     passwordRecord{algorithm: "pbkdf2-sha256", iterations: 300000, salt: salt, digest: digest},
 		sessionKey:   sessionKey[:],
 		backendToken: rbacGatewayBackendToken,
+		claimKey:     rbacGatewayClaimKey,
 		limiter:      newLimiter(),
 	}
 	g.proxy = g.newProxy()
@@ -183,6 +183,10 @@ func TestRBACGatewayCriticalRouteMatcher(t *testing.T) {
 		{http.MethodPost, "/api/v1/quarantine/prune"},
 		{http.MethodPost, "/api/v1/xdr/review/0123456789abcdef/ack"},
 		{http.MethodDelete, "/api/v1/xdr/review/0123456789abcdef"},
+		{http.MethodPost, "/api/v1/xdr/permits"},
+		{http.MethodDelete, "/api/v1/xdr/permits/permit-123"},
+		{http.MethodPost, "/api/v1/chameleon/reveal"},
+		{http.MethodPost, "/api/v1/xdr/update-window/override"},
 	}
 	for _, route := range critical {
 		if !gatewayCriticalRoute(route.method, route.path) {
@@ -191,12 +195,15 @@ func TestRBACGatewayCriticalRouteMatcher(t *testing.T) {
 	}
 	nonCritical := []struct{ method, path string }{
 		{http.MethodGet, "/api/v1/quarantine/prune"},
+		{http.MethodGet, "/api/v1/xdr/permits"},
+		{http.MethodGet, "/api/v1/chameleon/status"},
 		{http.MethodPost, "/api/v1/quarantine/preview"},
 		{http.MethodPost, "/api/v1/xdr/review/0123456789abcdef"},
 		{http.MethodDelete, "/api/v1/blocks/0123456789abcdef"},
 		{http.MethodPost, "/api/v1/settings/system/preview"},
 		{http.MethodPost, "/api/v1/xdr/review//ack"},
 		{http.MethodPost, "/api/v1/xdr/review/a/b/ack"},
+		{http.MethodDelete, "/api/v1/xdr/permits/a/b"},
 	}
 	for _, route := range nonCritical {
 		if gatewayCriticalRoute(route.method, route.path) {
@@ -210,7 +217,7 @@ func TestRBACGatewayCriticalRouteMatcher(t *testing.T) {
 // this fails and the two components would silently stop trusting each other.
 func TestRBACGatewayClaimMACContractVector(t *testing.T) {
 	got := hex.EncodeToString(gatewayCriticalClaimMAC(
-		rbacGatewayBackendToken, gatewayCriticalRole, gatewayStepUpMethodPassword,
+		[]byte("0123456789abcdef0123456789abcdef"), gatewayCriticalRole, gatewayStepUpMethodPassword,
 		1700000000, "abcdef0123456789abcdef0123456789"))
 	if got != rbacGatewayClaimVector {
 		t.Fatalf("the gateway claim MAC contract drifted: %s != %s", got, rbacGatewayClaimVector)
@@ -257,9 +264,24 @@ func TestRBACGatewayPasswordStepUpFlow(t *testing.T) {
 	if skew := time.Now().Unix() - timestamp; skew > 5 || -skew > 5 {
 		t.Fatalf("claim timestamp is not fresh: %d", skew)
 	}
-	wantMAC := hex.EncodeToString(gatewayCriticalClaimMAC(rbacGatewayBackendToken, role, method, timestamp, nonce))
+	wantMAC := hex.EncodeToString(gatewayCriticalClaimMAC(rbacGatewayClaimKey, role, method, timestamp, nonce))
 	if !hmac.Equal([]byte(macValue), []byte(wantMAC)) {
 		t.Fatalf("the forwarded claim MAC does not match the contract: %s != %s", macValue, wantMAC)
+	}
+	bearerMAC := hex.EncodeToString(gatewayCriticalClaimMAC([]byte(rbacGatewayBackendToken), role, method, timestamp, nonce))
+	if hmac.Equal([]byte(macValue), []byte(bearerMAC)) {
+		t.Fatal("the forwarded claim MAC reused the backend bearer token instead of the dedicated claim key")
+	}
+
+	// Missing claim key fails closed with 503.
+	noClaimFixture := newRBACGatewayFixture(t)
+	defer noClaimFixture.close()
+	noClaimFixture.g.claimKey = nil
+	noClaimFixture.grantSession(t)
+	statusNoClaim, _ := noClaimFixture.do(t, noClaimFixture.client, http.MethodPost, "/gateway/step-up",
+		[]byte(`{"password":"correct horse battery staple"}`), nil)
+	if statusNoClaim != http.StatusServiceUnavailable {
+		t.Fatalf("step-up without a claim key did not fail closed with 503: %d", statusNoClaim)
 	}
 
 	// The proof is single use: a replay is refused and never reaches the backend.

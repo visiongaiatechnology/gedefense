@@ -61,6 +61,9 @@ fn group_signal(pgid: i32, signal: i32, rule: &str) -> Result<(), BoxError> {
     if pgid == own_pgrp || pgid == std::process::id() as i32 {
         return Err("own process group is protected".into());
     }
+    if crate::process_tree::signals::process_group_has_protected_target(pgid)? {
+        return Err("protected process group".into());
+    }
     if signal != libc::SIGSTOP && signal != libc::SIGCONT {
         return Err("unsupported group signal".into());
     }

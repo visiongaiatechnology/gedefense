@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -485,16 +486,13 @@ func (m *MorpheusRASP) trustedDebuggerExempt(p ProcessSample) bool {
 		return false
 	}
 	if exe == "" {
-		// No executable identity was reported by the sensor (kernel thread, restricted
-		// /proc). Only a root process may hold the exemption in that case; a reported path
-		// would have to pass the stricter binary check below.
-		return true
+		return false
 	}
 	return verifiedDebuggerBinary(exe)
 }
 
 // verifiedDebuggerBinary reports whether exe is a plausible signed system debugger: an absolute,
-// canonical path that resolves below a trusted system directory and is a regular file that
+// canonical path that resolves below a trusted system directory and is a root-owned regular file that
 // neither the group nor the world may write to.
 func verifiedDebuggerBinary(exe string) bool {
 	if !filepath.IsAbs(exe) || filepath.Clean(exe) != exe {
@@ -505,6 +503,10 @@ func verifiedDebuggerBinary(exe string) bool {
 		return false
 	}
 	if info.Mode().Perm()&0o022 != 0 {
+		return false
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok || stat.Uid != 0 {
 		return false
 	}
 	resolved, err := filepath.EvalSymlinks(exe)
@@ -532,6 +534,7 @@ func ScrubSensitiveCredentials(input string) string {
 	}
 
 	result := input
+	const replacement = "[VGT_REDACTED_SECRET]"
 	for _, kw := range secretKeywords {
 		idx := strings.Index(strings.ToUpper(result), kw)
 		for idx != -1 {
@@ -543,14 +546,11 @@ func ScrubSensitiveCredentials(input string) string {
 				end = start + end
 			}
 
+			nextSearch := start
 			if end > start {
-				valLen := end - start
-				if valLen > 0 {
-					replacement := "[VGT_REDACTED_SECRET]"
-					result = result[:start] + replacement + result[end:]
-				}
+				result = result[:start] + replacement + result[end:]
+				nextSearch = start + len(replacement)
 			}
-			nextSearch := start + 20
 			if nextSearch >= len(result) {
 				break
 			}

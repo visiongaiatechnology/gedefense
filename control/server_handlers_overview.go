@@ -10,12 +10,56 @@ package main
 // dashboard snapshot projection.
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"net"
 	"net/http"
+	"sort"
+	"sync"
 	"time"
 )
+
+var (
+	uiBuildOnce  sync.Once
+	uiBuildValue string
+)
+
+// embeddedUIBuild derives a deterministic 8-hex digest over the embedded web
+// assets so the authenticated shell displays a concrete build identifier
+// rather than an unpopulated placeholder, while keeping unauthenticated HTML
+// and /livez free of build metadata (G-WEB-05).
+func embeddedUIBuild() string {
+	uiBuildOnce.Do(func() {
+		var paths []string
+		_ = fs.WalkDir(webAssets, "web", func(path string, entry fs.DirEntry, err error) error {
+			if err != nil || entry.IsDir() {
+				return nil
+			}
+			paths = append(paths, path)
+			return nil
+		})
+		sort.Strings(paths)
+		if len(paths) == 0 {
+			uiBuildValue = version
+			return
+		}
+		h := sha256.New()
+		for _, p := range paths {
+			data, err := fs.ReadFile(webAssets, p)
+			if err != nil {
+				continue
+			}
+			_, _ = fmt.Fprintf(h, "%s\x00%d\x00", p, len(data))
+			_, _ = h.Write(data)
+		}
+		sum := h.Sum(nil)
+		uiBuildValue = version + "+" + hex.EncodeToString(sum[:4])
+	})
+	return uiBuildValue
+}
 
 // clientSnapshot is the snapshot served to the dashboard. It carries the release readiness next
 // to the state so the interface does not have to fetch it separately: readiness used to be
@@ -24,6 +68,7 @@ import (
 // of turning the whole status into an error; the screen then keeps the last readiness it knows.
 func (s *APIServer) clientSnapshot() Snapshot {
 	snapshot := s.state.Snapshot()
+	snapshot.UIBuild = embeddedUIBuild()
 	// The XDR timeline row does not render the attack story, but one correlated incident can carry
 	// hundreds of nodes: on the production host 250 incidents summed to 12.6 MB of story data and
 	// every status frame pushed ~12.9 MB through the browser. The list keeps the fields it renders;
@@ -153,7 +198,8 @@ func (s *APIServer) panelStatus(w http.ResponseWriter, r *http.Request) {
 		}
 		openFindings = len(uniqueFindings)
 	}
-	safe := snap.CoreConnected && !snap.XDR.Degraded && openFindings == 0
+	xdrDegraded := isXDROperationallyDegraded(snap.XDR)
+	safe := snap.CoreConnected && !xdrDegraded && openFindings == 0
 	state := "alert"
 	if safe {
 		state = "safe"
@@ -163,7 +209,7 @@ func (s *APIServer) panelStatus(w http.ResponseWriter, r *http.Request) {
 		"state":          state,
 		"open_findings":  openFindings,
 		"core_connected": snap.CoreConnected,
-		"xdr_degraded":   snap.XDR.Degraded,
+		"xdr_degraded":   xdrDegraded,
 		"xdr_sensor":     snap.XDR.Sensor,
 	})
 }
@@ -256,7 +302,7 @@ func (s *APIServer) metrics(w http.ResponseWriter, r *http.Request) {
 		core = 1
 	}
 	xdrDegraded := 0
-	if snap.XDR.Degraded {
+	if isXDROperationallyDegraded(snap.XDR) {
 		xdrDegraded = 1
 	}
 	policyVerified := 0

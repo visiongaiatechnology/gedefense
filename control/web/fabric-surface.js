@@ -86,7 +86,9 @@ function renderSearchResults(payload) {
 }
 
 function openModuleSettings(hit) {
-  const target = document.querySelector(`.view[data-page="${hit.module}"]`);
+  const mod = String(hit.module || '');
+  const escaped = typeof CSS !== 'undefined' && typeof CSS.escape === 'function' ? CSS.escape(mod) : mod.replace(/[^a-zA-Z0-9_-]/g, '');
+  const target = document.querySelector(`.view[data-page="${escaped}"]`);
   if (!target) return;
   document.querySelectorAll('.view').forEach(view => {
     view.hidden = view !== target;

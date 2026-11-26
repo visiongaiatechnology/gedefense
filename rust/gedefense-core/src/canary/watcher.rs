@@ -243,7 +243,21 @@ impl CanaryBroker {
         })
     }
 
-    fn record_event(&self, event: CanaryEvent) {
+    pub(crate) fn record_event(&self, event: CanaryEvent) {
+        if event
+            .path
+            .file_name()
+            .and_then(|name| name.to_str())
+            == Some(SELF_TEST_DECOY_NAME)
+        {
+            if let Ok(mut hits) = self.self_test_hits.lock() {
+                if hits.len() >= MAX_SELF_TEST_HITS {
+                    hits.pop_front();
+                }
+                hits.push_back((event.pid, event.path));
+            }
+            return;
+        }
         let Ok(mut queue) = self.events.lock() else {
             return;
         };

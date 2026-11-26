@@ -669,13 +669,13 @@ func (e *CMSEngine) pollBridge() {
 	if !settings.BridgeEnabled || settings.BridgeLogPath == "" || e.bridgeFingerprint() == "" {
 		return
 	}
-	info, err := os.Stat(settings.BridgeLogPath)
+	info, err := os.Lstat(settings.BridgeLogPath)
 	if err != nil {
 		e.setBridgeError(fmt.Errorf("bridge log: %w", err))
 		return
 	}
-	if !info.Mode().IsRegular() {
-		e.setBridgeError(errors.New("bridge log must be a regular file"))
+	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+		e.setBridgeError(errors.New("bridge log must be a regular non-symlink file"))
 		return
 	}
 	inode := cmsFileInode(info)
@@ -709,6 +709,11 @@ func (e *CMSEngine) pollBridge() {
 		return
 	}
 	defer file.Close()
+	openedInfo, err := file.Stat()
+	if err != nil || !os.SameFile(info, openedInfo) || !openedInfo.Mode().IsRegular() {
+		e.setBridgeError(errors.New("bridge log changed during open"))
+		return
+	}
 	if _, err := file.Seek(offset, io.SeekStart); err != nil {
 		e.setBridgeError(err)
 		return

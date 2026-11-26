@@ -290,3 +290,31 @@ fn pooled_service_worker_collection_isolates_worker_without_killing_master_or_si
     assert!(!pids.contains(&5000), "master daemon must not be collected");
     assert!(!pids.contains(&5003), "healthy sibling worker must not be collected");
 }
+
+#[test]
+fn panel_server_exe_paths_allow_immutable_server_trees_and_reject_wwwroot() {
+    use std::os::unix::fs::PermissionsExt;
+    use std::path::Path;
+
+    assert!(is_panel_server_exe_path(Path::new("/www/server/php/86/sbin/php-fpm")));
+    assert!(is_panel_server_exe_path(Path::new("/opt/plesk/php/8.3/sbin/php-fpm")));
+    assert!(!is_panel_server_exe_path(Path::new("/www/wwwroot/site/php-fpm")));
+    assert!(!is_panel_server_exe_path(Path::new("/tmp/www/server/php-fpm")));
+
+    let root = std::env::temp_dir().join(format!("vgt_panel_tree_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let bin = root.join("server/php/86/sbin/php-fpm");
+    std::fs::create_dir_all(bin.parent().expect("parent")).expect("create dirs");
+    std::fs::write(&bin, b"elf").expect("write bin");
+    std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+    // Under current uid in test sandbox, non-root check passes for 0755 chain
+    // below `root`, while require_root rejects non-root owner unless uid 0.
+    let expected_root = unsafe { libc::geteuid() } == 0;
+    assert_eq!(path_chain_immutable_under(&root, &bin, true), expected_root);
+    assert!(path_chain_immutable_under(&root, &bin, false));
+
+    // Group-writable binary fails immutability immediately.
+    std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o775)).expect("chmod g+w");
+    assert!(!path_chain_immutable_under(&root, &bin, false));
+    let _ = std::fs::remove_dir_all(&root);
+}

@@ -183,6 +183,11 @@ impl BpfGuardCore {
         format!("{:016x}", self.epoch)
     }
 
+    /// Reports whether this daemon's own `lsm/bpf_prog` guard hook attached.
+    pub(crate) fn lsm_attached(&self) -> bool {
+        self.lsm_attached
+    }
+
 }
 
 #[cfg(test)]

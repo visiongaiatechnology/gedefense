@@ -67,6 +67,7 @@ type ProtectionStatus struct {
 
 type Snapshot struct {
 	Version              string        `json:"version"`
+	UIBuild              string        `json:"ui_build,omitempty"`
 	NodeName             string        `json:"node_name"`
 	NodeMode             string        `json:"node_mode"`
 	Enforcement          string        `json:"enforcement"`

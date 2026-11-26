@@ -35,6 +35,7 @@ var (
 	passwordFileFlag     = flag.String("password-file", "/etc/vgt/gedefense/access-password", "password record")
 	sessionKeyFileFlag   = flag.String("session-key-file", "/var/lib/vgt/gedefense/access-session.key", "session key")
 	backendTokenFileFlag = flag.String("backend-token-file", "/var/lib/vgt/gedefense/dashboard.token", "backend bearer token")
+	claimKeyFileFlag     = flag.String("claim-key-file", "", "dedicated HMAC key for gateway critical claims")
 	tlsCertFlag          = flag.String("tls-cert", "/etc/vgt/gedefense/tls/access.crt", "TLS certificate")
 	tlsKeyFlag           = flag.String("tls-key", "/etc/vgt/gedefense/tls/access.key", "TLS private key")
 	showVersionFlag      = flag.Bool("version", false, "show version")
@@ -48,10 +49,12 @@ type gateway struct {
 	publicHost   string
 	publicOrigin string
 	backend      *url.URL
+	passwordMu   sync.RWMutex
 	password     passwordRecord
 	passwordPath string
 	sessionKey   []byte
 	backendToken string
+	claimKey     []byte
 	proxy        *httputil.ReverseProxy
 	limiter      *limiter
 	// FIND-010: one process-wide admission gate in front of the memory-hard
@@ -170,6 +173,23 @@ func main() {
 	if len(backendToken) < 32 {
 		log.Fatal("backend token too short")
 	}
+	var claimKey []byte
+	if path := strings.TrimSpace(*claimKeyFileFlag); path != "" {
+		claimKey, err = readPrivateRegular(path, 32, 4096)
+		if err != nil {
+			log.Fatalf("gateway claim key: %v", err)
+		}
+	} else {
+		adjacent := *backendTokenFileFlag + ".gateway-claim"
+		claimKey, err = readPrivateRegular(adjacent, 32, 4096)
+		if err != nil {
+			if !errors.Is(err, os.ErrNotExist) {
+				log.Fatalf("adjacent gateway claim key: %v", err)
+			}
+			log.Printf("gateway critical claim key not provisioned (%s); browser critical-unlock will fail closed with 503", adjacent)
+			claimKey = nil
+		}
+	}
 	if err := validateTLSFiles(*tlsCertFlag, *tlsKeyFlag); err != nil {
 		log.Fatal(err)
 	}
@@ -191,6 +211,7 @@ func main() {
 		passwordPath:      *passwordFileFlag,
 		sessionKey:        derivedSessionKey,
 		backendToken:      backendToken,
+		claimKey:          claimKey,
 		limiter:           newLimiter(),
 		allowlistEnforced: true,
 	}

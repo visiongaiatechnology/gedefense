@@ -190,6 +190,9 @@ type SettingsStore struct {
 func cloneRuntimeSettings(in RuntimeSettings) RuntimeSettings {
 	out := in
 	out.ManagementAllowlist = append(make([]string, 0, len(in.ManagementAllowlist)), in.ManagementAllowlist...)
+	if in.Migrations != nil {
+		out.Migrations = append([]string{}, in.Migrations...)
+	}
 	if in.EnabledRuleModules != nil {
 		out.EnabledRuleModules = append([]string{}, in.EnabledRuleModules...)
 	}

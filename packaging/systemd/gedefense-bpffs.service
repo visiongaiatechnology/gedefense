@@ -10,7 +10,7 @@ After=sys-kernel-tracing.mount sys-fs-bpf.mount
 Type=oneshot
 # Must remain active even when bpffs is already mounted. A ConditionPathIsMountPoint
 # skip would leave Requires=gedefense-bpffs.service unsatisfied for core/login-gate.
-ExecStart=/usr/bin/bash -c 't=$(findmnt --noheadings --target /sys/fs/bpf --output FSTYPE 2>/dev/null || true); [[ "$t" == bpf ]] || /usr/bin/mount -t bpf -o nodev,nosuid,noexec bpf /sys/fs/bpf; tt=$(findmnt --noheadings --target /sys/kernel/tracing --output FSTYPE 2>/dev/null || true); [[ "$tt" == tracefs ]] || { /usr/bin/mkdir -p /sys/kernel/tracing && /usr/bin/mount -t tracefs -o nodev,nosuid tracefs /sys/kernel/tracing 2>/dev/null || true; }'
+ExecStart=/usr/bin/bash -c 't=$(findmnt --noheadings --target /sys/fs/bpf --output FSTYPE 2>/dev/null || true); [[ "$t" == bpf ]] || /usr/bin/mount -t bpf -o nodev,nosuid,noexec bpf /sys/fs/bpf; /usr/bin/mkdir -p -m 0700 /sys/fs/bpf/gedefense; tt=$(findmnt --noheadings --target /sys/kernel/tracing --output FSTYPE 2>/dev/null || true); [[ "$tt" == tracefs ]] || { /usr/bin/mkdir -p /sys/kernel/tracing && /usr/bin/mount -t tracefs -o nodev,nosuid tracefs /sys/kernel/tracing 2>/dev/null || true; }'
 RemainAfterExit=yes
 User=root
 Group=root

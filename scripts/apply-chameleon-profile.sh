@@ -286,10 +286,13 @@ ensure_dir() {
 
 unit_candidates() {
   local service="$1"
+  local script_dir
+  script_dir="$(cd -- "$(dirname -- "$0")" && pwd)"
   printf '%s\n' \
     "$(target_path "/etc/systemd/system/$service")" \
     "$(target_path "/usr/lib/systemd/system/$service")" \
-    "$(cd -- "$(dirname -- "$0")" && pwd)/../packaging/systemd/$service"
+    "${script_dir}/../systemd/$service" \
+    "${script_dir}/../packaging/systemd/$service"
 }
 
 discover_unit() {

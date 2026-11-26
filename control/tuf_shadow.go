@@ -241,3 +241,41 @@ func ShadowParseSummary(document *TUFShadowFeedDocument) string {
 	return fmt.Sprintf("shadow-parse format=%s bytes=%d lines=%d candidates=%d duplicates=%d digests=%s",
 		document.Format, document.Bytes, document.Lines, document.Candidates, document.DuplicateCandidates, document.DigestSHA256)
 }
+
+// SandboxShadowParseFeed runs the bounded Go shadow parser and, when an active
+// ParserCellManager with a provisioned "feed-bundle" profile is attached,
+// stages and executes the untrusted payload inside an ephemeral seccomp/namespace
+// helper cell first.
+func (m *ParserCellManager) SandboxShadowParseFeed(raw []byte, maxEntries int, maxBytes int64) (*TUFShadowFeedDocument, error) {
+	doc, err := ShadowParseFeedBytes(raw, DefaultTUFShadowLimits(maxEntries, maxBytes))
+	if err != nil {
+		return nil, err
+	}
+	if m == nil {
+		return doc, nil
+	}
+	status := m.Status()
+	if !status.Enabled || !status.Available {
+		return doc, nil
+	}
+	hasFeedProfile := false
+	for _, profile := range status.Profiles {
+		if profile == "feed-bundle" {
+			hasFeedProfile = true
+			break
+		}
+	}
+	if !hasFeedProfile {
+		return doc, nil
+	}
+	staged, stageErr := m.StageInput(raw)
+	if stageErr != nil {
+		return nil, newTUFError(TUFReasonShadowParse, "parser cell staging rejected untrusted feed document")
+	}
+	cell, createErr := m.Create("feed-bundle", staged.Token, staged.SHA256, staged.Size, status.TTLSeconds)
+	if createErr != nil {
+		return nil, newTUFError(TUFReasonShadowParse, "parser cell sandbox rejected untrusted feed document")
+	}
+	_, _ = m.Burn(cell.UUID, "tuf-shadow-parse-complete")
+	return doc, nil
+}

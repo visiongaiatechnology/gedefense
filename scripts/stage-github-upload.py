@@ -24,11 +24,13 @@ MAX_SOURCE_FILE_BYTES = 100 * 1024 * 1024
 
 SOURCE_DIRECTORIES = (
     ".github",
+    "benchmarks",
     "control",
     "docs",
     "gateway",
     "integration",
     "packaging",
+    "release",
     "rust",
     "scripts",
     "testdata",

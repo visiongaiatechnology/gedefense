@@ -346,6 +346,44 @@ func (e *XDREngine) PermitReport() PermitReport {
 	return e.permits.PermitReport()
 }
 
+func (e *XDREngine) ensurePermitStoreBound() {
+	if e == nil || e.permits == nil || e.permits.permitStoreHealthy() {
+		return
+	}
+	if err := e.permits.bindPermitStore(e.permitBrokerBinding()); err != nil {
+		e.notePermitStoreDegraded(err.Error())
+		return
+	}
+	e.clearPermitStoreDegraded()
+}
+
+// ListPermits returns the bounded sorted slice of stored PermitV1 entries.
+func (e *XDREngine) ListPermits() []PermitV1 {
+	if e == nil || e.permits == nil {
+		return []PermitV1{}
+	}
+	e.ensurePermitStoreBound()
+	return e.permits.ListPermits()
+}
+
+// UpsertPermit binds the store if needed and persists one PermitV1 object.
+func (e *XDREngine) UpsertPermit(permit *PermitV1) error {
+	if e == nil || e.permits == nil {
+		return errors.New("permit broker is unavailable")
+	}
+	e.ensurePermitStoreBound()
+	return e.permits.UpsertPermit(permit)
+}
+
+// RemovePermit binds the store if needed and deletes one PermitV1 object.
+func (e *XDREngine) RemovePermit(permitID string) error {
+	if e == nil || e.permits == nil {
+		return errors.New("permit broker is unavailable")
+	}
+	e.ensurePermitStoreBound()
+	return e.permits.RemovePermit(permitID)
+}
+
 // InvalidatePermits is the engine-level invalidation hook for callers that
 // observe a trust-relevant event (baseline_rebaseline, policy_update,
 // rule_update). It never touches permits whose auto_invalidate_on does not name

@@ -21,7 +21,7 @@ const NEUTRAL_ALPHABET: &[u8; 37] = b"abcdefghijklmnopqrstuvwxyz0123456789_";
 /// `TITAN_` set: every map the privileged core resolves through [`map_name`]
 /// must be renamed here, otherwise the load would fail (fatal, never a silent
 /// public identity).
-const MANAGED_MAP_PREFIXES: [&str; 26] = [
+const MANAGED_MAP_PREFIXES: [&str; 27] = [
     "ALLOWLIST_",
     "BLOCKLIST_",
     "BPF_GUARD_",
@@ -43,6 +43,7 @@ const MANAGED_MAP_PREFIXES: [&str; 26] = [
     "PERSIST_",
     "RANSOM_",
     "SEC_CRIT_",
+    "SELF_",
     "STYX_",
     "TELEMETRY_",
     "TITAN_",

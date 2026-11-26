@@ -97,7 +97,7 @@ rust-core-musl:
 # V6.3.0: fast typecheck of the Linux core and the bpfel eBPF object without a
 # kernel. Used on non-Linux dev hosts and by CI before the privileged builds.
 rust-check:
-	$(CARGO) check --locked --manifest-path rust/Cargo.toml --target $(MUSL_TARGET_X86_64) -p gedefense-common -p gedefense-core
+	$(CARGO) +$(RUST_STABLE) check --locked --manifest-path rust/Cargo.toml --target $(MUSL_TARGET_X86_64) -p gedefense-common -p gedefense-core
 	$(CARGO) +$(RUST_NIGHTLY) check --locked --manifest-path rust/Cargo.toml -p gedefense-ebpf --target bpfel-unknown-none -Z build-std=core
 
 # POINT 2: privileged ephemeral parser-cell helper (own root systemd unit).
@@ -107,7 +107,7 @@ rust-helper:
 	mkdir -p dist
 	install -m 0755 rust/target/release/gedefense-cell-helper dist/gedefense-cell-helper
 
-rust: rust-ebpf rust-core rust-helper
+rust: rust-ebpf rust-core rust-core-musl rust-helper
 full: test go gateway rust
 
 clean:

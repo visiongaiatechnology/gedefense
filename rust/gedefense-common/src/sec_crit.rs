@@ -56,8 +56,8 @@ pub const SEC_CRIT_BUCKET_MAX: u8 = SEC_CRIT_BUCKET_DNS;
 /// Bucket capacity and refill rate (tokens per second) for one class
 /// (class, cgroup, uid) key. Sized so a single flooding cgroup is throttled
 /// while normal telemetry is never affected.
-pub const SEC_CRIT_BUCKET_CAPACITY: u64 = 512;
-pub const SEC_CRIT_BUCKET_REFILL_PER_SECOND: u64 = 512;
+pub const SEC_CRIT_BUCKET_CAPACITY: u64 = 16384;
+pub const SEC_CRIT_BUCKET_REFILL_PER_SECOND: u64 = 16384;
 
 /// `TELEMETRY_FLOOD_BUCKETS` key bytes: class u8 + 3 zero + cgroup u64 (LE at
 /// offset 8) + uid u32 (LE at offset 16) + 4 zero. Fixed, zero-padded.
@@ -194,6 +194,13 @@ pub fn sec_crit_comm(name: &[u8]) -> [u8; 16] {
 /// Pure integer math (no floats, saturating): refill `tokens` by
 /// `elapsed_seconds * refill_per_second`, cap at `capacity`, then consume one
 /// token. Returns `(new_tokens, new_last_refill_ns, allowed)`.
+///
+/// When `now_ns < last_refill_ns` (which happens under SMP concurrency when
+/// multiple CPUs read/update the shared `TELEMETRY_FLOOD_BUCKETS` entry around
+/// a refill boundary), zero refill is granted and `last_refill_ns` stays
+/// monotonic while still consuming existing `tokens`. Only an empty bucket
+/// (`current == 0`) refuses emission; large (>10 s) backwards jumps rebase an
+/// empty bucket so a suspended clock never wedges permanently.
 pub fn telemetry_bucket_step(
     tokens: u64,
     last_refill_ns: u64,
@@ -205,17 +212,33 @@ pub fn telemetry_bucket_step(
         return (0, now_ns, false);
     }
     if now_ns < last_refill_ns {
-        // Clock went backwards: rebase without granting free tokens.
-        return (tokens.min(capacity), now_ns, false);
+        let current = tokens.min(capacity);
+        let next_refill_ns = if current == 0 && (last_refill_ns - now_ns) > 10_000_000_000 {
+            now_ns
+        } else {
+            last_refill_ns
+        };
+        if current == 0 {
+            return (0, next_refill_ns, false);
+        }
+        return (current - 1, next_refill_ns, true);
     }
     let elapsed_ns = now_ns - last_refill_ns;
     let elapsed_seconds = elapsed_ns / 1_000_000_000;
     let refill = elapsed_seconds.saturating_mul(refill_per_second);
     let current = tokens.saturating_add(refill).min(capacity);
+    // Only advance `last_refill_ns` when at least one whole second has elapsed;
+    // advancing it on sub-second intervals discards elapsed time when events
+    // arrive faster than 1 Hz and permanently starves the bucket to zero.
+    let next_refill_ns = if elapsed_seconds > 0 {
+        now_ns
+    } else {
+        last_refill_ns
+    };
     if current == 0 {
-        return (0, now_ns, false);
+        return (0, next_refill_ns, false);
     }
-    (current - 1, now_ns, true)
+    (current - 1, next_refill_ns, true)
 }
 
 #[cfg(test)]
@@ -322,13 +345,69 @@ mod tests {
             telemetry_bucket_step(0, 0, 60_000_000_000, 4, 2),
             (3, 60_000_000_000, true)
         );
-        // Backwards clock grants no free token.
-        assert_eq!(telemetry_bucket_step(4, 10, 5, 4, 2), (4, 5, false));
+        // Small backwards skew with tokens remaining grants no refill, keeps
+        // last_refill_ns monotonic, and consumes 1 token without false suppression.
+        assert_eq!(telemetry_bucket_step(4, 10, 5, 4, 2), (3, 10, true));
+        // Empty bucket under backwards skew grants no free token and stays throttled.
+        assert_eq!(telemetry_bucket_step(0, 10, 5, 4, 2), (0, 10, false));
+        // Large (>10 s) backwards jump on an empty bucket rebases last_refill_ns.
+        assert_eq!(
+            telemetry_bucket_step(0, 20_000_000_000, 5, 4, 2),
+            (0, 5, false)
+        );
         // Zero capacity is a closed bucket.
         assert_eq!(telemetry_bucket_step(10, 0, 1, 0, 2), (0, 1, false));
         // Saturating math never panics on huge elapsed times.
         let (tokens, _, allowed) = telemetry_bucket_step(u64::MAX, 0, u64::MAX, 8, u64::MAX);
         assert!(tokens <= 8 && allowed);
+    }
+
+    #[test]
+    fn multi_cpu_clock_skew_never_suppresses_non_empty_bucket() {
+        let mut tokens = SEC_CRIT_BUCKET_CAPACITY;
+        let mut last_refill_ns = 10_000_000_000u64;
+        // Simulate 64 concurrent SMP updates crossing refill boundaries where
+        // another CPU just advanced last_refill_ns slightly ahead of now_ns.
+        for i in 0..64u64 {
+            let now_ns = if i % 3 == 0 {
+                last_refill_ns.saturating_sub(250 + i)
+            } else if i % 5 == 0 {
+                last_refill_ns.saturating_add(1_000_000_000)
+            } else {
+                last_refill_ns.saturating_add(500)
+            };
+            let prev_refill = last_refill_ns;
+            let (next_tokens, next_refill, allowed) = telemetry_bucket_step(
+                tokens,
+                last_refill_ns,
+                now_ns,
+                SEC_CRIT_BUCKET_CAPACITY,
+                SEC_CRIT_BUCKET_REFILL_PER_SECOND,
+            );
+            assert!(allowed, "non-empty bucket suppressed at step {i}");
+            assert!(
+                next_refill >= prev_refill,
+                "timestamp regressed under SMP skew: {next_refill} < {prev_refill}"
+            );
+            tokens = next_tokens;
+            last_refill_ns = next_refill;
+        }
+    }
+
+    #[test]
+    fn token_bucket_never_starves_under_sub_second_traffic() {
+        // Steady 10 events/s (every 100 ms) into a cap=10, refill=10/s bucket:
+        // sub-second steps must not discard elapsed time or starve past capacity.
+        let mut tokens = 10u64;
+        let mut last_refill_ns = 0u64;
+        for step in 1..=250u64 {
+            let now_ns = step * 100_000_000;
+            let (next_tokens, next_refill_ns, allowed) =
+                telemetry_bucket_step(tokens, last_refill_ns, now_ns, 10, 10);
+            assert!(allowed, "sub-second steady traffic starved at step {step}");
+            tokens = next_tokens;
+            last_refill_ns = next_refill_ns;
+        }
     }
 
     #[test]

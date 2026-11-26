@@ -511,3 +511,124 @@ func TestStyxBeaconIgnoresLoopbackLinkLocalAndKernelSwapperFlows(t *testing.T) {
 		t.Fatalf("expected zero tracked/flagged/dropped for non-external noise, got %+v", snap)
 	}
 }
+
+func TestStyxBeaconIgnoresManagementAndDefenseAllowlistFlows(t *testing.T) {
+	engine := &XDREngine{
+		cfg:        Config{Defense: DefenseConfig{Allowlist: []string{"198.51.100.42"}}},
+		styxBeacon: NewStyxBeaconEngine(activeBeaconConfig(), NewIncidentCorrelator(0), nil),
+	}
+	engine.setStyxBeaconCapability(true)
+	runtime := defaultRuntimeSettings(engine.cfg)
+	runtime.ManagementAllowlist = []string{"10.0.2.2/32"}
+	monitor := StyxFabricSettings{Enabled: true, Mode: StyxModeMonitor, LogFlows: true}
+	runtime.Styx = &monitor
+	engine.applyStyxBeaconSettings(runtime)
+	engine.styxBeacon.mu.Lock()
+	engine.styxBeacon.cfg.DNSObservationAvailable = true
+	engine.styxBeacon.mu.Unlock()
+
+	for _, ip := range []string{"10.0.2.2", "198.51.100.42"} {
+		for i := 0; i < 15; i++ {
+			ev := beaconEvent(1, 797, 1_000_000_000+uint64(30*time.Second)*uint64(i), 1024, 0, 1, ip, 64723, 4, 6)
+			ev.Comm = "gedefense-contr"
+			if inc := engine.styxBeacon.RecordFlows([]CoreStyxFlowEvent{ev}); len(inc) != 0 {
+				t.Fatalf("allowlisted peer %s emitted unexpected beacon incident: %+v", ip, inc[0])
+			}
+		}
+	}
+	snap := engine.styxBeacon.Snapshot()
+	if snap.Flows != 0 || snap.Incidents != 0 {
+		t.Fatalf("expected allowlisted flows to be ignored, got %+v", snap)
+	}
+}
+
+func TestStyxBeaconLocalHostAddressSuppressesDirectIPWithoutDisablingOtherSignals(t *testing.T) {
+	config := activeBeaconConfig()
+	config.DNSObservationAvailable = true
+	config.LocalPrefixes = []netip.Prefix{netip.MustParsePrefix("198.51.100.10/32")}
+	engine := newBeaconTestEngine(t, config, newBeaconTestClock(), nil)
+
+	// Normal volume (<1 MiB) to host's own interface IP must NOT fire DIRECT_IP_NO_DNS.
+	selfEvent := beaconEvent(5753, 2609, 1_000_000_000, 190_000, 0, 12, "198.51.100.10", 8333, 4, 6)
+	selfEvent.Comm = "node_daemon"
+	if incidents := engine.RecordFlows([]CoreStyxFlowEvent{selfEvent}); len(incidents) != 0 {
+		t.Fatalf("host-local self flow should not fire DIRECT_IP_NO_DNS: %+v", incidents[0])
+	}
+	if top := engine.Snapshot().Top; len(top) != 0 {
+		t.Fatalf("expected zero flagged top flows for host self-traffic, got %+v", top)
+	}
+
+	// Sibling IP in the same /24 MUST still trigger DIRECT_IP_NO_DNS (host-only mask).
+	siblingEvent := beaconEvent(5753, 2609, 1_000_000_000, 190_000, 0, 12, "198.51.100.11", 8333, 4, 6)
+	siblingEvent.Comm = "node_daemon"
+	if incidents := engine.RecordFlows([]CoreStyxFlowEvent{siblingEvent}); len(incidents) != 1 || !beaconRuleIDsContain(incidents[0], StyxBeaconRuleDirectIP) {
+		t.Fatalf("sibling peer in same /24 lost DIRECT_IP_NO_DNS coverage: %+v", incidents)
+	}
+
+	// Other signals (asymmetry/periodicity) stay active even for host-local targets.
+	highVolSelf := beaconEvent(5753, 2609, 2_000_000_000, 2<<20, 1024, 64, "198.51.100.10", 9000, 4, 6)
+	for i := 0; i < 8; i++ {
+		highVolSelf.TimestampNS += uint64(time.Second)
+		_ = engine.RecordFlows([]CoreStyxFlowEvent{highVolSelf})
+	}
+	var sawAsymmetry bool
+	for _, flow := range engine.Snapshot().Top {
+		if flow.Remote == "198.51.100.10:9000" {
+			sawAsymmetry = len(flow.Signals) == 1 && flow.Signals[0] == StyxBeaconEventAsymmetry
+		}
+	}
+	if !sawAsymmetry {
+		t.Fatalf("expected non-DNS asymmetry signal to remain active for host target, got top=%+v", engine.Snapshot().Top)
+	}
+}
+
+func TestStyxBeaconDynamicLocalPrefixRefreshAndKernelSoftirqAntiSpoof(t *testing.T) {
+	clock := newBeaconTestClock()
+	hostIP := "198.51.100.50"
+	config := activeBeaconConfig()
+	config.DNSObservationAvailable = true
+	config.LocalPrefixSource = func() []netip.Prefix {
+		addr := netip.MustParseAddr(hostIP)
+		return []netip.Prefix{netip.PrefixFrom(addr, addr.BitLen())}
+	}
+	config.KernelSoftirqCheck = func(pid int) bool {
+		return pid == 44
+	}
+	engine := newBeaconTestEngine(t, config, clock, nil)
+
+	// Genuine ksoftirqd kernel thread (uid=0, pid=44 verified via procfs check) is ignored.
+	ksoftirq := beaconEvent(5753, 44, 1_000_000_000, 80_000, 0, 8, "203.0.113.99", 20302, 4, 6)
+	ksoftirq.UID = 0
+	ksoftirq.Comm = "ksoftirqd/1"
+	if incidents := engine.RecordFlows([]CoreStyxFlowEvent{ksoftirq}); len(incidents) != 0 {
+		t.Fatalf("verified ksoftirqd thread triggered unexpected incident: %+v", incidents[0])
+	}
+
+	// Userspace process spoofing ksoftirqd/* via prctl(PR_SET_NAME) MUST NOT bypass detection.
+	spoofed := beaconEvent(5753, 9999, 1_000_000_000, 80_000, 0, 8, "203.0.113.99", 20302, 4, 6)
+	spoofed.UID = 0
+	spoofed.Comm = "ksoftirqd/1"
+	if incidents := engine.RecordFlows([]CoreStyxFlowEvent{spoofed}); len(incidents) != 1 || !beaconRuleIDsContain(incidents[0], StyxBeaconRuleDirectIP) {
+		t.Fatalf("spoofed userspace ksoftirqd bypassed DIRECT_IP_NO_DNS: %+v", incidents)
+	}
+
+	// Dynamic interface change (host gains new IP after refresh interval) suppresses DIRECT_IP_NO_DNS on the new IP.
+	hostIP = "198.51.100.51"
+	clock.Advance(localPrefixRefreshInterval + time.Second)
+	newHostEvent := beaconEvent(5753, 2609, 2_000_000_000, 120_000, 0, 8, hostIP, 8333, 4, 6)
+	if incidents := engine.RecordFlows([]CoreStyxFlowEvent{newHostEvent}); len(incidents) != 0 {
+		t.Fatalf("dynamic local IP refresh did not suppress DIRECT_IP_NO_DNS: %+v", incidents[0])
+	}
+}
+
+func TestLocalHostInterfacePrefixesProduceHostOnlyMasks(t *testing.T) {
+	prefixes := localHostInterfacePrefixes()
+	for _, prefix := range prefixes {
+		if !prefix.IsValid() || !prefix.IsSingleIP() {
+			t.Fatalf("local interface prefix must be a single-host mask, got %s", prefix)
+		}
+		if prefix.Addr().IsLoopback() || prefix.Addr().IsUnspecified() {
+			t.Fatalf("unexpected loopback/unspecified address in local prefixes: %s", prefix)
+		}
+	}
+}

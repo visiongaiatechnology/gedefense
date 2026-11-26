@@ -248,7 +248,7 @@ func (s *APIServer) webExposureScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		writePublicError(w, http.StatusConflict, "web exposure scan rejected: "+err.Error())
+		writePublicError(w, http.StatusConflict, "web exposure scan rejected")
 		return
 	}
 	if s.state != nil {
@@ -267,7 +267,7 @@ func (s *APIServer) webExposureAdvisories(w http.ResponseWriter, _ *http.Request
 	settings := effectiveWebExposureSettings(s.settings.Get())
 	extra, err := webposture.ParseExtraAdvisories(settings.ExtraAdvisoriesJSON)
 	if err != nil {
-		writePublicError(w, http.StatusConflict, "web exposure advisory catalogue rejected: "+err.Error())
+		writePublicError(w, http.StatusConflict, "web exposure advisory catalogue rejected")
 		return
 	}
 	catalogue := append(webposture.Catalogue(), extra...)

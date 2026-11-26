@@ -115,7 +115,7 @@ func (e *LPEGuardEngine) refreshCapability() {
 	}
 	capability, reason := "active", ""
 	if _, err := e.core.CellPolicyEpoch(); err != nil {
-		capability, reason = "inactive", "the privileged core does not implement the Cell LSM policy family: "+err.Error()
+		capability, reason = "inactive", "the privileged core does not implement the Cell LSM policy family"
 	}
 	e.mu.Lock()
 	e.capability, e.reason, e.capabilityAt = capability, reason, time.Now().UTC()

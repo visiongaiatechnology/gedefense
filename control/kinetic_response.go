@@ -296,16 +296,32 @@ func (r *KineticResponseEngine) ExecuteDecision(decision NetworkDecision) (Block
 		}
 	}
 
-	// Calculate adaptive TTL with exponential backoff
+	// Calculate adaptive TTL with exponential backoff, clamping at every step so a
+	// large StrikeCount cannot shift past int64 max into a negative/zero duration (LIN-H03).
 	ttl := decision.BaseTTL
 	if ttl <= 0 {
 		ttl = time.Duration(r.cfg.Kinetic.BanTTLSeconds) * time.Second
 	}
-	if proposedRep.StrikeCount > 1 {
-		multiplier := 1 << (proposedRep.StrikeCount - 1)
-		ttl = ttl * time.Duration(multiplier)
-	}
 	maxTTL := time.Duration(r.cfg.Defense.MaxTTLSeconds) * time.Second
+	if proposedRep.StrikeCount > 1 && ttl > 0 {
+		shifts := proposedRep.StrikeCount - 1
+		if shifts > 30 {
+			shifts = 30
+		}
+		for i := 0; i < shifts; i++ {
+			if maxTTL > 0 && ttl >= maxTTL {
+				ttl = maxTTL
+				break
+			}
+			if ttl > (1<<62-1)/2 {
+				if maxTTL > 0 {
+					ttl = maxTTL
+				}
+				break
+			}
+			ttl *= 2
+		}
+	}
 	if maxTTL > 0 && ttl > maxTTL {
 		ttl = maxTTL
 	}
@@ -398,6 +414,20 @@ func (r *KineticResponseEngine) CommitApplied(decision NetworkDecision, entry Bl
 	defer r.mu.Unlock()
 	if change, ok := r.pending[entry.ID]; ok {
 		rep := change.proposedStrike
+		if len(r.reputation) >= 8192 {
+			cutoff := change.proposedStrike.LastStrikeAt.Add(-48 * time.Hour)
+			for target, existing := range r.reputation {
+				if existing == nil || existing.LastStrikeAt.Before(cutoff) {
+					delete(r.reputation, target)
+				}
+			}
+			for target := range r.reputation {
+				if len(r.reputation) < 8192 {
+					break
+				}
+				delete(r.reputation, target)
+			}
+		}
 		r.reputation[entry.Target] = &rep
 		delete(r.pending, entry.ID)
 	}

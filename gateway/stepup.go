@@ -252,6 +252,10 @@ func (g *gateway) stepUpRoute(w http.ResponseWriter, r *http.Request) {
 		writeGatewayJSONError(w, http.StatusForbidden, "origin rejected")
 		return
 	}
+	if len(g.claimKey) < 32 {
+		writeGatewayJSONError(w, http.StatusServiceUnavailable, "critical unlock claim key is unavailable on this host")
+		return
+	}
 	g.ensureStepUp()
 	source := clientIP(r.RemoteAddr)
 	if locked, retryAfter := g.stepUp.locked(source); locked {
@@ -342,7 +346,7 @@ func (g *gateway) criticalClaimForRequest(w http.ResponseWriter, r *http.Request
 		writeGatewayJSONError(w, http.StatusForbidden, "step-up proof is invalid, expired or already used")
 		return gatewayCriticalClaimHeaders{}, true
 	}
-	claim, err := newGatewayCriticalClaim(g.backendToken, time.Now())
+	claim, err := newGatewayCriticalClaim(g.claimKey, time.Now())
 	if err != nil {
 		writeGatewayJSONError(w, http.StatusServiceUnavailable, "a step-up claim could not be produced")
 		return gatewayCriticalClaimHeaders{}, true

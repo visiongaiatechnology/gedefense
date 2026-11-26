@@ -57,6 +57,8 @@ use std::{
 type BoxError = Box<dyn Error + Send + Sync + 'static>;
 
 pub const DEFAULT_CANARY_ROOT: &str = "/var/lib/vgt/gedefense/canaries";
+pub(crate) const SELF_TEST_DECOY_NAME: &str = ".vgt-self-test";
+const MAX_SELF_TEST_HITS: usize = 16;
 const MAX_CANARY_ROOTS: usize = 8;
 const MAX_REGISTERED_CANARIES: usize = 512;
 const MAX_PENDING_EVENTS: usize = 512;
@@ -93,12 +95,12 @@ struct CanaryRecord {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-struct CanaryEvent {
-    pid: i32,
-    uid: u32,
-    path: PathBuf,
-    canary_type: String,
-    exec: bool,
+pub(crate) struct CanaryEvent {
+    pub(crate) pid: i32,
+    pub(crate) uid: u32,
+    pub(crate) path: PathBuf,
+    pub(crate) canary_type: String,
+    pub(crate) exec: bool,
 }
 
 struct WatchState {
@@ -124,6 +126,7 @@ pub struct CanaryBroker {
     roots: Arc<Vec<PathBuf>>,
     records: Arc<Mutex<BTreeMap<PathBuf, CanaryRecord>>>,
     events: Arc<Mutex<VecDeque<CanaryEvent>>>,
+    self_test_hits: Arc<Mutex<VecDeque<(i32, PathBuf)>>>,
     dropped: Arc<AtomicU64>,
     mark_failures: Arc<AtomicU64>,
     watch: Arc<Mutex<WatchState>>,
@@ -173,12 +176,35 @@ impl CanaryBroker {
             roots: Arc::new(normalized),
             records: Arc::new(Mutex::new(BTreeMap::new())),
             events: Arc::new(Mutex::new(VecDeque::with_capacity(MAX_PENDING_EVENTS))),
+            self_test_hits: Arc::new(Mutex::new(VecDeque::with_capacity(MAX_SELF_TEST_HITS))),
             dropped: Arc::new(AtomicU64::new(0)),
             mark_failures: Arc::new(AtomicU64::new(0)),
             watch: Arc::new(Mutex::new(WatchState::new())),
         };
         broker.load_manifest();
         Ok(broker)
+    }
+
+    /// Returns the configured primary canary root used for self-defense decoys.
+    pub(crate) fn primary_root(&self) -> &Path {
+        &self.roots[0]
+    }
+
+    /// Consumes a recorded self-test fanotify hit matching `(probe_pid, path)`
+    /// from the dedicated channel so concurrent `CANARY_EVENTS` IPC polls cannot
+    /// starve self-defense verification.
+    pub(crate) fn consume_self_test_hit(&self, path: &Path, probe_pid: i32) -> bool {
+        let Ok(mut hits) = self.self_test_hits.lock() else {
+            return false;
+        };
+        let Some(pos) = hits
+            .iter()
+            .position(|(pid, hit_path)| *pid == probe_pid && hit_path == path)
+        else {
+            return false;
+        };
+        hits.remove(pos);
+        true
     }
 
     /// Parses one `--canary-root=<absolute path>` occurrence. Repeated flags

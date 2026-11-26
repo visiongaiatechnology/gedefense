@@ -61,7 +61,7 @@ func builtinPermitProfiles() []permitProfile {
 		Reason:     "development toolchain profile: build/test/package work in temporary trees and non-baseline parents",
 		Scope: PermitScope{
 			Rules:        append([]string(nil), permitScopeRules...),
-			PathPrefixes: []string{"/usr", "/opt", "/home", "/root", "/tmp", "/var/tmp"},
+			PathPrefixes: []string{"/usr", "/opt", "/home", "/root"},
 		},
 	}
 	container := permitProfile{
@@ -71,7 +71,7 @@ func builtinPermitProfiles() []permitProfile {
 		Reason:     "container runtime profile: shim/runtime processes appear in temporary and non-baseline lineages",
 		Scope: PermitScope{
 			Rules:        append([]string(nil), permitScopeRules...),
-			PathPrefixes: []string{"/usr", "/opt", "/home", "/root", "/tmp", "/var/tmp"},
+			PathPrefixes: []string{"/usr", "/opt", "/home", "/root"},
 		},
 	}
 	security := permitProfile{

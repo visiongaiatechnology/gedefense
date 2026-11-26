@@ -1,0 +1,48 @@
+[
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-26T11:43:34.904301+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "Baseline (Clean Ubuntu HWE 7.0 WebStack)",
+        "uid": "baseline"
+      }
+    },
+    "finding_info": {
+      "uid": "baseline:EP-LPE-KERNEL-01",
+      "title": "Blacklisted SCTP/DCCP socket + AF_PACKET + ptrace + /etc/shadow probe",
+      "desc": "rc=0, out={\"probe\": \"lpe-probe\", \"sctp_socket\": {\"attempted\": true, \"ok\": true, \"detail\": \"IPPROTO_SCTP\", \"elapsed_ms\": 89.472}, \"dccp_socket\": {\"atte; baseline unprotected webstack (no security daemon)",
+      "types": [
+        "hardred-endpoint",
+        "Kernel LPE & Protocol Attack Surface"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1068",
+            "name": "Kernel LPE & Protocol Attack Surface"
+          },
+          "tactic": {
+            "name": "Privilege Escalation"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 1,
+      "ttfa_ms": 749.03,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  }
+]

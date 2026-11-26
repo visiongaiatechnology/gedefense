@@ -123,6 +123,7 @@ const LSM_SETSOCKOPT_PROGRAM: &str = "gedefense_crossview_socket_setsockopt";
 const LSM_SETSOCKOPT_HOOK: &str = "socket_setsockopt";
 const SK_ATTACH_FILTER_PROGRAM: &str = "gedefense_crossview_sk_attach_filter";
 const SK_ATTACH_FILTER_SYMBOL: &str = "sk_attach_filter";
+const BPF_LSM_BPF_PROG_SYMBOL: &str = "bpf_lsm_bpf_prog";
 /// Default self-defence bpffs pin root (mirrors `main.rs`).
 const DEFAULT_BPF_PIN_ROOT: &str = "/sys/fs/bpf/gedefense";
 
@@ -201,6 +202,7 @@ pub(crate) struct CrossViewCore {
     lsm_create_attached: bool,
     lsm_setsockopt_attached: bool,
     kprobe_attached: bool,
+    bpf_guard_lsm_attached: bool,
     // cadence/accounting
     scans: u64,
     contradictions: u64,

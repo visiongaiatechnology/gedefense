@@ -315,7 +315,7 @@ pub(super) fn open_regular_at(parent_fd: i32, name: &CString) -> Result<File, Bo
         libc::openat(
             parent_fd,
             name.as_ptr(),
-            libc::O_RDONLY | libc::O_CLOEXEC | libc::O_NOFOLLOW,
+            libc::O_RDONLY | libc::O_CLOEXEC | libc::O_NOFOLLOW | libc::O_NONBLOCK,
         )
     };
     if fd < 0 {

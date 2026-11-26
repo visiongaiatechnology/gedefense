@@ -321,6 +321,10 @@ fn handle_connection(stream: UnixStream, key: &[u8], profiles: &[Profile], cli: 
             Some(fd) => protocol::send_fd(writer.as_raw_fd(), fd, &response)?,
             None => writer.write_all(&response).map_err(|_| ErrorCode::Internal)?,
         }
+        // Reap expired cells inside the connection loop too so a busy or
+        // long-lived client cannot stall TTL enforcement (LIN-M05).
+        let burned = registry.expire_due(TimeSample::now());
+        if burned > 0 { eprintln!("ttl-burn: {} cell(s)", burned); }
     }
     Ok(())
 }

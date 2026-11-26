@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"sync"
 	"time"
@@ -81,6 +82,11 @@ func (s *APIServer) l7Integration(w http.ResponseWriter, r *http.Request) {
 			decoder.DisallowUnknownFields()
 			if err := decoder.Decode(&request); err != nil {
 				apiFault(w, http.StatusBadRequest, err)
+				return
+			}
+			var trailing any
+			if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+				apiFault(w, http.StatusBadRequest, errors.New("unexpected trailing JSON content"))
 				return
 			}
 		}

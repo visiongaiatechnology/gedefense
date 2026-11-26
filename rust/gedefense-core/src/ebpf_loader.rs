@@ -468,7 +468,8 @@ impl KernelCore {
             bpf_guard::BpfGuardCore::load(&mut ebpf, lsm_btf.as_ref(), bpf_lsm_active)?;
         // V6.3.0 AP-3: cross-view supports (socket-tap ring + counters); the
         // verifier itself drives the scans from the poll cadence.
-        let cross_view = cross_view::CrossViewCore::load(&mut ebpf)?;
+        let mut cross_view = cross_view::CrossViewCore::load(&mut ebpf)?;
+        cross_view.set_bpf_guard_lsm_attached(bpf_guard.lsm_attached());
         // V6.3.0 AP-4: io_uring/LKM hook ladder; unsupported hooks degrade the
         // status instead of claiming enforcement.
         let kernel_hooks =

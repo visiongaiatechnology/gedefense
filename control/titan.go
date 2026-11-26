@@ -296,7 +296,8 @@ type TitanDeps struct {
 }
 
 type TitanEngine struct {
-	mu sync.RWMutex
+	mu        sync.RWMutex
+	journalMu sync.Mutex
 
 	version     string
 	deps        TitanDeps

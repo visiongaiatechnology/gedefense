@@ -43,8 +43,13 @@ spki=$(openssl x509 -in "$cert" -pubkey -noout |
 
 for browser in chromium chromium-browser google-chrome-stable google-chrome; do
   if command -v "$browser" >/dev/null 2>&1; then
-    profile="${XDG_RUNTIME_DIR:-/tmp}/gedefense-browser-$(id -u)"
-    install -d -m 0700 -- "$profile"
+    if [[ -n ${XDG_RUNTIME_DIR:-} && -d $XDG_RUNTIME_DIR ]]; then
+      profile="$XDG_RUNTIME_DIR/gedefense-browser-$(id -u)"
+      install -d -m 0700 -- "$profile"
+    else
+      profile=$(mktemp -d "/tmp/gedefense-browser-$(id -u).XXXXXX")
+      chmod 0700 "$profile"
+    fi
     exec "$browser" --app="$url" --user-data-dir="$profile" \
       --ignore-certificate-errors-spki-list="$spki" --no-first-run --disable-sync
   fi

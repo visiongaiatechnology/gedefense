@@ -225,6 +225,15 @@ func TestPermitNeverAutoBlockDevBuildSimulation(t *testing.T) {
 	if killDecisions != 0 {
 		t.Fatalf("dev-build simulation produced %d kill decisions", killDecisions)
 	}
+	// SEC-03 regression: built-in profiles MUST NOT tolerate executables under /tmp or /var/tmp.
+	for _, forged := range []ProcessSample{
+		{PID: 502, Comm: "cargo", Exe: "/tmp/cargo", ParentExe: "/usr/bin/build-daemon"},
+		{PID: 503, Comm: "runc", Exe: "/var/tmp/runc", ParentExe: "/usr/bin/containerd"},
+	} {
+		if permit := broker.Evaluate(forged, baseline.RuleIDs, baseline.Categories); permit != nil {
+			t.Fatalf("built-in permit tolerated writable temp binary %q: %+v", forged.Exe, permit)
+		}
+	}
 }
 
 // ------------------------------------------------------------ auto-invalidate

@@ -1,0 +1,922 @@
+[
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 1,
+    "time": "2026-11-26T13:31:19.831318+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "CrowdSec (Max Collections + Bouncers + AppSec WAF)",
+        "uid": "crowdsec"
+      }
+    },
+    "finding_info": {
+      "uid": "crowdsec:WAF-BENIGN-06",
+      "title": "Benign Math Query",
+      "desc": "http=403; anomaly score block: sql_injection: 10, anomaly: 13, ",
+      "types": [
+        "hardred-waf",
+        "Benign HTTP Control"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "NONE",
+            "name": "Benign HTTP Control"
+          },
+          "tactic": {
+            "name": "None"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 3,
+    "unmapped": {
+      "polarity": "benign",
+      "context_maturity": 2,
+      "ttfa_ms": 419.57,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 1,
+    "time": "2026-11-26T13:31:26.040232+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "CrowdSec (Max Collections + Bouncers + AppSec WAF)",
+        "uid": "crowdsec"
+      }
+    },
+    "finding_info": {
+      "uid": "crowdsec:NET-BENIGN-01",
+      "title": "Legitimate paced HTTP traffic (6 req @ 250ms)",
+      "desc": "ok=6/6 blocked=0; crowdsecurity/crowdsec-appsec-outofband, crowdsecurity/crowdsec-appsec-outofband",
+      "types": [
+        "hardred-netids",
+        "Benign Paced Web Traffic"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "NONE",
+            "name": "Benign Paced Web Traffic"
+          },
+          "tactic": {
+            "name": "None"
+          }
+        }
+      ]
+    },
+    "action_id": 1,
+    "action": "Allowed",
+    "status_id": 3,
+    "unmapped": {
+      "polarity": "benign",
+      "context_maturity": 2,
+      "ttfa_ms": 4210.66,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 1,
+    "time": "2026-11-26T13:31:30.246783+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "CrowdSec (Max Collections + Bouncers + AppSec WAF)",
+        "uid": "crowdsec"
+      }
+    },
+    "finding_info": {
+      "uid": "crowdsec:NET-BENIGN-02",
+      "title": "Normal TLS 1.3 HTTPS requests (4 handshakes)",
+      "desc": "tls_ok=0/4 blocked=4; none",
+      "types": [
+        "hardred-netids",
+        "Benign TLS Connections"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "NONE",
+            "name": "Benign TLS Connections"
+          },
+          "tactic": {
+            "name": "None"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 3,
+    "unmapped": {
+      "polarity": "benign",
+      "context_maturity": 0,
+      "ttfa_ms": null,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-26T13:31:41.519517+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "CrowdSec (Max Collections + Bouncers + AppSec WAF)",
+        "uid": "crowdsec"
+      }
+    },
+    "finding_info": {
+      "uid": "crowdsec:MAL-EICAR-HTTP-01",
+      "title": "POST EICAR payload over HTTP edge proxy/WAF",
+      "desc": "http=None; none",
+      "types": [
+        "hardred-malware",
+        "Inline L7 EICAR/Malware Upload"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1105",
+            "name": "Inline L7 EICAR/Malware Upload"
+          },
+          "tactic": {
+            "name": "Command and Control"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 0,
+      "ttfa_ms": null,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-26T13:32:13.711216+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "CrowdSec (Max Collections + Bouncers + AppSec WAF)",
+        "uid": "crowdsec"
+      }
+    },
+    "finding_info": {
+      "uid": "crowdsec:EP-LPE-KERNEL-01",
+      "title": "Blacklisted SCTP/DCCP socket + AF_PACKET + ptrace + /etc/shadow probe",
+      "desc": "rc=0, out={\"probe\": \"lpe-probe\", \"sctp_socket\": {\"attempted\": true, \"ok\": true, \"detail\": \"IPPROTO_SCTP\", \"elapsed_ms\": 98.403}, \"dccp_socket\": {\"atte; none",
+      "types": [
+        "hardred-endpoint",
+        "Kernel LPE & Protocol Attack Surface"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1068",
+            "name": "Kernel LPE & Protocol Attack Surface"
+          },
+          "tactic": {
+            "name": "Privilege Escalation"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 1,
+      "ttfa_ms": 428.75,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-26T13:35:45.244378+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "CrowdSec (Max Collections + Bouncers + AppSec WAF)",
+        "uid": "crowdsec"
+      }
+    },
+    "finding_info": {
+      "uid": "crowdsec:WAF-SQLI-01",
+      "title": "SQL Injection (WAF-SQLI-01)",
+      "desc": "http=None; none",
+      "types": [
+        "hardred-waf",
+        "SQL Injection"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1190",
+            "name": "SQL Injection"
+          },
+          "tactic": {
+            "name": "Initial Access"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 1,
+      "ttfa_ms": 5034.47,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-26T13:35:54.070172+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "CrowdSec (Max Collections + Bouncers + AppSec WAF)",
+        "uid": "crowdsec"
+      }
+    },
+    "finding_info": {
+      "uid": "crowdsec:WAF-SQLI-02",
+      "title": "SQL Injection (WAF-SQLI-02)",
+      "desc": "http=None; none",
+      "types": [
+        "hardred-waf",
+        "SQL Injection"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1190",
+            "name": "SQL Injection"
+          },
+          "tactic": {
+            "name": "Initial Access"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 1,
+      "ttfa_ms": 5039.29,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-26T13:36:02.542466+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "CrowdSec (Max Collections + Bouncers + AppSec WAF)",
+        "uid": "crowdsec"
+      }
+    },
+    "finding_info": {
+      "uid": "crowdsec:WAF-SQLI-03",
+      "title": "SQL Injection (WAF-SQLI-03)",
+      "desc": "http=None; none",
+      "types": [
+        "hardred-waf",
+        "SQL Injection"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1190",
+            "name": "SQL Injection"
+          },
+          "tactic": {
+            "name": "Initial Access"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 1,
+      "ttfa_ms": 5038.94,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-26T13:36:11.663058+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "CrowdSec (Max Collections + Bouncers + AppSec WAF)",
+        "uid": "crowdsec"
+      }
+    },
+    "finding_info": {
+      "uid": "crowdsec:WAF-XSS-01",
+      "title": "Cross-Site Scripting (WAF-XSS-01)",
+      "desc": "http=None; none",
+      "types": [
+        "hardred-waf",
+        "Cross-Site Scripting"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1059.007",
+            "name": "Cross-Site Scripting"
+          },
+          "tactic": {
+            "name": "Execution"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 1,
+      "ttfa_ms": 5036.27,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-26T13:36:20.308913+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "CrowdSec (Max Collections + Bouncers + AppSec WAF)",
+        "uid": "crowdsec"
+      }
+    },
+    "finding_info": {
+      "uid": "crowdsec:WAF-XSS-02",
+      "title": "Cross-Site Scripting (WAF-XSS-02)",
+      "desc": "http=None; none",
+      "types": [
+        "hardred-waf",
+        "Cross-Site Scripting"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1059.007",
+            "name": "Cross-Site Scripting"
+          },
+          "tactic": {
+            "name": "Execution"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 1,
+      "ttfa_ms": 5035.71,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-26T13:36:28.942354+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "CrowdSec (Max Collections + Bouncers + AppSec WAF)",
+        "uid": "crowdsec"
+      }
+    },
+    "finding_info": {
+      "uid": "crowdsec:WAF-LFI-01",
+      "title": "Path Traversal / LFI (WAF-LFI-01)",
+      "desc": "http=None; none",
+      "types": [
+        "hardred-waf",
+        "Path Traversal / LFI"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1083",
+            "name": "Path Traversal / LFI"
+          },
+          "tactic": {
+            "name": "Discovery"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 1,
+      "ttfa_ms": 5030.28,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-26T13:36:37.334161+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "CrowdSec (Max Collections + Bouncers + AppSec WAF)",
+        "uid": "crowdsec"
+      }
+    },
+    "finding_info": {
+      "uid": "crowdsec:WAF-LFI-02",
+      "title": "Double-Encoded Traversal (WAF-LFI-02)",
+      "desc": "http=None; none",
+      "types": [
+        "hardred-waf",
+        "Double-Encoded Traversal"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1083",
+            "name": "Double-Encoded Traversal"
+          },
+          "tactic": {
+            "name": "Discovery"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 1,
+      "ttfa_ms": 5032.75,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-26T13:36:46.700066+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "CrowdSec (Max Collections + Bouncers + AppSec WAF)",
+        "uid": "crowdsec"
+      }
+    },
+    "finding_info": {
+      "uid": "crowdsec:WAF-RCE-01",
+      "title": "OS Command Injection (WAF-RCE-01)",
+      "desc": "http=None; none",
+      "types": [
+        "hardred-waf",
+        "OS Command Injection"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1059.004",
+            "name": "OS Command Injection"
+          },
+          "tactic": {
+            "name": "Execution"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 1,
+      "ttfa_ms": 5032.38,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-26T13:36:55.373106+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "CrowdSec (Max Collections + Bouncers + AppSec WAF)",
+        "uid": "crowdsec"
+      }
+    },
+    "finding_info": {
+      "uid": "crowdsec:WAF-RCE-02",
+      "title": "PHP Webshell Payload (WAF-RCE-02)",
+      "desc": "http=None; none",
+      "types": [
+        "hardred-waf",
+        "PHP Webshell Payload"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1505.003",
+            "name": "PHP Webshell Payload"
+          },
+          "tactic": {
+            "name": "Persistence"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 1,
+      "ttfa_ms": 5051.33,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-26T13:37:04.359676+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "CrowdSec (Max Collections + Bouncers + AppSec WAF)",
+        "uid": "crowdsec"
+      }
+    },
+    "finding_info": {
+      "uid": "crowdsec:WAF-SSTI-01",
+      "title": "Server-Side Template Injection (WAF-SSTI-01)",
+      "desc": "http=None; none",
+      "types": [
+        "hardred-waf",
+        "Server-Side Template Injection"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1190",
+            "name": "Server-Side Template Injection"
+          },
+          "tactic": {
+            "name": "Initial Access"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 1,
+      "ttfa_ms": 5033.9,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-26T13:37:12.837909+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "CrowdSec (Max Collections + Bouncers + AppSec WAF)",
+        "uid": "crowdsec"
+      }
+    },
+    "finding_info": {
+      "uid": "crowdsec:WAF-XXE-01",
+      "title": "XML External Entity (WAF-XXE-01)",
+      "desc": "http=None; none",
+      "types": [
+        "hardred-waf",
+        "XML External Entity"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1190",
+            "name": "XML External Entity"
+          },
+          "tactic": {
+            "name": "Initial Access"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 1,
+      "ttfa_ms": 5037.33,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-26T13:37:23.168564+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "CrowdSec (Max Collections + Bouncers + AppSec WAF)",
+        "uid": "crowdsec"
+      }
+    },
+    "finding_info": {
+      "uid": "crowdsec:WAF-SSRF-01",
+      "title": "Cloud Metadata SSRF (WAF-SSRF-01)",
+      "desc": "http=None; none",
+      "types": [
+        "hardred-waf",
+        "Cloud Metadata SSRF"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1552.005",
+            "name": "Cloud Metadata SSRF"
+          },
+          "tactic": {
+            "name": "Credential Access"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 1,
+      "ttfa_ms": 5031.2,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-26T13:37:31.409310+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "CrowdSec (Max Collections + Bouncers + AppSec WAF)",
+        "uid": "crowdsec"
+      }
+    },
+    "finding_info": {
+      "uid": "crowdsec:WAF-SCAN-01",
+      "title": "Exploit Scanner UA / Sensitive File (WAF-SCAN-01)",
+      "desc": "http=None; none",
+      "types": [
+        "hardred-waf",
+        "Exploit Scanner UA / Sensitive File"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1595.002",
+            "name": "Exploit Scanner UA / Sensitive File"
+          },
+          "tactic": {
+            "name": "Reconnaissance"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 1,
+      "ttfa_ms": 5036.12,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-26T13:37:40.084247+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "CrowdSec (Max Collections + Bouncers + AppSec WAF)",
+        "uid": "crowdsec"
+      }
+    },
+    "finding_info": {
+      "uid": "crowdsec:WAF-FAILOPEN-01",
+      "title": "Oversized Body Inspection Check (WAF-FAILOPEN-01)",
+      "desc": "http=None; none",
+      "types": [
+        "hardred-waf",
+        "Oversized Body Inspection Check"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1190",
+            "name": "Oversized Body Inspection Check"
+          },
+          "tactic": {
+            "name": "Initial Access"
+          }
+        }
+      ]
+    },
+    "action_id": 2,
+    "action": "Denied",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 1,
+      "ttfa_ms": 8040.73,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  },
+  {
+    "class_uid": 2004,
+    "class_name": "Detection Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "activity_id": 1,
+    "severity_id": 4,
+    "time": "2026-11-26T13:38:11.958272+00:00",
+    "metadata": {
+      "version": "1.9.0",
+      "product": {
+        "name": "CrowdSec (Max Collections + Bouncers + AppSec WAF)",
+        "uid": "crowdsec"
+      }
+    },
+    "finding_info": {
+      "uid": "crowdsec:NET-BRUTE-SSH-01",
+      "title": "SSH failed login burst (18 attempts -> IP ban test)",
+      "desc": "ssh_spray={'probe': 'ssh-spray', 'addr': '192.168.56.50:22', 'attempts': 18, 'auth_failed': 18, 'timeouts': 0, 'tcp_refused': 0, 'other_errors': 0, 'first_drop_idx': -1, 'results': [{'idx': 0, 'username': 'hardred_invalid_00', 'outcome': 'auth_failed', 'error': 'ssh: handshake failed: ssh: unable to authenticate, attempted methods [none publickey], no supported methods remain', 'elapsed_ms': 52.716}, {'idx': 1, 'username': 'hardred_invalid_01', 'outcome': 'auth_failed', 'error': 'ssh: handshake failed: ssh: unable to authenticate, attempted methods [none publickey], no supported methods remain', 'elapsed_ms': 44.061}, {'idx': 2, 'username': 'hardred_invalid_02', 'outcome': 'auth_failed', 'error': 'ssh: handshake failed: ssh: unable to authenticate, attempted methods [none publickey], no supported methods remain', 'elapsed_ms': 45.276}, {'idx': 3, 'username': 'hardred_invalid_03', 'outcome': 'auth_failed', 'error': 'ssh: handshake failed: ssh: unable to authenticate, attempted methods [none publickey], no supported methods remain', 'elapsed_ms': 43.158}, {'idx': 4, 'username': 'hardred_invalid_04', 'outcome': 'auth_failed', 'error': 'ssh: handshake failed: ssh: unable to authenticate, attempted methods [none publickey], no supported methods remain', 'elapsed_ms': 40.536}, {'idx': 5, 'username': 'hardred_invalid_05', 'outcome': 'auth_failed', 'error': 'ssh: handshake failed: ssh: unable to authenticate, attempted methods [none publickey], no supported methods remain', 'elapsed_ms': 40.634}, {'idx': 6, 'username': 'hardred_invalid_06', 'outcome': 'auth_failed', 'error': 'ssh: handshake failed: ssh: unable to authenticate, attempted methods [none publickey], no supported methods remain', 'elapsed_ms': 43.864}, {'idx': 7, 'username': 'hardred_invalid_07', 'outcome': 'auth_failed', 'error': 'ssh: handshake failed: ssh: unable to authenticate, attempted methods [none publickey], no supported methods remain', 'elapsed_ms': 50.776}, {'idx': 8, 'username': 'hardred_invalid_08', 'outcome': 'auth_failed', 'error': 'ssh: handshake failed: ssh: unable to authenticate, attempted methods [none publickey], no supported methods remain', 'elapsed_ms': 59.527}, {'idx': 9, 'username': 'hardred_invalid_09', 'outcome': 'auth_failed', 'error': 'ssh: handshake failed: ssh: unable to authenticate, attempted methods [none publickey], no supported methods remain', 'elapsed_ms': 47.514}, {'idx': 10, 'username': 'hardred_invalid_10', 'outcome': 'auth_failed', 'error': 'ssh: handshake failed: ssh: unable to authenticate, attempted methods [none publickey], no supported methods remain', 'elapsed_ms': 47.814}, {'idx': 11, 'username': 'hardred_invalid_11', 'outcome': 'auth_failed', 'error': 'ssh: handshake failed: ssh: unable to authenticate, attempted methods [none publickey], no supported methods remain', 'elapsed_ms': 43.386}, {'idx': 12, 'username': 'hardred_invalid_12', 'outcome': 'auth_failed', 'error': 'ssh: handshake failed: ssh: unable to authenticate, attempted methods [none publickey], no supported methods remain', 'elapsed_ms': 46.008}, {'idx': 13, 'username': 'hardred_invalid_13', 'outcome': 'auth_failed', 'error': 'ssh: handshake failed: ssh: unable to authenticate, attempted methods [none publickey], no supported methods remain', 'elapsed_ms': 50.311}, {'idx': 14, 'username': 'hardred_invalid_14', 'outcome': 'auth_failed', 'error': 'ssh: handshake failed: ssh: unable to authenticate, attempted methods [none publickey], no supported methods remain', 'elapsed_ms': 43.561}, {'idx': 15, 'username': 'hardred_invalid_15', 'outcome': 'auth_failed', 'error': 'ssh: handshake failed: ssh: unable to authenticate, attempted methods [none publickey], no supported methods remain', 'elapsed_ms': 43.932}, {'idx': 16, 'username': 'hardred_invalid_16', 'outcome': 'auth_failed', 'error': 'ssh: handshake failed: ssh: unable to authenticate, attempted methods [none publickey], no supported methods remain', 'elapsed_ms': 46.168}, {'idx': 17, 'username': 'hardred_invalid_17', 'outcome': 'auth_failed', 'error': 'ssh: handshake failed: ssh: unable to authenticate, attempted methods [none publickey], no supported methods remain', 'elapsed_ms': 43.826}], 'total_elapsed_ms': 2205.304}; crowdsecurity/ssh-slow-bf_user-enum, crowdsecurity/ssh-bf_user-enum, crowdsecurity/ssh-slow-bf, crowdsecurity/ssh-bf, crowdsecurity/ssh-slow-bf_user-enum",
+      "types": [
+        "hardred-netids",
+        "SSH Credential Brute-Force"
+      ],
+      "attacks": [
+        {
+          "technique": {
+            "uid": "T1110.001",
+            "name": "SSH Credential Brute-Force"
+          },
+          "tactic": {
+            "name": "Credential Access"
+          }
+        }
+      ]
+    },
+    "action_id": 1,
+    "action": "Allowed",
+    "status_id": 1,
+    "unmapped": {
+      "polarity": "attack",
+      "context_maturity": 2,
+      "ttfa_ms": 785.65,
+      "pre_kill_damage": null,
+      "pre_kill_total": null
+    }
+  }
+]

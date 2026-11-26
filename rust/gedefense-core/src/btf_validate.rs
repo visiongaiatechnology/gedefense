@@ -33,7 +33,10 @@ pub(crate) fn validate_offsets(offsets: &TitanExecOffsets) -> Result<(), String>
     if offsets.inode_i_ctime_nsec_off <= offsets.inode_i_ctime_sec_off {
         return Err("inode.i_ctime: nsec does not follow sec".to_owned());
     }
-    let nsec_end = offsets.inode_i_ctime_nsec_off + offsets.inode_i_ctime_nsec_width;
+    let nsec_end = offsets
+        .inode_i_ctime_nsec_off
+        .checked_add(offsets.inode_i_ctime_nsec_width)
+        .ok_or_else(|| "inode.i_ctime: nsec offset overflows".to_owned())?;
     if !matches!(offsets.inode_i_ctime_nsec_width, 4 | 8) || nsec_end > offsets.inode_size {
         return Err("inode.i_ctime: nsec width or offset range is implausible".to_owned());
     }

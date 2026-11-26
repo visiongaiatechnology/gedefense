@@ -273,7 +273,10 @@ func (g *gateway) verifyPasswordGated(ctx context.Context, identity string, pass
 		return false, err
 	}
 	defer release()
-	return verifyPassword(password, g.password), nil
+	g.passwordMu.RLock()
+	rec := g.password
+	g.passwordMu.RUnlock()
+	return verifyPassword(password, rec), nil
 }
 
 func verifyPassword(password []byte, rec passwordRecord) bool {
@@ -313,11 +316,36 @@ func createArgon2PasswordRecord(password []byte) (string, error) {
 }
 
 func persistArgon2PasswordRecord(path string, password []byte) error {
-	record, err := createArgon2PasswordRecord(password)
-	if err != nil {
-		return err
+	_, err := persistAndParseArgon2PasswordRecord(path, password)
+	return err
+}
+
+func persistAndParseArgon2PasswordRecord(path string, password []byte) (passwordRecord, error) {
+	const memoryKiB uint32 = 65536
+	const timeCost uint32 = 3
+	const parallelism uint32 = 1
+	salt := make([]byte, 16)
+	if _, err := io.ReadFull(rand.Reader, salt); err != nil {
+		return passwordRecord{}, err
 	}
-	return writeAtomic(path, []byte(record+"\n"), 0o600)
+	digest, err := argon2IDKey(password, salt, timeCost, memoryKiB, parallelism, 32)
+	if err != nil {
+		return passwordRecord{}, err
+	}
+	record := fmt.Sprintf("v2$argon2id$v=19$m=%d,t=%d,p=%d$%s$%s", memoryKiB, timeCost, parallelism,
+		base64.RawStdEncoding.EncodeToString(salt), base64.RawStdEncoding.EncodeToString(digest))
+	if err := writeAtomic(path, []byte(record+"\n"), 0o600); err != nil {
+		zero(digest)
+		return passwordRecord{}, err
+	}
+	return passwordRecord{
+		algorithm:   "argon2id",
+		memoryKiB:   memoryKiB,
+		timeCost:    timeCost,
+		parallelism: parallelism,
+		salt:        salt,
+		digest:      digest,
+	}, nil
 }
 
 func pbkdf2SHA256(password, salt []byte, iterations, keyLen int) []byte {

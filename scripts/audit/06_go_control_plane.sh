@@ -283,7 +283,8 @@ for directive in (
 ):
     need('systemd-core-unit', unit, directive)
 # No further /sys node may be granted: the complete writable sysfs set is the
-# pre-existing bpffs mount plus the three reviewed lockdown nodes.
+# pre-existing bpffs mount (plus /sys/fs/bpf/gedefense pin dir under
+# ProtectKernelTunables=true on systemd 255+) and the three reviewed lockdown nodes.
 sys_grants = set()
 for line in unit.splitlines():
     if not line.startswith('ReadWritePaths='):
@@ -292,7 +293,7 @@ for line in unit.splitlines():
         token = token.lstrip('-')
         if token == '/sys' or token.startswith('/sys/'):
             sys_grants.add(token)
-if sys_grants != {'/sys/bus/usb', '/sys/bus/thunderbolt/devices', '/sys/devices', '/sys/fs/bpf'}:
+if sys_grants != {'/sys/bus/usb', '/sys/bus/thunderbolt/devices', '/sys/devices', '/sys/fs/bpf', '/sys/fs/bpf/gedefense'}:
     missing.append('systemd-core-unit: unexpected writable sysfs set: ' + ', '.join(sorted(sys_grants)))
 if len(re.findall(r'(?m)^CapabilityBoundingSet=', unit)) != 1:
     missing.append('systemd-core-unit: CapabilityBoundingSet must stay one reviewed line')

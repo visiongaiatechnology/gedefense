@@ -180,7 +180,7 @@ func (s *APIServer) witnessImport(w http.ResponseWriter, r *http.Request) {
 			writeWitnessRefusal(w, http.StatusBadRequest, "witness import body is not valid JSON")
 			return
 		}
-		writeWitnessRefusal(w, http.StatusConflict, "witness import rejected: "+witnessBoundText(err.Error(), 160))
+		writeWitnessRefusal(w, http.StatusConflict, "witness import rejected")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"accepted": true, "receipt": receipt, "status": s.witness.StatusView()})

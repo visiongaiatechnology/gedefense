@@ -76,6 +76,10 @@ pub(crate) static TRUSTED_EXEC_INODES: HashMap<[u8; EXEC_INODE_KEY_LEN], u32> =
 #[map]
 pub(crate) static MALWARE_TTL_INODES: HashMap<[u8; EXEC_INODE_KEY_LEN], u32> =
     HashMap::with_max_entries(EXEC_INODE_TTL_MAP_ENTRIES, 0);
+/// Trusted own-daemon executables `(s_dev, i_ino)` exempt from malware inode locks.
+#[map]
+pub(crate) static SELF_DAEMON_INODES: HashMap<[u8; EXEC_INODE_KEY_LEN], u8> =
+    HashMap::with_max_entries(16, 0);
 /// Bounded name/path mismatch evidence ring (1024 queued 64-byte records).
 #[map]
 pub(crate) static EXEC_INODE_EVENTS: RingBuf =
@@ -223,10 +227,9 @@ fn exec_inode_probe<T>(base: u64, offset: u32) -> Option<T> {
 /// gate is armed, the offsets are valid and both published structure sizes are
 /// greater than zero. `None` is "gate unavailable for this decision", never
 /// "trusted".
+/// Resolves only the current task's `(s_dev, i_ino)` executable identity key.
 #[inline(always)]
-pub(crate) fn current_exec_identity(
-    offsets: &ExecInodeOffsets,
-) -> Option<([u8; EXEC_INODE_KEY_LEN], u32)> {
+fn current_exec_identity_key(offsets: &ExecInodeOffsets) -> Option<[u8; EXEC_INODE_KEY_LEN]> {
     if offsets.task_size == 0 || offsets.mm_size == 0 {
         return None;
     }
@@ -260,7 +263,14 @@ pub(crate) fn current_exec_identity(
     if dev == 0 || ino == 0 {
         return None;
     }
-    let identity = exec_inode_key(dev, ino);
+    Some(exec_inode_key(dev, ino))
+}
+
+#[inline(always)]
+pub(crate) fn current_exec_identity(
+    offsets: &ExecInodeOffsets,
+) -> Option<([u8; EXEC_INODE_KEY_LEN], u32)> {
+    let identity = current_exec_identity_key(offsets)?;
     let flags = unsafe { TRUSTED_EXEC_INODES.get(&identity).copied().unwrap_or(0) };
     // A core-written value is a non-zero subset of the documented flags; an
     // undefined bit means a foreign/stale object -> gate unavailable.
@@ -268,6 +278,33 @@ pub(crate) fn current_exec_identity(
         return None;
     }
     Some((identity, flags))
+}
+
+/// True only when the current process's real kernel executable inode is
+/// registered in `SELF_DAEMON_INODES`. Fails closed (`false`) if offsets or
+/// identity cannot be verified — never trusts `bpf_get_current_comm()`.
+#[inline(always)]
+pub(crate) fn is_own_daemon_exec() -> bool {
+    let Some(offsets) = exec_inode_offsets() else {
+        return false;
+    };
+    let Some(identity) = current_exec_identity_key(&offsets) else {
+        return false;
+    };
+    unsafe { SELF_DAEMON_INODES.get(&identity).is_some() }
+}
+
+/// Resolves `(s_dev, i_ino)` for the current task via BTF offsets without
+/// requiring exec-inode gate arming, returning `(0, 0)` when unavailable.
+#[inline(always)]
+pub(crate) fn current_exe_dev_ino() -> (u32, u64) {
+    let Some(offsets) = exec_inode_offsets() else {
+        return (0, 0);
+    };
+    let Some(identity) = current_exec_identity_key(&offsets) else {
+        return (0, 0);
+    };
+    decode_exec_inode_key(&identity).unwrap_or((0, 0))
 }
 
 /// Looks up the trust flags of an already resolved executable identity.

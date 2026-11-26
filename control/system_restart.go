@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"strings"
@@ -103,6 +104,10 @@ func (s *APIServer) systemRestart(w http.ResponseWriter, r *http.Request) {
 		if err := decoder.Decode(&request); err != nil && !errors.Is(err, os.ErrClosed) {
 			// An empty body is not accepted either: the justification is required.
 			apiError(w, http.StatusBadRequest, "system restart rejected", fmt.Errorf("decoding restart request: %w", err))
+			return
+		}
+		if err := decoder.Decode(&struct{}{}); err != nil && !errors.Is(err, io.EOF) {
+			apiError(w, http.StatusBadRequest, "system restart rejected", errors.New("trailing JSON data rejected"))
 			return
 		}
 	}

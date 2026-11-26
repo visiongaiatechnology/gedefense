@@ -219,7 +219,7 @@ func (e *LockdownEngine) Clear(expectedEpoch, reasonToken, reasonText, requestID
 	if !latched {
 		return e.StatusView(), errLockdownNotLatched
 	}
-	if epoch != "" && expectedEpoch != epoch {
+	if !validLockdownEpoch(epoch) || expectedEpoch != epoch {
 		return e.StatusView(), errLockdownEpochMismatch
 	}
 	// A core that never implemented the family holds nothing to release, a core the

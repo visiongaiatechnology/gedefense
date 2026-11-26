@@ -6,7 +6,10 @@ python3 - "$ROOT" <<'PY'
 from pathlib import Path
 import re, sys
 root=Path(sys.argv[1])
-files=list((root/'control'/'web').glob('*.js'))+list((root/'control'/'web').glob('*.html'))
+files=sorted(
+    p for p in (list((root/'control'/'web').rglob('*.js'))+list((root/'control'/'web').rglob('*.html')))
+    if 'vendor' not in p.relative_to(root/'control'/'web').parts
+)
 forbidden={
     'innerHTML': re.compile(r'\binnerHTML\b'),
     'outerHTML': re.compile(r'\bouterHTML\b'),
@@ -16,12 +19,17 @@ forbidden={
     'Function constructor': re.compile(r'\bnew\s+Function\s*\('),
     'javascript URL': re.compile(r'javascript\s*:', re.I),
     'srcdoc': re.compile(r'\bsrcdoc\s*=', re.I),
-    'inline event handler': re.compile(r'\son[a-z]{3,}\s*=', re.I),
+    'inline event handler (HTML)': re.compile(r'\son[a-z]{3,}\s*=', re.I),
+    'inline event handler (DOM)': re.compile(r'\bsetAttribute\s*\(\s*[\'"]on[a-z]{3,}', re.I),
 }
 findings=[]
 for path in files:
     text=path.read_text(encoding='utf-8')
     for label, pattern in forbidden.items():
+        if label == 'inline event handler (HTML)' and path.suffix != '.html':
+            continue
+        if label == 'inline event handler (DOM)' and path.suffix != '.js':
+            continue
         for match in pattern.finditer(text):
             line=text.count('\n',0,match.start())+1
             findings.append(f'{path.relative_to(root)}:{line}: {label}')

@@ -11,6 +11,9 @@ import {
   acknowledgeIncident,
   confineIncident,
   deleteBlock,
+  getToken,
+  mintDirectStepUp,
+  mintGatewayStepUp,
   removeAllowlist,
   undoAllowlist,
   undoBlock
@@ -51,6 +54,7 @@ import { loadCMSView } from '../cms.js';
 import { loadKineticView } from '../kinetic.js';
 import { loadThreatIntelView } from '../threat-intel.js';
 import { loadXDRView } from '../xdr.js';
+import { loadAntispywareView } from './views_antispyware.js';
 import { loadExposureView } from '../v61/exposure.js';
 import { loadWorkersView } from '../v61/workers.js';
 import { loadTLSView } from '../v61/tls.js';
@@ -80,6 +84,7 @@ const viewMeta = {
   integrity: ['view.integrity.eyebrow', 'view.integrity.title'],
   boot: ['view.boot.eyebrow', 'view.boot.title'],
   xdr: ['view.xdr.eyebrow', 'view.xdr.title'],
+  antispyware: ['antispyware.eyebrow', 'antispyware.title'],
   network: ['view.network.eyebrow', 'view.network.title'],
   policy: ['view.policy.eyebrow', 'view.policy.title'],
   forensics: ['view.forensics.eyebrow', 'view.forensics.title'],
@@ -133,6 +138,7 @@ function activateView(name) {
   if (selected === 'kinetic') loadKineticView().catch(handleActionError);
   if (selected === 'threat-intel') loadThreatIntelView().catch(handleActionError);
   if (selected === 'xdr') loadXDRView(snapshot).catch(handleActionError);
+  if (selected === 'antispyware') loadAntispywareView(snapshot).catch(handleActionError);
   if (selected === 'hardening') Promise.all([loadHardening(), loadTransactions()]).catch(handleActionError);
   if (selected === 'integrity') loadIntegrity().catch(handleActionError);
   if (selected === 'boot') loadBootTrust().catch(handleActionError);
@@ -422,7 +428,7 @@ function handleActionError(error) {
     toast(t('toast.operatorRequired'), 'warning');
     return;
   }
-  const suffix = error instanceof APIError && error.errorID ? ` Â· ${error.errorID}` : '';
+  const suffix = error instanceof APIError && error.errorID ? ` · ${error.errorID}` : '';
   toast(`${error.message || t('toast.operationFailed')}${suffix}`, 'danger');
 }
 
@@ -496,6 +502,65 @@ function openAuthDialog() {
   if (dialog && !dialog.open) dialog.showModal();
 }
 
+async function withCriticalStepUp(actionLabel, callback) {
+  if (getToken()) {
+    const minted = await mintDirectStepUp();
+    if (!minted?.step_up) throw new Error(t('stepUp.unavailable'));
+    return callback(minted.step_up);
+  }
+  const dialog = byID('stepUpDialog');
+  const form = byID('stepUpForm');
+  const input = byID('stepUpPassword');
+  const labelNode = byID('stepUpActionLabel');
+  const stateNode = byID('stepUpState');
+  if (!dialog || !form || !input) {
+    throw new Error(t('stepUp.unavailable'));
+  }
+  if (labelNode) labelNode.textContent = String(actionLabel || '');
+  if (stateNode) stateNode.textContent = '';
+  input.value = '';
+  return new Promise(resolve => {
+    const cleanup = () => {
+      form.removeEventListener('submit', onSubmit);
+      dialog.removeEventListener('close', onClose);
+      input.value = '';
+    };
+    const onClose = () => {
+      cleanup();
+      resolve(null);
+    };
+    const onSubmit = async event => {
+      event.preventDefault();
+      const password = String(input.value || '');
+      input.value = '';
+      if (password.length < 12) {
+        if (stateNode) stateNode.textContent = t('stepUp.passwordShort');
+        input.focus();
+        return;
+      }
+      const confirmBtn = byID('stepUpConfirm');
+      if (confirmBtn) confirmBtn.disabled = true;
+      if (stateNode) stateNode.textContent = t('stepUp.verifying');
+      try {
+        const res = await mintGatewayStepUp(password);
+        if (!res?.step_up_proof) throw new Error(t('stepUp.unavailable'));
+        cleanup();
+        dialog.close();
+        const outcome = await callback(res.step_up_proof);
+        resolve(outcome === undefined ? true : outcome);
+      } catch (err) {
+        if (stateNode) stateNode.textContent = err?.message || t('stepUp.rejected');
+      } finally {
+        if (confirmBtn) confirmBtn.disabled = false;
+      }
+    };
+    form.addEventListener('submit', onSubmit);
+    dialog.addEventListener('close', onClose);
+    dialog.showModal();
+    input.focus();
+  });
+}
+
 export {
   activateView,
   acknowledge,
@@ -515,5 +580,6 @@ export {
   setRestartState,
   setValue,
   submitProtectionRemoval,
-  undoProtectionRemoval
+  undoProtectionRemoval,
+  withCriticalStepUp
 };

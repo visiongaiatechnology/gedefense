@@ -223,12 +223,12 @@ func scanELF(path string) (version, openssl string, modules []string, tlsStatic 
 		// table bounded to the same read budget.
 		return "", "", []string{}, false, []string{"binary has no .rodata section: " + path}
 	}
+	if section.Size > maxELFBytes {
+		return "", "", []string{}, false, []string{"ELF .rodata exceeds scan cap: " + path}
+	}
 	reader, err := section.Data()
 	if err != nil {
 		return "", "", []string{}, false, []string{"ELF .rodata unreadable: " + path}
-	}
-	if len(reader) > maxELFBytes {
-		reader = reader[:maxELFBytes]
 	}
 	data := reader
 	evidence = append(evidence, "ELF .rodata scanned: "+strconv.Itoa(len(data))+" bytes")

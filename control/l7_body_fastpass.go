@@ -140,11 +140,15 @@ var l7FastPassMarkers = []string{
 // performs no decode expansion: the fast pass exists to catch direct payloads
 // quickly, not to replace the normal pipeline.
 func l7RawBodyFindings(body []byte) []L7Finding {
+	const (
+		maxWindowsPerMarker = 4
+		maxTotalWindows     = 64
+	)
 	lower := strings.ToLower(string(body))
-	windows := make([][2]int, 0, 16)
+	windows := make([][2]int, 0, 32)
 	for _, marker := range l7FastPassMarkers {
 		start := 0
-		for len(windows) < 16 {
+		for markerHits := 0; markerHits < maxWindowsPerMarker && len(windows) < maxTotalWindows; markerHits++ {
 			index := strings.Index(lower[start:], marker)
 			if index < 0 {
 				break

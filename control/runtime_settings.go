@@ -96,8 +96,20 @@ func (s *SettingsStore) Revision(revision uint64) (RuntimeSettings, error) {
 }
 
 func (s *SettingsStore) Update(next RuntimeSettings) (RuntimeSettings, error) {
+	return s.updateLocked(next, 0, false)
+}
+
+// UpdateIfRevision atomically commits next only if the current revision still matches expectedRevision.
+func (s *SettingsStore) UpdateIfRevision(expectedRevision uint64, next RuntimeSettings) (RuntimeSettings, error) {
+	return s.updateLocked(next, expectedRevision, true)
+}
+
+func (s *SettingsStore) updateLocked(next RuntimeSettings, expectedRevision uint64, checkRevision bool) (RuntimeSettings, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if checkRevision && (expectedRevision == 0 || s.current.Revision != expectedRevision) {
+		return cloneRuntimeSettings(s.current), fmt.Errorf("runtime settings revision conflict: expected %d current %d", expectedRevision, s.current.Revision)
+	}
 	next.FabricVersion = fabricSettingsVersion
 	if err := validateRuntimeSettings(&next); err != nil {
 		return cloneRuntimeSettings(s.current), err

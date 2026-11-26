@@ -762,6 +762,11 @@ func (a *AirlockInspector) StageInJail(filename string, r io.Reader) (string, er
 	if err := os.MkdirAll(quarantineDir, 0o700); err != nil {
 		return "", NewAirlockStorageException("failed to prepare quarantine directory", err)
 	}
+	// S12 hard quota enforcement: ensure the quarantine vault keeps at least
+	// secCritQuarantineReserve (256 MiB) free before staging a new file.
+	if free, statErr := secCritFilesystemFreeBytes(quarantineDir); statErr == nil && free < secCritQuarantineReserve {
+		return "", NewAirlockStorageException("quarantine filesystem reserve below 256 MiB minimum", nil)
+	}
 	// Resolving the configured root once gives a stable anchor for the walk and
 	// makes the write and the cleanup agree on the same directory. The escape
 	// protection is not this call: openBeneath refuses a symbolic link in every

@@ -202,10 +202,14 @@ func (s *APIServer) fabricSettingsUpdate(w http.ResponseWriter, r *http.Request)
 			return
 		}
 	}
-	updated, err := s.settings.Update(next)
+	updated, err := s.settings.UpdateIfRevision(current.Revision, next)
 	if err != nil {
 		_ = s.rollbackManagementAllowlistChange(allowlistTxn)
-		apiError(w, http.StatusBadRequest, "settings update rejected", err)
+		status := http.StatusBadRequest
+		if strings.Contains(err.Error(), "revision conflict") {
+			status = http.StatusConflict
+		}
+		apiError(w, status, "settings update rejected", err)
 		return
 	}
 	if err := s.applyRuntimeSettings(current, updated, module); err != nil {

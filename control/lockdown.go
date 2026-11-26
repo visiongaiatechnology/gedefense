@@ -289,6 +289,9 @@ func validateLockdownEngineState(doc *lockdownEngineState) error {
 	default:
 		return errors.New("state is not in the closed vocabulary")
 	}
+	if (doc.Latched || doc.State == lockdownStateActive || doc.State == lockdownStateTriggering || doc.State == lockdownStateClearing) && !validLockdownEpoch(doc.Epoch) {
+		return errors.New("latched/active state requires an 8-hex-character epoch")
+	}
 	if doc.Epoch != "" && !validLockdownEpoch(doc.Epoch) {
 		return errors.New("epoch is not 8 hex characters")
 	}

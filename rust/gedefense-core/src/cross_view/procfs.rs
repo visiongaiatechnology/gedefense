@@ -49,12 +49,15 @@ impl CrossViewCore {
 
         // Resolve a bounded subset of the live pins and prove that each still
         // names the BPF object the pin manifest recorded. This catches a pin
-        // replaced with a different object, not only a removed pin.
+        // replaced with a different object, not only a removed pin. Note that
+        // kernel bpf_map_info.name is NUL-terminated inside BPF_OBJ_NAME_BYTES
+        // (16 bytes -> at most 15 chars), so long pin names match the 15-byte
+        // kernel-truncated object name.
         for name in current.iter().take(PIN_RESOLVE_LIMIT) {
             let full = format!("{}/{}", self.pin_root.trim_end_matches('/'), name);
             match resolve_pinned_object(&full) {
                 Ok(Some(object_name)) => {
-                    if object_name != *name {
+                    if !pin_matches_kernel_object_name(name, &object_name) {
                         self.enqueue(pin_event(
                             now_ms,
                             name,
@@ -70,7 +73,7 @@ impl CrossViewCore {
                     std::thread::sleep(Duration::from_millis(2));
                     match resolve_pinned_object(&full) {
                         Ok(Some(object_name)) => {
-                            if object_name != *name {
+                            if !pin_matches_kernel_object_name(name, &object_name) {
                                 self.enqueue(pin_event(
                                     now_ms,
                                     name,
@@ -91,6 +94,16 @@ impl CrossViewCore {
             }
         }
     }
+}
+
+pub(super) fn pin_matches_kernel_object_name(pin_name: &str, kernel_object_name: &str) -> bool {
+    let cap = BPF_OBJ_NAME_BYTES.saturating_sub(1);
+    let expected = if pin_name.len() > cap {
+        &pin_name[..cap]
+    } else {
+        pin_name
+    };
+    kernel_object_name == expected
 }
 
 pub(super) fn pin_event(now_ms: u64, name: &str, detail: u32, severity: u8) -> CrossViewEvent {
@@ -207,11 +220,32 @@ pub(super) fn read_proc_stat(pid: u32) -> Result<String, StatRead> {
     match read_bounded_string(&format!("{PROCFS_PATH}/{pid}/stat"), PROC_STAT_MAX) {
         Ok((text, _)) if !text.is_empty() => Ok(text),
         Ok(_) => Err(StatRead::Gone),
-        Err(error) => match error.kind() {
-            std::io::ErrorKind::NotFound => Err(StatRead::Gone),
-            _ => Err(StatRead::Refused),
-        },
+        Err(error) => {
+            if error.kind() == std::io::ErrorKind::NotFound || error.raw_os_error() == Some(3) {
+                Err(StatRead::Gone)
+            } else {
+                Err(StatRead::Refused)
+            }
+        }
     }
+}
+
+pub(super) fn parse_proc_status_tgid(status: &str) -> Option<u32> {
+    for line in status.lines() {
+        if let Some(rest) = line.strip_prefix("Tgid:") {
+            return rest.trim().parse::<u32>().ok().filter(|tgid| *tgid != 0);
+        }
+    }
+    None
+}
+
+/// Resolves the owning thread-group id (`TGID`) for one `/proc/<tid>/status`
+/// entry so a normal sub-thread omitted from `readdir("/proc")` is recognised
+/// when its parent process is visible.
+pub(super) fn read_proc_tgid(pid: u32) -> Option<u32> {
+    let (text, _) =
+        read_bounded_string(&format!("{PROCFS_PATH}/{pid}/status"), PROC_STAT_MAX).ok()?;
+    parse_proc_status_tgid(&text)
 }
 
 /// One bounded `/proc` pid listing (positive numeric entries only).

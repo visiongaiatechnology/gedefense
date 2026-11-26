@@ -498,7 +498,7 @@ function renderTitanQuarantine(payload) {
     path.title = titanDisplay(item.path);
     const hash = document.createElement('td');
     hash.className = 'mono';
-    hash.textContent = item.sample_sha256 ? `${String(item.sample_sha256).slice(0, 16)}â€¦` : '---';
+    hash.textContent = item.sample_sha256 ? `${String(item.sample_sha256).slice(0, 16)}…` : '---';
     hash.title = item.sample_sha256 ? String(item.sample_sha256) : '';
     const state = document.createElement('td');
     state.textContent = titanDisplay(item.state);
@@ -582,7 +582,7 @@ function openTitanReviewDialog(event) {
       titanTrustLabel(event.trust_state),
       titanAuthorizationLabel(event.authorization_reason),
       event.observed_utc ? formatTime(event.observed_utc) : '---'
-    ].join(' Â· ');
+    ].join(' · ');
   }
   setValue('titanReviewDecision', 'REVIEWED');
   setValue('titanReviewReason', '');
@@ -601,7 +601,7 @@ function openTitanContainDialog(event) {
       titanTrustLabel(event.trust_state),
       titanDisplay(event.sensor),
       event.observed_utc ? formatTime(event.observed_utc) : '---'
-    ].join(' Â· ');
+    ].join(' · ');
   }
   setValue('titanContainReason', '');
   titanSetInline('titanContainError', '');

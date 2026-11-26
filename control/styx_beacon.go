@@ -17,11 +17,14 @@ import (
 )
 
 const (
-	MaxTrackedBeaconFlows = 8192
-	MaxFlowsPerCgroup     = 64
-	FlowTTLSeconds        = 900
-	MaxIncidentsPerMinute = 6
-	DedupeSeconds         = 300
+	MaxTrackedBeaconFlows      = 8192
+	MaxFlowsPerCgroup          = 64
+	FlowTTLSeconds             = 900
+	MaxIncidentsPerMinute      = 6
+	DedupeSeconds              = 300
+	localPrefixRefreshInterval = 60 * time.Second
+	kernelThreadCacheTTL       = 5 * time.Minute
+	kernelThreadCacheLimit     = 256
 )
 const (
 	StyxBeaconEventPeriodicity = "BEACON_PERIODICITY"
@@ -47,6 +50,11 @@ type StyxBeaconConfig struct {
 	RxObservationAvailable, DNSObservationAvailable bool
 	RxObservationCapability                         bool
 	ResolverPrefixes                                []netip.Prefix
+	AllowPrefixes                                   []netip.Prefix
+	LocalPrefixes                                   []netip.Prefix
+	LocalPrefixSource                               func() []netip.Prefix
+	KernelSoftirqCheck                              func(pid int) bool
+	DNSAttribution                                  func(pid int, since time.Time) bool
 	CanaryCorrelation                               func(cgroupID uint64, pid int, since time.Time) bool
 	Now                                             func() time.Time
 	PruneInterval                                   time.Duration
@@ -74,6 +82,11 @@ type beaconAggregate struct {
 	lastEvent, lastCategory  string
 	lastDecision             string
 }
+type kthreadCacheEntry struct {
+	isKthread bool
+	checkedAt time.Time
+}
+
 type StyxBeaconEngine struct {
 	mu                                                                      sync.Mutex
 	cfg                                                                     StyxBeaconConfig
@@ -84,6 +97,9 @@ type StyxBeaconEngine struct {
 	perCgroup                                                               map[uint64]int
 	dedupe                                                                  map[string]time.Time
 	incidents                                                               []time.Time
+	localPrefixes                                                           []netip.Prefix
+	localPrefixRefreshedAt                                                  time.Time
+	kthreadCache                                                            map[int]kthreadCacheEntry
 	degraded                                                                bool
 	overflowPolls, cleanPolls                                               int
 	events, emittedIncidents, suppressed, dropped, overflowRecords, evicted uint64
@@ -116,13 +132,19 @@ func NewStyxBeaconEngine(cfg StyxBeaconConfig, correlator *IncidentCorrelator, s
 	if cfg.PruneInterval <= 0 {
 		cfg.PruneInterval = 5 * time.Second
 	}
-	return &StyxBeaconEngine{
+	engine := &StyxBeaconEngine{
 		cfg: cfg, correlator: correlator, sink: sink,
-		flows:     make(map[beaconFlowKey]*list.Element),
-		order:     list.New(),
-		perCgroup: make(map[uint64]int),
-		dedupe:    make(map[string]time.Time),
+		flows:        make(map[beaconFlowKey]*list.Element),
+		order:        list.New(),
+		perCgroup:    make(map[uint64]int),
+		dedupe:       make(map[string]time.Time),
+		kthreadCache: make(map[int]kthreadCacheEntry),
 	}
+	if cfg.LocalPrefixSource != nil {
+		engine.localPrefixes = cfg.LocalPrefixSource()
+		engine.localPrefixRefreshedAt = cfg.Now().UTC()
+	}
+	return engine
 }
 
 func (b *StyxBeaconEngine) SensorState() string {
@@ -181,6 +203,7 @@ func (b *StyxBeaconEngine) RecordFlows(events []CoreStyxFlowEvent) []XDRIncident
 		b.mu.Unlock()
 		return nil
 	}
+	b.refreshLocalPrefixesLocked(now)
 	b.events += uint64(len(events))
 	incidents := make([]XDRIncident, 0, 1)
 	for i := range events {
@@ -209,7 +232,9 @@ func (b *StyxBeaconEngine) observeLocked(event CoreStyxFlowEvent, now time.Time)
 		b.dropped++
 		return XDRIncident{}, false
 	}
-	if isIgnoredNonExternalFlow(event, address) {
+	if isIgnoredNonExternalFlow(event, address) ||
+		b.isVerifiedSoftirqLocked(event, now) ||
+		slices.ContainsFunc(b.cfg.AllowPrefixes, func(prefix netip.Prefix) bool { return prefix.Contains(address) }) {
 		return XDRIncident{}, false
 	}
 	key := beaconFlowKey{cgroupID: event.CgroupID, pid: event.PID, uid: event.UID,
@@ -255,8 +280,12 @@ func (b *StyxBeaconEngine) updateLocked(aggregate *beaconAggregate, event CoreSt
 	// the flow volume is the saturating delta sum - never a per-emit maximum.
 	aggregate.txBytes = saturatingAdd(aggregate.txBytes, event.TxBytes)
 	aggregate.rxBytes = saturatingAdd(aggregate.rxBytes, event.RxBytes)
-	if b.cfg.DNSObservationAvailable && slices.ContainsFunc(b.cfg.ResolverPrefixes, func(prefix netip.Prefix) bool { return prefix.Contains(aggregate.key.dstIP) }) {
-		aggregate.lastDNSSeen = true
+	if b.cfg.DNSObservationAvailable {
+		resolverMatch := slices.ContainsFunc(b.cfg.ResolverPrefixes, func(prefix netip.Prefix) bool { return prefix.Contains(aggregate.key.dstIP) })
+		dnsRecent := b.cfg.DNSAttribution != nil && b.cfg.DNSAttribution(aggregate.key.pid, now.Add(-FlowTTLSeconds*time.Second))
+		aggregate.lastDNSSeen = resolverMatch || dnsRecent
+	} else {
+		aggregate.lastDNSSeen = false
 	}
 }
 func saturatingAdd(left, right uint64) uint64 {
@@ -322,7 +351,13 @@ func (b *StyxBeaconEngine) evaluateLocked(aggregate *beaconAggregate, now time.T
 		}
 	}
 	// Signal 3 is dead in Phase 1: no DNS attribution exists, so it may never fire.
-	if b.cfg.DNSObservationAvailable && !aggregate.lastDNSSeen && !slices.ContainsFunc(b.cfg.ResolverPrefixes, func(prefix netip.Prefix) bool { return prefix.Contains(aggregate.key.dstIP) }) && aggregate.txBytes >= 65536 {
+	// Destinations matching a configured DNS resolver or an interface IP bound
+	// directly to this host never go through public DNS resolution, so they are
+	// exempt from DIRECT_IP_NO_DNS (while keeping periodicity/asymmetry active).
+	if b.cfg.DNSObservationAvailable && !aggregate.lastDNSSeen &&
+		!slices.ContainsFunc(b.cfg.ResolverPrefixes, func(prefix netip.Prefix) bool { return prefix.Contains(aggregate.key.dstIP) }) &&
+		!b.isLocalHostAddressLocked(aggregate.key.dstIP) &&
+		aggregate.txBytes >= 65536 {
 		signals = append(signals, StyxBeaconEventDirectIP)
 		rules = append(rules, StyxBeaconRuleDirectIP)
 		if 80 > bestScore {
@@ -551,4 +586,45 @@ func sanitizeBeaconComm(comm string) string {
 		return ""
 	}
 	return comm
+}
+
+func (b *StyxBeaconEngine) refreshLocalPrefixesLocked(now time.Time) {
+	if b.cfg.LocalPrefixSource == nil {
+		return
+	}
+	if !b.localPrefixRefreshedAt.IsZero() && now.Sub(b.localPrefixRefreshedAt) < localPrefixRefreshInterval {
+		return
+	}
+	b.localPrefixes = b.cfg.LocalPrefixSource()
+	b.localPrefixRefreshedAt = now
+}
+
+func (b *StyxBeaconEngine) isLocalHostAddressLocked(address netip.Addr) bool {
+	if slices.ContainsFunc(b.cfg.LocalPrefixes, func(prefix netip.Prefix) bool { return prefix.Contains(address) }) {
+		return true
+	}
+	return slices.ContainsFunc(b.localPrefixes, func(prefix netip.Prefix) bool { return prefix.Contains(address) })
+}
+
+func (b *StyxBeaconEngine) isVerifiedSoftirqLocked(event CoreStyxFlowEvent, now time.Time) bool {
+	if b.cfg.KernelSoftirqCheck == nil || event.UID != 0 || event.PID <= 0 {
+		return false
+	}
+	if !strings.HasPrefix(sanitizeBeaconComm(event.Comm), "ksoftirqd/") {
+		return false
+	}
+	if b.kthreadCache != nil {
+		if cached, ok := b.kthreadCache[event.PID]; ok && now.Sub(cached.checkedAt) < kernelThreadCacheTTL {
+			return cached.isKthread
+		}
+	}
+	verified := b.cfg.KernelSoftirqCheck(event.PID)
+	if b.kthreadCache == nil {
+		b.kthreadCache = make(map[int]kthreadCacheEntry)
+	}
+	if len(b.kthreadCache) >= kernelThreadCacheLimit {
+		clear(b.kthreadCache)
+	}
+	b.kthreadCache[event.PID] = kthreadCacheEntry{isKthread: verified, checkedAt: now}
+	return verified
 }

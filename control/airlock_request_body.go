@@ -36,14 +36,16 @@ func (a *AirlockInspector) InspectRequestBody(contentType string, body []byte) (
 	if !policy.enabled {
 		return nil, nil
 	}
+	maxCap := airlockRequestBodyScanMaxBytes
+	if airlockScanBudgetBytes < maxCap {
+		maxCap = airlockScanBudgetBytes
+	}
 	scanned := body
-	if len(scanned) > airlockRequestBodyScanMaxBytes {
-		scanned = scanned[:airlockRequestBodyScanMaxBytes]
+	truncated := len(scanned) > maxCap
+	if truncated {
+		scanned = scanned[:maxCap]
 	}
-	if len(scanned) > airlockScanBudgetBytes {
-		scanned = scanned[:airlockScanBudgetBytes]
-	}
-	digest := sha256.Sum256(scanned)
+	digest := sha256.Sum256(body)
 	prefixEnd := len(scanned)
 	if prefixEnd > airlockInspectHeaderBytes {
 		prefixEnd = airlockInspectHeaderBytes
@@ -77,6 +79,12 @@ func (a *AirlockInspector) InspectRequestBody(contentType string, body []byte) (
 		result.RiskScore = clampScore(policy.escalateScore(200))
 		result.ThreatType = "HTML_ACTIVE_CONTENT"
 		return result, NewAirlockSecurityException("request body contains active HTML content", nil)
+	}
+	if truncated {
+		result.IsClean = false
+		result.RiskScore = clampScore(policy.escalateScore(200))
+		result.ThreatType = "BODY_SCAN_CAP_EXCEEDED"
+		return result, NewAirlockSecurityException("request body exceeds Airlock raw-body scan cap; partial body cannot be certified clean", nil)
 	}
 	return result, nil
 }

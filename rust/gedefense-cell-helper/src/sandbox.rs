@@ -64,12 +64,19 @@ fn check_export_fd(fd: RawFd) -> Result<(), ErrorCode> {
     if fl < 0 || fl & libc::O_ACCMODE == libc::O_RDONLY { Err(ErrorCode::Internal) } else { Ok(()) }
 }
 fn open_input(spec: &CellSpec) -> Result<OwnedFd, ErrorCode> {
-    let c = cp(&spec.input_path)?;
-    let fd = unsafe { libc::open(c.as_ptr(), libc::O_RDONLY | libc::O_NOFOLLOW | libc::O_CLOEXEC | libc::O_NONBLOCK) };
+    let Some(preopened) = spec.input_fd.as_ref() else {
+        return Err(ErrorCode::InputInvalid);
+    };
+    let fd = unsafe { libc::fcntl(preopened.as_raw_fd(), libc::F_DUPFD_CLOEXEC, 0) };
     if fd < 0 { return Err(ErrorCode::InputInvalid); }
     let mut st: libc::stat = unsafe { std::mem::zeroed() };
     let size = spec.input_size;
-    let ok = unsafe { libc::fstat(fd, &mut st) } == 0 && st.st_mode & libc::S_IFMT == libc::S_IFREG && st.st_size as u64 == size && size > 0 && size <= HARD_MAX_INPUT_BYTES;
+    let ok = unsafe { libc::lseek(fd, 0, libc::SEEK_SET) } == 0
+        && unsafe { libc::fstat(fd, &mut st) } == 0
+        && st.st_mode & libc::S_IFMT == libc::S_IFREG
+        && st.st_size as u64 == size
+        && size > 0
+        && size <= HARD_MAX_INPUT_BYTES;
     if !ok { unsafe { libc::close(fd) }; return Err(ErrorCode::InputInvalid); }
     Ok(unsafe { OwnedFd::from_raw_fd(fd) })
 }
@@ -232,11 +239,11 @@ unsafe fn materialize_input(plan: &Plan) -> bool {
 }
 unsafe fn pivot(plan: &Plan) -> bool {
     if libc::chdir(plan.newroot.as_ptr()) != 0 { return false; }
-    if libc::syscall(libc::SYS_pivot_root, c".".as_ptr(), c".".as_ptr()) == 0 {
-        libc::umount2(c".".as_ptr(), libc::MNT_DETACH); libc::chdir(c"/".as_ptr()); true
-    } else {
-        libc::chroot(c".".as_ptr()) == 0 && libc::chdir(c"/".as_ptr()) == 0
+    if libc::syscall(libc::SYS_pivot_root, c".".as_ptr(), c".".as_ptr()) != 0 {
+        return false;
     }
+    libc::umount2(c".".as_ptr(), libc::MNT_DETACH);
+    libc::chdir(c"/".as_ptr()) == 0
 }
 /// Drop all capabilities/groups and make the unprivileged identity permanent.
 unsafe fn creds(plan: &Plan) -> bool {
@@ -275,14 +282,15 @@ unsafe fn child_main(plan: &Plan) -> ! {    if libc::prctl(libc::PR_SET_PDEATHSI
     if devnull > 2 { libc::close(devnull); }
     if libc::dup2(plan.export.as_raw_fd(), EXPORT_FD) < 0 { fail(18); }
     libc::fcntl(EXPORT_FD, libc::F_SETFD, 0);
-    if !creds(plan) { fail(19); } if !rlimits(plan) { fail(21); }
+    if !creds(plan) { fail(19); } if !rlimits(plan) { fail(25); }
     libc::umask(0o077);
     if libc::prctl(libc::PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0 { fail(22); }
     let mut argv: [*const libc::c_char; 40] = [std::ptr::null(); 40];
     let mut envp: [*const libc::c_char; 40] = [std::ptr::null(); 40];
-    for (i, a) in plan.args.iter().enumerate() { if i < 39 { argv[i] = a.as_ptr(); } }
-    for (i, e) in plan.envs.iter().enumerate() { if i < 39 { envp[i] = e.as_ptr(); } }
-    for fd in 5..1024 { if fd != ERR_FD { libc::close(fd); } }
+    if plan.args.len() >= argv.len() || plan.envs.len() >= envp.len() { fail(26); }
+    for (i, a) in plan.args.iter().enumerate() { argv[i] = a.as_ptr(); }
+    for (i, e) in plan.envs.iter().enumerate() { envp[i] = e.as_ptr(); }
+    for fd in 4..1024 { if fd != ERR_FD { libc::close(fd); } }
     let parser = libc::syscall(libc::SYS_fork) as libc::pid_t; // PID 1 = reaper
     if parser < 0 { fail(23); }
     if parser == 0 {
@@ -291,7 +299,7 @@ unsafe fn child_main(plan: &Plan) -> ! {    if libc::prctl(libc::PR_SET_PDEATHSI
         libc::execve(plan.binary.as_ptr(), argv.as_ptr(), envp.as_ptr());
         fail(E_EXEC);
     }
-    libc::close(EXPORT_FD);
+    for fd in 3..1024 { if fd != ERR_FD { libc::close(fd); } }
     if crate::seccomp::install_program(&plan.seccomp).is_err() { fail(E_SECCOMP); }
     libc::close(ERR_FD);
     let mut status: libc::c_int = 0;
@@ -379,10 +387,12 @@ mod tests {
     use super::*;
     use crate::types::test_support::TempDir;
     fn spec(td: &TempDir, binary: &str, argv: Vec<String>) -> CellSpec {
+        let input_path = td.write("in.bin", b"hello").expect("input");
+        let input_file = std::fs::File::open(&input_path).expect("open input");
         CellSpec {
             uuid: "ab".repeat(16), generation: 1, profile_id: "test".into(), binary: PathBuf::from(binary),
             binary_sha256: "cd".repeat(32), argv, env_allow: vec![], wayland: false, pipewire: false,
-            input_path: td.write("in.bin", b"hello").expect("input"), input_size: 5, input_sha256: "ef".repeat(32),
+            input_path, input_fd: Some(std::sync::Arc::new(OwnedFd::from(input_file))), input_size: 5, input_sha256: "ef".repeat(32),
             input_token: "01".repeat(16), export_fd: -1, export_path: td.child("export.bin"),
             limits: Limits::new(30, 256 << 20, 16, 1 << 20), uid: 0, gid: 65534, root_dir: td.child("cell"),
         }

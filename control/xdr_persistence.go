@@ -269,7 +269,7 @@ func (e *XDREngine) consumePersistenceEvents(events []CorePersistenceEvent, drop
 					Target: fmt.Sprintf("pid:%d", event.PID)})
 			}
 		case assessment.InfoOnly:
-			if e.state != nil {
+			if e.state != nil && assessment.EventKind != "xdr.persistence_memory_same_uid" {
 				e.state.AddEvent(Event{Time: now, Severity: "info", Kind: assessment.EventKind, Source: "kernel",
 					Message: assessment.Summary, Target: fmt.Sprintf("pid:%d", event.PID)})
 			}
@@ -296,30 +296,28 @@ func (e *XDREngine) consumePersistenceEvents(events []CorePersistenceEvent, drop
 
 // persistenceIntegrityTolerated implements the package-manager / boot-writer /
 // own-process tolerance for the persistence-path ladder.
+// Never trusts `comm` alone (`prctl(PR_SET_NAME)`): requires verified `selfPID`
+// or a resolved installation-managed executable path outside writable drop dirs.
 func (e *XDREngine) persistenceIntegrityTolerated(event CorePersistenceEvent) (bool, string) {
 	if e != nil && e.selfPID > 0 && event.PID == e.selfPID {
 		return true, "own control process"
 	}
-	if persistenceCommIn(event.Comm, persistenceOwnComms) {
+	exe := e.resolveProcessPath(event.PID)
+	if exe == "" || exe == "unknown" || bpfGuardPathUnderAny(exe, bpfGuardTempPathPrefixes) {
+		return false, ""
+	}
+	if persistenceCommIn(event.Comm, persistenceOwnComms) &&
+		(strings.HasPrefix(exe, "/opt/vgt/gedefense/") || strings.HasPrefix(exe, "/usr/bin/gedefense-") || strings.HasPrefix(exe, "/usr/sbin/gedefense-")) {
 		return true, "the GeDefense core/control itself"
 	}
-	if persistenceCommIn(event.Comm, persistencePackageManagerComms) {
-		return true, "package manager writer"
-	}
-	if persistenceCommIn(event.Comm, persistenceBootWriterComms) || strings.HasPrefix(event.Comm, "systemd") {
-		return true, "systemd/udev boot writer"
-	}
-	exe := persistenceExecutablePath(event.PID)
-	if exe != "unknown" {
-		for _, prefix := range persistencePackageManagerPathPrefixes {
-			if strings.HasPrefix(exe, prefix) {
-				return true, "package manager executable path"
-			}
+	for _, prefix := range persistencePackageManagerPathPrefixes {
+		if strings.HasPrefix(exe, prefix) {
+			return true, "package manager executable path"
 		}
-		for _, prefix := range persistenceBootWriterPathPrefixes {
-			if strings.HasPrefix(exe, prefix) {
-				return true, "systemd/udev executable path"
-			}
+	}
+	for _, prefix := range persistenceBootWriterPathPrefixes {
+		if strings.HasPrefix(exe, prefix) {
+			return true, "systemd/udev executable path"
 		}
 	}
 	return false, ""

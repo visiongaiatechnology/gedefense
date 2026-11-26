@@ -181,6 +181,8 @@ type StyxPhase2Engine struct {
 	firstSeen map[netip.Addr]time.Time
 	dedupe    map[string]time.Time
 
+	allowPrefixes []netip.Prefix
+
 	rxCapabilityKnown      bool
 	rxCapabilityAnnounced  bool
 	rxObservationAvailable bool
@@ -241,6 +243,7 @@ func (e *XDREngine) pollStyxPhase2(runtime RuntimeSettings, now time.Time, retry
 	}
 
 	engine.refreshSessions(now)
+	engine.setAllowlist(append(append([]string(nil), runtime.ManagementAllowlist...), e.cfg.Defense.Allowlist...))
 
 	incidents := engine.evaluatePCR(now)
 	for _, incident := range incidents {

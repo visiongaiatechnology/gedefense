@@ -46,6 +46,7 @@ export async function api(path, options = {}) {
   const headers = new Headers(options.headers || {});
   const token = getToken();
   if (token) headers.set('Authorization', `Bearer ${token}`);
+  if (options.stepUpProof) headers.set('X-VGT-Step-Up-Proof', String(options.stepUpProof).trim());
   if (mutating) headers.set('X-VGT-Request-ID', operationID);
   let body;
   if (Object.prototype.hasOwnProperty.call(options, 'json')) {
@@ -266,3 +267,21 @@ export const setTitanPolicy = input => api('/api/v1/titan/policy', { method: 'PO
 export const reviewTitanEvent = (id, input) => api(`/api/v1/titan/events/${encodeURIComponent(id)}/review`, { method: 'POST', json: input });
 export const getTitanQuarantine = () => api('/api/v1/titan/quarantine');
 export const containTitanEvent = input => api('/api/v1/titan/contain', { method: 'POST', json: input });
+
+// V6.3.0 RBAC step-up, quarantine prune, review queue, PermitV1 CRUD, SBC fusion, S12 sec-crit & Chameleon.
+export const getRBACRoles = () => api('/api/v1/auth/roles');
+export const mintDirectStepUp = () => api('/api/v1/auth/step-up', { method: 'POST', json: { purpose: 'critical' } });
+export const mintGatewayStepUp = password => api('/gateway/step-up', { method: 'POST', json: { password } });
+export const pruneQuarantine = (input, stepUpProof) => api('/api/v1/quarantine/prune', { method: 'POST', json: input, stepUpProof });
+export const getReviewQueue = (limit = 100) => api(`/api/v1/xdr/review?limit=${encodeURIComponent(limit)}`);
+export const ackReviewEntry = (id, stepUpProof) => api(`/api/v1/xdr/review/${encodeURIComponent(id)}/ack`, { method: 'POST', json: {}, stepUpProof });
+export const deleteReviewEntry = (id, stepUpProof) => api(`/api/v1/xdr/review/${encodeURIComponent(id)}`, { method: 'DELETE', stepUpProof });
+export const getSBCFusion = () => api('/api/v1/xdr/sbc');
+export const getSecCritStatus = () => api('/api/v1/xdr/sec-crit');
+export const getPermits = () => api('/api/v1/xdr/permits');
+export const upsertPermit = (permit, stepUpProof) => api('/api/v1/xdr/permits', { method: 'POST', json: permit, stepUpProof });
+export const deletePermit = (id, stepUpProof) => api(`/api/v1/xdr/permits/${encodeURIComponent(id)}`, { method: 'DELETE', stepUpProof });
+export const getChameleonStatus = () => api('/api/v1/chameleon/status');
+export const revealChameleon = (reason, confirm, stepUpProof) => api('/api/v1/chameleon/reveal', { method: 'POST', json: { reason, confirm }, stepUpProof });
+export const overrideUpdateWindow = (input, stepUpProof) => api('/api/v1/xdr/update-window/override', { method: 'POST', json: input, stepUpProof });
+export const getAntispywareStatus = () => api('/api/v1/antispyware/status');

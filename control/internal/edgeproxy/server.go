@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -158,6 +159,13 @@ func (m *Manager) Stop() {
 }
 
 func (m *Manager) startLocked(cfg Config) error {
+	keyInfo, keyErr := os.Lstat(cfg.KeyFile)
+	if keyErr != nil {
+		return fmt.Errorf("inspect edge private key: %w", keyErr)
+	}
+	if keyInfo.Mode()&os.ModeSymlink != 0 || !keyInfo.Mode().IsRegular() || keyInfo.Mode().Perm()&0o077 != 0 {
+		return errors.New("edge private key must be a non-symlink regular file without group/world access")
+	}
 	certificate, err := tls.LoadX509KeyPair(cfg.CertFile, cfg.KeyFile)
 	if err != nil {
 		return fmt.Errorf("load edge certificate: %w", err)

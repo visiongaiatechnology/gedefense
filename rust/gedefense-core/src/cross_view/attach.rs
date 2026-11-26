@@ -26,6 +26,7 @@ impl CrossViewCore {
             lsm_create_attached: false,
             lsm_setsockopt_attached: false,
             kprobe_attached: false,
+            bpf_guard_lsm_attached: false,
             scans: 0,
             contradictions: 0,
             events_total: 0,
@@ -65,6 +66,10 @@ impl CrossViewCore {
             core.pkgdb_token()
         );
         Ok(core)
+    }
+
+    pub(crate) fn set_bpf_guard_lsm_attached(&mut self, attached: bool) {
+        self.bpf_guard_lsm_attached = attached;
     }
 }
 

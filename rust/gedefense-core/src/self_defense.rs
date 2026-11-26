@@ -76,9 +76,7 @@ const CANARY_DRAIN_ATTEMPTS: usize = 3;
 /// allowed, so a returned probe means the event is already queued.
 const PROBE_WAIT_STEPS: usize = 500;
 const PROBE_STEP_MICROS: u64 = 1_000;
-/// Reserved decoy name; operators never create this one and the broker treats
-/// it as an ordinary bounded decoy inside the configured canary root.
-const SELF_TEST_DECOY_NAME: &str = ".vgt-self-test";
+pub(crate) use crate::canary::SELF_TEST_DECOY_NAME;
 const DECOY_CANARY_TYPE: &str = "DOTENV";
 const DECOY_MODE_TOKEN: &str = "600";
 const DECOY_CONTENT: &[u8] = b"VGT-GEDEFENSE-SELF-TEST\n";

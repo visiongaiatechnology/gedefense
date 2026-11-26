@@ -310,7 +310,7 @@ func (e *XDREngine) recordCrossViewRawTap(event CoreCrossViewEvent, now time.Tim
 		return
 	}
 	if event.PID == 0 || path == "unknown" {
-		if e.state != nil {
+		if e.state != nil && e.claimCrossViewSeen(fmt.Sprintf("unattrib-tap:%d:%s", event.UID, event.Comm), now, crossViewDedupeTTL) {
 			e.state.AddEvent(Event{Time: now, Severity: "info", Kind: "xdr.cross_view_raw_tap_unattributed", Source: "kernel",
 				Message: fmt.Sprintf("Raw packet tap observed without a resolvable owner: uid=%d ino=%d comm=%s; no verdict is derived from the socket identity alone",
 					event.UID, event.Ino, event.Comm),
@@ -409,6 +409,7 @@ func (e *XDREngine) recordCrossViewContradiction(event CoreCrossViewEvent, now t
 		EvidenceRoot: node.Digest,
 	}
 	e.appendIncident(incident)
+	e.recordLocalSecCritMirror("cross-view", CrossViewKindName(event.Kind), now)
 	e.state.AddEvent(Event{Time: now, Severity: severity, Kind: eventKind, Source: "kernel",
 		Message: summary + "; " + outcome, Target: crossViewTarget(event)})
 }

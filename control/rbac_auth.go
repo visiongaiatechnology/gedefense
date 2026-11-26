@@ -34,8 +34,9 @@ import (
 )
 
 var (
-	errObserverUnavailable = errors.New("observer credential is not provisioned")
-	errCriticalUnavailable = errors.New("critical step-up key is not provisioned")
+	errObserverUnavailable     = errors.New("observer credential is not provisioned")
+	errCriticalUnavailable     = errors.New("critical step-up key is not provisioned")
+	errGatewayClaimUnavailable = errors.New("gateway critical claim key is not provisioned")
 )
 
 // readRBACCredentialFile reads one adjacent credential file under the same
@@ -145,6 +146,30 @@ func (s *APIServer) criticalStepUpKey() ([]byte, error) {
 				"The optional critical step-up key file is present but does not meet the private-file policy; the critical role stays unavailable")
 		}
 		return nil, fmt.Errorf("%w: %v", errCriticalUnavailable, err)
+	}
+	key := append([]byte(nil), raw...)
+	return key, nil
+}
+
+// gatewayClaimKey returns the dedicated HMAC key shared strictly between the
+// access gateway and the control plane for authenticating gateway role claims.
+// It is kept separate from both the dashboard bearer token and the direct
+// critical step-up key.
+func (s *APIServer) gatewayClaimKey() ([]byte, error) {
+	path, err := s.adjacentCredentialPath(gatewayClaimKeySuffix)
+	if err != nil {
+		if errors.Is(err, errObserverUnavailable) {
+			return nil, errGatewayClaimUnavailable
+		}
+		return nil, err
+	}
+	raw, err := readRBACCredentialFile(path, criticalKeyMinBytes, rbacCredentialMaxBytes)
+	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			s.reportRBACEventOnce("gateway-claim-key:"+filepath.Base(path), "warning", "rbac.credential_rejected",
+				"The optional gateway claim key file is present but does not meet the private-file policy; gateway critical unlock stays unavailable")
+		}
+		return nil, fmt.Errorf("%w: %v", errGatewayClaimUnavailable, err)
 	}
 	key := append([]byte(nil), raw...)
 	return key, nil
@@ -316,9 +341,9 @@ func verifyCriticalStepUpProof(token string, key []byte, now time.Time, nonces *
 
 // gatewayClaimMAC is the exact MAC the gateway produces and the control plane
 // verifies: HMAC-SHA256 over the domain-separated bytes
-// role|step-up|timestamp|nonce with the backend credential as the key.
-func gatewayClaimMAC(backendToken, role, stepUp string, timestamp int64, nonce string) []byte {
-	mac := hmac.New(sha256.New, []byte(backendToken))
+// role|step-up|timestamp|nonce using the dedicated gateway claim key.
+func gatewayClaimMAC(claimKey []byte, role, stepUp string, timestamp int64, nonce string) []byte {
+	mac := hmac.New(sha256.New, claimKey)
 	mac.Write([]byte(gatewayClaimDomain))
 	mac.Write([]byte(role + "|" + stepUp + "|" + formatUnix(timestamp) + "|" + nonce))
 	return mac.Sum(nil)
@@ -328,12 +353,12 @@ func gatewayClaimMAC(backendToken, role, stepUp string, timestamp int64, nonce s
 // fact. A missing, malformed, stale, forged or replayed claim is refused; there
 // is no fallback to the direct proof path, so the two trust boundaries cannot be
 // mixed.
-func (s *APIServer) verifyGatewayCriticalClaim(r *http.Request, backendToken string, now time.Time) (gatewayCriticalClaim, criticalAuthFailure) {
+func (s *APIServer) verifyGatewayCriticalClaim(r *http.Request, claimKey []byte, now time.Time) (gatewayCriticalClaim, criticalAuthFailure) {
 	if r == nil {
 		return gatewayCriticalClaim{}, criticalAuthFailure{reason: "claim requires a request"}
 	}
-	if strings.TrimSpace(backendToken) == "" {
-		return gatewayCriticalClaim{}, criticalAuthFailure{reason: "backend credential is unavailable"}
+	if len(claimKey) < criticalKeyMinBytes {
+		return gatewayCriticalClaim{}, criticalAuthFailure{reason: "gateway claim key is unavailable", unavailable: true}
 	}
 	role := strings.TrimSpace(r.Header.Get(gatewayRoleHeader))
 	stepUpValue := strings.TrimSpace(r.Header.Get(gatewayStepUpHeader))
@@ -358,7 +383,7 @@ func (s *APIServer) verifyGatewayCriticalClaim(r *http.Request, backendToken str
 		return gatewayCriticalClaim{}, criticalAuthFailure{reason: "claim MAC is malformed"}
 	}
 	got, decodeErr := hex.DecodeString(macValue)
-	want := gatewayClaimMAC(backendToken, role, method, timestamp, nonce)
+	want := gatewayClaimMAC(claimKey, role, method, timestamp, nonce)
 	if decodeErr != nil || !hmac.Equal(got, want) {
 		return gatewayCriticalClaim{}, criticalAuthFailure{reason: "claim MAC does not verify"}
 	}

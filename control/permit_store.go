@@ -388,6 +388,25 @@ func (b *PermitBroker) PermitReport() PermitReport {
 	return report
 }
 
+// ListPermits returns a deterministic sorted copy of all stored PermitV1 objects.
+func (b *PermitBroker) ListPermits() []PermitV1 {
+	if b == nil {
+		return []PermitV1{}
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	out := make([]PermitV1, 0, len(b.permits))
+	for _, permit := range b.permits {
+		if permit != nil {
+			out = append(out, *permit)
+		}
+	}
+	sort.Slice(out, func(left, right int) bool {
+		return out[left].PermitID < out[right].PermitID
+	})
+	return out
+}
+
 // boundPermitPaths returns the executable paths of permits that asked for
 // binary re-validation; used by the maintenance pass.
 func (b *PermitBroker) boundPermitPaths() []string {

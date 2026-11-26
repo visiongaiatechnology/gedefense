@@ -419,12 +419,12 @@ func parseDesktopSocketMode(value string) (os.FileMode, error) {
 // expected ownership. The service must own it: it creates the socket there, and with
 // ProtectSystem=strict the path has to be listed in ReadWritePaths as well.
 func verifyDesktopDirectory(dir string) error {
-	info, err := os.Stat(dir)
+	info, err := os.Lstat(dir)
 	if err != nil {
 		return fmt.Errorf("desktop status directory %s: %w", dir, err)
 	}
-	if !info.IsDir() {
-		return fmt.Errorf("desktop status path %s is not a directory", dir)
+	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+		return fmt.Errorf("desktop status path %s must be a non-symlink directory", dir)
 	}
 	stat, ok := info.Sys().(*syscall.Stat_t)
 	if !ok {

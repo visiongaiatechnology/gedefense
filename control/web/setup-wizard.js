@@ -1,81 +1,90 @@
 // STATUS: DIAMANT VGT SUPREME
 'use strict';
 
-// GeDefense 6.1.0 — Guided First-Start Setup Wizard & Offline AGENTS.md Blueprint.
+// GeDefense 6.3.0 — Guided First-Start Setup Wizard & Offline AGENTS.md Blueprint.
 // Security invariant: never exposes or simulates any remote AI control API.
 // All recommendations are rendered statically or derived from read-only status APIs.
 import { api } from './api.js';
 import { t } from './i18n.js';
 import { toast } from './render.js';
 
-const STORAGE_DISMISSED = 'vgt.gedefense.wizard.dismissed.v61';
+const STORAGE_DISMISSED = 'vgt.gedefense.wizard.dismissed.v63';
+const STORAGE_DISMISSED_LEGACY = 'vgt.gedefense.wizard.dismissed.v61';
 
-const AGENT_MD_BLUEPRINT = `# AGENTS.md — Autonomous Host Onboarding & Hardening Guide for GeDefense 6.1.0
+const AGENT_MD_BLUEPRINT = `# AGENTS.md — Autonomous Host Onboarding & Hardening Guide for GeDefense 6.3.0
 
-> **Security Model:** GeDefense deliberately exposes **NO** inbound AI control channel or prompt API.
+> **Security Model:** GeDefense V6.3.0 deliberately exposes **NO** inbound AI control channel or prompt API.
 > An administrator runs a trusted CLI coding agent (Codex, Antigravity, Claude Code) directly via SSH
-> with host operator privileges, evaluates the server read-only first, decides per module whether
-> **Enforce**, **Observe**, or **Disabled** is safe for running workloads, applies configuration via
-> the local GeDefense control plane (\`/api/v1/settings/{module}\`), and verifies before enabling Full Enforce.
+> or locally on a hardened workstation/laptop with host operator privileges, inspects the machine read-only
+> first, tunes every module cleanly for **Server** or **Desktop/Workstation** workloads via the local
+> control plane (\`/api/v1/settings/{module}\` preview -> apply), and verifies every protection plane before Enforce.
 
 ---
 
-## Phase 1 · Read-Only Host & Service Discovery
-Run these commands first. Do NOT modify firewall/service state yet:
+## Phase 1 · Read-Only Host, Kernel & Role Discovery
+Run these commands first. Identify whether the target is a **Server** (NGINX/Apache/Caddy/Docker/DB) or **Desktop/Workstation** (Wayland/X11/browsers/dev toolchains/Flatpak). Do NOT mutate firewall or service state yet:
 \`\`\`bash
 uname -a
+ldd --version 2>/dev/null || true
+file /opt/vgt/gedefense/bin/gedefense-core 2>/dev/null || file /usr/local/bin/gedefense-core 2>/dev/null || true
 ss -tulpn
 ps -eo pid,ppid,user:16,comm,args --sort=comm | head -n 120
 systemctl list-units --type=service --state=running
 ls -la /etc/nginx/ /www/server/nginx/conf/ /www/server/panel/vhost/nginx/ 2>/dev/null || true
 ls -la /etc/systemd/system/gedefense*
-systemctl status gedefense-core gedefense-capture-helper gedefense-control gedefense-access --no-pager
+systemctl status gedefense-core gedefense-capture-helper gedefense-cell-helper gedefense-control gedefense-access --no-pager
+bpftool feature probe kernel 2>/dev/null | head -n 40 || true
+cat /sys/kernel/security/lsm 2>/dev/null || true
 \`\`\`
 
-## Phase 2 · Query Live GeDefense State (Read-Only)
-Authenticate locally against \`127.0.0.1\` / gateway socket using operator token and inspect every module:
-- \`GET /api/v1/status\` (Release phase, Core connection, Protection effective & gaps, XDR/L7/FIM health)
-- \`GET /api/v1/overview/situation\` (Correlated traffic light, 6 protection planes)
-- \`GET /api/v1/web-exposure/status\` (Web server ELF flags, HTTP/2 & HTTP/3 QUIC reachability, Advisories)
-- \`GET /api/v1/worker-guard/status\` (Worker processes, shared master cgroups, crash storms)
-- \`GET /api/v1/tls-sensor/status\` & \`/api/v1/tls-sensor/flows\` (AF_PACKET capture, ALPN, SNI, control-storm budget)
-- \`GET /api/v1/lpe-guard/status\` (LSM socket_create deny matrix, ASLR sysctl, StyX web-ingress profile)
-- \`GET /api/v1/edge-proxy/status\` (Check listener \`127.0.0.1:8443\` vs already-occupied ports before enabling!)
-- \`GET /api/v1/styx/status\` & \`/api/v1/titan/exec/status\` & \`/api/v1/parser-cells/status\`
-- \`GET /api/v1/boot-trust\`, \`/api/v1/hardening/posture\`, \`/api/v1/fim\`, \`/api/v1/witness/status\`, \`/api/v1/lockdown/status\`
-- \`GET /api/v1/settings/schema\` (Exact schema, defaults & bounds for all 18+ namespaces)
+---
 
-## Phase 3 · Decision Matrix (Observe vs Enforce vs Disabled)
-1. **Management Allowlist (MANDATORY FIRST):** Always confirm admin SSH/VPN/monitoring IPs in \`POST /api/v1/allowlist\` BEFORE transitioning \`canary\` -> \`enforce\`. Never lock yourself out.
-2. **Webserver & L7 Traffic Guard:**
-   - Only enable \`l7.mode = "enforce"\` once Nginx/Apache \`auth_request\` or VGT include snippet routes HTTP checks to GeDefense L7 socket without breaking static/panel vhosts (keep \`observe\` first for 15–30 min and inspect \`GET /api/v1/l7/findings\`).
-3. **Module A · Web Exposure (\`web_exposure\`):**
-   - Enable \`enabled = true\`, \`probe_loopback = true\`.
-   - Ensure \`gedefense-control\` can inspect vhost config directories or note ACLs if panel uses \`0600 root:root\`.
-4. **Module B · Worker Integrity (\`worker_guard\`):**
-   - Enable \`enabled = true\` to detect \`SIGSEGV\`/\`SIGBUS\` crash storms (CVE-2026-123007 style).
-   - Inspect \`skipped_cgroups\`! If \`nginx\` workers share the systemd unit cgroup with the master process, KEEP \`auto_apply_strict = false\` unless workers are isolated in a separate cgroup; otherwise strict \`JIT_ALLOW=0\`/\`NO_EXEC\` could affect reloads.
-5. **Module C · TLS / ALPN Sensor (\`tls_sensor\`):**
-   - Verify \`gedefense-capture-helper.service\` is \`active\` (\`AmbientCapabilities=CAP_NET_RAW CAP_NET_ADMIN\`).
-   - Enable \`enabled = true\`, \`ports = [443, 8443]\` (plus any custom TLS ports from \`ss -tulpn\`). Keep \`storm_action = "alert"\` initially; move to \`throttle\` only after observing normal upload/burst baselines.
-6. **Module D · LPE Guard (\`lpe_guard\`):**
-   - Safe on most hosts: \`enabled = true\`, ASLR sysctl (\`kernel.randomize_va_space = 2\`), socket policy. Before applying StyX \`web-ingress-only\`, verify no legitimate web app requires outbound raw sockets (\`AF_PACKET\` / \`AF_TIPC\` / \`SCTP\` / \`RDS\`).
-7. **Module E · Edge Proxy (\`edge_proxy\`):**
-   - Keep \`enabled = false\` unless you explicitly terminate TLS through GeDefense Edge (\`TLS 1.3\` + strict RFC-9113 HTTP/2 bounds). Check \`ss -tulpn\` so \`listen\` (default \`:8443\`) and \`upstream\` (\`:8080\`) do NOT collide with existing services (e.g. control panels or Go backends).
-8. **Kinetic XDP, Threat Intel, XDR, StyX, Titan Exec, Parser Cells:**
-   - Check \`GET /api/v1/kinetic/status\` \`ingress_mode\` (\`native\` / \`generic\` / \`tc\`). Start auto-ban safely after allowlist sync.
-   - Run **XDR** & **StyX** in \`observe\` until process/behavior profiles warm up (\`profiles_warm\`), then promote to \`enforce\`.
-   - Enable **Titan Exec-Gate** cautiously on production servers: audit allowed interpreter/compiler paths first before blocking unknown binaries.
-   - Keep **Parser Cells** active if helper \`gedefense-cell-helper.service\` is healthy.
-9. **FIM, Boot Trust, Witness, Lockdown:**
-   - After every upgrade or settings/unit update, run \`POST /api/v1/fim/baseline\` (\`{"scope":"release"}\`) and verify \`GET /api/v1/fim\` shows \`health: "verified"\`.
-   - Optionally configure remote **Witness** checkpoint push and duress/cooldown on **Emergency Lockdown** (\`arm\` only when ready).
+## Phase 2 · Query Live GeDefense V6.3.0 State (Read-Only)
+Authenticate locally against \`127.0.0.1\` or \`/run/vgt-gedefense/\` using the operator token (note: V6.3.0 enforces RBAC Observer vs Operator vs Critical Step-Up + Gateway HMAC binding) and inspect EVERY protection surface:
+- \`GET /api/v1/status\` (Release phase, \`ui_build\`, Core connection, XDR/L7/FIM health, Coverage, Protection gaps)
+- \`GET /api/v1/overview/situation\` (Correlated host threat verdict across 6 planes)
+- \`GET /api/v1/antispyware/status\` (**NEW V6.3.0 Unified Antispyware Telemetry:** \`self_guard\`, \`exec_inode\`, \`bpf_guard\`, \`cross_view\`, \`kernel_hooks\`, \`persistence\`, \`dns\`, \`styx_phase2\`, \`sbc_fusion\`, \`sec_crit\`, \`credential_guard\`, \`ransom\`, \`titan_exec\`, \`chameleon\`, \`lpe_guard\`)
+- \`GET /api/v1/xdr/sbc\`, \`GET /api/v1/xdr/sec-crit\`, \`GET /api/v1/xdr/permits\`, \`GET /api/v1/xdr/review\`
+- \`GET /api/v1/chameleon/status\` (Verify standard vs opt-in Chameleon install identity + BPF pin root)
+- \`GET /api/v1/web-exposure/status\` & \`GET /api/v1/worker-guard/status\` & \`GET /api/v1/tls-sensor/status\`
+- \`GET /api/v1/lpe-guard/status\` (\`mode\`: \`disabled|observe|enforce\`, \`capability\`: \`inactive|active\`, \`socket_policy\`, \`styx_profile\`)
+- \`GET /api/v1/edge-proxy/status\` (Check listener \`:8443\` vs existing services before enabling!)
+- \`GET /api/v1/styx/status\` & \`/api/v1/styx/beacons\` & \`GET /api/v1/titan/exec/status\` & \`GET /api/v1/parser-cells/status\`
+- \`GET /api/v1/boot-trust\`, \`GET /api/v1/hardening/posture\`, \`GET /api/v1/fim\`, \`GET /api/v1/witness/status\`, \`GET /api/v1/lockdown/status\`
+- \`GET /api/v1/settings/schema\` (Schema, bounds & defaults for every administrable namespace)
 
-## Phase 4 · Apply & Verify Safely
-Always use preview -> apply:
+---
+
+## Phase 3 · V6.3.0 Architecture & Antispyware Decision Matrix (Server vs Desktop)
+Understand which layers co-activate and what they trigger before switching Release to \`enforce\`:
+1. **Management Allowlist & RBAC Step-Up (MANDATORY FIRST):**
+   - Add SSH/admin/monitoring IPs to \`POST /api/v1/allowlist\` BEFORE switching \`canary\` -> \`enforce\`.
+   - Critical mutations (\`/api/v1/xdr/permits\`, \`/api/v1/quarantine/prune\`, \`/api/v1/chameleon/reveal\`, \`/api/v1/xdr/update-window/override\`) require an Operator password Step-Up proof (\`POST /gateway/step-up\` or \`POST /api/v1/auth/step-up\`). Never disable pinned release manifest verification (\`/etc/vgt/gedefense/release-public.key\`) during upgrades.
+2. **AP-0 Core Self-Protection & Static musl Binary:**
+   - Ensure \`gedefense-core\` is statically linked (musl, immune to \`LD_PRELOAD\` Symbiote/OrBit hooks) and \`self_guard\` shows \`bpffs_ok=true\`, \`pins_ok=true\`, \`canary_ok=true\`. Any unlinked BPF pin or tampered self-daemon inode fires \`XDR.SELF_TAMPER\` (\`SBC-EVID-08\`).
+3. **AP-1 BTF \`exec_inode\` + CredentialGuard + \`PermitV1\`:**
+   - Verify \`exec_inode\` BTF offsets match the kernel. Under \`enforce\`, **CredentialGuard** co-activates to deny unauthorized reads of \`/etc/shadow\`, SSH private keys, and runtime secrets with kernel \`-EACCES\` based on real \`(dev, inode, ctime)\` (immune to \`argv[0]\`/\`comm\` spoofing).
+   - For legitimate backup/monitoring agents needing secret access, inspect \`GET /api/v1/xdr/review\` and issue scoped signed \`PermitV1\` objects (\`POST /api/v1/xdr/permits\`), NEVER disable CredGuard globally.
+4. **AP-2 \`BPF_GUARD\` + AP-4 \`KernelHooks\` (\`io_uring\` / LKM) + AP-3 \`CrossView\` + AP-5 \`PersistenceGuard\`:**
+   - These activate automatically with XDR/Core (\`observe\` -> \`enforce\`).
+   - \`BPF_GUARD\` audits \`bpf_prog_load\`/\`attach\` & high-risk helpers (\`bpf_probe_write_user\`, \`override_return\`, \`send_signal\`).
+   - \`CrossView\` cross-checks 8 kernel vs userland domains (\`tap\`, \`mods\`, \`procs\`, \`bpf\`, \`trace\`, \`pkgdb\`) to expose DKOM/LKM/unlinked ELF hiding.
+   - \`PersistenceGuard\` watches \`/etc/ld.so.preload\`, systemd generators/drop-ins, cron, PAM, SSH keys, \`ptrace\`, and \`mmap\`/\`process_vm_writev\`.
+5. **AP-6 \`StyX Phase-2\` + \`DNS Capture\` + \`SBC\` Cross-Domain Corroboration:**
+   - \`StyX\` combines bidirectional TX+RX eBPF egress/ingress PCR (\`StyxPhase2Report\`), DNS tunneling entropy/NXDOMAIN capture (\`DNSReport\`), and C2 beacon periodicity (\`/api/v1/styx/beacons\`).
+   - Always check \`POST /api/v1/settings/styx\` rules before strict block on hosts running VPNs, WireGuard, package mirrors, or telemetry agents.
+6. **AP-7 / AP-8 / AP-9 \`Titan Exec\`, \`Parser Cells\`, \`Ransom Sensor\`, \`S12 SEC_CRIT\` & \`Fanotify\`:**
+   - **On Servers:** Keep \`l7.mode = "block"\` (once NGINX/Apache \`auth_request\` snippet is wired), \`web_exposure.enabled = true\`, \`worker_guard.enabled = true\` (\`auto_apply_strict = false\` if workers share master cgroup), \`tls_sensor.enabled = true\` on external ports, and \`titan_exec\` / \`parser_cells\` / \`lpe_guard\` tuned to service binaries.
+   - **On Desktops / Developer Workstations:** Keep \`l7\` / \`web_exposure\` / \`edge_proxy\` disabled unless hosting services; keep \`fanotify-exec\`, \`AP-0..AP-6\`, \`CredentialGuard\`, \`RansomSensor\`, \`Parser Cells\` (untrusted downloads/docs), and \`LPE Guard\` active, while allowing local IDE/compiler toolchains via \`titan_exec\` observe grace before strict exec blocking.
+7. **After Upgrade or Package Update:**
+   - Always run \`POST /api/v1/xdr/update-window/override\` (only with signed release manifest verified against pinned public key) OR \`POST /api/v1/fim/baseline\` after authorized updates, and confirm \`GET /api/v1/fim\` shows \`health: "verified"\`.
+
+---
+
+## Phase 4 · Safe Preview -> Apply -> Verify Workflow
 1. \`POST /api/v1/settings/{module}/preview\` with current \`revision\`.
-2. \`PUT /api/v1/settings/{module}\` once diff is clean.
-3. Re-check \`GET /api/v1/overview/situation\`: confirm \`level\` improves without unintended HTTP 5xx or worker stalls, then promote Release \`observe -> canary -> enforce\`.
+2. \`PUT /api/v1/settings/{module}\` after reviewing diff & warnings.
+3. Verify \`GET /api/v1/status\`, \`GET /api/v1/antispyware/status\`, and \`GET /api/v1/overview/situation\` show zero unintended degradations before promoting \`observe -> canary -> enforce\`.
 `;
 
 const WIZARD_STEPS = [
@@ -122,9 +131,17 @@ const WIZARD_STEPS = [
     descKey: 'wizard.step.l7.desc',
     targetView: 'l7',
     targetTab: 'settings',
-    statusFn: s => s.snap?.l7?.enabled
-      ? { label: String(s.snap.l7.mode || 'active').toUpperCase(), tone: s.snap.l7.mode === 'enforce' ? 'good' : 'warn' }
-      : { label: 'DISABLED', tone: 'muted' },
+    statusFn: s => {
+      const l7 = s.snap?.l7;
+      if (!l7?.enabled) return { label: 'DISABLED', tone: 'muted' };
+      const mode = String(l7.mode || 'observe').toLowerCase();
+      const blocking = mode === 'block' || mode === 'enforce';
+      const healthy = l7.healthy !== false;
+      return {
+        label: String(l7.mode || 'active').toUpperCase(),
+        tone: blocking && healthy ? 'good' : 'warn'
+      };
+    },
     checks: [
       { titleKey: 'wizard.chk.l7.1.t', detailKey: 'wizard.chk.l7.1.d' },
       { titleKey: 'wizard.chk.l7.2.t', detailKey: 'wizard.chk.l7.2.d' }
@@ -142,7 +159,7 @@ const WIZARD_STEPS = [
     targetTab: 'settings',
     statusFn: s => {
       const cap = s.tls?.capture === 'active';
-      const srv = Number(s.exposure?.summary?.servers || 0);
+      const srv = Number(s.exposure?.summary?.servers ?? (Array.isArray(s.exposure?.servers) ? s.exposure.servers.length : 0));
       return cap ? { label: `TLS ACTIVE · ${srv} WEB`, tone: 'good' } : { label: `${srv} WEB · TLS ${s.tls?.capture || 'off'}`, tone: 'warn' };
     },
     checks: [
@@ -162,9 +179,20 @@ const WIZARD_STEPS = [
     targetView: 'lpe-guard',
     targetTab: 'settings',
     statusFn: s => {
-      const lpeOn = Boolean(s.lpe?.enabled);
+      const lpeMode = String(s.lpe?.mode || '').toLowerCase();
+      const lpeCap = String(s.lpe?.capability || '').toLowerCase();
+      const lpeOn = (lpeMode === 'enforce' || lpeMode === 'observe') && lpeCap === 'active';
+      const lpeDegraded = (lpeMode === 'enforce' || lpeMode === 'observe') && !lpeOn;
       const edgeRun = s.edge?.state === 'running';
-      return { label: `LPE ${lpeOn ? 'ON' : 'OFF'} · EDGE ${edgeRun ? 'RUN' : 'OFF'}`, tone: lpeOn ? 'good' : 'muted' };
+      const lpeLabel = lpeOn
+        ? `LPE ${lpeMode.toUpperCase()}`
+        : lpeDegraded
+          ? 'LPE WAIT'
+          : 'LPE OFF';
+      return {
+        label: `${lpeLabel} · EDGE ${edgeRun ? 'RUN' : 'OFF'}`,
+        tone: lpeOn ? 'good' : lpeDegraded ? 'warn' : 'muted'
+      };
     },
     checks: [
       { titleKey: 'wizard.chk.lpe.1.t', detailKey: 'wizard.chk.lpe.1.d' },
@@ -202,9 +230,14 @@ const WIZARD_STEPS = [
     targetView: 'styx',
     targetTab: 'settings',
     statusFn: s => {
-      const styx = s.styx?.sensor_state || 'off';
-      const titan = s.titanExec?.state || 'off';
-      return { label: `STYX ${styx.toUpperCase()} · TITAN ${titan.toUpperCase()}`, tone: styx === 'active' ? 'good' : 'warn' };
+      const styx = String(s.styx?.sensor_state || 'off');
+      const titan = String(s.titanExec?.state || 'off');
+      const styxOk = styx === 'active';
+      const titanOk = titan === 'applied' || titan === 'inactive' || titan === 'active';
+      return {
+        label: `STYX ${styx.toUpperCase()} · TITAN ${titan.toUpperCase()}`,
+        tone: styxOk && titanOk ? 'good' : 'warn'
+      };
     },
     checks: [
       { titleKey: 'wizard.chk.xdr.1.t', detailKey: 'wizard.chk.xdr.1.d' },
@@ -224,7 +257,7 @@ const WIZARD_STEPS = [
     targetTab: '',
     statusFn: s => {
       const health = s.snap?.fim?.health || 'unknown';
-      return { label: `FIM ${String(health).toUpperCase()}`, tone: health === 'verified' ? 'good' : 'warn' };
+      return { label: `FIM ${String(health).toUpperCase()}`, tone: String(health).toLowerCase() === 'verified' ? 'good' : 'warn' };
     },
     checks: [
       { titleKey: 'wizard.chk.cells.1.t', detailKey: 'wizard.chk.cells.1.d' },
@@ -242,9 +275,10 @@ const WIZARD_STEPS = [
     targetView: 'witness',
     targetTab: 'settings',
     statusFn: s => {
-      const w = s.witness?.healthy ? 'WITNESS OK' : 'WITNESS OFF';
-      const l = s.lockdown?.armed ? 'LOCKDOWN ARMED' : 'LOCKDOWN IDLE';
-      return { label: `${w} · ${l}`, tone: s.witness?.healthy ? 'good' : 'muted' };
+      const w = s.witness?.healthy ? 'WITNESS OK' : s.witness?.enabled ? 'WITNESS WAIT' : 'WITNESS OFF';
+      const l = (s.lockdown?.armed || s.lockdown?.latched) ? 'LOCKDOWN ARMED' : 'LOCKDOWN IDLE';
+      const good = Boolean(s.witness?.healthy) || Boolean(s.lockdown?.armed);
+      return { label: `${w} · ${l}`, tone: good ? 'good' : 'muted' };
     },
     checks: [
       { titleKey: 'wizard.chk.wit.1.t', detailKey: 'wizard.chk.wit.1.d' },
@@ -273,7 +307,8 @@ function makeEl(tag, className = '', text = '') {
 
 function isDismissed() {
   try {
-    return globalThis.localStorage?.getItem(STORAGE_DISMISSED) === '1';
+    return globalThis.localStorage?.getItem(STORAGE_DISMISSED) === '1'
+      || globalThis.localStorage?.getItem(STORAGE_DISMISSED_LEGACY) === '1';
   } catch (_) {
     return false;
   }
@@ -281,8 +316,12 @@ function isDismissed() {
 
 function setDismissed(flag) {
   try {
-    if (flag) globalThis.localStorage?.setItem(STORAGE_DISMISSED, '1');
-    else globalThis.localStorage?.removeItem(STORAGE_DISMISSED);
+    if (flag) {
+      globalThis.localStorage?.setItem(STORAGE_DISMISSED, '1');
+    } else {
+      globalThis.localStorage?.removeItem(STORAGE_DISMISSED);
+      globalThis.localStorage?.removeItem(STORAGE_DISMISSED_LEGACY);
+    }
   } catch (_) { /* ignore private storage errors */ }
   const banner = byId('overviewFirstRunWizard');
   if (banner) banner.hidden = Boolean(flag);

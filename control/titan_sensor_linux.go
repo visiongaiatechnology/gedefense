@@ -51,7 +51,7 @@ func (o *titanLinuxObserver) Run(ctx context.Context, roots []string, out chan<-
 	watches := make(map[int]titanWatch, titanInotifyMaxWatchDir)
 	watched := make(map[string]struct{}, titanInotifyMaxWatchDir)
 	mask := uint32(syscall.IN_CREATE | syscall.IN_MODIFY | syscall.IN_ATTRIB | syscall.IN_CLOSE_WRITE |
-		syscall.IN_DELETE | syscall.IN_MOVED_FROM | syscall.IN_MOVED_TO | syscall.IN_DELETE_SELF | syscall.IN_MOVE_SELF)
+		syscall.IN_DELETE | syscall.IN_MOVED_FROM | syscall.IN_MOVED_TO | syscall.IN_DELETE_SELF | syscall.IN_MOVE_SELF | syscall.IN_DONT_FOLLOW)
 	addWatch := func(directory string) error {
 		clean := filepath.Clean(directory)
 		if _, exists := watched[clean]; exists {
@@ -59,6 +59,13 @@ func (o *titanLinuxObserver) Run(ctx context.Context, roots []string, out chan<-
 		}
 		if len(watched) >= titanInotifyMaxWatchDir {
 			return errors.New("inotify watch budget exhausted")
+		}
+		dirInfo, statErr := os.Lstat(clean)
+		if statErr != nil {
+			return statErr
+		}
+		if dirInfo.Mode()&os.ModeSymlink != 0 {
+			return errors.New("refusing to watch symlink path")
 		}
 		wd, addErr := syscall.InotifyAddWatch(fd, clean, mask)
 		if addErr != nil {

@@ -16,6 +16,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -25,14 +26,15 @@ const (
 )
 
 var (
-	rbacObserverBytes  = []byte(strings.Repeat("o", 32))
-	rbacObserverSecret = base64.RawURLEncoding.EncodeToString(rbacObserverBytes)
-	rbacCriticalKey    = []byte(strings.Repeat("k", 32))
+	rbacObserverBytes   = []byte(strings.Repeat("o", 32))
+	rbacObserverSecret  = base64.RawURLEncoding.EncodeToString(rbacObserverBytes)
+	rbacCriticalKey     = []byte(strings.Repeat("k", 32))
+	rbacGatewayClaimKey = []byte("gway-claim-key-0123456789abcdef!")
 )
 
 // rbacTestServer builds a server whose adjacent credential files follow the exact
-// convention of the production paths: `<token_file>.observer` and
-// `<token_file>.critical`, both mode 0600.
+// convention of the production paths: `<token_file>.observer`,
+// `<token_file>.critical` and `<token_file>.gateway-claim`, each mode 0600.
 func rbacTestServer(t *testing.T, observer bool, critical bool) (*APIServer, string) {
 	t.Helper()
 	cfg := isolatedTokenConfig(t, rbacOperatorToken)
@@ -45,6 +47,9 @@ func rbacTestServer(t *testing.T, observer bool, critical bool) (*APIServer, str
 	if critical {
 		if err := os.WriteFile(tokenPath+criticalKeySuffix, rbacCriticalKey, 0o600); err != nil {
 			t.Fatalf("write critical key: %v", err)
+		}
+		if err := os.WriteFile(tokenPath+gatewayClaimKeySuffix, rbacGatewayClaimKey, 0o600); err != nil {
+			t.Fatalf("write gateway claim key: %v", err)
 		}
 	}
 	server := NewAPIServer(cfg, NewState("rbac-test", cfg), nil, nil, nil, nil, nil, nil, rbacOperatorToken)
@@ -409,9 +414,9 @@ func TestStepUpLockoutAndReset(t *testing.T) {
 }
 
 // rbacGatewayClaimHeaders builds the four claim headers exactly as the gateway does.
-func rbacGatewayClaimHeaders(t *testing.T, backendToken string, timestamp int64, nonce string) map[string]string {
+func rbacGatewayClaimHeaders(t *testing.T, claimKey []byte, timestamp int64, nonce string) map[string]string {
 	t.Helper()
-	mac := gatewayClaimMAC(backendToken, criticalStepUpPurpose, "password", timestamp, nonce)
+	mac := gatewayClaimMAC(claimKey, criticalStepUpPurpose, "password", timestamp, nonce)
 	return map[string]string{
 		gatewayProxiedHeader:  gatewayProxiedValue,
 		gatewayRoleHeader:     criticalStepUpPurpose,
@@ -422,14 +427,14 @@ func rbacGatewayClaimHeaders(t *testing.T, backendToken string, timestamp int64,
 }
 
 // TestRBACGatewayClaimVerification covers the gateway trust path: a MACed claim
-// over the backend credential is accepted, and every forged, stale or replayed
-// variant is refused.
+// over the dedicated gateway claim key is accepted, and every forged, stale,
+// replayed or bearer-token-signed variant is refused.
 func TestRBACGatewayClaimVerification(t *testing.T) {
 	server, _ := rbacTestServer(t, false, true)
 	reached := false
 	handler := server.auth(rbacSink(&reached))
 	nonce := strings.Repeat("ab", 16)
-	headers := rbacGatewayClaimHeaders(t, rbacOperatorToken, time.Now().UTC().Unix(), nonce)
+	headers := rbacGatewayClaimHeaders(t, rbacGatewayClaimKey, time.Now().UTC().Unix(), nonce)
 	rec := rbacRequest(t, handler, http.MethodPost, "/api/v1/quarantine/prune", rbacOperatorToken, nil, func(r *http.Request) {
 		for name, value := range headers {
 			r.Header.Set(name, value)
@@ -437,6 +442,15 @@ func TestRBACGatewayClaimVerification(t *testing.T) {
 	})
 	if rec.Code != http.StatusNoContent || !reached {
 		t.Fatalf("a valid gateway claim was refused: status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	// A claim MAC signed with the operator bearer token (SEC-01 regression) MUST be refused.
+	bearerSigned := rbacGatewayClaimHeaders(t, []byte(rbacOperatorToken), time.Now().UTC().Unix(), strings.Repeat("de", 16))
+	if rec := rbacRequest(t, handler, http.MethodPost, "/api/v1/quarantine/prune", rbacOperatorToken, nil, func(r *http.Request) {
+		for name, value := range bearerSigned {
+			r.Header.Set(name, value)
+		}
+	}); rec.Code != http.StatusForbidden {
+		t.Fatalf("a gateway claim signed with the operator bearer token was accepted: %d", rec.Code)
 	}
 	// The same claim replayed is refused by the bounded nonce cache.
 	replay := rbacRequest(t, handler, http.MethodPost, "/api/v1/quarantine/prune", rbacOperatorToken, nil, func(r *http.Request) {
@@ -448,7 +462,7 @@ func TestRBACGatewayClaimVerification(t *testing.T) {
 		t.Fatalf("a replayed gateway claim was accepted: %d", replay.Code)
 	}
 	// A stale timestamp is outside the bounded window.
-	stale := rbacGatewayClaimHeaders(t, rbacOperatorToken, time.Now().UTC().Add(-gatewayClaimWindow-time.Minute).Unix(), strings.Repeat("cd", 16))
+	stale := rbacGatewayClaimHeaders(t, rbacGatewayClaimKey, time.Now().UTC().Add(-gatewayClaimWindow-time.Minute).Unix(), strings.Repeat("cd", 16))
 	if rec := rbacRequest(t, handler, http.MethodPost, "/api/v1/quarantine/prune", rbacOperatorToken, nil, func(r *http.Request) {
 		for name, value := range stale {
 			r.Header.Set(name, value)
@@ -457,7 +471,7 @@ func TestRBACGatewayClaimVerification(t *testing.T) {
 		t.Fatalf("a stale gateway claim was accepted: %d", rec.Code)
 	}
 	// A MAC produced with another key does not verify.
-	forged := rbacGatewayClaimHeaders(t, strings.Repeat("q", 40), time.Now().UTC().Unix(), strings.Repeat("ef", 16))
+	forged := rbacGatewayClaimHeaders(t, []byte(strings.Repeat("q", 40)), time.Now().UTC().Unix(), strings.Repeat("ef", 16))
 	if rec := rbacRequest(t, handler, http.MethodPost, "/api/v1/quarantine/prune", rbacOperatorToken, nil, func(r *http.Request) {
 		for name, value := range forged {
 			r.Header.Set(name, value)
@@ -466,7 +480,7 @@ func TestRBACGatewayClaimVerification(t *testing.T) {
 		t.Fatalf("a forged gateway claim was accepted: %d", rec.Code)
 	}
 	// A claim that is not for the critical role is refused even with a valid MAC.
-	otherRole := rbacGatewayClaimHeaders(t, rbacOperatorToken, time.Now().UTC().Unix(), strings.Repeat("12", 16))
+	otherRole := rbacGatewayClaimHeaders(t, rbacGatewayClaimKey, time.Now().UTC().Unix(), strings.Repeat("12", 16))
 	otherRole[gatewayRoleHeader] = roleOperatorName
 	if rec := rbacRequest(t, handler, http.MethodPost, "/api/v1/quarantine/prune", rbacOperatorToken, nil, func(r *http.Request) {
 		for name, value := range otherRole {
@@ -475,8 +489,13 @@ func TestRBACGatewayClaimVerification(t *testing.T) {
 	}); rec.Code != http.StatusForbidden {
 		t.Fatalf("an operator-role gateway claim unlocked a critical action: %d", rec.Code)
 	}
+	// Earlier negative cases share the fallback loopback failure budget, so advance past
+	// the lockout window before testing trust-marker exclusion and path isolation (F-06).
+	current := time.Now().UTC()
+	server.rbacNow = func() time.Time { return current }
+	current = current.Add(authLockoutDuration + time.Second)
 	// Claim headers without the gateway marker do not select the claim path.
-	unmarked := rbacGatewayClaimHeaders(t, rbacOperatorToken, time.Now().UTC().Unix(), strings.Repeat("34", 16))
+	unmarked := rbacGatewayClaimHeaders(t, rbacGatewayClaimKey, current.Unix(), strings.Repeat("34", 16))
 	if rec := rbacRequest(t, handler, http.MethodPost, "/api/v1/quarantine/prune", rbacOperatorToken, nil, func(r *http.Request) {
 		for name, value := range unmarked {
 			if name == gatewayProxiedHeader {
@@ -487,12 +506,17 @@ func TestRBACGatewayClaimVerification(t *testing.T) {
 	}); rec.Code != http.StatusForbidden {
 		t.Fatalf("claim headers without the gateway marker were accepted: %d", rec.Code)
 	}
+	// A host without a provisioned gateway claim key fails closed (503) even with bearer-signed headers.
+	noClaimServer, _ := rbacTestServer(t, false, false)
+	noClaimHandler := noClaimServer.auth(rbacSink(new(bool)))
+	if rec := rbacRequest(t, noClaimHandler, http.MethodPost, "/api/v1/quarantine/prune", rbacOperatorToken, nil, func(r *http.Request) {
+		for name, value := range bearerSigned {
+			r.Header.Set(name, value)
+		}
+	}); rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("a host without .gateway-claim failed open or wrong code: %d", rec.Code)
+	}
 	// The two trust paths never mix: a gateway-marked request ignores a direct proof.
-	// The earlier forged claims engaged the per-source lockout, so move the clock past
-	// it - this case is about trust-path mixing, not about the lockout.
-	current := time.Now().UTC()
-	server.rbacNow = func() time.Time { return current }
-	current = current.Add(authLockoutDuration + time.Second)
 	_, direct, err := issueCriticalStepUpProof(rbacCriticalKey, current)
 	if err != nil {
 		t.Fatal(err)
@@ -502,6 +526,80 @@ func TestRBACGatewayClaimVerification(t *testing.T) {
 		r.Header.Set(directStepUpHeader, direct)
 	}); rec.Code != http.StatusForbidden {
 		t.Fatalf("a direct proof was accepted on the gateway trust path: %d", rec.Code)
+	}
+}
+
+// TestRBACNonceReplayConcurrent verifies nonceReplayCache.claim is race-free under
+// concurrent critical step-up probes (LIN-H01).
+func TestRBACNonceReplayConcurrent(t *testing.T) {
+	cache := newNonceReplayCache(64)
+	now := time.Now().UTC()
+	const workers = 16
+	var wg sync.WaitGroup
+	var won sync.Mutex
+	winners := 0
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			if cache.claim("shared-nonce-0001", now.Add(time.Minute), now) {
+				won.Lock()
+				winners++
+				won.Unlock()
+			}
+			_ = cache.claim("unique-"+string(rune('a'+idx)), now.Add(time.Minute), now)
+		}(i)
+	}
+	wg.Wait()
+	if winners != 1 {
+		t.Fatalf("expected exactly 1 concurrent winner for shared nonce, got %d", winners)
+	}
+}
+
+// TestRBACGatewaySessionLockoutIsolation proves one attested gateway session exhausting
+// its step-up failure budget does not lock out another session on 127.0.0.1 (F-10).
+func TestRBACGatewaySessionLockoutIsolation(t *testing.T) {
+	server, _ := rbacTestServer(t, false, true)
+	handler := server.auth(rbacSink(new(bool)))
+	attestedSessionHeader := func(id string) string {
+		mac := hmac.New(sha256.New, []byte(rbacOperatorToken))
+		mac.Write([]byte(gatewaySessionDomain))
+		mac.Write([]byte(id))
+		return id + "." + hex.EncodeToString(mac.Sum(nil))
+	}
+	sessionA := attestedSessionHeader("session-aaaaaaaaaaaaaaaa")
+	sessionB := attestedSessionHeader("session-bbbbbbbbbbbbbbbb")
+
+	for attempt := 0; attempt < authLockoutFailureLimit; attempt++ {
+		forged := rbacGatewayClaimHeaders(t, []byte(strings.Repeat("z", 32)), time.Now().UTC().Unix(), strings.Repeat("55", 15)+string(rune('a'+attempt))+string(rune('0'+attempt)))
+		rec := rbacRequest(t, handler, http.MethodPost, "/api/v1/quarantine/prune", rbacOperatorToken, nil, func(r *http.Request) {
+			r.Header.Set(gatewaySessionHeader, sessionA)
+			for k, v := range forged {
+				r.Header.Set(k, v)
+			}
+		})
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("failure %d expected 403, got %d", attempt+1, rec.Code)
+		}
+	}
+	// Session A is now locked out (429).
+	recA := rbacRequest(t, handler, http.MethodPost, "/api/v1/quarantine/prune", rbacOperatorToken, nil, func(r *http.Request) {
+		r.Header.Set(gatewaySessionHeader, sessionA)
+		r.Header.Set(gatewayProxiedHeader, gatewayProxiedValue)
+	})
+	if recA.Code != http.StatusTooManyRequests {
+		t.Fatalf("locked session A expected 429, got %d", recA.Code)
+	}
+	// Session B can still present a valid critical claim and succeed.
+	validB := rbacGatewayClaimHeaders(t, rbacGatewayClaimKey, time.Now().UTC().Unix(), strings.Repeat("78", 16))
+	recB := rbacRequest(t, handler, http.MethodPost, "/api/v1/quarantine/prune", rbacOperatorToken, nil, func(r *http.Request) {
+		r.Header.Set(gatewaySessionHeader, sessionB)
+		for k, v := range validB {
+			r.Header.Set(k, v)
+		}
+	})
+	if recB.Code != http.StatusNoContent {
+		t.Fatalf("unrelated gateway session B was blocked by session A lockout: %d", recB.Code)
 	}
 }
 
@@ -717,7 +815,7 @@ func TestRBACStepUpMACDomainSeparated(t *testing.T) {
 // silently break the browser critical-action flow without breaking a local test.
 func TestRBACGatewayClaimMACContractVector(t *testing.T) {
 	const expected = "4ac29c78b0f3bc6fde1a802d90bccd02b7b689b8b58b28df0e670ec1aa7680df"
-	got := hex.EncodeToString(gatewayClaimMAC(rbacOperatorToken, criticalStepUpPurpose, "password",
+	got := hex.EncodeToString(gatewayClaimMAC([]byte("0123456789abcdef0123456789abcdef"), criticalStepUpPurpose, "password",
 		1700000000, "abcdef0123456789abcdef0123456789"))
 	if got != expected {
 		t.Fatalf("the gateway claim MAC contract drifted: %s != %s", got, expected)

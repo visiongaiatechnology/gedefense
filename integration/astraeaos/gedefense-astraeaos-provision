@@ -79,13 +79,14 @@ install_dashboard_token() {
   fi
   chown gedefense:"$ACCESS_GROUP" "$path"
   chmod 0600 "$path"
+  install_random_key "${ACCESS_STATE_PARENT}/dashboard.token.gateway-claim" gedefense "$ACCESS_GROUP" 0600
 }
 
 install_initial_password() {
   local record=${ACCESS_CONFIG_DIR}/access-password
   require_regular_or_absent "$record"
   [[ -s "$record" ]] && return 0
-  local plaintext record_tmp
+  local plaintext record_tmp secret_path secret_tmp marker_path marker_tmp
   plaintext=$(openssl rand -base64 24 | tr -d '\n')
   record_tmp=$(mktemp -- "${record}.new.XXXXXXXX")
   printf '%s\n' "$plaintext" |
@@ -93,12 +94,21 @@ install_initial_password() {
   chown "$ACCESS_USER:$ACCESS_GROUP" "$record_tmp"
   chmod 0600 "$record_tmp"
   mv -T -- "$record_tmp" "$record"
-  printf '%s\n' "$plaintext" >"${STATE_DIR}/initial-access-password"
-  chown root:root "${STATE_DIR}/initial-access-password"
-  chmod 0600 "${STATE_DIR}/initial-access-password"
-  : >/var/lib/vgt/gedefense-password-setup-required
-  chown root:root /var/lib/vgt/gedefense-password-setup-required
-  chmod 0644 /var/lib/vgt/gedefense-password-setup-required
+
+  secret_path=${STATE_DIR}/initial-access-password
+  require_regular_or_absent "$secret_path"
+  secret_tmp=$(mktemp -- "${secret_path}.new.XXXXXXXX")
+  printf '%s\n' "$plaintext" >"$secret_tmp"
+  chown root:root "$secret_tmp"
+  chmod 0600 "$secret_tmp"
+  mv -T -- "$secret_tmp" "$secret_path"
+
+  marker_path=/var/lib/vgt/gedefense-password-setup-required
+  require_regular_or_absent "$marker_path"
+  marker_tmp=$(mktemp -- "${marker_path}.new.XXXXXXXX")
+  chown root:root "$marker_tmp"
+  chmod 0644 "$marker_tmp"
+  mv -T -- "$marker_tmp" "$marker_path"
 }
 
 tls_identity_uses_p384() {
@@ -159,15 +169,26 @@ install_tls_identity() {
 
 install_xdr_baseline() {
   local destination=${CONFIG_DIR}/xdr-baseline.json
-  local control_hash core_hash access_hash gedefense_uid temporary
+  local control_hash core_hash access_hash helper_hash gedefense_uid access_uid temporary
   control_hash=$(sha256sum "${RELEASE}/bin/gedefense-control" | cut -d' ' -f1)
   core_hash=$(sha256sum "${RELEASE}/libexec/gedefense-core" | cut -d' ' -f1)
   access_hash=$(sha256sum "${RELEASE}/bin/gedefense-access" | cut -d' ' -f1)
+  helper_hash=""
+  if [[ -f "${RELEASE}/libexec/gedefense-cell-helper" ]]; then
+    helper_hash=$(sha256sum "${RELEASE}/libexec/gedefense-cell-helper" | cut -d' ' -f1)
+  fi
   gedefense_uid=$(id -u gedefense)
+  access_uid=$(id -u "${ACCESS_USER}" 2>/dev/null || printf '%s' "$gedefense_uid")
   temporary=$(mktemp -- "${destination}.new.XXXXXXXX")
-  printf '%s\n' \
-    '{"version":1,"profiles":[{"executable":"/opt/vgt/gedefense/current/bin/gedefense-control","sha256":"'"$control_hash"'","allowed_uids":['"$gedefense_uid"'],"allowed_parents":["/usr/lib/systemd/systemd"],"allow_external_network":true},{"executable":"/opt/vgt/gedefense/current/libexec/gedefense-core","sha256":"'"$core_hash"'","allowed_uids":[0],"allowed_parents":["/usr/lib/systemd/systemd"],"allow_external_network":false},{"executable":"/opt/vgt/gedefense/current/bin/gedefense-access","sha256":"'"$access_hash"'","allowed_uids":['"$gedefense_uid"'],"allowed_parents":["/usr/lib/systemd/systemd"],"allow_external_network":false}]}' \
-    >"$temporary"
+  if [[ -n $helper_hash ]]; then
+    printf '%s\n' \
+      '{"version":1,"profiles":[{"executable":"/opt/vgt/gedefense/current/bin/gedefense-control","sha256":"'"$control_hash"'","allowed_uids":['"$gedefense_uid"'],"allowed_parents":["/usr/lib/systemd/systemd"],"allow_external_network":true},{"executable":"/opt/vgt/gedefense/current/libexec/gedefense-core","sha256":"'"$core_hash"'","allowed_uids":[0],"allowed_parents":["/usr/lib/systemd/systemd"],"allow_external_network":false},{"executable":"/opt/vgt/gedefense/current/libexec/gedefense-cell-helper","sha256":"'"$helper_hash"'","allowed_uids":[0],"allowed_parents":["/usr/lib/systemd/systemd"],"allow_external_network":false},{"executable":"/opt/vgt/gedefense/current/bin/gedefense-access","sha256":"'"$access_hash"'","allowed_uids":['"$access_uid"'],"allowed_parents":["/usr/lib/systemd/systemd"],"allow_external_network":false}]}' \
+      >"$temporary"
+  else
+    printf '%s\n' \
+      '{"version":1,"profiles":[{"executable":"/opt/vgt/gedefense/current/bin/gedefense-control","sha256":"'"$control_hash"'","allowed_uids":['"$gedefense_uid"'],"allowed_parents":["/usr/lib/systemd/systemd"],"allow_external_network":true},{"executable":"/opt/vgt/gedefense/current/libexec/gedefense-core","sha256":"'"$core_hash"'","allowed_uids":[0],"allowed_parents":["/usr/lib/systemd/systemd"],"allow_external_network":false},{"executable":"/opt/vgt/gedefense/current/bin/gedefense-access","sha256":"'"$access_uid"'","allowed_uids":['"$access_uid"'],"allowed_parents":["/usr/lib/systemd/systemd"],"allow_external_network":false}]}' \
+      >"$temporary"
+  fi
   chown root:gedefense "$temporary"
   chmod 0640 "$temporary"
   mv -T -- "$temporary" "$destination"

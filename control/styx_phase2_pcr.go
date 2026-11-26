@@ -231,6 +231,9 @@ func (p *StyxPhase2Engine) evaluatePCR(now time.Time) []XDRIncident {
 		if len(incidents) >= styxPhase2MaxIncidentsPerPoll {
 			break
 		}
+		if p.isAllowlistedLocked(entity.key.remote) {
+			continue
+		}
 		tx, rx, txSamples, rxSamples := entity.windowLocked(minute)
 		windowBytes := saturatingAdd(tx, rx)
 		if windowBytes < styxPhase2MinWindowBytes || txSamples == 0 {
@@ -275,6 +278,32 @@ func (p *StyxPhase2Engine) claimIncidentLocked(key styxPhase2EntityKey, now time
 	}
 	p.dedupe[fingerprint] = now.Add(styxPhase2DedupeTTL)
 	return true
+}
+
+func (p *StyxPhase2Engine) setAllowlist(entries []string) {
+	if p == nil {
+		return
+	}
+	prefixes := parseAllowlistPrefixes(entries)
+	p.mu.Lock()
+	p.allowPrefixes = prefixes
+	p.mu.Unlock()
+}
+
+func (p *StyxPhase2Engine) isAllowlistedLocked(addr netip.Addr) bool {
+	if !addr.IsValid() {
+		return true
+	}
+	addr = addr.Unmap()
+	if addr.IsLoopback() {
+		return true
+	}
+	for _, prefix := range p.allowPrefixes {
+		if prefix.Contains(addr) {
+			return true
+		}
+	}
+	return false
 }
 
 // styxPhase2PCROverThreshold reports the exact integer form of PCR > +0.60:

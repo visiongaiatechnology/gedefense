@@ -15,6 +15,19 @@ export function badge(id, label, kind = '') {
   node.className = `badge${kind ? ` badge-${kind}` : ''}`;
 }
 
+// Mirrors control/xdr_sec_crit_flood.go::isXDROperationallyDegraded: S12 bulk
+// token-bucket throttling with high-priority ring drops=0 must not alarm-fatigue
+// protection posture or UI health badges when no compound fault is present.
+export function isXDROperationallyDegraded(xdr) {
+  if (!xdr || !xdr.degraded) return false;
+  const reason = String(xdr.degraded_reason || '').trim();
+  const nonFatalThrottle =
+    reason.startsWith('S12 telemetry backpressure active:') &&
+    !reason.includes('; ') &&
+    reason.includes('high-priority ring drops=0,');
+  return !nonFatalThrottle;
+}
+
 export function formatBytes(value) {
   let number = Number(value);
   if (!Number.isFinite(number) || number < 0) number = 0;

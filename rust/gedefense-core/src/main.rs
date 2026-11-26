@@ -365,11 +365,12 @@ fn main() -> Result<(), BoxError> {
     }
     let mut replay = ReplayGuard::new();
     eprintln!(
-        "GeDefense Rust core online: interface={iface} ingress={} cgroup_egress=attached cell_lsm={} titan_exec={} titan_exec_attached={} on_access=fanotify-exec user_scan=peercred-jail canary=fanotify-jail authenticated_ipc=VGT3 socket={socket} lockdown={}",
+        "GeDefense Rust core online: interface={iface} ingress={} cgroup_egress=attached cell_lsm={} titan_exec={} titan_exec_attached={} on_access={} user_scan=peercred-jail canary=fanotify-jail authenticated_ipc=VGT3 socket={socket} lockdown={}",
         core.mode,
         if core.cell_lsm_attached { "attached" } else { "optional-unavailable" },
         core.titan_exec.state_text(),
         core.titan_exec.attached,
+        scanner.on_access_label(),
         core.lockdown.state_text()
     );
     for incoming in listener.incoming() {

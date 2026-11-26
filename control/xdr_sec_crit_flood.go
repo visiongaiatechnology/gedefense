@@ -7,6 +7,7 @@ package main
 
 import (
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -115,6 +116,24 @@ func (e *XDREngine) secCritPressureCauseSet() bool {
 	defer e.mu.RUnlock()
 	_, ok := e.degradeCauses[secCritPressureCause]
 	return ok
+}
+
+// isNonFatalSecCritThrottleReason reports whether `XDR.DegradedReason` solely
+// reflects S12 bulk token-bucket throttling with zero high-priority ring drops.
+// Per the S12 contract, bulk flood rate-limiting reports capability telemetry
+// without dropping Release out of enforce (turning off L7 WAF / Kinetic XDP).
+func isNonFatalSecCritThrottleReason(reason string) bool {
+	trimmed := strings.TrimSpace(reason)
+	return strings.HasPrefix(trimmed, "S12 telemetry backpressure active:") &&
+		!strings.Contains(trimmed, "; ") &&
+		strings.Contains(trimmed, "high-priority ring drops=0,")
+}
+
+// isXDROperationallyDegraded reports whether XDR is genuinely degraded (not
+// merely experiencing S12 per-workload bulk telemetry throttling with zero
+// high-priority evidence ring drops).
+func isXDROperationallyDegraded(xdr XDRStatus) bool {
+	return xdr.Degraded && !isNonFatalSecCritThrottleReason(xdr.DegradedReason)
 }
 
 // consumeSecCritEvents turns one bounded drain into independent evidence. It

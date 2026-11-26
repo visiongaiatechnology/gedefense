@@ -2,6 +2,7 @@
 package main
 
 import (
+	"crypto/ed25519"
 	"errors"
 	"fmt"
 	"log"
@@ -39,6 +40,7 @@ type XDREngine struct {
 	behavior         *BehaviorModel
 	logger           *IncidentLogger
 	selfPID          int
+	execPathOverride func(int) string
 	seeded           bool
 	seen             map[string]struct{}
 	dedupe           map[string]time.Time
@@ -217,7 +219,8 @@ type XDREngine struct {
 	// updateWindow is the only sanctioned way to replace this installation's own binaries
 	// while XDR runs. It is opened exclusively by BeginSignedUpdateWindow after a signed
 	// release manifest verified; see selfTamper/checkProtected.
-	updateWindow *xdrUpdateWindow
+	updateWindow     *xdrUpdateWindow
+	pinnedReleaseKey ed25519.PublicKey
 	mu           sync.RWMutex
 	highJobs     chan evaluationJob
 	normalJobs   chan evaluationJob
@@ -268,7 +271,15 @@ func (e *XDREngine) BeginSignedUpdateWindow(manifestPath, publicKeyPath, artifac
 	if e == nil {
 		return errors.New("XDR engine unavailable")
 	}
-	document, err := VerifyReleaseManifest(manifestPath, publicKeyPath, artifactDir)
+	pinnedKey := e.pinnedReleaseKey
+	if len(pinnedKey) == 0 {
+		var keyErr error
+		pinnedKey, keyErr = pinnedReleasePublicKey()
+		if keyErr != nil {
+			return fmt.Errorf("signed update window refused: %w", keyErr)
+		}
+	}
+	document, err := VerifyPinnedReleaseManifest(manifestPath, publicKeyPath, artifactDir, pinnedKey)
 	if err != nil {
 		return fmt.Errorf("signed update window refused: %w", err)
 	}
@@ -301,15 +312,26 @@ func (e *XDREngine) BeginSignedUpdateWindow(manifestPath, publicKeyPath, artifac
 		ExpiresAt:      now.Add(ttl),
 		Expected:       expected,
 	}
+	openMessage := fmt.Sprintf("Signed package-update window opened for %d own executable(s); manifest=%s reason=%s expires=%s",
+		len(expected), manifestDigest, window.Reason, window.ExpiresAt.Format(time.RFC3339))
+	if e.state != nil {
+		if err := e.state.RecordEvidence(EvidenceRecord{
+			Severity: "high", Kind: "xdr.update_window_opened", Source: "integrity",
+			Message: openMessage, Target: productArtifactRoot(),
+		}); err != nil && !errors.Is(err, errEvidenceBudgetExhausted) {
+			return fmt.Errorf("signed update window refused: evidence commit: %w", err)
+		}
+	}
 	e.mu.Lock()
 	e.updateWindow = window
 	e.mu.Unlock()
-	e.state.AddEvent(Event{
-		Severity: "high", Kind: "xdr.update_window_opened", Source: "integrity",
-		Message: fmt.Sprintf("Signed package-update window opened for %d own executable(s); manifest=%s expires=%s",
-			len(expected), manifestDigest, window.ExpiresAt.Format(time.RFC3339)),
-		Target: productArtifactRoot(),
-	})
+	if e.state != nil {
+		e.state.AddEvent(Event{
+			Severity: "high", Kind: "xdr.update_window_opened", Source: "integrity",
+			Message: openMessage,
+			Target:  productArtifactRoot(),
+		})
+	}
 	return nil
 }
 
@@ -323,9 +345,13 @@ func (e *XDREngine) EndSignedUpdateWindow(reason string) {
 	open := e.updateWindow != nil
 	e.updateWindow = nil
 	e.mu.Unlock()
-	if open {
-		e.state.AddEvent(Event{Severity: "high", Kind: "xdr.update_window_closed", Source: "integrity",
-			Message: "Signed package-update window closed: " + strings.TrimSpace(reason)})
+	if open && e.state != nil {
+		msg := "Signed package-update window closed: " + strings.TrimSpace(reason)
+		_ = e.state.RecordEvidence(EvidenceRecord{
+			Severity: "high", Kind: "xdr.update_window_closed", Source: "integrity",
+			Message: msg, Target: productArtifactRoot(),
+		})
+		e.state.AddEvent(Event{Severity: "high", Kind: "xdr.update_window_closed", Source: "integrity", Message: msg})
 	}
 }
 
@@ -411,11 +437,21 @@ func (e *XDREngine) applyAuthorizedUpdate(path, identity, digest, observed strin
 		}
 	}
 	e.mu.Unlock()
-	e.state.AddEvent(Event{Severity: "high", Kind: "xdr.update_window_artifact_applied", Source: "integrity",
-		Message: "GeDefense component replaced inside a verified signed update window", Target: path})
-	if closed {
-		e.state.AddEvent(Event{Severity: "high", Kind: "xdr.update_window_closed", Source: "integrity",
-			Message: "Signed package-update window closed: every artifact named by the manifest was observed"})
+	if e.state != nil {
+		_ = e.state.RecordEvidence(EvidenceRecord{
+			Severity: "high", Kind: "xdr.update_window_artifact_applied", Source: "integrity",
+			Message: fmt.Sprintf("GeDefense component replaced inside verified update window (sha256=%s)", updated.digest), Target: path,
+		})
+		e.state.AddEvent(Event{Severity: "high", Kind: "xdr.update_window_artifact_applied", Source: "integrity",
+			Message: "GeDefense component replaced inside a verified signed update window", Target: path})
+		if closed {
+			const closedMsg = "Signed package-update window closed: every artifact named by the manifest was observed"
+			_ = e.state.RecordEvidence(EvidenceRecord{
+				Severity: "high", Kind: "xdr.update_window_closed", Source: "integrity",
+				Message: closedMsg, Target: productArtifactRoot(),
+			})
+			e.state.AddEvent(Event{Severity: "high", Kind: "xdr.update_window_closed", Source: "integrity", Message: closedMsg})
+		}
 	}
 }
 
@@ -603,6 +639,7 @@ func NewXDREngine(cfg Config, state *State, core *CoreClient, feeds *FeedManager
 		Enabled:                 false,
 		FlowCapabilityKnown:     false,
 		DNSObservationAvailable: false,
+		DNSAttribution:          e.DNSQueryObservedForPID,
 		CanaryCorrelation:       e.styxCanaryCorrelation,
 	}, e.correlator, e.emitStyxBeaconIncident)
 	e.applyStyxBeaconSettings(runtime)

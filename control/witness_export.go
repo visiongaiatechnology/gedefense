@@ -225,6 +225,8 @@ func (e *WitnessEngine) checkpointSealsHead(checkpoint WitnessCheckpoint) bool {
 // bounded reason; an epoch/sequence regression additionally raises the rollback
 // alarm.
 func (e *WitnessEngine) ImportReceipt(_ context.Context, raw []byte) (WitnessReceipt, error) {
+	e.opsMu.Lock()
+	defer e.opsMu.Unlock()
 	e.mu.Lock()
 	settings := e.settings
 	failClosed := e.failClosed

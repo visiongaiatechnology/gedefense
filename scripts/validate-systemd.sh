@@ -180,7 +180,7 @@ read -r -a sys_grants <<<"$(
     sed 's/^[^=]*=//' | tr ' ' '\n' | sed 's/^-//' |
     grep -E '^/sys(/|$)' | sort -u | tr '\n' ' '
 )"
-if [[ ${sys_grants[*]-} != '/sys/bus/thunderbolt/devices /sys/bus/usb /sys/devices /sys/fs/bpf' ]]; then
+if [[ ${sys_grants[*]-} != '/sys/bus/thunderbolt/devices /sys/bus/usb /sys/devices /sys/fs/bpf /sys/fs/bpf/gedefense' ]]; then
   printf 'gedefense-core.service has an unexpected writable sysfs set: %s\n' "${sys_grants[*]-}" >&2
   exit 1
 fi

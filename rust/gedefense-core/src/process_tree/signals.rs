@@ -8,7 +8,7 @@ use std::{
 
 use crate::{process_control::valid_rule_token, BoxError};
 
-use super::tree::{collect_tree, proc_start_ticks, read_process_table, ProcEntry};
+use super::tree::{collect_tree_live, proc_start_ticks, read_process_table, ProcEntry};
 
 fn resolve_exe(pid: i32) -> Option<PathBuf> {
     fs::read_link(format!("/proc/{pid}/exe")).ok()
@@ -107,7 +107,7 @@ pub(crate) fn stop_process_descendants(root_pid: i32, rule: &str) -> Result<(), 
         return Err("invalid rule token".into());
     }
     let table = read_process_table()?;
-    let members = collect_tree(root_pid, &table)?;
+    let members = collect_tree_live(root_pid, &table)?;
     let own_pid = std::process::id() as i32;
     let mut stopped = 0u32;
     for member in &members {
@@ -188,7 +188,7 @@ pub(crate) fn signal_process_tree(
         return Err("kill rejected: objective evidence missing".into());
     }
     let table = read_process_table()?;
-    let members = collect_tree(root_pid, &table)?;
+    let members = collect_tree_live(root_pid, &table)?;
     let own_pid = std::process::id() as i32;
     // SAFETY: getpgrp has no arguments and cannot fail.
     let own_pgrp = unsafe { libc::getpgrp() };

@@ -362,7 +362,7 @@ ensure_password_record() {
     return
   fi
   [[ -x $ACCESS_BIN && ! -L $ACCESS_BIN ]] || fail "access binary unavailable: $ACCESS_BIN"
-  local plaintext record_tmp
+  local plaintext record_tmp init_tmp
   plaintext=$(openssl rand -base64 24 | tr -d '\n')
   record_tmp=$(mktemp -- "${record}.new.XXXXXXXX")
   printf '%s\n' "$plaintext" | "$ACCESS_BIN" --hash-password-stdin >"$record_tmp"
@@ -371,13 +371,22 @@ ensure_password_record() {
     chown "$ACCESS_USER:$ACCESS_GROUP" -- "$record_tmp"
   fi
   mv -T -- "$record_tmp" "$record"
-  printf '%s\n' "$plaintext" >"${STATE_DIR}/initial-access-password"
-  chmod 0600 -- "${STATE_DIR}/initial-access-password"
+  init_tmp=$(mktemp -- "${STATE_DIR}/initial-access-password.new.XXXXXXXX")
+  chmod 0600 -- "$init_tmp"
   if [[ $SKIP_OWNER != 1 ]]; then
-    chown root:root "${STATE_DIR}/initial-access-password"
+    chown root:root -- "$init_tmp"
   fi
-  : >"${ROOT}/var/lib/vgt/gedefense-password-setup-required"
-  chmod 0644 -- "${ROOT}/var/lib/vgt/gedefense-password-setup-required"
+  printf '%s\n' "$plaintext" >"$init_tmp"
+  mv -T -- "$init_tmp" "${STATE_DIR}/initial-access-password"
+  local marker_path="${ROOT}/var/lib/vgt/gedefense-password-setup-required"
+  require_regular_or_absent "$marker_path" || return
+  local marker_tmp
+  marker_tmp=$(mktemp -- "${marker_path}.new.XXXXXXXX")
+  chmod 0644 -- "$marker_tmp"
+  if [[ $SKIP_OWNER != 1 ]]; then
+    chown root:root -- "$marker_tmp"
+  fi
+  mv -T -- "$marker_tmp" "$marker_path"
   changes=$((changes + 1))
   note "generated initial operator password at ${STATE_DIR}/initial-access-password (root-only); rotate it after first login"
 }
@@ -643,6 +652,7 @@ ensure_raw_key "${STATE_DIR}/xdr-log.key" 0600 "${CONTROL_USER}" "${CONTROL_GROU
 ensure_raw_key "${STATE_DIR}/runtime-settings.key" 0600 "${CONTROL_USER}" "${CONTROL_GROUP}"
 ensure_session_key
 ensure_dashboard_token
+ensure_raw_key "${ACCESS_STATE_PARENT}/dashboard.token.gateway-claim" 0600 "${CONTROL_USER}" "${ACCESS_GROUP}"
 ensure_password_record
 ensure_tls_identity
 ensure_xdr_baseline

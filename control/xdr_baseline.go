@@ -56,6 +56,7 @@ func productArtifactPaths() []string {
 		filepath.Join(root, "bin", "gedefense-control"),
 		filepath.Join(root, "bin", "gedefense-access"),
 		filepath.Join(root, "libexec", "gedefense-core"),
+		filepath.Join(root, "libexec", "gedefense-cell-helper"),
 		filepath.Join(root, "lib", "gedefense", "gedefense-ebpf"),
 	}
 }

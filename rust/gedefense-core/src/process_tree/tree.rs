@@ -5,6 +5,8 @@
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     fs,
+    os::unix::fs::MetadataExt,
+    path::Path,
 };
 
 use crate::BoxError;
@@ -60,7 +62,7 @@ pub(crate) fn parse_proc_stat(pid: i32, stat: &str) -> Option<ProcEntry> {
     })
 }
 
-fn read_proc_entry(pid: i32) -> Option<ProcEntry> {
+pub(crate) fn read_proc_entry(pid: i32) -> Option<ProcEntry> {
     use std::io::Read as _;
     let file = fs::File::open(format!("/proc/{pid}/stat")).ok()?;
     let mut stat = String::new();
@@ -98,8 +100,110 @@ pub(crate) fn group_has_trusted_comm(
     })
 }
 
+/// Pure predicate for immutable hosting-panel server trees (never webroots
+/// such as `/www/wwwroot`).
+pub(crate) fn is_panel_server_exe_path(path: &Path) -> bool {
+    let text = path.to_string_lossy();
+    text.starts_with("/www/server/") || text.starts_with("/opt/plesk/")
+}
+
+/// Verifies via `symlink_metadata` that every segment strictly below `root_prefix`
+/// up to `path` contains no symlink and carries no group/world write permission;
+/// when `require_root` is true every checked segment must be owned by uid 0.
+pub(crate) fn path_chain_immutable_under(
+    root_prefix: &Path,
+    path: &Path,
+    require_root: bool,
+) -> bool {
+    let Ok(rel) = path.strip_prefix(root_prefix) else {
+        return false;
+    };
+    let mut cur = root_prefix.to_path_buf();
+    let total = rel.components().count();
+    if total == 0 {
+        return false;
+    }
+    for (idx, comp) in rel.components().enumerate() {
+        cur.push(comp);
+        let Ok(meta) = fs::symlink_metadata(&cur) else {
+            return false;
+        };
+        if meta.file_type().is_symlink() {
+            return false;
+        }
+        if idx + 1 < total && !meta.is_dir() {
+            return false;
+        }
+        if idx + 1 == total && !meta.is_file() {
+            return false;
+        }
+        if (meta.mode() & 0o022) != 0 {
+            return false;
+        }
+        if require_root && meta.uid() != 0 {
+            return false;
+        }
+    }
+    true
+}
+
+/// Checks whether a live PID is backed by a non-deleted executable under a
+/// trusted system root whose binary filename matches its `/proc/<pid>/stat`
+/// `comm` (mitigates `prctl(PR_SET_NAME)` spoofing bypass, LIN-H04).
+pub(crate) fn verified_trusted_comm_exe(pid: i32, comm: &str, trusted: &[&str]) -> bool {
+    if !trusted.iter().any(|name| *name == comm) {
+        return false;
+    }
+    let Ok(exe) = fs::read_link(format!("/proc/{pid}/exe")) else {
+        return false;
+    };
+    let text = exe.to_string_lossy();
+    if text.ends_with(" (deleted)") {
+        return false;
+    }
+    let trusted_prefix = text.starts_with("/usr/")
+        || text.starts_with("/bin/")
+        || text.starts_with("/sbin/")
+        || text.starts_with("/lib/")
+        || text.starts_with("/lib64/")
+        || text.starts_with("/opt/vgt/gedefense/");
+    let trusted_panel = is_panel_server_exe_path(&exe)
+        && path_chain_immutable_under(Path::new("/"), &exe, true);
+    if !trusted_prefix && !trusted_panel {
+        return false;
+    }
+    exe.file_name()
+        .and_then(|n| n.to_str())
+        .is_some_and(|base| base == comm || base.starts_with(comm))
+}
+
+fn verified_apt_method_exe(pid: i32) -> bool {
+    let Ok(exe) = fs::read_link(format!("/proc/{pid}/exe")) else {
+        return false;
+    };
+    let text = exe.to_string_lossy();
+    !text.ends_with(" (deleted)") && text.starts_with("/usr/lib/apt/methods/")
+}
+
+/// Live `/proc` exemption check requiring `/proc/<pid>/exe` corroboration.
+pub(crate) fn process_group_has_verified_trusted_exe(
+    pgid: i32,
+    trusted: &[&str],
+) -> Result<bool, BoxError> {
+    if pgid <= 1 {
+        return Ok(true);
+    }
+    let table = read_process_table()?;
+    Ok(table.iter().any(|entry| {
+        entry.pgrp == pgid
+            && (verified_trusted_comm_exe(entry.pid, &entry.comm, trusted)
+                || verified_apt_method_exe(entry.pid))
+    }))
+}
+
 /// Reads the bounded `/proc` snapshot and answers the exemption question for
 /// one process group.
+#[allow(dead_code)]
 pub(crate) fn process_group_has_trusted_comm(
     pgid: i32,
     trusted: &[&str],
@@ -138,10 +242,10 @@ pub(crate) fn read_process_table() -> Result<Vec<ProcEntry>, BoxError> {
     Ok(table)
 }
 
-/// Returns true when `root` is a non-leader worker inside a shared multi-worker
-/// service pool (e.g. `php-fpm`, `lsphp`, `httpd`, `nginx`) whose PGID leader
-/// serves other traffic. In that topology, containment targets `root` and its
-/// own PPID descendants instead of sweeping sibling workers or the pool master.
+/// Pure synthetic predicate over a `/proc` snapshot: true when `root` is a
+/// non-leader worker inside a shared multi-worker service pool. Live `/proc`
+/// callers must use [`verified_entry_is_service_pool_worker`] so spoofed
+/// `comm` strings without matching executables cannot isolate malware.
 pub(crate) fn entry_is_service_pool_worker(root: &ProcEntry, table: &[ProcEntry]) -> bool {
     if root.pid <= 1 || root.pid == root.pgrp {
         return false;
@@ -150,12 +254,25 @@ pub(crate) fn entry_is_service_pool_worker(root: &ProcEntry, table: &[ProcEntry]
         return true;
     }
     table.iter().any(|entry| {
-        entry.pid == root.pgrp
-            && crate::ransom::POOL_SERVICE_COMMS.contains(&entry.comm.as_str())
+        entry.pid == root.pgrp && crate::ransom::POOL_SERVICE_COMMS.contains(&entry.comm.as_str())
     })
 }
 
-/// Checks whether a live PID is a worker inside a pooled service daemon group.
+/// Live `/proc` service-pool worker check requiring `/proc/<pid>/exe` system-prefix corroboration.
+pub(crate) fn verified_entry_is_service_pool_worker(root: &ProcEntry, table: &[ProcEntry]) -> bool {
+    if root.pid <= 1 || root.pid == root.pgrp {
+        return false;
+    }
+    if verified_trusted_comm_exe(root.pid, &root.comm, crate::ransom::POOL_SERVICE_COMMS) {
+        return true;
+    }
+    table.iter().any(|entry| {
+        entry.pid == root.pgrp
+            && verified_trusted_comm_exe(entry.pid, &entry.comm, crate::ransom::POOL_SERVICE_COMMS)
+    })
+}
+
+/// Checks whether a live PID is a verified worker inside a pooled service daemon group.
 pub(crate) fn is_service_pool_worker(pid: i32) -> Result<bool, BoxError> {
     if pid <= 1 {
         return Ok(false);
@@ -164,20 +281,14 @@ pub(crate) fn is_service_pool_worker(pid: i32) -> Result<bool, BoxError> {
     let Some(root) = table.iter().find(|entry| entry.pid == pid) else {
         return Ok(false);
     };
-    Ok(entry_is_service_pool_worker(root, &table))
+    Ok(verified_entry_is_service_pool_worker(root, &table))
 }
 
-/// Collects the bounded kill set for `root_pid`: PPID descendants (BFS, depth
-/// capped) plus every member of the root's process group (except when `root` is
-/// a worker inside a shared multi-worker service pool, so sibling workers and
-/// the master daemon stay online). The visited set makes the walk cycle-safe
-/// even against a synthetic `/proc` snapshot; ordering is deepest-first so
-/// children are stopped before their parent. The root must remain present.
-pub(crate) fn collect_tree(root_pid: i32, table: &[ProcEntry]) -> Result<Vec<ProcEntry>, BoxError> {
-    let Some(root) = table.iter().find(|entry| entry.pid == root_pid) else {
-        return Err("kill tree root is not present in the proc snapshot".into());
-    };
-    let isolate_worker_only = entry_is_service_pool_worker(root, table);
+fn collect_tree_with_isolation(
+    root: &ProcEntry,
+    table: &[ProcEntry],
+    isolate_worker_only: bool,
+) -> Result<Vec<ProcEntry>, BoxError> {
     let mut children: HashMap<i32, Vec<&ProcEntry>> = HashMap::new();
     for entry in table {
         children.entry(entry.ppid).or_default().push(entry);
@@ -207,7 +318,7 @@ pub(crate) fn collect_tree(root_pid: i32, table: &[ProcEntry]) -> Result<Vec<Pro
         }
     }
     // Process-group members of the root's group (the PGID half of the scope),
-    // skipped when isolating a pooled service worker to avoid master/sibling DoS.
+    // skipped when isolating a verified pooled service worker to avoid master/sibling DoS.
     if !isolate_worker_only {
         for entry in table {
             if entry.pgrp == root.pgrp && !visited.contains(&entry.pid) {
@@ -226,4 +337,23 @@ pub(crate) fn collect_tree(root_pid: i32, table: &[ProcEntry]) -> Result<Vec<Pro
     // PID for determinism.
     ordered.sort_unstable_by(|left, right| right.0.cmp(&left.0).then(left.1.pid.cmp(&right.1.pid)));
     Ok(ordered.into_iter().map(|(_, entry)| entry).collect())
+}
+
+/// Collects the bounded kill set for `root_pid` over a synthetic snapshot.
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) fn collect_tree(root_pid: i32, table: &[ProcEntry]) -> Result<Vec<ProcEntry>, BoxError> {
+    let Some(root) = table.iter().find(|entry| entry.pid == root_pid) else {
+        return Err("kill tree root is not present in the proc snapshot".into());
+    };
+    let isolate_worker_only = entry_is_service_pool_worker(root, table);
+    collect_tree_with_isolation(root, table, isolate_worker_only)
+}
+
+/// Live-host variant requiring `/proc/<pid>/exe` corroboration before isolating a worker.
+pub(crate) fn collect_tree_live(root_pid: i32, table: &[ProcEntry]) -> Result<Vec<ProcEntry>, BoxError> {
+    let Some(root) = table.iter().find(|entry| entry.pid == root_pid) else {
+        return Err("kill tree root is not present in the proc snapshot".into());
+    };
+    let isolate_worker_only = verified_entry_is_service_pool_worker(root, table);
+    collect_tree_with_isolation(root, table, isolate_worker_only)
 }

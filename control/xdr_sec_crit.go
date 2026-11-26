@@ -95,11 +95,34 @@ type SecCritEngine struct {
 	pressureActive bool
 	// Bounded per-source rate limit for differential-gap findings.
 	differentialAt map[uint8]time.Time
+	// Count of critical local integrity/cross-view findings mirrored into SEC_CRIT.
+	mirroredEvents uint64
 }
 
 // NewSecCritEngine constructs the inert engine.
 func NewSecCritEngine() *SecCritEngine {
 	return &SecCritEngine{differentialAt: make(map[uint8]time.Time, 8)}
+}
+
+// recordLocalSecCritMirror mirrors local self-tamper and cross-view critical
+// findings into the SEC_CRIT bookkeeping and telemetry stream (observe-only).
+func (e *XDREngine) recordLocalSecCritMirror(source, kind string, now time.Time) {
+	if e == nil || e.secCrit == nil {
+		return
+	}
+	e.secCritMu.Lock()
+	e.secCrit.mirroredEvents++
+	e.secCritMu.Unlock()
+	if e.state != nil {
+		e.state.AddEvent(Event{
+			Time:     now,
+			Severity: "high",
+			Kind:     "xdr.sec_crit_evidence",
+			Source:   "sec-crit",
+			Message:  boundedPermitText(fmt.Sprintf("Critical local evidence mirrored to high-priority ring: source=%s kind=%s", source, kind), secCritSummaryBytes),
+			Target:   boundedPermitText(source+":"+kind, 120),
+		})
+	}
 }
 
 // pollSecCrit runs one status + drain cycle and returns the next due time. The

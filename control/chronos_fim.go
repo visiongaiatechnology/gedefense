@@ -59,6 +59,7 @@ type ChronosCheckpoint struct {
 
 type ChronosScanner struct {
 	mu             sync.Mutex
+	policyMu       sync.RWMutex
 	roots          []string
 	checkpointPath string
 	batchSize      int
@@ -163,6 +164,12 @@ func ComputeMerkleRoot(fileHashes map[string]string) string {
 
 // SaveCheckpoint serializes the current progress to atomic disk storage.
 func (c *ChronosScanner) SaveCheckpoint() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.saveCheckpointLocked()
+}
+
+func (c *ChronosScanner) saveCheckpointLocked() error {
 	if c.checkpointPath == "" || c.checkpoint == nil {
 		return nil
 	}
@@ -202,8 +209,24 @@ func (c *ChronosScanner) SaveCheckpoint() error {
 // is used on purpose; when an old plaintext checkpoint is present, Scan starts a fresh full walk
 // and the next SaveCheckpoint replaces the file with an authenticated one.
 func (c *ChronosScanner) LoadCheckpoint() (*ChronosCheckpoint, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.loadCheckpointLocked()
+}
+
+func (c *ChronosScanner) loadCheckpointLocked() (*ChronosCheckpoint, error) {
 	if c.checkpointPath == "" {
 		return nil, nil
+	}
+	info, statErr := os.Lstat(c.checkpointPath)
+	if statErr != nil {
+		if os.IsNotExist(statErr) {
+			return nil, nil
+		}
+		return nil, NewChronosStorageException("failed to stat checkpoint file", statErr)
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+		return nil, NewChronosStorageException("checkpoint path must be a regular non-symlink file", nil)
 	}
 	data, err := os.ReadFile(c.checkpointPath)
 	if err != nil {
@@ -245,7 +268,7 @@ func (c *ChronosScanner) Scan(ctx context.Context, resume bool) (*ChronosCheckpo
 
 	now := time.Now().UTC()
 	if resume && c.checkpoint == nil {
-		_, _ = c.LoadCheckpoint()
+		_, _ = c.loadCheckpointLocked()
 	}
 	resuming := resume && c.checkpoint != nil &&
 		(c.checkpoint.Phase == "RUNNING" || c.checkpoint.Phase == "PAUSED")
@@ -291,7 +314,7 @@ func (c *ChronosScanner) Scan(ctx context.Context, resume bool) (*ChronosCheckpo
 			select {
 			case <-ctx.Done():
 				c.checkpoint.Phase = "PAUSED"
-				_ = c.SaveCheckpoint()
+				_ = c.saveCheckpointLocked()
 				return ctx.Err()
 			default:
 			}
@@ -324,7 +347,7 @@ func (c *ChronosScanner) Scan(ctx context.Context, resume bool) (*ChronosCheckpo
 			filesInBatch++
 			if filesInBatch >= c.batchSize {
 				filesInBatch = 0
-				_ = c.SaveCheckpoint()
+				_ = c.saveCheckpointLocked()
 				if c.yieldDuration > 0 {
 					time.Sleep(c.yieldDuration)
 				}
@@ -369,7 +392,7 @@ func (c *ChronosScanner) Scan(ctx context.Context, resume bool) (*ChronosCheckpo
 	if bounded {
 		c.checkpoint.Phase = "BOUNDED"
 		c.checkpoint.MerkleRoot = ComputeMerkleRoot(c.checkpoint.FileHashes)
-		_ = c.SaveCheckpoint()
+		_ = c.saveCheckpointLocked()
 		return c.checkpoint, NewChronosValidationException(
 			fmt.Sprintf("Chronos traversal budget exhausted after %d files and %d bytes; the digest set is partial",
 				c.checkpoint.FilesScanned, c.checkpoint.BytesScanned), nil)
@@ -377,21 +400,35 @@ func (c *ChronosScanner) Scan(ctx context.Context, resume bool) (*ChronosCheckpo
 
 	c.checkpoint.Phase = "COMPLETED"
 	c.checkpoint.MerkleRoot = ComputeMerkleRoot(c.checkpoint.FileHashes)
-	_ = c.SaveCheckpoint()
+	_ = c.saveCheckpointLocked()
 
 	return c.checkpoint, nil
 }
 
-// hashRegularFile hashes a single regular file, guaranteeing immediate close of the descriptor.
+// hashRegularFile hashes a single regular file safely, rejecting symlinks and bounding reads.
 func hashRegularFile(path string) (string, int64, error) {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return "", 0, err
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+		return "", 0, errors.New("chronos refuses non-regular or symlink file")
+	}
 	f, err := os.Open(path)
 	if err != nil {
 		return "", 0, err
 	}
 	defer f.Close()
-
+	opened, err := f.Stat()
+	if err != nil || !os.SameFile(info, opened) || !opened.Mode().IsRegular() {
+		return "", 0, errors.New("chronos file identity changed during open")
+	}
+	const chronosHashMaxBytes int64 = 512 << 20
+	if opened.Size() > chronosHashMaxBytes {
+		return "", 0, errors.New("chronos file exceeds maximum hashing bound")
+	}
 	hasher := sha256.New()
-	written, err := io.Copy(hasher, f)
+	written, err := io.Copy(hasher, io.LimitReader(f, chronosHashMaxBytes))
 	if err != nil {
 		return "", 0, err
 	}

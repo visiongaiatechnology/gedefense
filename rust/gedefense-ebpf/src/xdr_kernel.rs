@@ -20,11 +20,10 @@ use aya_ebpf::{
     programs::{RetProbeContext, TracePointContext},
 };
 use gedefense_common::{
-    credential_reader_allowed, ExecArgvEvent, KernelProbeEvent, EXEC_ARGV_EVENT_RING_BYTES,
-    EXEC_ARGV_EVENT_WIRE_BYTES, KERNEL_PROBE_ACTION_AUDIT, KERNEL_PROBE_DETAIL_BYTES,
-    KERNEL_PROBE_EVENT_RING_BYTES, KERNEL_PROBE_EVENT_WIRE_BYTES,
-    KERNEL_PROBE_KIND_CRED_OPENAT, KERNEL_PROBE_KIND_PTRACE, KERNEL_PROBE_KIND_SYMLINK,
-    SEC_CRIT_BUCKET_EXEC_ARGV, SEC_CRIT_BUCKET_KERNEL_PROBE,
+    ExecArgvEvent, KernelProbeEvent, EXEC_ARGV_EVENT_RING_BYTES, EXEC_ARGV_EVENT_WIRE_BYTES,
+    KERNEL_PROBE_ACTION_AUDIT, KERNEL_PROBE_DETAIL_BYTES, KERNEL_PROBE_EVENT_RING_BYTES,
+    KERNEL_PROBE_EVENT_WIRE_BYTES, KERNEL_PROBE_KIND_CRED_OPENAT, KERNEL_PROBE_KIND_PTRACE,
+    KERNEL_PROBE_KIND_SYMLINK, SEC_CRIT_BUCKET_EXEC_ARGV, SEC_CRIT_BUCKET_KERNEL_PROBE,
 };
 use crate::sec_crit::{
     telemetry_budget_allow, telemetry_current_cgroup_id, telemetry_note_suppressed,
@@ -64,6 +63,18 @@ pub(crate) static EXEC_ARGV_EVENTS: RingBuf =
 #[map]
 pub(crate) static KERNEL_PROBE_EVENTS: RingBuf =
     RingBuf::with_byte_size(KERNEL_PROBE_EVENT_RING_BYTES, 0);
+#[map]
+pub(crate) static EXEC_ARGV_DROPS: PerCpuArray<u64> = PerCpuArray::with_max_entries(1, 0);
+#[map]
+pub(crate) static KERNEL_PROBE_DROPS: PerCpuArray<u64> = PerCpuArray::with_max_entries(1, 0);
+
+#[inline(always)]
+fn bump_xdr_drop(counter_map: &PerCpuArray<u64>) {
+    if let Some(counter) = counter_map.get_ptr_mut(0) {
+        // SAFETY: per-CPU index 0 belongs exclusively to the executing CPU.
+        unsafe { *counter = (*counter).saturating_add(1) };
+    }
+}
 
 const _: () = assert!(core::mem::size_of::<ExecArgvEvent>() == EXEC_ARGV_EVENT_WIRE_BYTES);
 const _: () = assert!(core::mem::size_of::<KernelProbeEvent>() == KERNEL_PROBE_EVENT_WIRE_BYTES);
@@ -90,27 +101,6 @@ fn normalize_comm(raw: [u8; 16]) -> [u8; 16] {
         out[15] = 0;
     }
     out
-}
-
-#[inline(always)]
-fn prefix_match(buf: &[u8], prefix: &[u8]) -> bool {
-    if buf.len() < prefix.len() {
-        return false;
-    }
-    let mut i = 0usize;
-    while i < prefix.len() {
-        let Some(&a) = buf.get(i) else {
-            return false;
-        };
-        let Some(&b) = prefix.get(i) else {
-            return false;
-        };
-        if a != b {
-            return false;
-        }
-        i += 1;
-    }
-    true
 }
 
 #[inline(always)]
@@ -241,6 +231,8 @@ pub(crate) fn flush_pending_exec_argv(tid: u32, comm: [u8; 16]) {
     if let Some(mut entry) = EXEC_ARGV_EVENTS.reserve::<ExecArgvEvent>(0) {
         unsafe { entry.as_mut_ptr().write(*scratch) };
         entry.submit(0);
+    } else {
+        bump_xdr_drop(&EXEC_ARGV_DROPS);
     }
 }
 
@@ -298,6 +290,8 @@ pub(crate) fn emit_kernel_probe(
     if let Some(mut entry) = KERNEL_PROBE_EVENTS.reserve::<KernelProbeEvent>(0) {
         unsafe { entry.as_mut_ptr().write(event) };
         entry.submit(0);
+    } else {
+        bump_xdr_drop(&KERNEL_PROBE_DROPS);
     }
 }
 
@@ -334,15 +328,97 @@ fn try_sys_enter_ptrace(ctx: &TracePointContext) -> Option<()> {
 }
 
 #[inline(always)]
-fn is_exact_bytes(buf: &[u8], expected: &[u8]) -> bool {
-    buf.len() == expected.len() && prefix_match(buf, expected)
+fn eq_at(buf: &[u8], off: usize, lit: &[u8]) -> bool {
+    if off > PATH_PROBE_BYTES || off + lit.len() > buf.len() {
+        return false;
+    }
+    let mut i = 0usize;
+    while i < lit.len() {
+        let Some(&a) = buf.get(off + i) else {
+            return false;
+        };
+        let Some(&b) = lit.get(i) else {
+            return false;
+        };
+        if a != b {
+            return false;
+        }
+        i += 1;
+    }
+    true
+}
+
+#[inline(always)]
+fn at_nul_or_end(buf: &[u8], off: usize) -> bool {
+    matches!(buf.get(off), None | Some(&0))
+}
+
+/// Advance over one `/` or `./` separator without a loop so BPF verifier
+/// sees strictly bounded offsets without state explosion (F-07).
+#[inline(always)]
+fn skip_one_sep(buf: &[u8], pos: usize) -> usize {
+    if pos < buf.len() && matches!(buf.get(pos), Some(&b'/')) {
+        return pos + 1;
+    }
+    if pos + 1 < buf.len()
+        && matches!(buf.get(pos), Some(&b'.'))
+        && matches!(buf.get(pos + 1), Some(&b'/'))
+    {
+        return pos + 2;
+    }
+    pos
+}
+
+#[inline(always)]
+fn skip_two_seps(buf: &[u8], pos: usize) -> usize {
+    let p = skip_one_sep(buf, pos);
+    skip_one_sep(buf, p)
 }
 
 #[inline(always)]
 fn is_cred_open_sensitive(path_bytes: &[u8]) -> bool {
-    prefix_match(path_bytes, b"/etc/shadow")
-        || prefix_match(path_bytes, b"/etc/gshadow")
-        || prefix_match(path_bytes, b"/etc/vgt/gedefense/secrets/")
+    is_cred_open_sensitive_dfd(-100, path_bytes)
+}
+
+#[inline(always)]
+fn is_cred_open_sensitive_dfd(dfd: i64, path_bytes: &[u8]) -> bool {
+    let Some(&first) = path_bytes.first() else {
+        return false;
+    };
+    if first == 0 {
+        return false;
+    }
+    if first == b'/' {
+        let p1 = skip_two_seps(path_bytes, 1);
+        if !eq_at(path_bytes, p1, b"etc/") {
+            return false;
+        }
+        let p2 = skip_two_seps(path_bytes, p1 + 4);
+        if eq_at(path_bytes, p2, b"shadow") || eq_at(path_bytes, p2, b"gshadow") {
+            return true;
+        }
+        if !eq_at(path_bytes, p2, b"vgt/") {
+            return false;
+        }
+        let p3 = skip_two_seps(path_bytes, p2 + 4);
+        if !eq_at(path_bytes, p3, b"gedefense/") {
+            return false;
+        }
+        let p4 = skip_two_seps(path_bytes, p3 + 10);
+        return eq_at(path_bytes, p4, b"secrets/");
+    }
+    // dirfd-relative opens (`openat(etc_fd, "shadow")` / `"./shadow"` / `"secrets/..."`)
+    // carry non-AT_FDCWD (-100) descriptor and relative spelling; flag sensitive basenames
+    // so dirfd openings cannot silently evade pre-DAC credential telemetry (F-07).
+    if dfd == -100 {
+        return false;
+    }
+    let rel = skip_two_seps(path_bytes, 0);
+    (eq_at(path_bytes, rel, b"shadow") && at_nul_or_end(path_bytes, rel + 6))
+        || (eq_at(path_bytes, rel, b"gshadow") && at_nul_or_end(path_bytes, rel + 7))
+        || eq_at(path_bytes, rel, b"secrets/")
+        || eq_at(path_bytes, rel, b"shadow-")
+        || eq_at(path_bytes, rel, b"gshadow-")
 }
 
 #[tracepoint]
@@ -359,13 +435,15 @@ pub fn gedefense_openat2_cred_probe(ctx: TracePointContext) -> u32 {
 
 #[inline(always)]
 fn try_openat_cred_probe(ctx: &TracePointContext) -> Option<()> {
+    let dfd: i64 = unsafe { ctx.read_at(16).unwrap_or(-100) };
     let filename_ptr: u64 = unsafe { ctx.read_at(24).ok()? };
     if filename_ptr == 0 {
         return None;
     }
-    let comm = bpf_get_current_comm().unwrap_or([0u8; 16]);
-    let clen = comm_trimmed_len(&comm);
-    if credential_reader_allowed(&comm[..clen]) {
+    if matches!(
+        crate::exec_inode::current_exec_trust(),
+        Some((_, flags)) if (flags & crate::exec_inode::EXEC_INODE_CRED_FLAG) != 0
+    ) {
         return None;
     }
     let mut path = [0u8; PATH_PROBE_BYTES];
@@ -381,7 +459,7 @@ fn try_openat_cred_probe(ctx: &TracePointContext) -> Option<()> {
             return None;
         }
     };
-    if !is_cred_open_sensitive(path_bytes) {
+    if !is_cred_open_sensitive_dfd(dfd, path_bytes) {
         return None;
     }
     emit_kernel_probe(
@@ -402,16 +480,41 @@ pub fn gedefense_symlinkat_sensitive(ctx: TracePointContext) -> u32 {
 
 #[inline(always)]
 fn is_sensitive_cred_path(path_bytes: &[u8]) -> bool {
-    is_exact_bytes(path_bytes, b"/etc")
-        || is_exact_bytes(path_bytes, b"/etc/")
-        || prefix_match(path_bytes, b"/etc/shadow")
-        || prefix_match(path_bytes, b"/etc/gshadow")
-        || prefix_match(path_bytes, b"/etc/passwd")
-        || prefix_match(path_bytes, b"/etc/sudoers")
-        || prefix_match(path_bytes, b"/etc/cron")
-        || prefix_match(path_bytes, b"/etc/pam.d")
-        || prefix_match(path_bytes, b"/etc/vgt/gedefense")
-        || prefix_match(path_bytes, b"/root/.ssh")
+    if !matches!(path_bytes.first(), Some(&b'/')) {
+        return false;
+    }
+    let p1 = skip_two_seps(path_bytes, 1);
+    if eq_at(path_bytes, p1, b"root/") {
+        let p2 = skip_two_seps(path_bytes, p1 + 5);
+        return eq_at(path_bytes, p2, b".ssh");
+    }
+    if !eq_at(path_bytes, p1, b"etc") {
+        return false;
+    }
+    if at_nul_or_end(path_bytes, p1 + 3) {
+        return true;
+    }
+    if !matches!(path_bytes.get(p1 + 3), Some(&b'/')) {
+        return false;
+    }
+    let p2 = skip_two_seps(path_bytes, p1 + 4);
+    if at_nul_or_end(path_bytes, p2) {
+        return true;
+    }
+    if eq_at(path_bytes, p2, b"shadow")
+        || eq_at(path_bytes, p2, b"gshadow")
+        || eq_at(path_bytes, p2, b"passwd")
+        || eq_at(path_bytes, p2, b"sudoers")
+        || eq_at(path_bytes, p2, b"cron")
+        || eq_at(path_bytes, p2, b"pam.d")
+    {
+        return true;
+    }
+    if eq_at(path_bytes, p2, b"vgt/") {
+        let p3 = skip_two_seps(path_bytes, p2 + 4);
+        return eq_at(path_bytes, p3, b"gedefense");
+    }
+    false
 }
 
 #[tracepoint]
@@ -504,9 +607,11 @@ fn try_getname_flags_ret(ctx: &RetProbeContext) -> Option<()> {
         unsafe { bpf_probe_read_kernel_str_bytes(name_ptr as *const u8, &mut path).ok()? };
     match kind_tag {
         COLD_PATH_CRED_OPENAT => {
-            let comm = bpf_get_current_comm().unwrap_or([0u8; 16]);
-            let clen = comm_trimmed_len(&comm);
-            if credential_reader_allowed(&comm[..clen]) || !is_cred_open_sensitive(path_bytes) {
+            if matches!(
+                crate::exec_inode::current_exec_trust(),
+                Some((_, flags)) if (flags & crate::exec_inode::EXEC_INODE_CRED_FLAG) != 0
+            ) || !is_cred_open_sensitive(path_bytes)
+            {
                 return None;
             }
             emit_kernel_probe(

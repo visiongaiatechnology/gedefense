@@ -11,6 +11,7 @@ import {
   getQuarantine,
   previewCellAction,
   previewQuarantine,
+  pruneQuarantine,
   scanMalware,
   setCaseStatus
 } from '../api.js';
@@ -29,7 +30,8 @@ import {
 import {
   handleActionError,
   number,
-  on
+  on,
+  withCriticalStepUp
 } from './navigation.js';
 import { selectTransactionByID } from './views_overview.js';
 
@@ -71,6 +73,25 @@ function renderQuarantine(payload) {
       selectTransactionByID(item.transaction_id).catch(handleActionError);
     });
     action.append(button);
+    if (item.status === 'applied' && item.identity && item.object_id) {
+      const pruneBtn = document.createElement('button');
+      pruneBtn.type = 'button';
+      pruneBtn.className = 'button button-danger table-action ml-xs';
+      pruneBtn.textContent = t('quarantine.prune');
+      pruneBtn.addEventListener('click', async () => {
+        try {
+          const outcome = await withCriticalStepUp(t('quarantine.prune') + ': ' + item.object_id, proof =>
+            pruneQuarantine({ object_id: item.object_id, identity: item.identity, confirm: item.object_id }, proof)
+          );
+          if (outcome === null) return;
+          toast(t('quarantine.pruneDone'), 'good');
+          await Promise.all([loadQuarantine(), refresh()]);
+        } catch (error) {
+          handleActionError(error);
+        }
+      });
+      action.append(pruneBtn);
+    }
     row.append(action);
     return row;
   });

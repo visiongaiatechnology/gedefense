@@ -104,7 +104,8 @@ if [[ -f "$ROOT/dist/gedefense-ebpf" ]]; then
   # V6.3.0 round 4: the independent high-priority security ring and the
   # telemetry token-bucket maps must exist in the shipped object.
   for symbol in SEC_CRIT_EVENTS SEC_CRIT_STATE SEC_CRIT_COUNTERS \
-                TELEMETRY_FLOOD_BUCKETS TELEMETRY_FLOOD_SUPPRESSED; do
+                TELEMETRY_FLOOD_BUCKETS TELEMETRY_FLOOD_SUPPRESSED \
+                EXEC_ARGV_DROPS KERNEL_PROBE_DROPS; do
     grep -Fq -- "$symbol" <<<"$ebpf_symbols" ||
       fail "built eBPF object is missing V6.3.0 round-4 symbol ${symbol}"
   done

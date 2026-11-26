@@ -756,6 +756,9 @@ func (g *MitigationGuard) tick(ctx context.Context) bool {
 		record.status.Transitions = append(record.status.Transitions, MitigationTransition{
 			At: g.now(), Kind: "drift-corrected", Detail: fmt.Sprintf("%s drifted to %q and was put back to %s", key, current, desired),
 		})
+		if len(record.status.Transitions) > 64 {
+			record.status.Transitions = append([]MitigationTransition(nil), record.status.Transitions[len(record.status.Transitions)-64:]...)
+		}
 		g.mu.Unlock()
 		g.emit("high", "kernel.mitigation_drift", fmt.Sprintf(
 			"%s was changed outside GeDefense to %q and has been re-asserted to %s", key, current, desired))

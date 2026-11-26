@@ -147,7 +147,7 @@ func deriveDesktopStatus(snap Snapshot, now time.Time, window time.Duration) des
 	if incident, ok := worstIncidentWithin(snap.Incidents, now, window, "critical"); ok {
 		return desktopStatusDecision{desktopStateAlert, "Kritischer Vorfall: " + boundedSummary(incident.Summary)}
 	}
-	if snap.XDR.Degraded {
+	if isXDROperationallyDegraded(snap.XDR) {
 		reason := strings.TrimSpace(snap.XDR.DegradedReason)
 		if reason == "" {
 			reason = "Ursache nicht benannt"

@@ -327,6 +327,9 @@ func validatePermitV1(p *PermitV1, now time.Time) error {
 	if p.Signature == permitSignatureAbsent && p.Signer != "" {
 		return errors.New("permit carries a signer without a signature")
 	}
+	if p.Signature == permitSignatureAbsent && p.TrustLevel != permitTrustAnalyst {
+		return errors.New("unsigned permit may only use ANALYST_MODE")
+	}
 	if len(p.AutoInvalidateOn) > 0 {
 		for _, kind := range p.AutoInvalidateOn {
 			if kind == "binary_changed" && p.Path == "" {

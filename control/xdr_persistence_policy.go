@@ -342,7 +342,7 @@ func (e *XDREngine) assessPersistenceEvent(event CorePersistenceEvent, status Co
 		if !ok {
 			return persistenceAssessment{
 				RuleID: PersistenceRuleMemory, EventKind: "xdr.memory_scrape_probe", EventType: "MEMORY_SCRAPE_PROBE",
-				Category: "memory", Severity: "warning", Score: 90, Confidence: 70, CausalEdge: EdgeMemoryScraped,
+				Category: "memory", Severity: "warning", Score: 70, Confidence: 65, CausalEdge: EdgeMemoryScraped,
 				CorrelationQuality: persistenceQualityNone,
 				Summary:            fmt.Sprintf("%s; %s against target pid=%d (target exited or /proc unreadable; uid relation unknown)", summaryPrefix, direction, target),
 				Limitations:        []string{"target process no longer resolvable: the unrelated-uid condition cannot be verified, correlation NONE"},
@@ -353,6 +353,13 @@ func (e *XDREngine) assessPersistenceEvent(event CorePersistenceEvent, status Co
 				InfoOnly: true, EventKind: "xdr.persistence_memory_same_uid", Severity: "info", Score: 0,
 				Summary: fmt.Sprintf("%s; %s against same-uid target pid=%d comm=%s (debugger/self-service class, information only; mode=%q)",
 					summaryPrefix, direction, target, targetComm, mode),
+			}
+		}
+		if event.Kind == PersistenceKindPtraceAccess && e.persistenceBenignRootProcRead(event, targetComm, mode) {
+			return persistenceAssessment{
+				InfoOnly: true, EventKind: "xdr.persistence_proc_read_noaudit", Severity: "info", Score: 0,
+				Summary: fmt.Sprintf("%s; non-attach NOAUDIT procfs metadata read by managed root binary against pid=%d uid=%d comm=%s (mode=%q)",
+					summaryPrefix, target, targetUID, targetComm, mode),
 			}
 		}
 		return persistenceAssessment{
@@ -367,6 +374,50 @@ func (e *XDREngine) assessPersistenceEvent(event CorePersistenceEvent, status Co
 		InfoOnly: true, EventKind: "xdr.persistence_unknown", Severity: "info", Score: 0,
 		Summary: "Unclassified persistence record ignored: " + summaryPrefix,
 	}
+}
+
+const (
+	linuxPtraceModeAttach  uint64 = 0x02
+	linuxPtraceModeNoAudit uint64 = 0x04
+)
+
+var persistenceManagedSystemPrefixes = []string{
+	"/usr/bin/", "/usr/sbin/", "/bin/", "/sbin/",
+	"/usr/lib/", "/lib/", "/usr/libexec/", "/opt/vgt/gedefense/",
+}
+
+// persistenceBenignRootProcRead filters non-attach PTRACE_MODE_NOAUDIT procfs
+// reads (e.g., landscape-sysinfo/ps inspecting /proc/<pid>/stat or maps)
+// strictly when initiated by root from an immutable system executable against
+// non-GeDefense targets. Attach/mem reads (0x02), non-NOAUDIT reads (e.g.
+// environ=0x09), unprivileged callers, writable-dir binaries, and GeDefense
+// daemons always stay escalated.
+func (e *XDREngine) persistenceBenignRootProcRead(event CorePersistenceEvent, targetComm, modeRaw string) bool {
+	if event.UID != 0 {
+		return false
+	}
+	modeVal, err := strconv.ParseUint(strings.TrimSpace(modeRaw), 10, 32)
+	if err != nil {
+		return false
+	}
+	if modeVal&linuxPtraceModeAttach != 0 || modeVal&linuxPtraceModeNoAudit == 0 {
+		return false
+	}
+	lowerTarget := strings.ToLower(strings.TrimSpace(targetComm))
+	if strings.HasPrefix(lowerTarget, "gedefense-") || persistenceCommIn(targetComm, persistenceOwnComms) {
+		return false
+	}
+	exe := e.resolveProcessPath(event.PID)
+	if exe == "" || exe == "unknown" || bpfGuardPathUnderAny(exe, bpfGuardTempPathPrefixes) {
+		return false
+	}
+	cleanExe := filepath.Clean(exe)
+	for _, prefix := range persistenceManagedSystemPrefixes {
+		if strings.HasPrefix(cleanExe, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // persistenceDriftReasonName names one drift reason code.

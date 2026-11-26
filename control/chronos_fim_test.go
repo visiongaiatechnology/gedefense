@@ -292,3 +292,47 @@ func TestChronosFIMResumeSurvivesADeletedMarker(t *testing.T) {
 		t.Fatalf("the recovered walk is incomplete: hashes=%d root=%q", len(cp.FileHashes), cp.MerkleRoot)
 	}
 }
+
+func TestChronosFIM_BatchCheckpointDoesNotDeadlockAndAllowsPolicyReads(t *testing.T) {
+	tempDir := t.TempDir()
+	rootDir := filepath.Join(tempDir, "batch_root")
+	if err := os.MkdirAll(rootDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 6; i++ {
+		if err := os.WriteFile(filepath.Join(rootDir, fmt.Sprintf("f_%02d.bin", i)), []byte("payload"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cpPath := filepath.Join(tempDir, "checkpoint.json")
+	scanner, err := NewChronosScanner([]string{rootDir}, cpPath, 2, 2*time.Millisecond)
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		cp, scanErr := scanner.Scan(context.Background(), false)
+		if scanErr != nil {
+			done <- scanErr
+			return
+		}
+		if cp.FilesScanned != 6 || cp.Phase != "COMPLETED" {
+			done <- fmt.Errorf("unexpected checkpoint state: files=%d phase=%s", cp.FilesScanned, cp.Phase)
+			return
+		}
+		done <- nil
+	}()
+	for i := 0; i < 5; i++ {
+		_ = scanner.Enabled()
+		_ = scanner.Roots()
+		time.Sleep(time.Millisecond)
+	}
+	select {
+	case scanErr := <-done:
+		if scanErr != nil {
+			t.Fatal(scanErr)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("ChronosScanner.Scan deadlocked during batch checkpointing or policy read")
+	}
+}

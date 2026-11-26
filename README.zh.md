@@ -1,29 +1,28 @@
 <div align="center">
 
-<img width="256" height="256" alt="GeDefense" src="https://github.com/user-attachments/assets/978d2835-c915-473d-9995-d315efaa869c" />
+<img width="320" alt="GeDefense Linux 6.3.0 — GeDefense Vasili Edition" src="docs/assets/vasiliedit.png" />
 
+# VGT GeDefense Linux `6.3.0` — *GeDefense Vasili Edition*
+### 本地主权型 Linux 安全织网与反间谍防御系统 — Your Entenprise System
 
-# VGT GeDefense
-### Linux 安全织网 — 您的 Entenprise System — 由 Sir Quacksec 认证
-
-<sub>*(注：“Entenprise” 并非拼写错误，而是源自德语 “Ente”（鸭子）的双关语，致敬 Sir Quacksec 🦆)*</sub>
+<sub>*(注：“Entenprise” 源自德语 “Ente” [鸭子]，致敬 VGT 吉祥物 Sir Quacksec 🦆)*</sub>
 
 [![License](https://img.shields.io/badge/License-AGPL--3.0--only-blue?style=for-the-badge)](https://www.gnu.org/licenses/agpl-3.0)
-[![Version](https://img.shields.io/badge/Version-6.3.0-orange?style=for-the-badge)](#)
-[![Status](https://img.shields.io/badge/Status-Release_V6_(6.3.0)-brightgreen?style=for-the-badge)](#)
-[![Installer](https://img.shields.io/badge/Installer-Universal_Linux-green?style=for-the-badge)](#-快速上手)
-[![Platform](https://img.shields.io/badge/Platform-Linux_x86__64-lightgrey?style=for-the-badge&logo=linux)](#)
-[![Data Plane](https://img.shields.io/badge/Data_Plane-Rust_eBPF%2FXDP-red?style=for-the-badge&logo=rust)](#-系统架构)
-[![Control Plane](https://img.shields.io/badge/Control_Plane-Go-00ADD8?style=for-the-badge&logo=go)](#-系统架构)
-[![Crypto](https://img.shields.io/badge/Evidence-Ed25519%2FAES--256--GCM-gold?style=for-the-badge)](#-密码学与安全规范)
-[![Sovereign](https://img.shields.io/badge/Control_Plane-Local%2FSovereign-brightgreen?style=for-the-badge)](#)
-[![Linux](https://img.shields.io/badge/Linux-APT%20%7C%20DNF%20%7C%20pacman%20%7C%20Zypper-cyan?style=for-the-badge&logo=linux)](#-通用-linux-集成)
-[![AstraeaOS](https://img.shields.io/badge/AstraeaOS-Native_Ready-7de3ff?style=for-the-badge)](#-astraeaos-原生集成)
-[![Architecture](https://img.shields.io/badge/Architecture-Specification-9cf?style=for-the-badge&logo=blueprint)](ARCHITECTURE.md)
-[![Security Audit](https://img.shields.io/badge/Security-Audit_V6-success?style=for-the-badge&logo=shield)](SECURITY.md)
+[![Version](https://img.shields.io/badge/Version-6.3.0-orange?style=for-the-badge)](RELEASE-NOTES.md)
+[![Edition](https://img.shields.io/badge/Edition-GeDefense_Vasili_Edition-ff6f61?style=for-the-badge)](RELEASE-NOTES.md)
+[![Status](https://img.shields.io/badge/Release-v6.3.0_(Current)-brightgreen?style=for-the-badge)](RELEASE-NOTES.md)
+[![Platform](https://img.shields.io/badge/Platform-Linux_x86__64-lightgrey?style=for-the-badge&logo=linux)](docs/INSTALLATION.md)
+[![Data Plane](https://img.shields.io/badge/Data_Plane-Rust_eBPF%2FXDP%2FLSM-red?style=for-the-badge&logo=rust)](docs/ARCHITECTURE.md)
+[![Control Plane](https://img.shields.io/badge/Control_Plane-Go_1.27-00ADD8?style=for-the-badge&logo=go)](docs/ARCHITECTURE.md)
+[![Core](https://img.shields.io/badge/Core-Static--PIE_musl-blueviolet?style=for-the-badge)](docs/ANTISPYWARE.md)
+[![Crypto](https://img.shields.io/badge/Evidence-Ed25519%2FAES--256--GCM-gold?style=for-the-badge)](docs/SECURITY-MODEL.md)
+[![HardRed 1.3](https://img.shields.io/badge/VGT_HardRed_1.3-90.09%2F100_PASS-brightgreen?style=for-the-badge)](benchmarks/vgt-hardred-6.3.0/)
+[![HardRed 1.2](https://img.shields.io/badge/VGT_HardRed_1.2-94.95%2F100_PASS-brightgreen?style=for-the-badge)](benchmarks/vgt-hardred-6.3.0/hardred/)
 [![VGT](https://img.shields.io/badge/VGT-VisionGaiaTechnology-cyan?style=for-the-badge)](https://visiongaiatechnology.de)
 
-**内核级近源网络防御 · 主机级 XDR · 加密证据链 · 可逆系统加固 · 无云端控制平面**
+**内核近源网络防御 · 主机 XDR · `AP-0`–`AP-9` 反间谍防御 · 加密证据链 · 可逆加固 · 零云端控制面**
+
+<img width="260" height="358" alt="Sir Quacksec — VGT" src="https://github.com/user-attachments/assets/1ce4d172-df4f-49a5-aaa1-dd24074b8073" />
 
 <br />
 
@@ -32,969 +31,279 @@
 
 <br />
 
-⬇️ **安装程序直链下载 (v6.3.0 / V6):**
-[**OneClick 安装程序 (`.run`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.3.0/VGT_GeDefense_V6_6.3.0_OneClick.run) · [`.sha256`](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.3.0/VGT_GeDefense_V6_6.3.0_OneClick.run.sha256) · [**Desktop Tray (`.run`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.3.0/GeDefense-6.3.0-Desktop-OneClick.run) · [`.sha256`](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.3.0/GeDefense-6.3.0-Desktop-OneClick.run.sha256) · [**源码归档 (`.zip`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.3.0/VGT_GeDefense_V6_6.3.0_Source.zip) · [**v6.3.0 发布页**](https://github.com/visiongaiatechnology/gedefense/releases/tag/v6.3.0) · [**基准测试结果 6.2.1 (`94.73 / PASS`)**](benchmarks/vgt-hardred-6.2.1/) · [快速上手](#-快速上手)
+⬇️ **官方 v6.3.0 安装程序与证据归档：**  
+[**OneClick 安装程序 (`.run`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.3.0/VGT_GeDefense_V6_6.3.0_OneClick.run) · [`.sha256`](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.3.0/VGT_GeDefense_V6_6.3.0_OneClick.run.sha256) · [**Desktop Tray (`.run`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.3.0/GeDefense-6.3.0-Desktop-OneClick.run) · [`.sha256`](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.3.0/GeDefense-6.3.0-Desktop-OneClick.run.sha256) · [**源码归档 (`.zip`)**](https://github.com/visiongaiatechnology/gedefense/releases/download/v6.3.0/VGT_GeDefense_V6_6.3.0_Source.zip) · [**v6.3.0 发布页**](https://github.com/visiongaiatechnology/gedefense/releases/tag/v6.3.0) · [**基准测试结果 (`6.3.0`)**](benchmarks/vgt-hardred-6.3.0/)
+
+<br />
+
+<img width="1280" alt="GeDefense: Real Security, Many Feathers" src="https://github.com/user-attachments/assets/dc56735e-b2b2-45c9-a363-97554a92ae0a" />
 
 </div>
 
 ---
 
-> **基准归属与诚实声明：** 已发布的 VGT HardRed `94.73 / PASS` 与 REDHARD ARES 1.2 结果是在 **GeDefense Linux 6.2.1** 上实测的。**V6.3.0 没有新的公开 HardRed/ARES 基准测试运行**，也不声称任何新得分；V6.3.0 新增 AP-0…AP-9 传感器、Rootkit 防御与自保护能力，详见变更日志。
+## 01 · 快速导航
 
-## 🧭 快速导航
-
-| 栏目 | 内容概览 | 跳转 |
+| 章节 | 内容概览 | 文档链接 |
 |---|---|---|
-| 📊 **VGT HardRed 基准评测** | `94.73 / 100 · PASS` 对比 OSS+SafeLine (`59.28 / PASS`)、OSS+ModSec (`55.40 / FAIL`)、SafeLine (`52.92`)、Wazuh 与 CrowdSec | [查看结果](#-vgt-hardred-基准测试--v621-对比-oss-组合栈实测评估) |
-| 📂 **测试证据与原始报告** | HardRed 与 ARES 面板、SARIF、ATT&CK、OCSF 与 GoTestWAF 报告 | [`benchmarks/vgt-hardred-6.2.1/`](benchmarks/vgt-hardred-6.2.1/) |
-| ⚙️ **复现配置与环境说明** | 完整 `EDR/Hardened Max` 参数与 `6.2.0 → 6.2.1` 变更说明 | [复现指南](#-如何复现-max-hardness-测试配置) |
-| 🔍 **什么是 VGT GeDefense？** | V6.3.0 架构、模块 A–E、Titan、安装向导与 PC vs. 服务器 | [架构总览](#-什么是-vgt-gedefense) |
-| 🧪 **Verify Yourself** | 原生 Go/Rust 测试套件与 19 道安全审计门禁 | [自主验证](#-verify-yourself--完整测试套件与自主审计指南) |
-| 🏛️ **系统架构与防御矩阵** | 信任域隔离、eBPF/XDP、主机 XDR、StyX 与密码学 | [系统架构](#-系统架构) |
-| 🚀 **快速上手与发布门禁** | 一键安装脚本、发布门禁与已知限制 | [快速上手](#-快速上手) |
-| 📋 **版本更新日志 (Changelog)** | 完整历史记录（`v6.3.0` → `v1.0.0-beta.5`） | [更新日志](#-版本更新日志-changelog) |
-| 📄 **许可证与数据署名** | `AGPL-3.0-only`、GeoIP/ASN 与第三方声明 | [开源许可证](#-开源许可证) |
+| 02 · **执行摘要** | 本地主权 Linux 安全织网与生产就绪状态 | [总览](#02--执行摘要-executive-overview) |
+| 03 · **6.3.0 核心更新** | `AP-0`–`AP-9` 反间谍防御、内核防护、重构与性能提升 | [反间谍技术规范](docs/ANTISPYWARE.md) |
+| 04 · **核心能力** | XDP 网络、L7 WAF、主机 XDR、勒索隔离库、证据链 | [核心能力](#04--核心能力) |
+| 05 · **安全架构** | 7 层架构、4 信任域隔离、数据流与 Web 证据屏障 | [架构概览](docs/ARCHITECTURE.md) |
+| 06 · **基准测试结果** | HardRed `1.2` (`94.95`)、ARES `1.2`、反间谍 `S16–S20` 与 HardRed `1.3` (`90.09`) | [基准测试数据包](benchmarks/vgt-hardred-6.3.0/) |
+| 07 · **验证与原始证据** | 测试报告、交互式面板、CSV/SARIF/OCSF 与本地安全审计 | [验证指南](#07--验证与原始证据) |
+| 08 · **安装指南** | 环境要求、签名 `.run` 安装包校验与版本回滚 | [安装文档](docs/INSTALLATION.md) |
+| 09 · **配置与运维** | `Observe`、`Canary`、`Enforce`、`Degraded` 与紧急急停 | [配置手册](docs/CONFIGURATION.md) |
+| 10 · **安全模型与边界** | 信任假设、内核前置要求与经验证的 `6.3.0` 限制 | [安全模型](docs/SECURITY-MODEL.md) |
+| 11 · **开发与研究资源** | 完整文档索引与 GeDefense 跨平台生态 | [开发者指南](docs/DEVELOPER-GUIDE.md) |
+| 12 · **版本历史** | 精简版本时间线 (`6.3.0` → `1.0.0`) | [CHANGELOG.md](CHANGELOG.md) |
+| 13 · **开源许可与署名** | `AGPL-3.0-only` 与第三方组件及数据集声明 | [THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md) |
 
 ---
 
-## 📊 VGT HardRed 基准测试 — V6.2.1 对比 OSS 组合栈实测评估
+## 02 · 执行摘要 (Executive Overview)
 
-基于开源多领域 Linux 安全基准测试套件 **[VGT HardRed (`RedHard`)](https://github.com/visiongaiatechnology/redhard)**（`2026-11-24T00:28:34Z`），在快照隔离的全新 **Ubuntu 24.04（Linux HWE 7.0，NGINX + PHP 8.3-FPM）** 目标虚拟机上实测（`eth0` 带外控制面，`eth1` 无白名单攻击面；四轴加权模型：防护效能 45% · 误报韧性 20% · 响应与遏制延迟 20% · 系统开销 15%）。本次扩展评测将 **GeDefense Linux 6.2.1** 与 **OSS Best-of-Breed + SafeLine WAF**、**OSS Best-of-Breed（ModSecurity CRS + Suricata IPS + Tetragon + ClamAV）**、独立 **长亭雷池 SafeLine WAF CE 9.4.7**、**Wazuh**、**CrowdSec** 及纯净 **Baseline** 进行全面横向对比：
+**GeDefense Linux `6.3.0`** 是一套**本地主权优先的 Linux 安全织网系统**，将内核级 eBPF/XDP 网络过滤、原生 Go 七层 WAF 检测、主机行为 XDR、十层反间谍与反 Rootkit 防护 (`AP-0`–`AP-9`)、可逆 Compare-and-Set 内核参数加固以及 Ed25519 签名取证账本融为一体——**完全不依赖任何云端控制平面**。
 
-| 排名 | 受测安全方案 | 综合得分 (0–100) | 轴 1：防护效能 | 轴 2：误报韧性 | 轴 3：延迟与遏制 | 轴 4：系统开销 | 门禁状态 |
-|---:|---|---:|---:|---:|---:|---:|---|
-| 1 | **GeDefense Linux 6.2.1 (`EDR/Hardened Max`)** | **94.73** | **95.88** | **100.00** | **92.20** | **87.63** | **`PASS`** |
-| 2 | **OSS Best-of-Breed + SafeLine WAF (`SafeLine + Suricata + Tetragon + ClamAV`)** | **59.28** | 69.31 | 100.00 | 38.14 | 3.08 | `PASS` |
-| 3 | **OSS Best-of-Breed (`ModSec CRS + Suricata IPS + Tetragon + ClamAV`)** | **55.40** | 76.27 | 38.46 | 38.91 | 37.35 | `FAIL` |
-| 4 | **Chaitin SafeLine WAF CE 9.4.7 (`Max Strict Semantics + ACL`)** | **52.92** | 41.09 | 100.00 | 28.23 | 58.59 | `PASS` |
-| 5 | **Wazuh (`Max Rules + FIM + Auditd + Active Response`)** | **46.70** | 32.66 | 69.23 | 22.14 | 91.53 | `CONDITIONAL` |
-| 对照 | **Baseline (`Clean Ubuntu HWE 7.0 WebStack`)** | **46.23** | 17.86 | 100.00 | 15.97 | 100.00 | `CONDITIONAL` |
-| 6 | **CrowdSec (`Max Collections + Bouncers + AppSec WAF`)** | **36.58** | 44.56 | 0.00 | 28.38 | 72.37 | `FAIL` |
+```text
+传统拼装式安全栈（iptables + auditd + fail2ban + 反向代理 WAF + 云 SIEM）
+  组件彼此孤立   -> 状态割裂，内存占用 ~1.8–2.5 GiB，响应链条冗长
+  配置即信任     -> 误报规则直接导致业务锁死
+  云端遥测       -> 主机敏感上下文与凭据外流
 
-> **版本演进提升（`6.2.0 → 6.2.1`）：** 综合得分由 **`86.16`** 跃升至 **`94.73 / 100 (PASS)`**（`+8.57`），主要源自内核 BPF-LSM 恶意文件 inode 锁定（`hardred-malware`：`65.6 → 95.6`，阻断 TPR `33.3% → 100.0%`）以及内核行为级 XDR 探针（`hardred-endpoint`：`59.0 → 94.4`，检测 TPR `53.3% → 93.3%`，阻断 TPR `53.3% → 100.0%`，主机受损率由 `18.1%` 降至 **`8.6%`**），全程保持 `0.0%` 误报。
-
-### 核心横向对比：GeDefense 6.2.1 vs. OSS Best-of-Breed 组合栈
-
-| 测试域 | GeDefense 6.2.1 (检测 / 阻断 / FPR / 得分) | OSS Best-of-Breed (检测 / 阻断 / FPR / 得分) | 关键实测优势 |
-|---|---|---|---|
-| `hardred-waf` | 100.0% / 100.0% / **0.0%** / **100.0** | 100.0% / 92.9% / 12.5% / **92.8** | 零正常请求误报（OSS 组合栈因 WAF 12.50% 阻断误报触及 `FAIL`） |
-| `hardred-netids` | 100.0% / 100.0% / 0.0% / **98.3** | 100.0% / 75.0% / 0.0% / **86.2** | Kinetic XDP 稳定拦截高速洪泛（`196/240`）与端口扫描 |
-| `hardred-endpoint` | **93.3%** / **100.0%** / 0.0% / **94.4** | 33.3% / 50.0% / 0.0% / **51.9** | **受损率仅 `8.6%` 对比 OSS `100.0%`**（OSS 未能阻断勒索 AES/风暴及 `memfd`） |
-| `hardred-malware` | 100.0% / 100.0% / 0.0% / **95.6** | 100.0% / 100.0% / 0.0% / **96.7** | BPF-LSM `MALWARE_DENIED_INODES` + AES-256-GCM 隔离保险库 |
-| `hardred-compliance` | 100.0% / 86.0% / 0.0% / **86.0** | 100.0% / 80.0% / 0.0% / **80.0** | Lynis 加固指数 **`71`**（OSS `65`，基线 `63`） |
-
-- **系统性能与资源开销对比（`GeDefense 6.2.1` vs. `OSS Best-of-Breed` vs. Baseline）：**
-  - **GeDefense Linux 6.2.1：** `525.0` HTTP RPS（p50 `14.07 ms` · p95 `23.65 ms`）· `86,682.7` Sysbench EPS · `211.8` FIO IOPS · **`88.4 MiB`** 常驻内存 RSS · **`7.4%`** CPU 占用 · Lynis `71`。
-  - **OSS Best-of-Breed（`ModSec + Suricata + Tetragon + ClamAV`）：** `452.4` HTTP RPS（p50 `13.85 ms` · p95 `29.93 ms`）· `84,829.5` Sysbench EPS · `237.4` FIO IOPS · **`1,761.0 MiB`** 常驻内存 RSS（约 **`20×`** 内存）· **`57.3%`** CPU 占用（约 **`13×`** CPU）· Lynis `65`。
-  - **Chaitin SafeLine WAF CE 9.4.7（单测 `07-safeline-max` 与 `OSS+SafeLine`）：** 误报率 **`0.0%`**（`PASS`，将 `OSS+SafeLine` 提升至 `59.28`），但在 `hardred-waf` 仅获 **`79.0`**（拦截 `11/14`，放行了 `WAF-LFI-02` 双重编码、`WAF-XXE-01` 与 `WAF-SCAN-01` `sqlmap` + `/.env`）；单机占 **`1,040.5 MiB` RSS / `48.1%` CPU**（`484.9` RPS），在 `OSS+SafeLine` 组合中达 **`2,614.7 MiB` RSS / `60.6%` CPU / `175.2` RPS（p95 `67.45 ms`）**。
-
-### 自适应多阶段对抗评测（`VGT HardRed 1.2 / REDHARD ARES`）
-
-| 受测系统 | ARES 架构韧性 | ARES 运行时韧性 | ARES 自适应对抗韧性 | 阻断攻击链 | 平均遏制前受损率 | 多种子均值（3 Seed × 3 轮） | 误报数 |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| **GeDefense Linux 6.2.1** | **78.40** | **96.68** | **93.46** | **36 / 36** | **11.1%** | **93.64** (σ = `0.0918`) | **0** |
-| **OSS Best-of-Breed + SafeLine WAF** | 58.20 | 56.25 | 61.33 | 27 / 36 | 100.0% | 61.52 | 0 |
-| **Chaitin SafeLine WAF CE 9.4.7** | 53.60 | 51.67 | 42.69 | 24 / 36 | 100.0% | 42.88 | 0 |
-| **Wazuh HIDS/SIEM** | 65.10 | 15.42 | 27.78 | 3 / 36 | 100.0% | 27.96 | 3 |
-| **CrowdSec IPS/CTI** | 59.80 | 51.67 | 42.25 | 24 / 36 | 100.0% | 42.44 | 0 |
-
-### 📂 仓库内完整实测结果归档目录
-
-所有完整的评分卡 JSON、全部单用例判决（7 套方案）、SARIF 报告、MITRE ATT&CK 矩阵、OCSF 导出及交互式 HTML 面板已直接收入本仓库：
-- 📁 **[基准测试证据目录 (`benchmarks/vgt-hardred-6.2.1/`)](benchmarks/vgt-hardred-6.2.1/)**
-- 📄 **[完整评测总结报告 (`FINAL_BENCHMARK_REPORT.md`)](benchmarks/vgt-hardred-6.2.1/FINAL_BENCHMARK_REPORT.md)** · **[汇总对比 CSV](benchmarks/vgt-hardred-6.2.1/VGT_HardRed_Comparison.csv)** · **[交互式 HTML 面板](benchmarks/vgt-hardred-6.2.1/VGT_HardRed_Dashboard.html)**
-- 🤖 **[REDHARD ARES 混合对抗报告](benchmarks/vgt-hardred-6.2.1/ares/FINAL_ARES_HYBRID_REPORT.md)** · **[ARES CSV](benchmarks/vgt-hardred-6.2.1/ares/VGT_HardRed_ARES_Comparison.csv)** · **[ARES HTML 面板](benchmarks/vgt-hardred-6.2.1/ares/VGT_HardRed_ARES_Dashboard.html)**
-- 🔎 **各对比方案原始数据目录：** [`gedefense/`](benchmarks/vgt-hardred-6.2.1/gedefense/) · [`oss-safeline/`](benchmarks/vgt-hardred-6.2.1/oss-safeline/) · [`oss-stack/`](benchmarks/vgt-hardred-6.2.1/oss-stack/) · [`safeline/`](benchmarks/vgt-hardred-6.2.1/safeline/) · [`wazuh/`](benchmarks/vgt-hardred-6.2.1/wazuh/) · [`crowdsec/`](benchmarks/vgt-hardred-6.2.1/crowdsec/) · [`baseline/`](benchmarks/vgt-hardred-6.2.1/baseline/)
-
-### ⚙️ 如何复现 `Max-Hardness` 测试配置
-
-如需在 Linux 主机上复现上述完整防护配置（默认安装以保守的 `observe` 模式启动，且不会擅自开启强锁定以防业务中断）：
-
-1. **内核 LSM 启动参数：** 确认 `/sys/kernel/security/lsm` 已启用 `bpf`（内核启动参数 `lsm=...,bpf` 并重启），确保 **Titan Exec Gate**、**LPE `socket_create`** 与 **Credential Guard `file_open`** 真实挂载。
-2. **提升发布阶段：** 依次切换 `observe` → `canary` → **`enforce`**（`POST /api/v1/release/transition`：`PROMOTE:CANARY` 后 `PROMOTE:ENFORCE`），并密封发布期 FIM 基线（`POST /api/v1/fim/baseline`，`"scope": "release"`）。
-3. **核心防御设置（`PUT /api/v1/settings/{module}`）：**
-   - `kinetic`: `enabled=true`、`enforcement_mode="block"`、`ip_threshold=20`、`velocity_limit=10`、`range_threshold=35`、`portscan_threshold=3`、`syn_threshold=15`、`syn_ack_ratio=3`、`auto_contain_single_ip=true`、`auto_contain_ipv4_subnet=true`、`auto_contain_ipv6_subnet=true`。
-   - `l7`: `enabled=true`、`mode="block"`、`inline_enabled=true`（接入 NGINX `auth_request` / Edge 套接字）、`alert_score=30`、`block_score=70`、`sensitive_rate_per_minute=20`、`sensitive_rate_burst=5`、`client_rate_per_minute=180`、`client_rate_burst=40`、`tls_enabled=true`、`tls_anti_spoof=true`。
-   - `xdr`: `enabled=true`、`network_sensor_enabled=true`、`behavior_enabled=true`、`alert_score=30`、`contain_score=60`、`kill_score=90`、`enabled_rule_modules=["baseline","command","lineage","masquerading","origin","threat-intel"]`、`advanced.malware_correlation=true`。
-   - `titan`（FIM / 违禁文件防御）：`mode="STRICT"`、`armed=true`、`auto_contain=true`（`POST /api/v1/titan/policy`）。
-   - `titan_exec`（6.2.0 ABI-2）：`enabled=true`、**`mode="untrusted"`**（全局模式 `4` — 阻断非 root 或全局可写路径执行，同时保持系统软件包正常运作）、`require_ctime=true`。
-4. **V6 子系统与模块 A–E 配置：**
-   - `worker_guard`: `enabled=true`、`strict_exec=true`、`strict_mmap=true`、`auto_apply_strict=true`、`correlate_peers=true`、`storm_threshold=3`。
-   - `tls_sensor`: `enabled=true`、监听目标网卡与 `"lo"`、`ports=[443,8443,9843]`、`alert_only=false`。
-   - `lpe_guard`: `enabled=true`，阻断 `AF_PACKET`/`AF_TIPC`/`AF_VSOCK`/`SCTP`/`DCCP`/`RDS`，`styx_profile=true`、`enforce_aslr=true`、`block_lpe_modules=true`（`POST /api/v1/lpe-guard/apply`）。
-   - `styx`: `enabled=true`、全局 `mode="monitor"`、`log_flows=true`，并为 Web 工作进程 cgroup（如通过符号 `cgroup_path` 绑定 `php8.3-fpm.service`）单独启用 **`per_cell` `mode="enforce"`** 以阻断未授权的出站 C2 回连。
-   - `parser_cells`: `enabled=true`、`burn_on_incident=true`、`incident_score=60`；`lockdown`: `enabled=true`、`auto_arm=true`、`allow_loopback=true`、`drop_loopback=false`、`network_lockdown=true`、`freeze_processes=true`、`freeze_brokers=true`（`POST /api/v1/lockdown/arm`，`mode="locked"`）；`threat_intel`: `enabled=true`、`auto_sync=true`。
-5. **CIS / Lynis 系统加固基线：** 通过 `/api/v1/transactions/preview` → `/apply`（`type: "hardening.sysctl-profile"`）应用事务型 **`astraeaos-cis-l1`** sysctl 配置，并可按需手动运行 `gedefense-cis-baseline --apply`（SSHD 加固配置、`UMASK 027`、登录横幅、内核模块黑名单与 auditd 基线规则）。
-
-> [!NOTE]
-> **环境差异说明与工程透明度声明（`6.2.0 → 6.2.1`）：** 实际得分会因目标主机的内核版本与 LSM 启动标志（`lsm=...,bpf`）、CPU/磁盘 I/O 性能、网络拓扑及业务白名单而变化。在 `6.2.0 → 6.2.1` 迭代中，我们针对真实运行暴露的问题完成了底层补强：除 `6.2.0` 的全部改进外，`6.2.1` 新增 BPF-LSM 恶意文件 inode 锁（`MALWARE_DENIED_INODES` + `CORE_QUARANTINE_ALLOWED_ROOTS`）、内核级行为 XDR 探针（`EXEC_ARGV_EVENTS`、`KERNEL_PROBE_EVENTS`、`getname_flags` kretprobe 与 `aya` 多核 tracepoint 激活）、精细化勒索阈值（`15→6` / `25→18`）与基于 PPID 的服务进程池隔离（`RANSOM_TRUST_POOL_METADATA`）、StyX 非外部流过滤（`isIgnoredNonExternalFlow`）以及异步 `ChronosScanner` 扫描。
-
----
-
-<img width="1536" height="1024" alt="GeDefense_ Real Security, Many Feathers" src="https://github.com/user-attachments/assets/dc56735e-b2b2-45c9-a363-97554a92ae0a" />
-
-## 🌐 GeDefense 宇宙
-
-GeDefense 是一套本地优先的安全架构，覆盖 Linux、Windows、Android 和 WordPress。所有同系项目遵循同一理念：本地控制、诚实可见性、无静默遥测。
-
-| 项目 | 方向 |
-| --- | --- |
-| [![Android TV](https://img.shields.io/badge/Android_TV-3DDC84?style=flat-square&logo=android&logoColor=0B1220)](https://github.com/visiongaiatechnology/gedefense_androidtv) **GeDefense TV** | Android TV / Google TV 安全控制台：回环 VPN、流量地图、XDR-Light 与可逆 Kinetic-Lite 遏制。 |
-| [![Linux](https://img.shields.io/badge/Linux-D4AF37?style=flat-square&logo=linux&logoColor=0B1220)](https://github.com/visiongaiatechnology/gedefense) **GeDefense Linux** *（本仓库）* | 内核级网络防御：eBPF/XDP 执行、L7 WAF、带签名证据的主机 XDR、可逆加固（Rust/Go，完全本地）。 |
-| [![Windows](https://img.shields.io/badge/Windows-8B5CF6?style=flat-square&logo=windows&logoColor=ffffff)](https://github.com/visiongaiatechnology/gedefensewin) **GeDefense Windows** | 本地自主的 Windows 11 安全控制台：Defender/ASR/WFP/App Control、加固、MHX EDR/XDR、本地威胁情报与 HMAC 链式证据。 |
-| [![Android](https://img.shields.io/badge/Android-22D3EE?style=flat-square&logo=android&logoColor=0B1220)](https://github.com/visiongaiatechnology/gedefenseandroid) **GeDefense Android** | 原生 Android 安全平台：本地 VPN 执行、端点遥测、XDR/EDR 关联、威胁情报、应用风险分析与加密证据。 |
-| [![WordPress](https://img.shields.io/badge/WordPress-1F8FFF?style=flat-square&logo=wordpress&logoColor=ffffff)](https://github.com/visiongaiatechnology/gedefensewp) **GeDefense WordPress** | AGPL-3.0 开源核心 WordPress 套件：ZEUS WAF、AEGIS 深度包检测、TRINITY XDR、ThroneGuard 锁定与 HADES 后台隐藏。 |
-
----
-
-## 🏛️ 安全架构与技术规范
+VGT GeDefense Linux 6.3.0
+  Rust no_std eBPF/XDP + BPF-LSM  -> 在内核态直接丢弃恶意流量并拦截越权系统调用
+  Static-PIE musl Core (UID 0)    -> 免疫 LD_PRELOAD，pidfd 进程树遏制，AES-GCM 隔离库
+  Loopback Go 控制面 (零权限)     -> XDR/SBC 图关联、AlertOnly WAF、FIM、TUF 规则签名
+  Ed25519 + AES-256-GCM 账本      -> 防篡改取证与原子级回滚（实测仅 ~70.8 MiB RSS）
+```
 
 > [!IMPORTANT]
-> **面向安全研究员、系统架构师与审计人员：**
-> GeDefense 维护着详尽的形式化技术架构规范、信任边界模型与符号数据树：
-> 
-> ### ➔ [📘 ARCHITECTURE.md — 完整技术架构规范文档](ARCHITECTURE.md)
-> 
-> *超过 4400 行详细规范，涵盖 7 层架构拓扑、内核 eBPF/XDP 数据平面、Go 控制平面、Rust 响应核心、原生 L7 WAF 引擎、加密证据账本以及可逆系统加固引擎。*
+> **生产就绪度与目标主机资格认证声明 (`6.3.0`)：**  
+> GeDefense Linux `6.3.0` 是通过审计与基准测试验证的**生产候选 / 主机资格版本**。每次发布均附带可验证的构建溯源（`SHA256SUMS`、SPDX SBOM、Ed25519 签名清单与索引）、Go/Rust 自动化测试、10 阶段静态安全审计以及完整的 HardRed `1.2` / `1.3` 与 ARES 实测结果（`PASS`）。部署到目标主机时系统默认以 `observe` 安全模式启动；启用 `enforce` 前必须完成目标内核 (`lsm=...,bpf`)、网卡 XDP 模式、systemd/IPC 及管理白名单验证，并审阅 [`SECURITY.md`](SECURITY.md)。
 
 ---
 
-## 🧪 Verify Yourself — 完整测试套件与自主审计指南
+## 03 · `6.3.0` 核心更新
 
-> [!TIP]
-> **“不盲信，重验证”（Don't Trust, Verify）—— 极致透明与完全可复现**
-> GeDefense 专为零信任（Zero Trust）环境打造。每一项安全承诺、信任边界、解析器、密码学不变量以及内核级线速过滤器均拥有自动化测试套件的严格保障。只需一行命令，即可在本地运行所有 **634+ 项原生测试函数** 与 **19 道自动化安全审计关卡**。
+### 🛡️ 高级反间谍与反 Rootkit 防护体系 (`AP-0` – `AP-9`)
 
-### 📊 测试套件与覆盖范围概览
+> **GeDefense Linux 6.3.0 · 新版本亮点：** 全面对抗现代 Linux 隐蔽植入物（*Symbiote*、*OrBit*、*Ebury*、*LinkPro*、*VoidLink*、*BPFDoor*、*PUMAKIT*、*Curing* `io_uring`）、内核操纵、凭据窃取、进程隐藏与静默数据外泄——全套 **12/12 防护平面** 协同运作。
 
-| 测试套件 / 组件 | 路径与文件 | 测试用例 / 场景数 | 验证能力与安全保证 | 直接执行命令 |
-| :--- | :--- | :---: | :--- | :--- |
-| **控制平面单元与集成测试** | [`control/*_test.go`](control/) | **574 项测试**<br>*(108 个文件 + 25 个子测试)* | XDR DAG 关联分析、L7 WAF 多重解码、FIM SHA-256 基线、故障闭锁发布门禁、双账本 90% 阈值轮换、自身构件安全更新识别 | `cd control && go test -v ./...` |
-| **安全模糊测试套件 (Fuzzing)** | [`control/*fuzz_test.go`](control/) | **8 个 Fuzz 目标** | 畸形输入下的内存安全性与防 Panic 能力：L7 规范化器、TLS ClientHello、加密信封、Core IPC 响应、`/proc/stat` | `make fuzz-smoke` |
-| **接入网关与边界认证测试** | [`gateway/*_test.go`](gateway/) | **28 项测试**<br>*(6 个文件)* | TLS 1.3 ML-KEM 后量子曲线、Argon2id 密码哈希、`__Host-` Cookie 隔离、CSRF 同步令牌、跨源头清洗 | `cd gateway && go test -v ./...` |
-| **Rust 内核协议与数据平面** | [`rust/gedefense-common`](rust/gedefense-common/) | **6 项测试** | 零拷贝网络协议头解析、IPv4/IPv6 与 VLAN/QinQ 边界检查、线缆事件解码器 | `cargo test --locked --manifest-path rust/Cargo.toml -p gedefense-common` |
-| **Rust 特权响应核心** | [`rust/gedefense-core`](rust/gedefense-core/) | **18 项测试** | 重放保护 LRU 淘汰机制、Sysctl CAS 原子契约、流式恶意软件检测 (Polyglot/EICAR)、AES-256-GCM 隔离保险库 | `cargo test --locked --manifest-path rust/Cargo.toml -p gedefense-core` |
-| **自动化安全审计门禁** | [`scripts/security-audit.sh`](scripts/security-audit.sh) | **19 道审计关卡** | 零不安全 DOM Sinks (`innerHTML`, `eval`)、严格 CSP 验证、I18N 四语系词条严格对齐、套接字文件权限 (`0700`/`0600`) | `bash scripts/security-audit.sh` |
-| **Kinetic 线速负载验收** | [`scripts/validate-kinetic-release-candidate.sh`](scripts/validate-kinetic-release-candidate.sh) | **完整套件** | 入站突发流量浸泡测试、滑动遥测窗口、LPM Trie 硬件线速丢弃基准 | `bash scripts/validate-kinetic-release-candidate.sh` |
-| **Linux 发行版契约集成** | [`scripts/validate-distro-integration.sh`](scripts/validate-distro-integration.sh) | **完整套件** | 多发行版兼容性测试（涵盖 Arch、Debian、Fedora、SUSE 的 systemd 服务契约） | `bash scripts/validate-distro-integration.sh` |
-| **隔离区 DAC 与权限验证** | [`scripts/validate-quarantine-dac.sh`](scripts/validate-quarantine-dac.sh) | **完整套件** | 根用户专有访问控制、禁止执行位、防目录遍历陷阱 | `bash scripts/validate-quarantine-dac.sh` |
-| **Systemd 沙盒指令验证** | [`scripts/validate-systemd.sh`](scripts/validate-systemd.sh) | **完整套件** | 严格审查所有服务单元的 `DynamicUser`、`ProtectSystem=strict` 与 Linux Capabilities 丢弃 | `bash scripts/validate-systemd.sh` |
-| **四语系 I18N 词条对齐验证** | [`scripts/validate-i18n.mjs`](scripts/validate-i18n.mjs) | **完整套件** | 德语、英语、俄语、简体中文 100% 翻译键严格对齐校验 | `node scripts/validate-i18n.mjs` |
+| 分组 | 防护平面 | 核心职责 |
+|---|---|---|
+| **`AP-0 – AP-2`** | `SelfGuard`, `CredentialGuard`, `BPF_GUARD` | Static-PIE musl 免疫 (`0 NEEDED`)、BPF Pin/Canary 监控、BTF `exec_inode` 信任与 Helper 风险位图 |
+| **`AP-3 – AP-4`** | `CrossView`, `KernelHooks` | 8 域 Rootkit 视图差异核验、`io_uring` LSM/Tracepoint 与隐身前内核模块捕获 |
+| **`AP-5 – AP-6`** | `PersistenceGuard`, `StyX PCR`, `DNS Detection` | 链接器/PAM/systemd/外设与内存防护、`cgroup_skb/ingress` PCR (`>0.60`)、5 信号 DNS 与 `GIEF/SBC` |
+| **`AP-7 – AP-9`** | `Titan Exec`, `Chameleon`, `Evidence Resilience` | `Fanotify` + `RansomSensor`、`PermitV1`、`Parser Cells`、174 符号变色龙伪装、`S09`/`S12`/`R6`/`S08` |
 
-### ⚡ 快速开始：在本地机器上亲自运行测试
+<div align="center">
+  <img src="docs/assets/antispyware-10-planes.svg" alt="GeDefense Linux 6.3.0 AP-0 至 AP-9 十层反间谍防御架构" width="100%" />
+</div>
+
+#### 十层反间谍平面简述
+
+1. **`AP-0` — Static-PIE musl 核心与 `SelfGuard`：** 无 glibc 静态链接（零 `NEEDED` 库，免疫 `LD_PRELOAD` 注入），每 `<= 5 秒` 校验 **23 个 `CRITICAL_MAPS`** Pin 并在本地落盘前优先向外部 Witness 发送 `XDR.SELF_TAMPER`。
+2. **`AP-1` — BTF `exec_inode` 信任与 `CredentialGuard`：** 基于内核 `task_struct -> mm -> exe_file -> f_inode` 真实可执行文件身份决策，无视 `comm`/`argv[0]` 伪造，以 `-EACCES` 阻止未授权进程读取 `/etc/shadow` 等敏感凭据。
+3. **`AP-2` — 加载时 `BPF_GUARD`：** 挂钩 `lsm/bpf_prog`、`sys_enter_bpf` 与 `check_helper_call`，识别高危内核 Helper（`bpf_probe_write_user`、`bpf_override_return`、`bpf_send_signal`）。
+4. **`AP-3` — 8 域 `CrossView` 核验器：** 对比内核迭代器与 `/proc`/用户态视图，揭露隐藏进程、隐藏 eBPF 程序/Map、隐藏套接字 (`NETLINK_SOCK_DIAG`)、无端口 Raw 抓包、隐藏 LKM、Ftrace 钩子、BPF Pin 篡改（适配内核 15 字符 `BPF_OBJ_NAME_LEN` 截断）及与系统包库不一致的共享库映射。
+5. **`AP-4` — `KernelHooks`（`io_uring` 与 LKM 审计）：** 覆盖 `io_uring` 异步系统调用绕过（LSM 与 Tracepoints）以及内核模块隐藏前的加载捕获（`init_module`/`finit_module`/`delete_module`）。
+6. **`AP-5` — `PersistenceGuard` 与外设/内存防护：** 保护 `/etc/ld.so.preload`、动态链接器、PAM/`sshd` 依赖库、systemd 单元、udev 规则及 `ptrace`/`process_vm_readv` 内存窃取（精准区分合法 `PTRACE_MODE_NOAUDIT` 系统状态检查与恶意抓包），同时监测摄像头、麦克风与 `evdev` 键盘记录。
+7. **`AP-6` — `StyX Phase-2` (PCR)、DNS 隧道与 `GIEF / SBC Fusion`：** 借助 `cgroup_skb/ingress` 获取真实 RX 计数（`PCR > 0.60` 且 `>= 256 KiB`），5 信号 DNS 隧道分析（`>= 3` 信号同时命中才告警）及 `gief/v1.0` 图关联引擎。
+8. **`AP-7` — `Titan Exec Gate`、`Fanotify`、`RansomSensor`、`PermitV1` 与 `Parser Cells`：** 执行前/写入后异步查杀、内核 `WX` 内存拦截、`pidfd` 进程树遏制（保护 `php-fpm`/`nginx` 工作池不被误杀）、签名例外代理 `PermitV1` 与一次性隔离解析沙盒。
+9. **`AP-8` — `Chameleon` 变色龙身份模式与诱饵 Canary：** 结合诱饵文件陷阱与可选签名配置，在加载时等长重写 **174 个内核 eBPF 符号**（`bpftool` 看不到任何 `gedefense`/`styx`/`titan` 字样），防止自动化杀手工具定位安全代理。
+10. **`AP-9` — `ARES` 抗打击与证据自保护：** 独立 **256 KiB `SEC_CRIT_EVENTS`** 高优先级环形缓冲区确保证据在日志洪泛下零丢失（`S12` 兼容多核 SMP 时钟偏差）、2-of-3 Ed25519 TUF 规则防投毒（`S09`）、网关 RBAC 分级授权（`R6`）及 Witness 优先推送（`S08`/`S15`）。
+
+> 📘 **完整反间谍技术规范 (`AP-0`–`AP-9`、API 指标与 `S16–S20` 映射)：** [**`docs/ANTISPYWARE.md`**](docs/ANTISPYWARE.md)
+
+### `6.3.0` 其他工程升级
+- **五波次结构化重构：** 对 Go 控制/网关、Web UI、Rust Core/eBPF 与 10 阶段静态审计进行模块拆分与规范化（[`docs/REFACTORING-V6.3.0.md`](docs/REFACTORING-V6.3.0.md)）。
+- **发布后稳定性加固：** 面板 PHP-FPM 工作池精准隔离、`sec_crit` SMP 时钟容错、`StyX` 动态本机接口过滤与 `ksoftirqd` 防伪造、`cross_view` 15 字符 BPF 名称匹配及 Root `NOAUDIT` 状态读取零误报优化。
+- **实测性能提升：** 全量防护开启下 HTTP 吞吐达到 **`648.8 RPS`**（p95 延迟 `20.59 ms`），安全进程常驻内存仅 **`70.8 MiB` RSS**，CPU 仅 **`7.1%`**（[`docs/PERFORMANCE.md`](docs/PERFORMANCE.md)）。
+
+---
+
+## 04 · 核心能力
+
+| 防护层面 | 核心能力 | 参考文档 |
+|---|---|---|
+| **网络防御 (eBPF/XDP)** | `sk_buff` 分配前线速丢包（25 万条 LPM 规则，IPv4/IPv6）、洪泛/端口扫描自动遏制、管理白名单优先、`VERIFY_EMPTY` | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) |
+| **原生 L7 WAF 与 A–E 模块** | 零外部依赖 Go HTTP/Raw-Body WAF、ELF 暴露面扫描、工作进程崩溃风暴防护、独立 `capture-helper`、LPE Socket 拦截 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) |
+| **主机 XDR 与反间谍** | `AP-0`–`AP-9` 十层协同、8 域 `CrossView` 核验、`io_uring` 审计、`StyX` 出站 PCR、5 信号 DNS 隧道、`GIEF/SBC` 关联 | [`docs/ANTISPYWARE.md`](docs/ANTISPYWARE.md) |
+| **勒索与恶意样本隔离库** | 内核高熵写入与重命名风暴遏制、`FAN_OPEN_EXEC_PERM` + 深层归档扫描、`MALWARE_DENIED_INODES` 与 AES-256-GCM 隔离库 | [`docs/SECURITY-MODEL.md`](docs/SECURITY-MODEL.md) |
+| **取证账本与可逆加固** | Ed25519 单调防篡改账本、AES-GCM FIM 与 `ChronosScanner`、原子级 Compare-and-Set `sysctl` 加固与自动回滚 | [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md) |
+
+---
+
+## 05 · 安全架构
+
+<div align="center">
+  <img src="docs/assets/security-architecture.svg" alt="GeDefense Linux 6.3.0 信任域与安全数据流架构" width="100%" />
+</div>
+
+### 核心架构不变量
+- **四信任域七层隔离：** 非特权 HTTPS 网关（`:9843`）→ 仅限回环零特权控制面（`:9844`，`UID gedefense`）+ 隔离辅助服务（`capture-helper` 无密钥与状态访问权，一次性 `cell-helper`）→ Static-PIE musl 响应核心（`UID 0`）→ Rust `no_std` 内核数据面。
+- **Web 证据隔离屏障：** 所有七层 Web 检测结果强制标记 `AlertOnly: true`（`ResponseScore: 0`），Web 规则绝不允许单独触发 `SIGKILL`/`XDR_KILL_TREE`。
+- **通用 Linux 与 AstraeaOS：** 原生支持 APT、DNF/YUM、pacman 与 Zypper 发行版，并在 AstraeaOS 中担任唯一权威安全引擎。
+
+> 📘 **架构文档：** [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) · [`ARCHITECTURE.md`（4,400+ 行完整规范）](ARCHITECTURE.md)
+
+---
+
+## 06 · 基准测试结果 (`VGT HardRed` 与 `REDHARD ARES`)
+
+> [!NOTE]
+> **评测方法与独立性声明：**  
+> 以下所有数据均使用开源基准套件 **[VGT HardRed (`RedHard`)](https://github.com/visiongaiatechnology/redhard)** 在快照隔离的 **Ubuntu 24.04（Linux HWE 7.0，4 vCPU，4 GiB RAM，NGINX + PHP 8.3-FPM）** 目标虚拟机上测得。**HardRed 与 ARES 是 VGT 自研的可复现工程评估基准**，采用客观严苛的通过门禁，**并非外部第三方认证**。
+
+### A. `HardRed 1.2` 与 `1.3` — 标准安全基准评测
+
+| 基准套件 | 受测版本 | 综合得分 | 轴 1：防护效能 | 轴 2：误报韧性 | 轴 3：延迟 | 轴 4：开销 | 门禁结果 |
+|---|---|---:|---:|---:|---:|---:|---|
+| **HardRed 1.2** *(基础集 S01–S15)* | GeDefense `6.2.1` | `94.73` | `95.88` | `100.00` | `92.20` | `87.63` | **`PASS`** |
+| **HardRed 1.2** *(基础集 S01–S15)* | **GeDefense `6.3.0`** | **`94.95`** | **`96.73`** | **`100.00`** | `88.87` | **`91.00`** | **`PASS`** |
+| **HardRed 1.3** *(+ `S16–S20` 与管道时钟修复)* | **GeDefense `6.3.0` (`03j`)** | **`90.09`** | `90.06` | `85.71` *(0% 拦截误报)* | **`89.90`** | **`96.27`** | **`PASS`** |
+
+<details>
+<summary><strong>7 套系统全维度横向对比 (HardRed 1.3 · 全领域 + 反间谍 S16–S20)</strong></summary>
+
+| 排名 | 安全方案 | 总分 | Scope 覆盖 | 域内效能 | 防护效能 | 误报韧性 | 延迟 | 系统开销 | 门禁 |
+|---:|---|---:|---:|---:|---:|---:|---:|---:|---|
+| 1 | **GeDefense Linux 6.3.0 (`03j`)** | **90.09** | 100.0% | 90.06 | 90.06 | 85.71 | 89.90 | 96.27 | **`PASS`** |
+| 2 | **OSS Best-of-Breed + SafeLine WAF** | **56.41** | 90.9% | 55.02 | 55.02 | 100.00 | 36.39 | 29.17 | `PASS` |
+| 3 | **长亭雷池 SafeLine WAF CE 9.4.7** | **50.41** | 45.5% | 56.79 | 35.78 | 100.00 | 27.69 | 58.50 | `PASS` |
+| 4 | **OSS Best-of-Breed** (`ModSec+Suricata+Tetragon+ClamAV`) | **47.87** | 90.9% | 67.98 | 67.98 | 42.86 | 38.40 | 6.83 | `FAIL` |
+| 5 | **Wazuh** (`Rules+FIM+Auditd+Active Response`) | **47.72** | 81.8% | 35.90 | 35.90 | 71.43 | 28.28 | 77.47 | `CONDITIONAL` |
+| 6 | **CrowdSec** (`Max Collections+Bouncers+AppSec`) | **24.73** | 36.4% | 51.66 | 31.77 | 0.00 | 18.53 | 44.88 | `FAIL` |
+| Ref | **Baseline** (`纯净 Ubuntu HWE 7.0`) | **46.01** | 100.0% | 17.20 | 17.20 | 100.00 | 16.37 | 100.00 | `CONDITIONAL` |
+
+</details>
+
+### B. `ARES 1.2` 与 `1.3` — 自适应对抗评估
+
+| 评估支柱 | GeDefense `6.2.1` (`ARES 1.2`) | GeDefense `6.3.0` (`ARES 1.2`) | GeDefense `6.3.0` (`ARES 1.3 · S01–S20`) |
+|---|---:|---:|---:|
+| **Design Resilience** (`R1`–`R12`) | `78.40` | **`86.90`** | **`86.90`** |
+| **Runtime Resilience** | `96.68` | **`96.68`** | **`96.52`** |
+| **Adaptive Adversarial Resilience** | `93.46` | **`93.46`** | **`87.70`** |
+| **系统自保护能力** (`R5`, `R6`, `R7`) | `73.12` | **`90.00`** | **`90.00`** |
+| **阻断攻击链 / 事前损害 / 误报数** | `36/36` · `11.1%` · `0` | `36/36` · `11.1%` · `0` | **`54/54` · `11.6%` · `0`** (`264/267` 实证引用) |
+
+### C. `HardRed 1.3` / `ARES` 反间谍专项评估 (`S16` – `S20`)
+
+| 安全方案 | 域得分 | 检测 TPR | 阻断 TPR | 检测 / 拦截 FPR | 中位 TTFA (ms) | `S16` (eBPF/LKM) | `S17` (`io_uring`) | `S18` (Cred/Mem) | `S19` (CrossView) | `S20` (自完整性) |
+|---|---:|---:|---:|---:|---:|---|---|---|---|---|
+| **GeDefense Linux 6.3.0 (`03j`)** | **84.8** | **100.0%** | **75.0%** | **0.0% / 0.0%** | **1010.9** | `DETECTED_ONLY` | `DETECTED_ONLY` | **`PREVENTED`** | **`PREVENTED`** | **`PREVENTED`** |
+| **Wazuh HIDS/SIEM** | 44.2 | 80.0% | 0.0% | 0.0% / 0.0% | 613.3 | `DETECTED_ONLY` | `DETECTED_ONLY` | `DETECTED_ONLY` | `DETECTED_ONLY` | `NO_DETECTION` |
+| **OSS + SafeLine WAF** | 32.5 | 40.0% | 0.0% | 0.0% / 0.0% | 408.0 | `NO_DETECTION` | `NO_DETECTION` | `DETECTED_ONLY` | `DETECTED_ONLY` | `NO_DETECTION` |
+| **OSS Best-of-Breed** | 32.5 | 40.0% | 0.0% | 0.0% / 0.0% | 421.9 | `NO_DETECTION` | `NO_DETECTION` | `DETECTED_ONLY` | `DETECTED_ONLY` | `NO_DETECTION` |
+| **Chaitin SafeLine WAF** | 7.5 | 0.0% | 0.0% | 0.0% / 0.0% | — | `NOT_IN_SCOPE` | `NOT_IN_SCOPE` | `NOT_IN_SCOPE` | `NOT_IN_SCOPE` | `NO_DETECTION` |
+| **CrowdSec IPS/AppSec** | 7.5 | 0.0% | 0.0% | 0.0% / 0.0% | — | `NOT_IN_SCOPE` | `NOT_IN_SCOPE` | `NOT_IN_SCOPE` | `NOT_IN_SCOPE` | `NO_DETECTION` |
+| **Baseline (无防护)** | 7.5 | 0.0% | 0.0% | 0.0% / 0.0% | — | `NO_DETECTION` | `NO_DETECTION` | `NO_DETECTION` | `NO_DETECTION` | `NO_DETECTION` |
+
+---
+
+## 07 · 验证与原始证据
+
+- 📁 **完整 `6.3.0` 评测证据包：** [`benchmarks/vgt-hardred-6.3.0/`](benchmarks/vgt-hardred-6.3.0/)
+  - [`hardred/`](benchmarks/vgt-hardred-6.3.0/hardred/) · [`ares/`](benchmarks/vgt-hardred-6.3.0/ares/) · [`antispyware/`](benchmarks/vgt-hardred-6.3.0/antispyware/) · [`reports/`](benchmarks/vgt-hardred-6.3.0/reports/) · [`raw-evidence/`](benchmarks/vgt-hardred-6.3.0/raw-evidence/)
 
 ```bash
-# 1. 运行全部 Go 测试、静态分析、JS 语法检查与安全审计（一键运行）
-make test
-
-# 2. 启用 Go Race Detector 运行并发竞争检测测试
-make test-race
-
-# 3. 运行全部原生 Rust 测试（Kernel Common 与 Response Core）
-cargo test --locked --manifest-path rust/Cargo.toml -p gedefense-common -p gedefense-core
-
-# 4. 运行 8 项 Go 安全模糊测试（Fuzzing Smoke）
-make fuzz-smoke
-
-# 5. 执行全面的静态安全审计脚本
-bash scripts/security-audit.sh
-
-# 6. 执行端到端完整仓库验证
+make test           # Go 单元测试、go vet、JS 语法与 10 阶段安全审计
+make test-race      # Go 并发竞态检测 (control + gateway)
+make fuzz-smoke     # 24 项安全模糊测试
+make rust           # Rust 原生测试与 static-PIE musl + eBPF 构建
 bash scripts/validate.sh
 ```
 
-> 📖 **正式公测测试方案：** 涵盖 Observe、Canary、Enforce 及 AstraeaOS 的完整阶段测试矩阵，请参阅 [**BETA-TEST-PLAN.md**](BETA-TEST-PLAN.md)。
-
 ---
 
-### 7 层主权安全防御架构概览
+## 08 · 安装指南
 
-```text
-1. PUBLIC ACCESS GATEWAY       Go · 端口 9843（TLS 1.3、ML-KEM 后量子混合加密、Argon2id、CSRF 同步令牌）
-2. COMMAND CENTER DASHBOARD   ESNext / 原生 JS / 原生 CSS · 0 第三方依赖 · CSP 深度加固
-3. CONTROL PLANE               Go · 端口 9844（仅限环回回环 · XDR、L7 WAF、FIM、证据账本、事件分析）
-4. PRIVILEGED RESPONSE CORE   Rust · /run/vgt-gedefense/core.sock（HMAC VGT3、pidfd_open、sysctl CAS、fanotify）
-5. KERNEL DATA PLANE           Rust no_std eBPF/XDP + cgroup-skb + LSM（LPM Trie 25 万条规则，RingBuf EDR）
-6. INTEGRATION FABRIC          通用 Linux（APT/DNF/pacman/Zypper）· AstraeaOS 原生 Ring-1 隔离单元
-7. RELEASE ENGINEERING         Toolchains.lock · 可复现构建 · 密码学镜像清单
-```
-
-### 核心安全不变量
-- **无云端控制平面：** 威胁情报、行为基线、操作密钥及取证数据 100% 保留在本地主机，杜绝数据外发。
-- **内核级速度数据平面：** 入站网络攻击在网卡驱动层通过 Rust eBPF/XDP 丢弃，在分配套接字缓冲区（`sk_buff`）之前即刻阻断。
-- **原生 L7 应用防御（仅使用 Go 标准库）：** 有界 HTTP 规范化、反绕过解码与 RE2 正则扫描，零第三方依赖，零 CGO，无脚本引擎开销。
-- **Web 证据隔离屏障：** Web 层检测事件标记为 `AlertOnly: true`（`ResponseScore: 0`）。Web 层的单项告警绝不会自主触发主机级进程终止（`SIGKILL`/`SIGSTOP`）；破坏性阻断必须依赖独立的主机/内核证据。
-- **密码学不可篡改证据账本：** 防篡改的单调递增序列，结合前序哈希验证（`AES-256-GCM` + `Ed25519`）。
-- **可逆的 Sysctl 内核加固：** 基于原子 Compare-and-Set 与内核回读机制，在部分配置失败时自动执行回滚。
-
----
-
-## 🔍 什么是 VGT GeDefense？
-
-GeDefense 绝非简单的防火墙规则管理器。它是**本地化主权 Linux 安全防御矩阵** — 集成了内核级网络防御、主机 XDR、加密证据账本、可逆系统加固以及可选的 AstraeaOS 原生隔离，全程无需任何云端控制平面。
-
-```
-传统 Linux 安全技术栈：
-  缺乏协同的工具拼凑 (iptables + auditd + fail2ban) → 无共享状态
-  盲信配置                                           → 自定义规则自动直接执行
-  缺乏证据链                                         → 安全事件无法确证
-  不支持自动回滚                                     → 系统加固变更不可逆
-  依赖云端 SIEM / 控制平面                           → 敏感数据离开本地主机
-
-VGT GeDefense:
-  Rust eBPF/XDP 数据平面                  → 内核就近防御，支持高达 250,000 条规则
-  Go 控制平面 (XDR、策略、FIM)            → 独立信任域，仅限环回接口
-  Rust 响应核心 (pidfd、SIGKILL)          → 任何 Kill 指令前均须经过仲裁验证
-  隔离的信任域架构                        → 公共网关 · 控制面 · 响应核心 · 数据平面
-  Ed25519 签名的证据账本                  → 单调递增序列 + 前序哈希验证
-  AES-256-GCM 保护的 FIM 基线             → 完整性遭到破坏时即刻 Fail-closed
-  可逆系统加固                            → Compare-and-Set、原子持久化、自动回滚
-  加密响应隔离保险库 (AES-GCM)            → 附带 SHA-256 唯一身份的样本隔离
-  无云端控制平面                          → 敏感状态绝不离开受保护主机
-  通用 Linux 原生支持                     → 深度适配 APT · DNF/YUM · pacman · Zypper
-  AstraeaOS 原生适配                      → 经校验的镜像源，同一套安全防御链
-```
-
-单一的正则表达式、威胁情报命中、行为异常或伪装检测**绝不能单独授权终止进程**。进入 Enforce（强制执行）模式至少需要两个独立的授权类别、客观的仲裁证据以及非降级的系统运行状态。
-
-### 🛡️ GeDefense V6.3.0 全栈防御能力与模块 A–E
-
-所有子系统共享隔离信任域、REST API 与 Web 管理面板。在 `observe`/`canary` 阶段 V6 主动阻断默认保持关闭；切换至 `enforce` 时自动开启安全基线（`styx=monitor`、`titan_exec=contain`、`parser_cells=enabled`），而更严格的策略（**Emergency Lockdown**、**Witness**、`titan_exec=untrusted`、按 Cell 启用的 StyX `enforce` 与 CIS 用户态基线）始终由管理员显式启用：
-
-- **模块 A–E（Web 暴露面与边缘防护栈）：**
-  - **模块 A — Web Exposure & Posture：** 通过只读方式解析 `/proc/<pid>/exe` 的 ELF `.rodata`（零 `os/exec`），分析 NGINX/Apache 监听配置并执行有界环回 ALPN 探测，仅在真实可达时关联高危 CVE。
-  - **模块 B — Worker Integrity Guard：** 基于内核 `signal:signal_deliver` tracepoint 与 netlink 回退监控已注册 Web 工作进程，60 秒内 ≥ 3 次致命崩溃即触发 `XDR.WORKER_CRASH_STORM`，并支持 Opt-in 为工作进程 cgroup 下发 `JIT_ALLOW = 0` 限制（自动排除 master/control 单元）。
-  - **模块 C — TLS/ALPN 传感器与 h2 Control-Storm 预算：** 通过特权拆分的独立进程 `gedefense-capture-helper.service` 被动捕获 `AF_PACKET`，配合内核 `INET_DIAG` 套接字计数，精准区分恶意 HTTP/2 控制风暴与正常大文件上传。
-  - **模块 D — LPE Kill-Chain 阻断器：** 通过 `socket_create` BPF-LSM 阻止 Web 工作进程 cgroup 调用 `AF_PACKET`、`AF_TIPC`、`AF_VSOCK`、`SCTP`、`DCCP` 与 `RDS`，并强化 ASLR 与高危协议模块黑名单。
-  - **模块 E — 内存安全边缘终结器（Edge Proxy）：** 可选的 Go `crypto/tls` + `net/http` 入站网关，强制 RFC-9113 流控边界与结构化内联 WAF（SQL 注释/空白规范化、敏感配置文件扫描、`POST`/`PUT` 原始正文检测、`780 KB–1.5 MB` 快速通道及确定性 `429 + Retry-After`）。
-- **内核与主机级 XDR（五大防线 + V6.2 增强）：**
-  - **Titan Exec Gate（ABI-2）与 GeDefense Titan 文件篡改/违禁注入防御：** 在 `contain` 与全局 `untrusted`（模式 `4`）下拦截 `bprm_check_security` / `mmap_file(PROT_EXEC)` 对非 root/全局可写落地路径（`memfd_create`、`/tmp`、`/dev/shm`）的执行；同时 GeDefense Titan 结合有界 inotify、FIM 基线与本地 `dpkg`/`pacman` 软件包归属（`AUTHORIZED`/`TOLERATED`/`UNEXPECTED`/`COMPROMISED`）评估未经授权的文件植入，绝不进行人员归因，所有隔离均经可逆的 AES-256-GCM 保险库完成。
-  - **eBPF 勒索软件传感器与进程树级遏制：** 通过 `vfs_write`/`vfs_rename`/`vfs_unlink` kprobe 捕获高熵加密写入风暴与批量重命名；Rust 响应核心按 `100 ms` 周期立即以可逆 `SIGSTOP` 冻结整个进程组（豁免 `apt`、`dpkg`、`tar`、`cargo` 等合法维护进程），再由控制面通过 `pidfd` 校验执行 `XDR_KILL_TREE` 或 `GROUP_CONT` 解冻。
-  - **异步 On-Write 恶意软件与递归压缩包扫描：** `FAN_CLOSE_WRITE` 监控 `/tmp`、`/var/tmp`、`/dev/shm` 与 `/var/www`（`PrivateTmp=false` 配合受限路径授权，支持 ZIP/GZIP/TAR 8 层有限递归解包与最高 `16 MiB` 探针扫描），结合 SHA-256 锁完成无竞态加密隔离。
-  - **BPF-LSM Credential Guard：** `file_open` 钩子保护 `/etc/shadow`、`/etc/gshadow` 与密钥目录，仅放行 `sshd`、`sudo`、`su`、`login`、`cron`、`passwd`、`useradd`/`usermod`/`groupadd` 等白名单授权程序；未武装/未挂载时绝不阻断正常登录。
-  - **StyX 出站执行、信标检测与 16 MiB 流遥测：** 支持符号化 `cgroup_path` 身份与重启后 cgroup2-inode 动态重解析（漂移时进入 `degraded` 而非静默 fail-open），16 MiB `FLOW_EVENTS` 环形缓冲区，并将 `enforcement_active` 与 `telemetry_state` 分离展示。
-  - **临时解析隔离单元（`gedefense-cell-helper.service`）、带外 Witness 与 Emergency Lockdown：** 一次性命名空间/seccomp 解析沙箱（`VGTGC2`）、防 SSRF 的 Ed25519 账本外锚、XDP/TC 快速断网锁存及复合 BadUSB 拦截（`HID+Storage`/`HID+CDC`）。
-- **引导式安装向导（`00`–`08`）与离线 `AGENTS.md` 工作流：** 控制台内置分步配置向导，并提供“先只读后变更加固”的 `AGENTS.md` 操作蓝图供管理员通过 SSH 驱动本地 CLI 代理（`POST /api/v1/settings/{module}/preview` → `PUT`），绝不暴露远程 AI 控制接口。
-
-### 💻 桌面 PC / 工作站 vs. 🖥️ Linux 服务器 — V6.3.0 防护对比
-
-| 部署场景 | 重点缓解威胁 | 开启 `enforce` 后的关键防线 |
-|---|---|---|
-| **Linux 桌面 PC / 工作站** | 零点击文档解析漏洞、复合型 BadUSB 硬件植入、密钥管家窃取、无文件内存木马（`memfd`/`PROT_EXEC`）、静默 C2 回连 | **Parser Cells** 隔离不可信解析；**Lockdown** 拦阻 BadUSB 并冻结敏感进程；**StyX (`monitor`)** 发现异常信标；**Titan Exec (`contain`/`untrusted`)** 限制不可信路径执行 |
-| **Linux 服务器（Web / API / 计算）** | L7 HTTP 注入/Webshell 渗透、Web 容器/cgroup 出站外泄、`/tmp`/`/var/www` 投毒、勒索加密破坏、`/etc/shadow` 窃密 | **L7 Edge/WAF + Kinetic XDP** 阻断网络与应用层攻击；**StyX (`per_cell enforce`)** 封死 Web 工作进程异常出站；**Titan Exec + 勒索传感 + On-Write + Credential Guard** 扼杀后渗透；**Witness** 实现账本异地存证 |
-
-> [!WARNING]
-> **发布与资质状态说明（版本 6.3.0 / V6）。**  
-> GeDefense V6 正处于面向测试与资质验证主机的持续演进阶段。自动化发布门禁已完整校验构建溯源、Ed25519 签名、Go/Rust 测试套件与静态安全不变量；外部公共 CA 代码签名、RFC3161 时间戳、吊销列表及目标主机的内核验证器/网卡 XDP 挂载测试仍属于节点级上线前验收项。在生产环境启用 `enforce` 前，请务必阅读 [SECURITY.md](SECURITY.md)、[RELEASE-NOTES.md](RELEASE-NOTES.md) 与 [CHANGELOG.md](CHANGELOG.md)。
-
----
-
-<img width="2560" height="1229" alt="image" src="https://github.com/user-attachments/assets/1f5cf6ae-ee59-498d-9c5b-e06e8efc9ef2" />
-
-
-## 🏛️ 系统架构
-
-```
-┌──────────────────────────────────────────────────────────────┐
-│                    PUBLIC ACCESS GATEWAY                      │
-│   Go · TLS 1.3 · Argon2id · 主机/来源/CSRF · 会话管理        │
-│   非特权运行 · 默认端口 9843（可配置范围 1024–65535）        │
-├──────────────────────────────────────────────────────────────┤
-│                      CONTROL PLANE                            │
-│   Go · XDR · 策略引擎 · 遥测 · FIM · 证据账本 · 事件分析     │
-│   运行用户: gedefense · 仅限本地环回 (TCP 9844)              │
-├──────────────────────────────────────────────────────────────┤
-│                      RESPONSE CORE                            │
-│   Rust · VGT3 IPC · pidfd 响应 · 隔离库 · Sysctl 修改        │
-│   UID 0 · 权能限制 (Capabilities) · HMAC 认证的 IPC 通信     │
-│   套接字: /run/vgt-gedefense/core.sock                       │
-├──────────────────────────────────────────────────────────────┤
-│                       DATA PLANE                              │
-│   eBPF/XDP · IPv4/IPv6 · 网卡层最长前缀匹配 (LPM) 白/黑名单  │
-│   内核级 XDP · 支持多达 250,000 条阻断条目                   │
-└──────────────────────────────────────────────────────────────┘
-```
-
-<img width="2560" height="1229" alt="image" src="https://github.com/user-attachments/assets/0712a990-f3ad-4b4a-8d18-8e0a60395fe1" />
-
-
-### 信任域分离
-
-| 信任域 | 承担职责 | 运行特权 |
-|---|---|---|
-| **公共网关 (Gateway)** | TLS 1.3、Argon2id、主机/来源/CSRF 校验、会话鉴权 | 非特权进程 |
-| **控制平面 (Control Plane)** | XDR、策略管理、遥测指标、FIM、证据账本、分析控制台 | `gedefense` 普通系统用户 |
-| **响应核心 (Response Core)** | XDP Map 管理、pidfd 进程处置、样本隔离、Sysctl 加固 | UID 0（受权能边界严格约束） |
-| **数据平面 (Data Plane)** | IPv4/IPv6 数据包解析、网卡物理层 LPM 白名单与黑名单阻断 | 内核态 / XDP |
-
-### 部署形态
-
-**通用 Linux (Universal Linux)** — 在基于 systemd 的 x86_64 Linux 操作系统上通过 APT、DNF/YUM、pacman 或 Zypper 一键安装。Rust Core 和 eBPF 程序将直接针对宿主机的内核与网卡进行编译，并通过严格验证后原子激活。
-
-**AstraeaOS 原生 (AstraeaOS-native)** — 采用完全相同的核心二进制、原生服务配置、AstraeaOS 加固配置集、安全启动证据及可选的 Gaia Cells 隔离单元。GeDefense 是 AstraeaOS 内部的**唯一法定安全管理中枢**。
-
----
-
-<img width="2560" height="1229" alt="image" src="https://github.com/user-attachments/assets/57feccc5-75ab-46a1-a575-3a5ec3402087" />
-
-
-## 🛡️ 防御矩阵核心机制
-
-### 网络级近源防御 (Rust eBPF/XDP)
-
-| 特性 | 详细说明 |
-|---|---|
-| **数据平面** | Rust eBPF/XDP — 原生硬件驱动级 XDP，支持 Generic-XDP 容错回退 |
-| **协议覆盖** | 全面支持 IPv4 和 IPv6 |
-| **规则匹配算法** | LPM Tries（最长前缀匹配树） |
-| **容量规格** | 支持高达 250,000 条规则条目 |
-| **管理白名单** | 优先于黑名单生效 — 绝不阻断管理员通信路径 |
-| **CIDR 规则** | 具备签名校验与生命周期（TTL）控制 |
-| **威胁源自动阻断** | 默认禁用 — 公共威胁情报源必须经过管理员明确授权方可生效 |
-| **空规则严格校验** | 权威的 `VERIFY_EMPTY` 校验 — 杜绝隐藏的残留阻断规则 |
-
-### 主机级 XDR
-
-| 特性 | 详细说明 |
-|---|---|
-| **监控信号** | 进程画像、执行命令、父子继承树、调用源、进程伪装、网络流量、威胁情报 |
-| **基线画像** | 自适应学习，严格限制单进程基线的基数上限 |
-| **自定义规则** | RE2 线性正则引擎 — 严格限定为仅告警模式（Alert-only） |
-| **多信号联动门禁** | 在采取任何阻断升级动作前，必须满足多维证据聚合门禁 |
-| **PID 身份绑定** | PID 与 pidfd 双重绑定 — 彻底免疫 PID 回绕复用攻击 |
-| **金丝雀阶段处置** | 验证充足证据后执行暂停信号（SIGSTOP） |
-| **强制执行阶段处置** | 仅限仲裁器权威核验后方可发送终止信号（SIGKILL） |
-
-**XDR 默认性能与资源预算**
-
-| 参数项 | 设定值 |
-|---|---|
-| 进程扫描周期 | 750 ms |
-| 网络与完整性检查周期 | 3 s / 3 s |
-| 告警 / 隔离 / 查杀阈值分值 | 40 / 80 / 120 |
-| 工作线程数 / 队列深度 | 4 / 2,048 |
-| 单次扫描评估任务上限 | 4,096 |
-| 事件日志大小硬上限 | 64 MiB |
-
-### 证据链与完整性
-
-| 特性 | 详细说明 |
-|---|---|
-| **证据账本 (Ledger)** | 经 `Ed25519` 本地签名与强加密保护 |
-| **链式哈希结构** | 单调递增序号，严格绑定前序记录哈希值 |
-| **防截断保护** | 独立的头部检查点校验（Head Checkpoint） |
-| **FIM 基线库** | 受到 `AES-256-GCM` 认证加密保护 |
-| **目录遍历安全** | 递归深度受限，结合流式 SHA-256 计算 |
-| **环境安全检查** | 严格校验并发竞争、符号链接及文件权限模数 |
-| **完整性受损处置** | 故障闭锁（Fail-closed）— 绝不容忍静默降级 |
-
-### 安全事件与事务控制
-
-| 特性 | 详细说明 |
-|---|---|
-| **事件关联分析** | 加密封装事件上下文数据 |
-| **重复性事件收敛** | 具备账本追溯承诺的重复告警抑制与收敛机制 |
-| **加固执行流程** | 变更预览 (Preview) → 管理员授权 (Authorize) → 实际应用 (Apply) |
-| **审计追溯流程** | 状态核验 (Verify) → 安全审计 (Audit) → 状态还原 (Reverse) |
-| **服务启动自检** | 差异对齐校验 — 发现未知漂移时隔离审查，绝不盲目覆盖 |
-
----
-
-## 🔒 运行安全与阶段晋升门禁
-
-```
-Observe（观察） ──→ Canary（金丝雀） ──→ Enforce（强制执行）
-      │                    │                    │
-      │              多重客观证据          经签名的 CIDR 规则
-      │              校验的 SIGSTOP        与白名单双向同步
-      │
- XDP 探针就绪，无阻断规则
- 已通过空规则安全验证
-```
-
-| 运行状态 | 网络拦截动作 | 进程级处置措施 | 晋升放行条件 |
-|---|---|---|---|
-| **Observe** | XDP 处于监听状态，无拦截规则 | 仅记录遥测事件 | 确认内核中无残留拦截规则 |
-| **Canary** | 保持流量观测 | 经证据核验的暂停（SIGSTOP） | 满足策略、稳定性观察期与健康度门禁 |
-| **Enforce** | 执行经签名的 CIDR 阻断 | 经仲裁授权的终止（SIGKILL） | 管理网络白名单已完成原子同步 |
-| **Degraded** | 故障安全模式 | 挂起所有主动阻断行为 | 必须由管理员介入排查并显式恢复 |
-
-**紧急阻断终止协议：** 停用主动响应 → 清理所有拦截规则 → 经过鉴权的 `VERIFY_EMPTY` 核验 → 保存经签名的 Observe 策略配置 → 确认恢复纯净空状态。任何中间环节报错均绝不判定为安全。
-
----
-
-## 🔐 密码学与安全规范
-
-| 保护目标 | 算法标准 | 详细配置规格 |
-|---|---|---|
-| **管理员凭证** | Argon2id | 64 MiB 内存占用 · 迭代次数 t=3 · 并行度 p=1 · 128 位盐值 · 256 位输出 |
-| **Control ↔ Core 通信** | HMAC-SHA-256 | 32 字节共享密钥 · 时间窗口校验 · 随机数 Nonce · 防重放缓存 · `SO_PEERCRED` |
-| **运行状态存储** | AES-256-GCM | 随机 Nonce · 专职子密钥隔离 · 关联数据（AAD）绑定校验 |
-| **安全策略 / 证据签名** | Ed25519 | 本地私钥签名与公钥验签 |
-| **内容身份鉴别** | SHA-256 | 流式哈希计算与二次验证 |
-| **公共访问网关** | TLS 1.3 | 本地自签发或系统安装的受信任证书 |
-
-关联数据（AAD）校验上下文：Schema · 节点标识 · 目标用途 · 规范化路径 · 序列号。
-系统仅在旧版数据迁移时短暂兼容 PBKDF2 — 首次成功登录后将原子升级至 Argon2id。
-
-### 浏览器与 API 深度加固
-
-| 加固项 | 实现状态 |
-|---|---|
-| 零外部第三方依赖（无外链 CDN、追踪脚本或网络字体） | ✓ |
-| 彻底杜绝动态 HTML 字符串拼接与 eval 执行 | ✓ |
-| 实施严苛的 CSP 策略，严禁网页被 iframe 嵌套引用 | ✓ |
-| 同步器 CSRF 令牌防护与严格的请求来源（Origin）比对 | ✓ |
-| 全面启用 Secure、HttpOnly 及 SameSite=Strict Cookie 属性 | ✓ |
-| 服务端执行 Bearer 令牌注入 | ✓ |
-| 全局启用 Request-ID、TTL 有效期及防重放攻击检测 | ✓ |
-| 外部情报源拉取启用 DNS 防重绑定与 SSRF 拦截 | ✓ |
-| 原生 L7 应用安全引擎与有界规范化解析 | ✓ |
-| L7 模块未引入任何外部 Go 依赖包 | ✓ |
-| Go 语言服务内部严禁拼接执行系统 shell 命令 | ✓ |
-| 控制平面后端仅监听本地环回网络（Loopback） | ✓ |
-
-**敏感运行状态与私钥材料绝不离开受保护的主机系统。**
-
----
-
-## 🔧 可逆系统加固
-
-内置预设：`Generic Linux Server` 与 `AstraeaOS Workstation` — 基于预先审定的键值白名单。
-
-内核参数变更均通过 Compare-and-Set 原子操作执行，完成回读校验后，原子持久化至 `/etc/sysctl.d/90-vgt-gedefense.conf`。
-
-Rust Core **未提供任何通用的系统 Shell、文件系统或 Sysctl 执行后门**。若配置过程中发生局部错误，系统将严格按照相反顺序自动回滚所有修改。
-
-### 加密响应隔离保险库 (Response Vault)
-
-| 特性 | 详细说明 |
-|---|---|
-| **加密算法** | AES-256-GCM |
-| **分块大小** | 1 MiB 分块加密 |
-| **源文件体积上限** | 256 MiB |
-| **样本身份标识** | SHA-256 哈希值 + 完整元数据签名 |
-| **捕获隔离** | 原子写入 — 经还原验证方可提交 |
-| **符号链接防护** | `openat2`、`O_NOFOLLOW` 严格阻断逃逸 |
-| **保险库系统权限** | `root:gedefense` 0700 — 剥夺 `CAP_DAC_OVERRIDE` |
-
----
-
-## 🐧 通用 Linux 集成
-
-| 系统层级 | Beta v4 集成规格 |
-|---|---|
-| 包管理器适配 | 原生支持 APT · DNF/YUM · pacman · Zypper |
-| 初始化管理 | 经过语法与运行时验证的加固型 systemd 单元 |
-| 特权权限边界 | 受 Polkit 精准限制的准备就绪助手 — 无通用 root shell |
-| 桌面快捷方式 | 独立的 Chromium 运行环境配置，实施精准证书 SPKI 锁定 |
-| TLS 身份认证 | 绑定公网主机标识，以及 `localhost`、`127.0.0.1`、`::1` 等 SAN 证书属性 |
-| 发布阶段流水线 | Go 数据竞争/模糊测试/安全审计 · Rust Core 校验 · eBPF 编译 · 产物指纹 |
-| 跨发行版兼容性 | Ubuntu/Debian · Fedora/RHEL · Arch · openSUSE 契约验证 |
-| 目标主机实体验证 | bpffs 挂载 · 验证器通过的 eBPF 探针 · 实体网卡 XDP 挂载 · IPC 与 TLS |
-
-发行版测试容器用于保障打包脚本与通用接口规范的正确性。容器环境不代表已通过宿主机内核验证。每个正式版本仍必须在目标主机的实际内核、网卡驱动和网络设备上通过特权安全检查。
-
----
-
-## 🌐 AstraeaOS 原生集成
-
-| 集成模块 | 实现进度 |
-|---|---|
-| 原生服务部署与 systemd 管理 | ✅ 已实现 — 遵循与独立版一致的高标准安全链 |
-| GeDefense 源码同步镜像 | ✅ 已实现 — 严格校验 SHA-256 发布清单 |
-| AstraeaOS 专属加固画像 | ✅ 已实现 — 支持状态回滚与持久化固化 |
-| 安全启动链证据采集 | ✅ 已实现 — 严格记录证据，杜绝虚假背书 |
-| Gaia Cells VGTGC1 隔离适配层 | ✅ 已实现 — 作为运行时可选组件提供 |
-| UUID / 生命周期世代 / Cgroup ID 绑定 | ✅ 已实现 — 实施不可更改的操作上下文绑定 |
-| 单元冻结 / 网络隔离快速回滚 | ✅ 已实现 — 证据绑定的原子事务操作 |
-| Gaia Cells 守护进程 | — 未包含 — 属于 AstraeaOS 操作系统自身的运行环境 |
-| 独立欺骗诱捕服务 (Deception) | — 顺延规划 — 不属于当前 Beta 授权管理范围 |
-
-所有针对隔离单元的操作均严格绑定其 UUID、生命周期世代及内核 cgroup ID。系统将对调用者的 UID、HMAC 签名、时间戳窗口及 Nonce 进行联合验证。
-
-若环境中**未部署** Gaia Cells 运行环境，适配层将安全返回 `runtime_not_installed`。通用主机安全防御层将继续正常工作，**系统绝不降级**。
-
-> **唯一法定中枢：** 在 AstraeaOS 中，GeDefense 是全系统唯一的安全主管实体。Sentinel 仅作为历史迁移与合规审计的数据源提供支持。
-
----
-
-## ⚙️ 运行时规范与技术契约
-
-### 宿主机运行环境要求（独立部署版）
-
-| 软硬件指标 | 准入要求规格 |
-|---|---|
-| **操作系统** | Linux |
-| **硬件架构** | x86_64 / amd64 |
-| **初始化系统** | systemd |
-| **内核能力** | 必须支持 BPF/XDP 及 pidfd 特性 |
-| **包管理工具** | apt-get、dnf/yum、pacman 或 zypper |
-| **安装前提** | 具备 root 执行权限，编译期间需要访问互联网 |
-| **网关运行时** | `libargon2.so.1` 依赖库 |
-
-> 本测试阶段不划定一刀切的内核版本死线，亦不承诺特定网卡型号全覆盖。目标主机是否合规完全取决于能否顺利通过源码编译、内核验证器审查、XDP 挂载测试、IPC 连通性以及健康度基准测试。
-
-### 锁定的编译构建工具链
-
-| 工具链组件 | 锁定版本 |
-|---|---|
-| **Go** | 1.27.4 |
-| **Rust Core** | 1.97.1 |
-| **Rust eBPF** | nightly-2026-07-16 |
-| **Rust 标准源码组件** | rust-src |
-| **bpf-linker** | 0.10.3 |
-| **Cargo 依赖锁定** | `Cargo.lock --locked` |
-
-### 接口与网络端口分配
-
-| 接口服务名称 | 默认监听配置 | 暴露等级 |
-|---|---|---|
-| **HTTPS 管理网关** | TCP 9843 | 管理与公网访问 — 可配置范围 1024–65535 |
-| **Go 控制平面后端** | TCP 9844 | 仅限本地回环地址（Loopback） |
-| **Rust Core IPC 通信** | `/run/vgt-gedefense/core.sock` | HMAC-VGT3 签名 + `SO_PEERCRED` 校验 |
-| **L7 检测服务 API** | `/run/vgt-gedefense-l7/inspect.sock` | 本地 Unix 套接字 · 资源限制 · `SO_PEERCRED` |
-| **L7 内联反向代理** | `/run/vgt-gedefense-l7/edge.sock` | 可选的本地 Unix 反向代理安全边界 |
-| **Gaia Cells 控制接口** | `/run/gaia-cells/control.sock` | 可选组件 — 基于 VGTGC1 协议 |
-| **威胁情报数据流** | HTTPS 出站通信 | 可选组件 — 仅允许访问合规的公网 IP |
-
-### 核心文件目录布局
-
-| 目录与文件路径 | 承担职责与用途 |
-|---|---|
-| `/opt/vgt/gedefense/releases/<版本号>` | 只读且不可变的正式发布程序包 |
-| `/opt/vgt/gedefense/current` | 指向当前运行版本的原子软链接 |
-| `/etc/vgt/gedefense/` | 核心配置文件、TLS 证书及私钥机密数据 |
-| `/var/lib/vgt/gedefense/` | 加密保存的系统动态运行数据 |
-| `/var/lib/vgt/gedefense/quarantine/objects` | 加密响应隔离保险库（Response Vault） |
-| `/run/vgt-gedefense-l7/` | 专供 L7 检查使用的临时 Unix 域套接字 |
-| `/sys/fs/bpf` | 内核 BPF 虚拟文件系统挂载点 |
-| `/var/log/vgt-gedefense-install.log` | 系统安装调试日志文件 — 访问权限 0600 |
-
----
-
-## 🚀 快速上手
+**环境要求：** Linux `x86_64`、`systemd`、`apt`/`dnf`/`pacman`/`zypper`、`libargon2.so.1`，支持 eBPF/XDP 的内核（推荐启用 `lsm=...,bpf` 以开启完整 BPF-LSM 强制防护）。
 
 ```bash
-# 下载安装程序
 wget https://github.com/visiongaiatechnology/gedefense/releases/download/v6.3.0/VGT_GeDefense_V6_6.3.0_OneClick.run
-
-# 校验 SHA-256 完整性指纹
+wget https://github.com/visiongaiatechnology/gedefense/releases/download/v6.3.0/VGT_GeDefense_V6_6.3.0_OneClick.run.sha256
 sha256sum --check VGT_GeDefense_V6_6.3.0_OneClick.run.sha256
-
-# 执行安装（需要 root 权限）
-chmod 700 VGT_GeDefense_V6_6.3.0_OneClick.run
+chmod 0700 VGT_GeDefense_V6_6.3.0_OneClick.run
 sudo ./VGT_GeDefense_V6_6.3.0_OneClick.run
 ```
 
-> **安装程序可用性：** 官方 v6.3.0 自包含安装程序（`VGT_GeDefense_V6_6.3.0_OneClick.run` 与 `GeDefense-6.3.0-Desktop-OneClick.run`）随签名的 GitHub Release 一同发布。
-
-> 安装包与校验和文件仅在通过全部 GitHub CI 测试及实体 Linux 节点验证后发布。切勿运行未经验签的 RUN 可执行文件。
-
-安装脚本只有在完整通过以下校验链条后方可宣告成功：**代码编译 → 内核验证器测试 → XDP 驱动层挂载 → IPC 通信链路测试 → 控制后端校验 → TLS 证书安全准入**。
-
-安装过程中，脚本可根据检测结果，自动通过 UFW、firewalld 或 iptables 完成 HTTPS 网关服务端口（TCP 9843）的放行配置。
-
-**首次运行请务必保持在 Observe 观察模式。只有在所有验证门禁均正常满足后，方可调整至 Canary 及 Enforce 模式。**
+> 📘 **桌面托盘安装包、源码构建、目录布局与回滚：** [`docs/INSTALLATION.md`](docs/INSTALLATION.md)
 
 ---
 
-## ✅ 发布门禁与质量规范
+## 09 · 配置与运维
 
-| 质量核验门禁 | 当前状态 | 准入判定规则 |
-|---|---:|---|
-| 源码与发布包清单核对 | ✅ 已实现 | 校验和必须实现零漂移 |
-| 机密数据与私钥残留扫描 | ✅ 已实现 | 检出违规项必须为零 |
-| GitHub Actions 与容器指纹锁定 | ✅ 已实现 | 必须绑定不可变哈希标识 |
-| Go 单元测试、集成测试与 Vet 审查 | 🔒 强制 CI 门禁 | 必须全项通过 |
-| Go 竞态检测与安全模糊测试冒烟 | 🔒 强制 CI 门禁 | 必须全项通过 |
-| JavaScript 与 Shell 语法规范校验 | ✅ 本地与 CI | 必须全项通过 |
-| AST 静态安全回归审计 | 🔒 强制 CI 门禁 | 必须全项通过 |
-| Rust 核心组件原生单元测试 | 🔒 强制 CI 门禁 | 必须全项通过 |
-| Rust Core 与 eBPF 正式环境构建 | 🔒 强制 CI 门禁 | 必须全项通过 |
-| Ubuntu、Fedora、Arch、openSUSE 测试矩阵 | 🔒 强制 CI 门禁 | 矩阵任务必须全部绿色通过 |
-| 安装包产物与 SHA-256 指纹校验 | 🔒 强制 CI 门禁 | 必须全项通过 |
-| 实体主机内核验证器与网卡 XDP 挂载 | ⏳ 目标主机资质 | 针对每个目标部署主机单独审查 |
-| systemd、IPC、控制后端、TLS、Polkit 校验 | ⏳ 目标主机资质 | 针对每个目标部署主机单独审查 |
+GeDefense 启动后默认停留在安全的 **`observe`** 模式，并通过晋升门禁（`observe → canary → enforce`）、管理白名单同步及可逆事务管理运行状态：
 
-**最终发布门禁：** 针对目标宿主机的具体内核、验证器兼容性、XDP 模式、网卡设备及驱动程序的实体端对端冒烟测试。
+| 阶段 | 网络策略 | 主机与进程动作 | 晋升条件 |
+|---|---|---|---|
+| **Observe** | XDP 已挂载，黑名单为空 (`VERIFY_EMPTY`) | 仅记录遥测告警 | Core IPC 已认证 + 签名 Observe 策略 |
+| **Canary** | 网络保持观察 | 凭据校验后执行 `SIGSTOP`（Web 层为 `AlertOnly`） | 策略就绪 + 观察期 + XDR 健康 |
+| **Enforce** | 签名 XDP LPM 拦截规则 | 代理核验 `pidfd` `SIGKILL` / 隔离库 | 非空且已同步的管理白名单 |
+| **Degraded** | 故障降级 / 状态未确认 | 暂停主动拦截 | 需管理员介入并恢复正常状态 |
+
+> 📘 **阶段切换命令、Emergency Stop 与 `EDR/Hardened Max` 配置参考：** [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md)
 
 ---
 
-## 🚧 当前已知局限（6.3.0 / V6）
+## 10 · 安全模型与边界
 
-- 暂未集成 Swarm / 集群网格（Mesh）支持
-- 暂不支持 QUIC 协议网络卸载
-- 不包含云服务商级别的骨干网 DDoS 流量吸收清洗能力
-- 不提供入站流量的 TLS 深度解密镜像
-- 威胁情报源暂不支持自动强制拦截（Feed Auto-Enforce）
-- 若主机遭遇 Root 权限的底层破坏，本系统无法提供绝对免死防护
-- 暂未包含完整的 Measured Boot 远程度量证明
-- Gaia Cells 隔离生命周期守护进程独立存在（属于 AstraeaOS 专属组件）
-- 隔离诱捕服务（Deception Service）顺延规划
-- 替换受保护的发布组件会以高严重级别被报告，并且不会解除平台的防护；账本轮转要求其归档目录归属于该服务且权限为 `0700`，否则将拒绝运行，而不是写入一个共享目录
-- Rust 核心进程会统计并记录被跳过的入口数据记录，但尚未在其健康应答中报告该数量，因此该数值显示在服务日志中，而不是面板中
-- **暂无专用 V6 Web UI 面板：** StyX、Titan Exec Gate、Parser Cells、Emergency Lockdown 与 Witness 当前通过 Settings v17 与 REST API 配置；切入 `enforce` 时会自动启用安全默认值（`styx`、`titan_exec`、`parser_cells`），而 Emergency Lockdown 与 Witness 保持 Opt-in。
-- **内核 `bpf` LSM 前置要求（点 1 与 Cell Socket LSM）：** 强制内核拦截（`bprm_check_security` / `mmap_file`）需要 `/sys/kernel/security/lsm` 包含 `bpf`（通过 `lsm=...,bpf` 启动参数并重启）；未启用时系统如实上报 `inactive`。
-- **Parser Cells（点 2）：** 默认自带空的解析器配置白名单（需由管理员定义具体解析程序/策略）；Wayland/PipeWire 经纪人透传属于 Phase 2。
-- **Witness 与硬件证明边界（点 4）：** 仅提供 Mode A 客户端与 `vgtw1` 离线包（仓库内不含外部 Witness 服务端或法定人数仲裁）；无 TPM2/UEFI 的主机如实上报 `quote_kind="none"` 与 `key_binding="software"`。
-- **Emergency Lockdown Phase 2 边界（点 5）：** LUKS 卷挂起、图形会话锁屏与 RAM 清零均在 Phase 2 规划内（无对应平台接口时如实报告 `unsupported`）；USB/TB sysfs 控制要求 `gedefense-core.service` 具备相应的内核 sysfs 权限。
+- **密钥与托管边界：** 发布签名私钥严格离线保存于仓库之外（[`RELEASE-KEYS.md`](RELEASE-KEYS.md)）；本地运行密钥权限为 `0600`。
+- **`bpf` LSM 依赖：** 完整内核执行拦截（`Titan Exec Gate`、`CredentialGuard`、`BPF_GUARD`）需内核启用 `/sys/kernel/security/lsm` 中的 `bpf`，否则如实报告 `inactive`。
+- **经验证的 `6.3.0` 边界：** 不支持多节点 Swarm/Mesh 协同、不支持 QUIC 卸载与 TLS 中间人解密、不替代上游运营商级大流量 DDoS 清洗、无法保证已发生完全 root 内核沦陷后的主机完整性。`AS-S16` 与 `AS-S17` 默认处于 `DETECTED_ONLY` 模式（彻底禁用 `io_uring` 需显式启用 `kernel.io_uring_disabled`），`Feed Auto-Enforce` / `Emergency Lockdown` / `Witness` / `Chameleon` 均为显式 Opt-in，WordPress 桥接器处于 Alpha 预览状态（[`SECURITY.md`](SECURITY.md)）。
+
+> 📘 **完整安全模型与限制说明：** [`docs/SECURITY-MODEL.md`](docs/SECURITY-MODEL.md) · [`SECURITY.md`](SECURITY.md)
 
 ---
 
-## 📋 版本更新日志 (Changelog)
+## 11 · 开发与研究资源
 
-### v6.3.0 — 反间谍传感器加固、eBPF Rootkit 防御、跨视图与变色龙模式 *(当前版本 — 2026-11-24)*
-
-- **静态 musl 核心与传感器自保护（AP-0）：** `gedefense-core` 以 `static-pie` musl 二进制交付，不含 `NEEDED` 库依赖（消除 glibc/`LD_PRELOAD` 攻击面）；BPF pin 守卫、ring 丢弃统计与周期性 canary 自检上报 `XDR.SELF_TAMPER` / `SBC-EVID-08`，固定版本的 eBPF 对象仅在验证通过后安装。
-- **可执行文件 inode 信任（AP-1）：** Credential Guard 与勒索软件传感器改用 BTF 解析的 `task_struct → mm → exe_file → f_inode` 身份（`TRUSTED_EXEC_INODES`）而非可伪装的 `comm` 做信任决策；行为载体 inode（LD_PRELOAD `.so`、BPF 加载器、`memfd`）可执行带 TTL/恢复与账本哈希的 inode 锁定。
-- **加载时 eBPF 守卫与 helper 位图（AP-2）：** `lsm/bpf_prog`、`sys_enter_bpf` 与 BTF 门控的 `check_helper_call` kprobe 在 `do_misc_fixups` 前捕获原始 helper ID，并为每个程序构建风险位图（`bpf_probe_write_user`、`bpf_override_return`、`bpf_send_signal`），产生 observe-first 的 `XDR.BPF_ANOMALY` / `XDR.BPF_ROOTKIT_HELPER` 发现。
-- **8 域跨视图校验器（AP-3）：** 内核迭代器、`NETLINK_SOCK_DIAG`（不调用 `ss`）、直接读取 `/proc/<pid>/stat`，以及 LKM/ftrace/map-pin 交叉校验，检测隐藏的 BPF 程序、进程、套接字、无端口 raw tap、LKM/ftrace 钩子与 BPF link 篡改（仅观察）。
-- **io_uring/LKM 钩子与持久化/外设完整性（AP-4/AP-5）：** io_uring LSM 钩子与 tracepoint，加上对 `module_load`/`init_module`/`finit_module`/`delete_module` 的 pre-stealth 捕获（`XDR.IO_URING_ANOMALY`、`XDR.LKM_LOAD`）；对 linker、`ld.so.preload`、PAM/`sshd`、systemd generator/drop-in 与 udev `RUN+=` 持久化的写入/审计保护，对映射进安全关键二进制的库执行包数据库校验，并新增桌面外设与浏览器/Keyring 机密访问传感器。
-- **StyX 第二阶段、DNS 隧道与 GIEF v1.0/SBC（AP-6）：** 真实 `cgroup_skb/ingress` RX 观测、5 分钟双向 PCR 外泄评分（诚实上报 `NONE`/`TEMPORAL`）、有界 UDP/53 捕获与 5 信号 DNS 隧道分析（≥ 3 个信号同时成立），以及包含时间加权 SBC 实体图和 `SBC-PROV-01`…`SBC-EVID-08` 家族的 `gief/v1.0` 信封。
-- **PermitV1 代理、评审队列、prune 与可解释性（AP-7）：** 统一 `vgt-gedefense-permit-v1` 代理（`AUTHORIZED`/`TOLERATED`/`ANALYST_MODE`，仅做抑制、绝不自动 kill）、持久化加密 TTL 评审队列、evidence-first `QUARANTINE_PRUNE`、每条 XDR 发现的强制可解释字段，以及保持 `0.0 %` 防护误报门槛的 TOLERATED 配置。
-- **可选 Chameleon 身份模式（AP-8）：** 默认关闭：签名清单配置对内核可见的 eBPF 程序/map 标识执行等长中性重命名（174 个符号；`bpftool prog list` 不再显示 `gedefense`/`styx`/`titan` 字符串）；清单缺失或无效时直接失败，绝不静默回退到公开身份。
-- **ARES 自我防御（AP-9）：** TUF 级 feed 防投毒（`S09`：2-of-3 Ed25519 阈值签名、角色分离、防回滚 epoch、语义守卫、LKG 回滚）、遥测抗 DoS 背压（`S12`：256 KiB `SEC_CRIT_EVENTS` ring、令牌桶、诚实上报 `enforced=false`）、管理 API RBAC（`R6`：Observer/Operator/Critical-Unlock 与 step-up 证明）以及 anti-truncate witness 优先推送（`S08`/`S15`）。
-- **参考与基准诚信：** 完整技术证据见 [`docs/V6.3.0-RELEASE.md`](docs/V6.3.0-RELEASE.md)，验证账本见 [`docs/V6.3.0-VERIFICATION.md`](docs/V6.3.0-VERIFICATION.md)。已发布的 VGT HardRed `94.73 / PASS` 与 ARES 结果仍为 **6.2.1 实测**；**V6.3.0 没有新的公开 HardRed/ARES 基准运行**，也不声称任何新得分。
-
-### v6.2.1 — 内核行为 XDR 探针、Inode 隔离锁与服务进程池隔离 *(当前版本 — 2026-11-23)*
-
-- **恶意文件 Inode 锁与核心路径边界（`FIND-G-001`）：** 新增 BPF-LSM `MALWARE_DENIED_INODES`（`4,096` 条目），无需宽泛 DAC 特权即可在非 root `0755` 目录中通过 `file_open` 直接返回 `-EACCES` 封锁恶意样本，并与 `CORE_QUARANTINE_ALLOWED_ROOTS` / `FORBIDDEN_ROOTS` 及 `capture_open_fd_only()` 协同完成 AES-256-GCM 加密归档。
-- **内核行为 XDR 与多核 Tracepoint：** 新增 `EXEC_ARGV_EVENTS`（`512` 字节子 Shell 参数捕获）、`KERNEL_PROBE_EVENTS`（`XDR.PTRACE_ATTEMPT`、`XDR.KERNEL_PROTOCOL_PROBE`、`XDR.CREDENTIAL_PROBE`、`XDR.SYMLINK_OVER_SENSITIVE`）、`PENDING_COLD_OPEN` + `getname_flags` kretprobe、发现阶段规则（`KD.LINUX.DISCOVERY.ACCOUNT`、`KD.LINUX.DISCOVERY.SUID`）及 `rust/vendor/aya` 多核 Perf 激活。
-- **服务池隔离与控制面健康度：** 将勒索检测阈值强化为 `15 → 6`（熵爆发）与 `25 → 18`（元数据风暴），增加 `RANSOM_TRUST_POOL_METADATA`（豁免 `php-fpm`、`lsphp`、`nginx`、`httpd`、`apache2`、`mariadbd`、`postgres`、`redis-server` 等常规缓存重命名）并通过 PPID 专属树隔离（`stop_process_descendants` / `collect_tree`）确保主守护与健康并发 Worker 在线；新增 `isIgnoredNonExternalFlow` 过滤及异步 `ChronosScanner`。
-- **扩展 VGT HardRed 与 ARES 1.2 基准评测（`86.16 → 94.73`）：** 完整对比 HardRed **`94.73 / 100 (PASS)`** 与 5 方案 ARES 1.2（`78.40 / 96.68 / 93.46`，`177/177` 源码引用验证）vs. OSS Best-of-Breed + SafeLine WAF（`59.28 / PASS` · ARES `58.20 / 56.25 / 61.33`）、OSS Best-of-Breed（`55.40 / FAIL`）、SafeLine WAF（`52.92 / PASS` · ARES `53.60 / 51.67 / 42.69`）、Wazuh（`46.70`）、CrowdSec（`36.58`）及 ARES 混合对抗报告已收录于 [`benchmarks/vgt-hardred-6.2.1/`](benchmarks/vgt-hardred-6.2.1/)（`docs/V6.2.1-RELEASE.md`）。
-
-### v6.2.0 — 防御最大化与遥测韧性 *(2026-11-22)*
-
-- **恶意软件与压缩包检测（`M1.1`–`M1.3`）：** 新增 `/tmp`、`/var/tmp`、`/dev/shm`、`/var/www` 的异步 `FAN_CLOSE_WRITE` 监控（跨 UID 全覆盖，支持最高 `16 MiB` 签名探测 / `64 MiB` 全量扫描）、有界递归 ZIP/GZIP/TAR 解包（深度 8，防 zip-slip 路径穿越）、`PrivateTmp=false` 精确路径授权、基于 fd 锁的加密隔离，以及 HTTP `POST`/`PUT` 原始正文恶意载荷检测。
-- **主机遏制与内核守卫（`M2.1`–`M2.4`）：** 基于 ABI-2 的 TITAN Exec 全局 `untrusted` 模式（`4`）；经 `pidfd` 身份核验的 `XDR_KILL_TREE` / `GROUP_STOP` / `GROUP_CONT`；随 Core 挂载自动武装且按 `100 ms` 周期排空的 eBPF 勒索软件传感器（`vfs_write`/`vfs_rename`/`vfs_unlink` + 可逆 `SIGSTOP`）；保护 `/etc/shadow`、`/etc/gshadow` 与密钥文件的 `file_open` BPF-LSM Credential Guard（涵盖本地 TTY `login`/`cron`/`useradd`/`dpkg` 白名单）。
-- **StyX 符号化身份与 16 MiB 流遥测（`M3.1`–`M3.2`）：** 重启/重建自动解析符号化 `cgroup_path`（漂移时明确报告 `degraded` 而非静默 fail-open）、`FLOW_EVENTS` 扩容至 16 MiB / 每批 64 条事件，并在 UI 与 API 中独立区分 `enforcement_active` 与 `telemetry_state`。
-- **WAF、系统加固与攻击故事关联（`M4.1`–`M4.5`、`M5.1`–`M5.2`）：** SQL 注释/空白规范化、敏感配置文件扫描（`/.env`、`.git/config`、备份文件）、分号链参数拆分、`780 KB–1.5 MB` 大包快速通道、确定性 `429 + Retry-After` 限流、`astraeaos-cis-l1` 21 位 Go/Rust sysctl 基线 + 可选 `gedefense-cis-baseline`，以及 Kinetic→XDR 攻击故事关联。
-- **基准测试实证：** 在完成全部审计后置修复后，VGT HardRed 实测取得 **`86.16 / 100 (PASS)`**（`0.0%` Det/Prot FPR，详见 `docs/V6.2.0-RELEASE.md`）。
-
-### v6.1.2 — 安装前置条件与情报签名密钥热修复 *(2026-11-20)*
-
-- **全新安装 `systemd` 前置条件（`scripts/oneclick-installer-header.sh`）：** 在启动单元前创建 `gedefense-desktop` 组以及 `/run/gedefense-scan`、`/run/gedefense`、`/sys/fs/cgroup/vgt-cells` 运行目录（无需重启），将 `CERT_FILE` 统一固定为 `${TLS_DIR}/access.crt`，并加固 `reconcile_post_upgrade_posture()` 的 JSON 解析保护。
-- **Ed25519 签名密钥加载修复（`control/feed_signing.go`）：** 防止以 `0x0d` + `
-` 结尾的 32/64 字节二进制 Ed25519 密钥被误截断末字节。
-
-### v6.1.1 — 安全加固与内核兼容性热修复 *(2026-11-19)*
-
-- **安全审计闭环（`VGT-AUDIT-20261118-GD61` R2/R3 与 `VGT-AUDIT-2026-11-19` `FIND-001`–`FIND-005`）：** 将特权 `AF_PACKET`/`CN_PROC` 采集拆离至 `gedefense-capture-helper.service`（使 `gedefense-control.service` 恢复零特权）；补充 Parser-Cell x32 ABI seccomp 拦截（`FIND-001`）、TLS 传感器有界 Map（`FIND-002`）、Lockdown `auto_network_drop` 状态一致性（`FIND-003`）、复合 USB `bNumInterfaces` 与父设备去授权校验（`FIND-004`），以及 Gateway `Connection` 头部清洗（`FIND-005`）。
-- **Kernel 7.3 BTF 与态势红绿灯自动冷却：** 支持 32 字节扩展 BTF v1 头（`24 <= hdr_len <= data.len()`），并引入两阶段自动冷却机制（`0–15 分钟` 红色 → `15–60 分钟` 黄色 → `> 60 分钟` 绿色）。
-
-### v6.1.0 — Web 暴露面、Worker 完整性、TLS 传感器、LPE 防护与边缘终结器 *(2026-11-18)*
-
-- **模块 A–E 与 10 大 V6 视图：** 新增只读 Web 暴露面扫描（`/proc` + ELF `.rodata` + 环回 ALPN）、工作进程崩溃风暴守护（`signal:signal_deliver` + `XDR.WORKER_CRASH_STORM`）、TLS/ALPN 与 h2 控制风暴预算（`INET_DIAG`）、LPE 套接字封锁（`socket_create` + ASLR/模块黑名单）及 Go 边缘终结器（Settings v18）。
-
-### v6.0.3 — 事件严重级别统一与审计门禁加固 *(当前版本 — 2026-11-17)*
-
-- **端到端小写严重级别规范化（`GD-SEV-001`）：** 统一 `morpheus_rasp`、`styx_egress`、`styx_beacon` 与 `deception` 输出小写严重级别，在 `appendIncident`、`emitStyxBeaconIncident` 与 `State.AddIncident` 补齐规范化，并使 `CaseEngine.IngestIncident` 对未知值显式报错（Fail-Visible），消除严重事件静默丢弃风险。
-- **Web UI 严重级别样式一致性：** 在 `xdr.js`、`l7.js`、`render.js` 与 `app.js` 使用 `.toLowerCase()` 规范化样式类名，并包含防护概览界面优化。
-- **可复现审计门禁：** 将 `scripts/security-audit.sh` 的 Point-4 锚点校验切换至受版本控制的 `docs/POINT4-PHASE1-REPORT.md`。
-
-### v6.0.1 — 服务器安全自启与 AIDE 扫描器校准热修复 *(2026-11-16)*
-
-- **Emergency Lockdown 保持 Opt-in：** `ApplySafeV6DefaultsOnEnforce()` 在切换至 `enforce` 时不再自动武装 Emergency Lockdown；**StyX**（`monitor`）、**Titan Exec Gate**（`contain`）与 **Parser Cells**（`enabled`）保持自动激活，**Emergency Lockdown** 与 **Witness** 需管理员显式启用。
-- **AIDE 与完整性扫描器校准：** 将 `aide`、`aide.wrapper`、`updatedb.*`、`tripwire`、`samhain`、`rkhunter`、`chkrootkit`、`clamscan`、`clamd`、`freshclam`、`osqueryd` 加入 `isSystemOrScannerAccessor`（记录为 `CANARY_SUSPICIOUS_SYSTEM_ACCESS` / `HIGH` 而非误触发锁定）。
-- **相对路径 `.sha256` 校验文件：** `VGT_GeDefense_V6_6.0.1_OneClick.run.sha256` 仅保留相对文件名。
-
-### v6.0.0 — GeDefense V6 反间谍软件与主机主权架构 *(2026-11-15)*
-
-- **五点反间谍软件蓝图：** 集成 StyX 出站与 C2/Beacon 检测（点 3）、支持运行时 BTF 偏移与 Kernel 7.0 split-`ctime` 的 Titan + eBPF-LSM 执行/动态库门禁（点 1）、基于 `gedefense-cell-helper.service` 的临时解析隔离单元（点 2）、带单调 `ledger_epoch` 与 SSRF 钉扎的带外 Witness 客户端（点 4）以及支持 XDP/TC 丢弃锁存、复合 BadUSB 拦截与 15 字节 `comm` 冻结的紧急锁定（点 5）。
-- **布防（`enforce`）安全自动启用：** 鉴于暂未随附独立 V6 UI 面板，在 GeDefense 切换至 `enforce` 时会自动启用安全默认配置（`styx=monitor`、`titan_exec=contain`、`parser_cells=enabled`），`lockdown` 与 `witness` 保持 Opt-in，且管理员通过 API 所做的更改可持久保留。
-- **集成 5.2.0 安全基线：** 包含 `VGT-AUDIT-20261114-GD51` 审计全部 36 项修复、OneClick Ed25519 预校验、Argon2id 准入与迁移以及签名发布包。
-
-### v5.0.0-beta.1 — 自动 Gaia Cell 隔离、受控内核缓解与 PHP/L7 操作加固 *(上一版本)*
-
-- **自动与手动 Gaia Cell 隔离：** 达到或超过 `cells.auto_confine_score` 的事件会通过可逆事务引擎隔离所属 cell；每个事件行提供手动隔离。API：`POST /api/v1/xdr/incidents/{id}/confine`、`GET /api/v1/cells/confinement`。
-- **内核缓解保护：** 可选 sysctl 缓解，带有限试用窗口、主机服务验证与自动回滚；hardening 视图提供 dry-run、apply、rollback 及原因说明。
-- **PHP 上传进度缓解：** 关键 L7 规则 `L7.PHP.SESSION_UPLOAD_PROGRESS`（score 110）与 hardening 控制 `web.php-upload-progress`；`session.upload_progress.enabled = Off` 按实际 Web SAPI 验证。
-- **按规则的 L7 强制：** `l7.enforce_rules` 将阻断限定为指定规则/家族；inline edge 自检 PASS，源站仅绑定 loopback，直接访问源站无法绕过检测。
-
-### v4.3.0 — 内核公告暴露：发现、评分并阻断传感器看不到的风险
-
-- 按随发布提供的内核公告目录评估运行时暴露；`unknown` 绝不被表述为安全。
-- 可达性加权评分与 dashboard 的 kernel-risk 面板（dry-run、apply、rollback）。
-
-
-### v4.2.5 — 全向量实时威胁地图、升级后秒级重防护与传感器自愈
-
-可视化与平台韧性更新。带来汇聚全部攻击向量的实时威胁地图、软件升级后的即时防护重启以及自动化的传感器自愈机制。
-
-* **概览大屏全向量实时威胁地图：**
-  * **全检测链路汇聚呈现：** 概览大屏现已集成交互式全球威胁态势地图，统一汇聚内核级 eBPF/XDP 丢包、L7 应用层 Web 攻击与主机端 XDR 检测事件。
-  * **主权节点精准定位与测地线光弧：** 攻击光弧精准飞向当前主机通过本地 GeoIP 解析的实际地理坐标。未知 IP 与零坐标自动过滤，防止错误落点。
-  * **七路分流统计指标：** 分别统计攻击来源、落点节点、阻断总数、归属国家，并独立呈现 Kinetic、L7、XDR 三层防御向量指标。
-  * **实时事件流水活动带：** 地图下方展示最新 10 条取证账本事件，包含时间戳、检测途径、源 IP/国家、威胁类型及处置动作。
-  * **严格零云端依赖与纯本地资产：** 采用本地打包的 MIT 协议矢量地图与 95 万条离线 GeoIP 矩阵，支持键盘无障碍访问并在开启 `prefers-reduced-motion` 时自动关闭动效。支持中、德、英、俄四国语言。
-* **软件升级后秒级极速重布防（6–7 秒）：**
-  * **宿主硬件环境与发布版本号严格解耦：** 启动监管引擎将主机硬件特征（内核版本、节点名、网卡）与版本号分离。在已适格宿主上执行版本升级不再需要经历 20 分钟的金丝雀浸泡等待，6–7 秒内全量回归 `enforce` 强制拦截。
-* **传感器自愈与网关高可用：**
-  * **流量驱动传感器自动修复：** 解决 `l7_application` 在服务重启后因流量计数重置而长期停留在“等待流量”的问题，`sensor_coverage` 模块通过真实检测链路执行标准自检探针（上限 3 次）。
-  * **首周期前先验内核状态：** 避免启动首秒因时序差产生误告警。
-  * **Systemd 网关 TLS 证书严格成对校验：** 防止因证书和私钥路径不一致导致 `ERR_CONNECTION_REFUSED` 服务中断。
-
-### v4.2.4 — 故障闭锁式强制执行、账本轮转与诚实的界面
-
-加固版本。它消除了平台可能自行失去防护的路径，并让每个界面如实说明内核的实际状态。
-
-* **故障闭锁式强制执行（解除武装事件）：**
-  * **自动降级不再释放已验证的内核策略。** 一条核心无法解释的内核数据记录 - 一个混合的 UDP/TCP 聚合记录，生产者用触发该次输出的数据包的协议为其打标签，因此一条 TCP 记录可以携带比 SYN 更多的尝试 - 此前会中断整个排空；控制平面把失败的排空读取为内核钩子丢失，于是发布门禁以一个不可用的传感器为由，将内核策略对账为 `observe`。每一条阻断条目都被从内核中移除，一台生产主机因此在二十小时内毫无防护地运行，因为没有任何机制把它带回来。现在门禁会确认并保留它已验证的内容（`verified-enforce`），而一个无法确认的状态会报告为 `verified-empty`，不再被当作同一回事。
-  * **重启会保留签名策略所携带的强制执行，** 而不是初始化到 `observe`。
-  * **阶段晋升永不降低已验证的强制执行。** 只有操作员的明确动作才会降低它，而「保留」会作为一项独立的动作被报告（`automatic_response_paused`），而不是被报告为强制执行发生变更。
-  * **排空或解析器故障与「丧失强制执行能力」被区分开来，** 因此一个无法投递数据记录的传感器，不再被读取为一个无法阻断的内核。
-  * **平台会自行重新武装，** 一旦各项门禁通过且平静期成立，并连同此前使其停滞的原因一起记录该过渡。
-  * **成功的验证会清除它所取代的原因。** 原因此前是单向的：只有轮转或操作员恢复才能清除一个原因，因此一次瞬时故障会让 XDR 一直处于降级状态 - 并让主动响应一直处于暂停状态 - 直到有人重启控制平面。
-  * **操作员的部署不再被当作入侵。** 替换 GeDefense 自身的一个组件此前会降级 XDR 并暂停主动响应，因此每发布一个修复都会悄然关掉一部分防护。现在它是一条高严重级别的记录，不附带任何响应；第三方对象仍保留完整反应。
-  * **恢复事件账本不再要求放弃防护，** 而在保留状态下那原本无法达成 - 要修复该账本，先前只能解除那台主机的武装，而该账本存在的意义正是保全它的防护。
-  * **Rust 核心进程只为一致的聚合保留 TCP 标签。** 同质的 TCP 批次保留其 `protocol`/`tcp_flags` 和精确计数器 — 大批量 ACK 或 SYN 不再被误判为矛盾。混合 TCP 与非 TCP 数据包的批次使用显式中性标记（`protocol = 0`、`tcp_flags = 0`）和精确计数器输出，而不再继承触发刷新的那个数据包的标签。与批次长度相矛盾的记录会被拒绝并计为丢失样本（当累积过多时触发排空告警），绝不会被改写为中性的标签。eBPF 生产者每个批次最多刷新 255 个数据包（wire 字段 `attempt_count` 为 `u8`），其 LSM 遍历覆盖从根开始的完整 cgroup-v2 祖先链，因此安装在 Gaia Cell cgroup 上的策略也会覆盖其后代叶子 cgroup。参见 `rust/gedefense-common/src/lib.rs`（wire 解码器）和 `rust/gedefense-ebpf/src/main.rs`（生产者）。
-* **账本保留：**
-  * **两份取证账本都会轮转，而不是被填满。** 触及配额此前会停止记录、降级 XDR 并暂停主动响应，直到操作员手动归档该分段 - 在一台生产主机上一天之内发生了两次。现在达到百分之九十时，已密封的链条会连同清单一起归档，清单载明大小、摘要、序列、头部哈希与校验范围，随后开始一条全新的链条。
-  * **轮转能经受崩溃。** 它先复制再替换，因此被中断的一轮会在下一次启动时依据轮转标记被补完；而一个其清单不匹配的标记会被拒绝，而不是被采信。
-  * **证据账本在有限范围内验证自身。** 启动时此前会验证整份账本 - 约 260 MB，每兆字节约 6.7 秒 - 并超出了该 systemd 单元的启动超时，导致平台和网关都无法启动。现在启动只检查认证过的检查点与一个有限的尾部窗口；历史记录在后台针对一个认证过的水印增量覆盖；完整验证仍然可供操作员使用。未认证的水印会被拒绝，因为接受它曾让一个伪造的文件跳过整段历史。
-  * **被中断的追加会被恢复** - 验证后密封，或作为部分写入被丢弃 - 而不再阻止服务启动。
-* **界面验证：**
-  * **每一句关于状态的陈述都会与其来源数据进行比对。** 对面板进行无头渲染 —— 十一种数据与视图组合、八十条规则 —— 将操作员读到的内容与 API 实际返回的内容进行比较。它发现了三处与其所描述状态相矛盾的陈述，且全部由本版本的修正引入。
-  * **该检查器证明自己能够失败。** 使用故意错误的负载进行自检，并提供回归模式再次移除防护：于是八十条规则中有十八条变红，包括徽章中的 SYSTEM NOMINAL。
-
-### v4.2.1 — 稳定性、证据与界面修复
-
-这是一个修复版本。它不引入任何新的子系统；它让既有的子系统如实说明自身状态，并且不妨碍操作员的工作。
-
-* **证据账本：**
-  * **容量不再被当作数据损坏。** 触及保留配额会设置账本的完整性错误，从而将其永久隔离，并报告 XDR 处于降级状态，提示 "mandatory evidence ledger unavailable"。已满的账本并不是损坏的账本。
-  * **同一份配额，从每一侧读取的结果一致。** 构造阶段宽松，运行阶段严格，因此在已提高配额下合法增长的账本在重启后会被接受，而不再是服务拒绝启动。
-  * **操作员提高的配额就是账本实际执行的配额。** 构造函数用编译内置的 64 MiB 默认值初始化其策略，而追加路径优先采用该值，因此提高到 256 MiB 的配额在每次启动时都被丢弃：账本在 64 MiB 处停止，随后拒绝每一次追加，却仍报告自身健康。平台已悄然停止记录证据。现在两份配额起始值一致，且事后调低的配额仍然生效。
-  * **该状态会自我说明。** "retention budget reached" 与 "integrity unavailable" 是两条独立的消息，各自带有独立的数值与独立的补救措施。
-* **发布门禁：**
-  * **故障安全机制保留其触发原因。** 该原因在下一次刷新时被当前的阻断项列表覆盖，因此一个仍停留在 Observe 模式的平台最终会显示 "release gates satisfied"。
-  * **故障安全机制本身就是取证证据。** 回退是平台自主执行的最具后果的动作，而它此前没有留下任何安全事件。
-* **L7 Application Defense：**
-  * **自检通过会清除过期的降级状态，** 并以十五分钟为上限，使过期的通过结果无法掩盖此后已经失效的路径。
-  * **生成的 nginx 配置此前永远无法应用。** 它会生成一个带有 `listen ... ssl` 的 server 块，并在本应放置证书指令的位置写入一条注释 - nginx 会直接拒绝 - 同时指定了一个已经拥有 server 块的主机名。现在它是两段可插入的片段，并在测试套件中针对真实的 nginx 解析器进行了校验。
-  * **执行路径会被如实报告。** `INGRESS_HEALTH` 会说明内核挂载了哪个钩子 - 原生 XDP、通用 XDP 或 TC ingress - 而不再将三者一律描述为经验证的内核入口生产者，尽管它们在高负载下的行为差异极大。
-  * **当 L7 不在其路径上时，操作员也能看到是否存在 HTTP 流量。** Web 表面发现会报告本主机上是否运行 Web 服务器以及运行在哪些端口上 - 只读、有界，且绝不被呈现为防护，因为检测不等于防护。
-  * **引导式 Web 服务器集成只生成配置文本，别的什么都不做。** 它绝不写入 Web 服务器的配置，绝不重载服务，也绝不声称生成的片段已经生效；由操作员来应用它，随后自检会观测它是否奏效。每一个插值都会先针对封闭文法进行校验，因为其输出是给特权守护进程使用的配置文件。
-  * **被检查的请求是两个计数器之和，而不是其中之一。** 面板此前只显示请求计数器，因此一台其内联监听器已检查 174 个请求的主机，会在自己的 "TRAFFIC ACTIVE" 徽标正下方报告 "0 geprüfte Requests" - 面板自相矛盾，并且掩盖了证明其判定正确的证据。该数值现在是判定所依据的求和结果。
-* **Kinetic Defense：**
-  * **执行动作与实际效果均可见。** 面板会说明所使用的钩子、内核通道的健康状况以及引擎检测到什么并执行了什么。在 Observe 模式下它会明确说明这一点：整列零值意味着响应阶段从未进入，而不是什么也没有看到。
-  * **总览承载各项数值，** 并按每个数值所回答的问题分组。
-  * **覆盖率摘要会解释它所提到的传感器。** 它下方的那句话此前被绑定到某一个传感器名称，因此一条显示 "Mandatory sensors degraded: l7_application" 的摘要，会被健康状况良好的入口生产者那句话来解释 - 一个降级状态的标题配上一段正面的解释，出现在同一个会话中与 Application Defense 页面相矛盾的页面上，而两者读取的是同一份快照。现在原因归属于使平台处于非正常状态的那个传感器，采用服务端的优先级，并且回退文本是已翻译的键，而不是德语字面量。
-  * **该摘要是确定性的。** 它声称以确定性方式判定状态，但它此前按 map 迭代顺序拼接传感器名称，因此同一状态在每次刷新时都会生成顺序不同的句子。
-* **加固与完整性：**
-  * **针对 GeDefense 自身组件的篡改发现不再触发响应。** 产品自身某个二进制文件的摘要不匹配无法与一次经过批准的更新区分开来，而响应引擎却据此采取了遏制动作：一百多条已记录的安全事件表明，该产品会冻结自己的接入网关，这是任何攻击者只要触碰一个文件就能触发的拒绝服务。该发现仍以完整严重级别保留 - 同一规则、同一评分、同一分类 - 只是不施加响应；第三方二进制文件仍保留其响应。产品自身组件通过一个共享根目录识别，该根目录跟随 `VGT_RELEASE_ROOT`。
-  * **十个加固开关在已加固的主机上完全无效，** 因为只要某个开关对应的控制项已处于 PROTECTED 状态，该开关就会被禁用；预检核对的是选择结果，而不是应用该选择。
-  * **安全态势不得自我高估。** 在一台 22 项控制中仅有 2 项可读且两项均通过的主机上，评估得分为 100 并标记为 HARDENED。当证据不足以支撑该等级时，现在会对等级设置上限，并在评分旁标注覆盖率。
-  * **受保护对象发生变更时按对象报告，且只报告一次。** 受保护集合通过 `/current/bin/...` 与 `/releases/<version>/bin/...` 抵达同一个发布二进制文件，因此一次替换会产生两条严重安全事件 - 而且一项未修复的变更会在每个去重周期被反复通告，直到服务重启，于是一个单一事实淹没了记录它的账本。现在报告以解析后的对象及其观测状态为键，并且原因会列出每一个发生变更的对象。
-  * **完整性面板会指明实际处于降级状态的子系统，** 而不是在它所指向的事件账本本身健康且与之毫无关系时显示 `INTEGRITY_FAILURE`。
-* **威胁情报：**
-  * **FireHOL Level 1 被强制执行，而不是仅做关联。** 一次已记录的 Schema 迁移会在既存节点上提高存储值，依据 Feed ID 匹配且永不调低，因为这里是在替操作员更改其自身设置。
-* **控制平面生命周期：**
-  * **一次内部重启，** 可从界面触达，会激活那些已持久化但从未被应用的 RESTART 类取值。当没有任何 supervisor 会把进程重新拉起时，它会拒绝执行，因为在此处退出会停止产品并使其一直处于停止状态。
-* **接入网关与界面：**
-  * **登录表单不再使自己失效。** 每一次页面查看都会生成一个新的 CSRF 令牌并覆盖 Cookie，因此该 Cookie 成了一个单一共享槽位，而不是屏幕上表单自身的属性。该页面带有自己的语言链接，浏览器会预取并预渲染它们，而正是这第二次请求足以让可见表单持有的令牌与 Cookie 不再匹配 - 这就是为什么一位没有做错任何事的操作员无论重新加载多少次都无法登录。第二个标签页、后退/前进恢复以及一个指向该端点的第三方 `<img>` 也会造成同样的结果。现在浏览器获得的令牌会被一直复用直至过期；防护机制未变，仍是 HttpOnly、Secure、SameSite=Strict 的仅主机 Cookie 中的 24 个随机字节，任何其他站点都无法读取或设置。
-  * **过期的登录表单不再以死路收场。** 它此前只是一个裸露的 `403 request rejected`，既不说明原因也不给出出路。拒绝本身未变 - 没有匹配的令牌就不会有任何认证，也不会读取任何密码 - 但现在过期的表单会被带回一个新表单，并附上四种语言的说明，有效期为 1 小时。
-  * **拒绝原因只显示一次。** 它此前在查询字符串中传递，因而成了地址的属性而非事件的属性：重新加载，或从历史记录返回该页面，都会在一个刚刚签发且仍然有效的表单之上重复显示 "this sign-in page had expired"。现在它改由页面消费的一次性 Cookie 承载。
-  * **网关拒绝可被诊断。** 日志会记录原因、期望令牌与到达令牌的指纹以及当时存在哪些 Cookie - 绝不记录令牌值本身。
-  * **登录页面经过重新组织，** 围绕主机在任何凭据存在之前确实能够证明的事实，并将产品标识内嵌，而不是用 CSS 绘制。
-  * **仪表盘的认证界面** 会说明主机能够证明什么，并在声称会话已获授权之前，针对控制平面校验密钥。
-  * **Protection Center 与导航：** 一个逐字重复状态药丸的标题、一个承诺导航却毫无作用的按钮、一个紧挨主操作且永久呈实心红色的紧急停止按钮、一个美元符号导航图标以及一个重复的盾牌图标。
-* **翻译：**
-  * **有 58 个键仅存在于德语中，** 因此阅读英语、俄语或中文的操作员会在执行面板、证据提示与重启界面上看到原始的键标识符。现在覆盖率是每个词条目录自身的属性，并且除文档属性外，`t()` 调用点也会被检查。
-
-### v4.2.0 — Security Fabric Control Plane
-
-* **全面安全审计整改与系统加固：**
-  * **严重：** 彻底修复金丝雀陷阱中的符号链接遍历漏洞（任意文件写入 / root 提权）。采用基于 `openat(2)` 并带有 `O_NOFOLLOW|O_DIRECTORY` 的逐级安全路径解析，强制阻断符号链接并返回 `ELOOP`。
-  * **高危：** 修复 5 个 API 处理器向客户端泄露原始运行时错误信息的缺陷；以强类型的不透明错误响应全面取代脆弱的关键词子串黑名单。
-  * **高危：** 强化 CSPRNG 故障安全退出语义（`log.Fatalf`），防止证据链、安全事件、隔离区及阻断记录降级生成可预测的时间戳 ID。
-  * **高危：** 修复配置导入预览功能中的远程崩溃隐患，采用故障安全的安全密钥派生逻辑。
-  * **高危：** 导入令牌在密码学层面严格绑定已审计内容的哈希指纹，防止令牌重用与碰撞攻击。
-  * **中危：** 策略引擎、威胁情报与 Chronos 检查点全面切换至防崩溃原子写入器（`atomicWriteFile`），具备符号链接拦截、`O_EXCL` 标识及对文件与父目录的双重 `fsync` 刷新。
-  * **中危：** 彻底从 CSP 中移除 `unsafe-inline` 样式指令；HSTS 强制仅在 TLS 加密通信下生效。
-* **Security Fabric Control Plane（安全织网控制平面）：**
-  * 涵盖 12 大模块化子系统（`kinetic`、`network`、`protection`、`xdr`、`l7`、`threat_intel`、`hardening`、`integrity`、`boot_trust`、`policy_trust`、`forensics`、`system`）。
-  * 服务端 Schema 驱动，热路径上的不可变快照，持久化的 `restart_required` 重启感知语义。
-  * 核心安全不变量严禁随意配置修改：内核 Map 规则上限、Core IPC 认证、私钥加密存储、管理网络防自锁、情报源防投毒校验。
-* **控制平面工作台与遥测能力：**
-  * 确定性配置搜索功能（`GET /api/v1/settings/search`），支持查看实时生效值与命中规则释义。
-  * 密码学签名且脱敏的跨域配置导出（`POST /api/v1/settings/export`）。
-  * 真正的双阶段安全导入（`/import/preview` + `/import/apply`），内置 Diff 差异比对及单次有效的过期令牌。
-  * 实时配置漂移感知（`GET /api/v1/settings/drift`），在同步异常时主动触发 `CONFIG_DRIFT` 预警。
-* **完全离线的矢量 SVG 世界地图（jsVectorMap 1.7.0）：**
-  * 100% 本地渲染，无任何外部 CDN 或瓦片地图依赖；原生 button 交互设计确保完全符合 `require-trusted-types-for 'script'` 标准。
-  * 本地 GeoIP/ASN 解析，等值面威胁密度渲染，实时攻击定位标记与流量动态脉冲。
-* **UI/UX Supreme — 现代化控制台重新设计：**
-  * 淘汰传统笨重的卡片网格，采用统一的指挥层与分组遥测面板。
-  * 采用带有发丝分割线的语义化 `<dl>` 数据条带取代厚重的边框。
-  * 纯状态驱动的高亮配色：仅在指标非零时激活功能性提示色。
-  * 完整的键盘操作无障碍支持（`<button>`），符合 WCAG AA 对比度规范，支持 `prefers-reduced-motion`。
-* **运行时与底层引擎修复：**
-  * 修复 `CaseEngine.Status` 中的递归锁死锁问题。
-  * 彻底消除 Airlock 检查器与 CaseEngine 中的故障开放（fail-open）状态。
-  * 修复针对多层级资源请求的 `GET /assets/{name...}` 路由解析异常。
-  * 将 Go 工具链的最低版本安全底线上调至 ≥ 1.26.6（修复 6 个已知的标准库 CVE 漏洞）。
-
-### v4.0.1 — 简体中文本地化、专用 XDR 内核恢复与扩展
-
-- **简体中文（`zh-CN` / `ZH`）本地化：** 全面支持指挥中心简体中文界面（743 个词条，与德语、英语、俄语完全平齐）。在登录页加入中文选项与 Cookie 持久化支持。
-- **专用 XDR 内核恢复面板：** 引入 `#xdr` 专用恢复页面与 `/api/v1/xdr/recovery` 接口，具备 `ARCHIVE_AND_REINITIALIZE_XDR` 确认拦截，可在不借助 SSH 的情况下直接备份受损账本并重启 eBPF 内核传感器。
-- **账本哈希域解耦：** 攻击故事默克尔证据树根（`evidence_root`）与 HMAC 账本链哈希（`record_hash`）各自独立，避免服务重启后误报异常。
-- **全局版本对齐：** 将全套服务组件、网关、Web 端、契约测试、Rust 工作空间及打包脚本统一升级至 `4.0.1`。
-
-### v4.0.0-beta.1 — 原生 L7 应用安全防御与关联加固
-
-**L7 应用安全平面（WAF 与 API 网关）**
-
-- **Go 标准库原生实现：** 内置 L7 检测引擎直接集成于非特权 Go 控制守护进程（`gedefense-control`）内部。100% 纯 Go 实现，无 CGO，零第三方外部依赖，无需 Lua、WASM 或 Node.js 环境。
-- **双模部署架构：**
-  - *建议/独立套接字模式：* 权限为 `0660` 的 Unix 域套接字（`/run/vgt-gedefense-l7/inspect.sock`），提供标准化 JSON 评估接口（`POST /v1/inspect`）及严格字段校验（`DisallowUnknownFields`），对接外部反向代理（nginx、Caddy、Envoy、Apache）。
-  - *原生内联反向代理模式：* 透明内联过滤器（`/run/vgt-gedefense-l7/edge.sock`），串联于 TLS 终止与业务应用之间，提供并发控制与故障安全关闭预算。
-- **严格的上游隔离（防 SSRF）：** 转发目标严格限定为干净的绝对 Unix 套接字或回环 IP 字面量（`127.0.0.1`、`[::1]`）。从架构上杜绝了请求重定向与动态 DNS 解析隐患。
-- **有界规范化与反规避引擎：**
-  - 多轮递归反转义（URL 路径及参数解码、HTML 实体、`\uXXXX` 与 `\xXX` 转义字符）。
-  - 全角字符转半角折叠（Unicode Fullwidth Fold 将 `\uff01`–`\uff5e` 转为 ASCII），防范通过特殊宽字符绕过过滤。
-  - 自动识别并解码参数中的未填充及 URL 安全 Base64 负载。
-  - 流式 JSON 解析器，具有严格的递归深度限制（`max_json_depth = 32`）与令牌配额。
-  - 有界解压缩：通过 `io.LimitReader` 处理 Gzip/Deflate，防御解压炸弹（Zip-bomb DoS）。
-  - 针对非结构化文本使用 16 KB 分块（重叠 256 字节），在无额外内存分配开销的前提下防止跨块截断绕过。
-- **全方位攻击检测特征库（线性 RE2 引擎，零 ReDoS 风险）：**
-  - *SQL 注入（SQLi）：* UNION SELECT 语法、布尔恒真式（`' OR 1=1`）、时间延迟（`pg_sleep`、`benchmark`）及堆叠查询语句。
-  - *跨站脚本（XSS）：* 脚本标签、内联事件处理器（`onerror=`、`onload=`）、危险伪协议（`javascript:`、`data:text/html`）及 `iframe srcdoc` 攻击载荷。
-  - *命令注入 / RCE：* 命令拼接符（`;`、`&&`、`||`、`|`）、命令替换（`$(...)`、反引号）及 PowerShell/CMD 载荷。
-  - *路径遍历与本地文件包含（LFI）：* 遍历序列（`../`、`..\`）、Linux 敏感路径（`/etc/passwd`、`/proc/self/environ`）及流包装器（`php://`、`phar://`、`data://`）。
-  - *SSTI、XXE 与反序列化：* 模板语法（Jinja、Twig、Smarty、Spring）、外部 XML 实体、PHP 序列化对象、Java 序列化魔数（`rO0AB`）及 JNDI/Log4j 表达式。
-  - *HTTP 协议走私与畸形解析：* 重复或非法的 `Content-Length`、CL.TE / TE.CL 冲突、非法传输编码及被禁用的 `TRACE` 方法。
-- **反规避 SSRF 检测与灵活 IP 规范化：**
-  - 规范化并拦截非常规 IPv4 表示法：十六进制、八进制、十进制整数及简写形式。
-  - 全面阻断针对各大云厂商元数据接口的探测（AWS IMDSv2、GCP、Azure、阿里云、Oracle 云）。
-- **内存中 Airlock 复合上传检查（`InspectBytes`）：**
-  - 上传文件在落盘前直接于内存中完成检查。
-  - 严格限制分块数量与文件大小；校验魔数、MIME 匹配、双重扩展名、截断空字节及 SHA-256 恶意哈希。
-- **三层分片令牌桶速率限制：**
-  - 64 个基于 FNV-1a 哈希的独立分片，消除高并发流量下的锁竞争。
-  - 客户端维度的流量速率限制。
-  - 敏感端点（`/login`、`/wp-login.php`、`/api/login`）防爆破保护。
-  - 全局敏感路由限速（防御分布式僵尸网络攻击）。
-- **响应数据泄露防护（DLP）：**
-  - 实时监听上游响应，防止数据库报错、源码、堆栈轨迹及私钥泄露。
-  - 严格保持网络传输层原始字节未被更改。
-
-**XDR 关联分析与主机完整性**
-
-- **Web 证据隔离（防误报屏障）：** L7 事件标记为 `AlertOnly: true`（`ResponseScore: 0`）。Web 告警绝不能自主触发针对主机进程的破坏性处置动作；必须依托独立内核证据。
-- **接入 Trinity XDR 2.0 DAG：** 将 L7 网络事件作为节点写入因果图谱，提供默克尔根签名确证。
-- **主机网络关联追踪：** 实时关联外来恶意 HTTP 请求与 Linux 本地套接字连接（`SO_PEERCRED` 及 `NetConnection` 远程追踪）。
-- **受控强制拦截放行：** 仅当发布门禁达到健康通过的 `Enforce` 状态时，才启用内联拦截阻断。
-
-**Systemd 服务、Linux 访问控制与加固**
-
-- 专用系统组 `gedefense-l7`，通过 `systemd-tmpfiles` 创建受保护目录 `/run/vgt-gedefense-l7`（权限 `0750`）。
-- 套接字权限配置为 `0660`，启用内核级凭据核验（`SO_PEERCRED`）。
-- 锁定 Go 1.27.4 工具链，并通过 AST 静态安全审计验证。
-- CI 持续集成中包含 3 套高强度模糊测试（Fuzzing）。
-
-### v3.0.0-beta.1 — 通用 Linux 原生集成
-
-**集成与部署**
-
-- 将此前 AstraeaOS 专属的安全契约全面推广至通用 Linux 发行版。
-- 添加针对 APT、DNF/YUM、pacman 与 Zypper 的安装依赖自动解析。
-- 新增通用 Polkit 权限控制边界与 systemd 服务就绪助手。
-- 提供基于 Chromium 独立用户配置环境的桌面快捷方式，使用精准的证书 SPKI 锁定，无需修改系统信任库。
-- 将 SDDM、ArchISO 及 Gaia Cells 等特殊行为限定为仅在 AstraeaOS 环境下启用。
-
-**安全与代码健壮性**
-
-- 生成的网关 TLS 证书 SAN 扩展中补充 `localhost`、`127.0.0.1` 及 `::1` 映射。
-- 将恶意软件信誉哈希数据库深度整合至构建、发布、加密配置与回滚状态中。
-- 引入具备故障闭锁特性的资源校验清单、违规机密标识扫描、符号链接拒绝及体积上限约束。
-- 规范化 Linux 脚本换行符（LF）并显式授予执行权限。
-
-**工程化发布流水线**
-
-- 实施严格的 Go 单元/竞态/模糊测试及静态安全门禁。
-- 锁定 Rust 用户态测试、Rust Core 正式版本及 no_std eBPF 程序构建。
-- 引入基于哈希指纹锁定的 Ubuntu、Fedora、Arch 与 openSUSE 矩阵构建任务。
-- 将 GitHub Actions 插件锁定至固定的 40 位 Git Commit 哈希。
-- 引入特权主机流水线，实测 bpffs、eBPF、XDP 挂载、IPC/TLS、systemd 与 Polkit。
-
-**稳固的安全基石**
-
-- Go 控制平面、Rust 响应核心与 Rust eBPF/XDP 数据平面构成的三权分立安全基础保持不变。
-- Observe → Canary → Enforce 演进逻辑、证据账本、加密隔离库与可逆加固机制始终如一。
-
-### v1.0.0-beta.5 — 完整测试版 (Complete Beta)
-
-里程碑意义的 Complete Beta 标志 — 核心防御链条功能完备并可供测试。3.5.1 安装程序配备全流程验证门禁（编译、内核验证器、XDP 挂载、IPC、后端、TLS）。拥有与 GaiaOS 源码逐字节一致的镜像仓库，全量测试矩阵顺利通过。
-
----
-
-## 🔗 VGT 主权生态项目
-
-| 项目名称 | 定位分类 | 核心使命 |
+| 文档资源 | 用途 | 链接 |
 |---|---|---|
-| 🛡️ **VGT GeDefense** | **Linux 主权安全矩阵** | 内核就近防御、主机 XDR、加密证据账本 — 当前所在项目 |
-| 🧠 **[VGT AETHEL](https://github.com/visiongaiatechnology/aethel)** | **主权 AI 操作系统** | 本地运行、由系统操作员全权治理的主权人工智能系统 |
-| 🖥️ **[VGT WP-Desk](https://github.com/visiongaiatechnology/vgtdesk)** | **OS 适配层 / UX** | 经过深度安全加固的 WordPress 操作员工作空间 |
-| ⚔️ **[VGT Sentinel](https://github.com/visiongaiatechnology/sentinelcom)** | **WAF / IDS** | 适用于 WordPress 的零信任 Web 应用防火墙 |
-| ⚡ **[VGT Auto-Punisher](https://github.com/visiongaiatechnology/vgt-auto-punisher)** | **IDS** | L4+L7 混合式入侵检测防御系统 |
-| 🔐 **[VGT Omega Vault](https://github.com/visiongaiatechnology/vgt-omega-vault)** | **加密表单系统** | 采用 AES-256-GCM 高强度加密的 WordPress 数据保险库 |
-| 🌐 **[GaiaCom](https://github.com/visiongaiatechnology/GaiaCom)** | **安全通信** | 后量子加密、联邦化端到端加密（E2EE）安全通信平台 |
-| 📊 **[VGT Dattrack](https://github.com/visiongaiatechnology/dattrack)** | **数据分析** | 主权掌控的本地隐私数据分析系统 |
+| **架构总览** | 信任域图示与 4,400+ 行完整技术架构 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) · [`ARCHITECTURE.md`](ARCHITECTURE.md) |
+| **反间谍规范** | `AP-0`–`AP-9` 详细规格与 API 状态字段 | [`docs/ANTISPYWARE.md`](docs/ANTISPYWARE.md) |
+| **安全与密码学** | 安全不变量、加密配置与 `6.3.0` 已知边界 | [`docs/SECURITY-MODEL.md`](docs/SECURITY-MODEL.md) · [`CRYPTOGRAPHY.md`](CRYPTOGRAPHY.md) |
+| **API 与运维** | RBAC 角色体系、`/api/v1/*` 接口与运维配置 | [`docs/API-REFERENCE.md`](docs/API-REFERENCE.md) · [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md) |
+| **性能与排障** | 开销横向实测数据与常见故障排查 | [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md) · [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) |
+| **开发与测试** | 本地测试套件、模糊测试、打包与 Beta 验证计划 | [`docs/DEVELOPER-GUIDE.md`](docs/DEVELOPER-GUIDE.md) · [`BETA-TEST-PLAN.md`](BETA-TEST-PLAN.md) |
+
+### GeDefense 全平台主权安全矩阵
+
+| 平台 | 定位 | 仓库地址 |
+|---|---|---|
+| **GeDefense Linux** *(本仓库)* | 内核 eBPF/XDP、L7 WAF、主机 XDR 与 `AP-0`–`AP-9` 反间谍防御 | [`visiongaiatechnology/gedefense`](https://github.com/visiongaiatechnology/gedefense) |
+| **GeDefense Windows** | Windows 11 本地主权安全台、Defender/ASR/WFP 与 MHX EDR | [`visiongaiatechnology/gedefensewin`](https://github.com/visiongaiatechnology/gedefensewin) |
+| **GeDefense Android** | Android 本地 VPN 防护、终端遥测与加密取证 | [`visiongaiatechnology/gedefenseandroid`](https://github.com/visiongaiatechnology/gedefenseandroid) |
+| **GeDefense Android TV** | Android TV / Google TV 环回 VPN 与 Kinetic-Lite 防护 | [`visiongaiatechnology/gedefense_androidtv`](https://github.com/visiongaiatechnology/gedefense_androidtv) |
+| **GeDefense WordPress** | AGPL-3.0 WordPress 安全套件（ZEUS WAF、AEGIS、TRINITY XDR） | [`visiongaiatechnology/gedefensewp`](https://github.com/visiongaiatechnology/gedefensewp) |
 
 ---
 
-## 💙 支持我们的开源使命
+## 12 · 版本历史
 
-[![Donate](https://img.shields.io/badge/Donate-PayPal-00457C?style=for-the-badge&logo=paypal)](https://paypal.me/dergoldenelotus)
-
-| 赞助途径 | 接收地址 / 链接 |
-|---|---|
-| **PayPal** | [paypal.me/dergoldenelotus](https://paypal.me/dergoldenelotus) |
-| **Bitcoin** | `bc1q3ue5gq822tddmkdrek79adlkm36fatat3lz0dm` |
-| **ETH / USDT (ERC-20)** | `0xD37DEfb09e07bD775EaaE9ccDaFE3a5b2348Fe85` |
-
----
-
-## 📄 开源许可证
-
-**AGPL-3.0-only · © 2026 VisionGaia Technology · 德国科隆**
-
-VGT GeDefense 属于自由开源软件：您可以根据自由软件基金会发布的 GNU Affero 通用公共许可证（仅限第 3 版）条款重新分发和/或修改它。任何衍生作品或基于网络运行的修改版本，均必须以相同的许可证条款公开发布。
-
-企业级部署支持、TIER-0 安全审计认证（VGT SafetySys™）及商业豁免许可咨询：[visiongaiatechnology.de](https://visiongaiatechnology.de)
-
-### 🗺️ 数据归属与本地离线 GeoIP / ASN 数据库
-
-GeDefense 深度内置 100% 本地纯离线运行的 GeoIP 与 Origin-ASN 威胁富化数据库（`/var/lib/vgt/gedefense/geoip.csv`），确保在运行时绝不发起任何外部第三方云端查询或泄露网络遥测：
-
-* **DB-IP Lite 数据集：** 本软件包含由 DB-IP 创建的 GeoLite2 或 DB-IP Lite 离线数据，可在 [https://db-ip.com/](https://db-ip.com/) 获取，基于知识共享署名 4.0 国际许可协议 (CC BY 4.0) 发布。必须保留来源署名 (Attribution)。
-* **Origin ASN 映射数据：** 来源 ASN 路由归属数据由 [sapics/ip-location-db](https://github.com/sapics/ip-location-db) 项目提供，遵循公有领域奉献与许可协议 (PDDL)。
-
-#### 自动化更新本地 GeoIP 数据库
-
-系统运维人员可通过内置的生成与合并脚本随时全量拉取、依最长前缀匹配 (LPM) 紧凑聚合并原子化更新本地数据库：
-
-```bash
-# 下载最新 DB-IP City 与 Origin-ASN 数据集，编译压缩为 < 128 MiB / < 1,000,000 前缀并原子化替换 /var/lib/vgt/gedefense/geoip.csv
-sudo python3 scripts/update-geoip-db.py /var/lib/vgt/gedefense/geoip.csv
-```
+| 版本 | 日期 | 核心里程碑 | 详情 |
+|---|---|---|---|
+| **`v6.3.0`** *(当前版本)* | `2026-11-26` | `AP-0`–`AP-9` 反间谍防护、5 波架构重构、内核与工作池稳定性修复、HardRed `1.2` (`94.95`) / `1.3` (`90.09 · PASS`) + ARES `1.3` | [`CHANGELOG.md`](CHANGELOG.md) · [`RELEASE-NOTES.md`](RELEASE-NOTES.md) |
+| `v6.2.1` | `2026-11-23` | `MALWARE_DENIED_INODES` 内核锁、内核行为 XDR、服务工作池隔离 (`94.73 · PASS`) | [`docs/V6.2.1-RELEASE.md`](docs/V6.2.1-RELEASE.md) |
+| `v6.2.0` | `2026-11-22` | `FAN_CLOSE_WRITE` 隔离库、Titan `untrusted` 模式、eBPF RansomSensor (`86.16 · PASS`) | [`docs/V6.2.0-RELEASE.md`](docs/V6.2.0-RELEASE.md) |
+| `v6.1.0` – `v6.1.2` | `2026-11-18..20` | 模块 A–E（暴露面/WorkerGuard/TLS/LPE/Edge）、隔离抓包助手、Kernel 7.3 BTF | [`docs/V6.1.2-HOTFIX.md`](docs/V6.1.2-HOTFIX.md) |
+| `v6.0.0` – `v6.0.3` | `2026-11-15..17` | 五点主权架构（StyX、Titan、解析沙盒、Witness、紧急锁定） | [`CHANGELOG.md`](CHANGELOG.md) |
 
 ---
 
-### 第三方许可证
+## 13 · 开源许可与第三方署名
 
-地图使用 **jsVectorMap 1.7.0**（MIT，Copyright © 2020 Mustafa Omar；世界地图 `world-merc.js`）。`geoip.csv` 离线数据基于 **iplocate/ip-address-databases**（CC BY-SA 4.0；由 VisionGaia Technology 修改）、DB-IP Lite（CC BY 4.0）以及 `sapics/ip-location-db` 的 Origin-ASN（PDDL）。完整声明见 [THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md)。
+GeDefense Linux 采用 **`AGPL-3.0-only`** 开源协议（见 [`LICENSE`](LICENSE)）。随附的第三方组件与公开数据集均独立适用其各自许可条款（完整声明见 [`THIRD-PARTY-LICENSES.md`](THIRD-PARTY-LICENSES.md)）：
 
+| 组件 / 数据集 | 来源 | 许可证 |
+|---|---|---|
+| **jsVectorMap 1.7.0**（本地化 SVG 地图） | [themustafaomar/jsvectormap](https://github.com/themustafaomar/jsvectormap) | **MIT** © 2020 Mustafa Omar |
+| **IP-to-Country / IP-to-ASN**（离线 `geoip.csv`） | [iplocate/ip-address-databases](https://github.com/iplocate/ip-address-databases) | **CC BY-SA 4.0**（由 VGT 为 GeDefense 转换并依同协议分发） |
+| **DB-IP Lite**（更新器城市库数据源） | [db-ip.com](https://db-ip.com/) | **CC BY 4.0**（需保留署名） |
+| **Origin-ASN 数据**（更新器源） | [sapics/ip-location-db](https://github.com/sapics/ip-location-db) | **PDDL** |
+| **Qt 6**（可选桌面托盘动态链接） | [qt.io](https://www.qt.io/) | **LGPL-3.0** / Qt 商业条款 |
 
-<div align="center">
-
-**VISIONGAIATECHNOLOGY – WE ARCHITECT THE FUTURE OF SECURITY.**
-
-[![VGT](https://img.shields.io/badge/VisionGaia-Technology-cyan?style=for-the-badge)](https://visiongaiatechnology.de)
-
-*VGT GeDefense 6.3.0 (V6) — Universal Linux Security Fabric // Rust eBPF/XDP Data Plane // Go Control Plane // Host XDR // Ed25519 Evidence Ledger // AES-256-GCM Encrypted Vault // Reversible Hardening // AstraeaOS-Native Adapter // Separated Trust Domains // No Cloud Control Plane // AGPL-3.0-only // Linux x86_64*
-
-</div>
+*控制台运行期间完全离线本地加载资源，不向任何外部 CDN 或云服务发起请求。*

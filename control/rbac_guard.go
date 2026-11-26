@@ -157,6 +157,8 @@ func (c *nonceReplayCache) claim(nonce string, expires, now time.Time) bool {
 	if nonce == "" {
 		return false
 	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if now.Sub(c.lastGC) > time.Minute {
 		for value, at := range c.seen {
 			if now.After(at) {

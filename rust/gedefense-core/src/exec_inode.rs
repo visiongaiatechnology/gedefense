@@ -118,9 +118,27 @@ const AUTH_EXEC_PATHS: &[&str] = &[
     // (`(sd-pam)`, `(sd-executor)`): the inode is the trusted identity of that
     // packaged binary, so a local attacker cannot borrow it without root.
     "/usr/lib/systemd/systemd",
+    "/usr/lib/systemd/systemd-executor",
+    "/lib/systemd/systemd-executor",
+    // Non-symlinked system install path for `gedefense-control` (symlinked
+    // `/opt/vgt/gedefense/current/...` release binaries are registered from
+    // `/proc/self/exe` sibling resolution in `populate_default_trust`).
+    "/usr/bin/gedefense-control",
 ];
 /// System binaries with the full ransom exemption (never credential readers).
-const SYSTEM_RANSOM_PATHS: &[&str] = &["/usr/bin/systemctl"];
+const SYSTEM_RANSOM_PATHS: &[&str] = &[
+    "/usr/bin/systemctl",
+    "/usr/bin/apt",
+    "/usr/bin/apt-get",
+    "/usr/bin/dpkg",
+    "/usr/bin/dpkg-deb",
+    "/usr/bin/apt-helper",
+    "/usr/lib/apt/apt-helper",
+    "/usr/lib/apt/methods/http",
+    "/usr/lib/apt/methods/store",
+    "/usr/lib/apt/methods/rred",
+    "/usr/lib/apt/methods/gpgv",
+];
 /// Pooled web/DB service workers: skip the metadata (rename/unlink) signal only;
 /// the entropy signal stays live. Exact known packager paths; a missing path is
 /// skipped and counted, never guessed by a glob.
@@ -131,6 +149,28 @@ const POOL_SERVICE_PATHS: &[&str] = &[
     "/usr/sbin/php-fpm8.3",
     "/usr/sbin/php-fpm8.4",
     "/usr/sbin/php-fpm8.5",
+    "/usr/sbin/php-fpm8.6",
+    // aaPanel / BT-Panel immutable server binary tree (never /www/wwwroot).
+    "/www/server/php/80/sbin/php-fpm",
+    "/www/server/php/81/sbin/php-fpm",
+    "/www/server/php/82/sbin/php-fpm",
+    "/www/server/php/83/sbin/php-fpm",
+    "/www/server/php/84/sbin/php-fpm",
+    "/www/server/php/85/sbin/php-fpm",
+    "/www/server/php/86/sbin/php-fpm",
+    "/www/server/nginx/sbin/nginx",
+    "/www/server/apache/bin/httpd",
+    "/www/server/mysql/bin/mysqld",
+    "/www/server/mysql/bin/mariadbd",
+    // Plesk / OpenLiteSpeed packaged binaries.
+    "/opt/plesk/php/8.1/sbin/php-fpm",
+    "/opt/plesk/php/8.2/sbin/php-fpm",
+    "/opt/plesk/php/8.3/sbin/php-fpm",
+    "/opt/plesk/php/8.4/sbin/php-fpm",
+    "/opt/plesk/php/8.5/sbin/php-fpm",
+    "/opt/plesk/php/8.6/sbin/php-fpm",
+    "/usr/local/lsws/bin/openlitespeed",
+    "/usr/local/lsws/bin/litespeed",
     "/usr/sbin/nginx",
     "/usr/sbin/mariadbd",
     "/usr/sbin/mysqld",
@@ -149,6 +189,7 @@ pub(crate) struct ExecInodeCore {
     offsets: AyaArray<MapData, u32>,
     trusted: AyaHashMap<MapData, [u8; 16], u32>,
     ttl: AyaHashMap<MapData, [u8; 16], u32>,
+    self_daemons: Option<AyaHashMap<MapData, [u8; 16], u8>>,
     allowed: PerCpuArray<MapData, u64>,
     denied: PerCpuArray<MapData, u64>,
     emitted: PerCpuArray<MapData, u64>,

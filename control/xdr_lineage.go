@@ -118,6 +118,8 @@ func (e *XDREngine) Run(ctx context.Context) {
 	var execRetryAfter time.Time
 	var egressRetryAfter time.Time
 	var malwareRetryAfter time.Time
+	var malwareStatusRetryAfter time.Time
+	var malwareHealthDegraded bool
 	var cellLSMEventRetryAfter time.Time
 	var cellLSMPolicyRetryAfter time.Time
 	// POINT 3 / P3-T5: independent rate limits for the kernel flow channel. The
@@ -155,6 +157,8 @@ func (e *XDREngine) Run(ctx context.Context) {
 	var sbcCorroborationRetryAfter time.Time
 	var execArgvRetryAfter time.Time
 	var kernelProbeRetryAfter time.Time
+	var xdrKernelStatusRetryAfter time.Time
+	var lastXdrKernelDrops uint64
 	for {
 		select {
 		case <-ctx.Done():
@@ -284,6 +288,35 @@ func (e *XDREngine) Run(ctx context.Context) {
 							e.recordMalwareEvent(event)
 						}
 					}
+				}
+			}
+			if e.core != nil && !now.Before(malwareStatusRetryAfter) {
+				status, statusErr := e.core.MalwareStatus()
+				if statusErr != nil {
+					if strings.Contains(strings.ToLower(statusErr.Error()), "unknown command") {
+						malwareStatusRetryAfter = now.Add(30 * time.Second)
+					} else {
+						malwareStatusRetryAfter = now.Add(5 * time.Second)
+					}
+				} else {
+					if status.State == "degraded" {
+						malwareSensorOnline = false
+						if !malwareHealthDegraded {
+							malwareHealthDegraded = true
+							detail := status.LastError
+							if detail == "" {
+								detail = "fanotify on-access session degraded"
+							}
+							e.state.AddEvent(Event{Severity: "critical", Kind: "xdr.malware_sensor_degraded", Source: "kernel", Message: fmt.Sprintf("Fanotify on-access sensor degraded (%s, failures=%d)", detail, status.Failures)})
+							e.state.SetXDRStatus(XDRStatus{Enabled: true, Mode: runtimeXDRMode, Sensor: xdrSensorMode(execSensorOnline, egressSensorOnline, malwareSensorOnline, e.cfg.Cells.Enabled, cellLSMEventOnline && cellLSMPolicyOnline), ProtectedObjects: len(e.protected), QueueCapacity: cap(e.highJobs) + cap(e.normalJobs), Behavior: e.behavior.Summary()})
+						}
+					} else if status.State == "online" && malwareHealthDegraded {
+						malwareHealthDegraded = false
+						malwareSensorOnline = true
+						e.state.AddEvent(Event{Severity: "info", Kind: "xdr.malware_sensor_recovered", Source: "kernel", Message: "Fanotify on-access sensor recovered"})
+						e.state.SetXDRStatus(XDRStatus{Enabled: true, Mode: runtimeXDRMode, Sensor: xdrSensorMode(execSensorOnline, egressSensorOnline, malwareSensorOnline, e.cfg.Cells.Enabled, cellLSMEventOnline && cellLSMPolicyOnline), ProtectedObjects: len(e.protected), QueueCapacity: cap(e.highJobs) + cap(e.normalJobs), Behavior: e.behavior.Summary()})
+					}
+					malwareStatusRetryAfter = now.Add(5 * time.Second)
 				}
 			}
 			// POINT 3 / P3-T5: drain the kernel's aggregated flow telemetry on its own
@@ -420,6 +453,34 @@ func (e *XDREngine) Run(ctx context.Context) {
 					}
 				}
 				kernelProbeRetryAfter = now.Add(nextDelay)
+			}
+			if runtime.XDREnabled && e.probeCore != nil && !now.Before(xdrKernelStatusRetryAfter) {
+				if statusClient, ok := e.probeCore.(interface {
+					XdrKernelStatus() (CoreXdrKernelStatus, error)
+				}); ok {
+					kStatus, kErr := statusClient.XdrKernelStatus()
+					if kErr == nil {
+						totalDrops := kStatus.ExecArgvDrops + kStatus.KernelProbeDrops + kStatus.RejectedExecArgv + kStatus.RejectedProbes
+						if totalDrops > lastXdrKernelDrops {
+							delta := totalDrops - lastXdrKernelDrops
+							lastXdrKernelDrops = totalDrops
+							e.state.AddEvent(Event{
+								Severity: "warning",
+								Kind:     "xdr.kernel_ring_overflow",
+								Source:   "kernel",
+								Message: fmt.Sprintf(
+									"Kernel XDR telemetry drops increased by %d (exec_argv_drops=%d kernel_probe_drops=%d rejected_exec_argv=%d rejected_probes=%d)",
+									delta, kStatus.ExecArgvDrops, kStatus.KernelProbeDrops, kStatus.RejectedExecArgv, kStatus.RejectedProbes,
+								),
+							})
+						}
+						xdrKernelStatusRetryAfter = now.Add(10 * time.Second)
+					} else {
+						xdrKernelStatusRetryAfter = now.Add(30 * time.Second)
+					}
+				} else {
+					xdrKernelStatusRetryAfter = now.Add(30 * time.Second)
+				}
 			}
 			if now.Before(egressRetryAfter) {
 				continue

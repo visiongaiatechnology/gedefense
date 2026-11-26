@@ -419,6 +419,15 @@ func (e *TitanEngine) validateTitanContainSafePath(path string) error {
 	if !info.Mode().IsRegular() {
 		return errors.New("containment requires a regular file")
 	}
+	for dir := filepath.Dir(clean); dir != "" && dir != "/" && dir != "."; dir = filepath.Dir(dir) {
+		dirInfo, dirErr := os.Lstat(dir)
+		if dirErr != nil || dirInfo.Mode()&os.ModeSymlink != 0 {
+			return errors.New("containment refuses a symlinked parent directory")
+		}
+		if parent := filepath.Dir(dir); parent == dir {
+			break
+		}
+	}
 	if info.Size() < 0 || info.Size() > policy.MaxFileBytes {
 		return errors.New("containment object exceeds the bounded size")
 	}

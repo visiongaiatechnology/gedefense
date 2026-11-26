@@ -12,6 +12,7 @@ pub(crate) fn dispatch(
         ["EXEC_EVENTS"] => core.take_exec_events(),
         ["EXEC_ARGV_EVENTS"] => core.xdr_kernel.take_exec_argv_events(),
         ["KERNEL_PROBE_EVENTS"] => core.xdr_kernel.take_kernel_probe_events(),
+        ["XDR_KERNEL_STATUS"] => Ok(core.xdr_kernel.status()),
         ["XDR_STOP", pid, start, rule] => {
             let pid = pid.parse::<i32>()?;
             let start = start.parse::<u64>()?;

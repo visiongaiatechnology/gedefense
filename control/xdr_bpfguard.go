@@ -175,7 +175,7 @@ func (e *XDREngine) consumeBpfGuardEvents(events []CoreBpfGuardEvent, dropped ui
 			continue
 		}
 		if tolerated, reason := e.bpfGuardEventTolerated(event); tolerated {
-			if e.state != nil {
+			if e.state != nil && reason != "own core daemon" && reason != "own control process" {
 				e.state.AddEvent(Event{Time: now, Severity: "info", Kind: "xdr.bpf_guard_tolerated", Source: "kernel",
 					Message: fmt.Sprintf("Tolerated BPF loader activity observed: pid=%d tgid=%d uid=%d comm=%s action=%s command=%s (%s)",
 						event.PID, event.TGID, event.UID, event.Comm, bpfGuardActionName(event.Action), bpfGuardCommandName(event.Command), reason),
@@ -199,36 +199,55 @@ func (e *XDREngine) consumeBpfGuardEvents(events []CoreBpfGuardEvent, dropped ui
 	}
 }
 
+func (e *XDREngine) resolveProcessPath(pid int) string {
+	if pid <= 0 {
+		return "unknown"
+	}
+	if e != nil && e.execPathOverride != nil {
+		return e.execPathOverride(pid)
+	}
+	return titanExecProcessPath(uint32(pid))
+}
+
 // bpfGuardEventTolerated is the single TOLERATED policy enforcement point for
-// untrusted kernel records. A loader is tolerated when
-//  1. its task name is in bpfGuardToleratedComms,
-//  2. its executable resolves under an installation-managed path
-//     (/usr/bin, /usr/sbin, /usr/local/bin, /opt), or
-//  3. it is a PermitV1-style trusted parent's child (parent comm in
-//     bpfGuardTrustedParentComms and the loader is not a shell),
-//
-// or when the process is our own control process. Everything else is untrusted.
+// untrusted kernel records. A loader is never tolerated solely on mutable task
+// `comm` (`prctl(PR_SET_NAME)` spoofing); its verified executable path must be
+// known and not in a writable drop path:
+//  1. own control process (`selfPID`) or SO_PEERCRED-verified core daemon (`CorePID`),
+//  2. installation-managed executable path (/usr/bin, /usr/sbin, /usr/local/bin,
+//     /opt, /usr/lib/systemd, /usr/libexec), or
+//  3. PermitV1-style trusted parent's non-shell, non-temp verified child binary.
 func (e *XDREngine) bpfGuardEventTolerated(event CoreBpfGuardEvent) (bool, string) {
 	if e != nil && e.selfPID > 0 && event.PID == e.selfPID {
 		return true, "own control process"
 	}
+	if e != nil && e.core != nil && event.PID > 0 && event.PID == e.core.CorePID() {
+		return true, "own core daemon"
+	}
 	comm := strings.ToLower(strings.TrimSpace(event.Comm))
-	if _, ok := bpfGuardToleratedComms[comm]; ok {
+	path := e.resolveProcessPath(event.PID)
+	if path == "" || path == "unknown" {
+		if resolved := resolveToleratedPathByInode(comm, event.ExeDev, event.ExeIno); resolved != "" {
+			path = resolved
+		}
+	}
+	if path == "" || path == "unknown" || bpfGuardPathUnderAny(path, bpfGuardTempPathPrefixes) {
+		return false, ""
+	}
+	if _, ok := bpfGuardToleratedComms[comm]; ok && bpfGuardPathUnderAny(path, bpfGuardToleratedPathPrefixes) {
 		return true, "tolerated loader comm"
 	}
-	path := titanExecProcessPath(uint32(event.PID))
-	if path != "unknown" {
-		for _, prefix := range bpfGuardToleratedPathPrefixes {
-			if strings.HasPrefix(path, prefix) {
-				return true, "installation-managed executable path"
-			}
-		}
+	if bpfGuardPathUnderAny(path, bpfGuardToleratedPathPrefixes) {
+		return true, "installation-managed executable path"
 	}
 	parentPID, parentComm := bpfGuardParentInfo(event.PID)
 	if parentPID > 0 && parentComm != "" {
-		if _, ok := bpfGuardTrustedParentComms[parentComm]; ok {
-			if _, shell := bpfGuardShellComms[comm]; !shell {
-				return true, "trusted parent"
+		parentPath := e.resolveProcessPath(parentPID)
+		if parentPath != "" && parentPath != "unknown" && !bpfGuardPathUnderAny(parentPath, bpfGuardTempPathPrefixes) {
+			if _, ok := bpfGuardTrustedParentComms[parentComm]; ok {
+				if _, shell := bpfGuardShellComms[comm]; !shell {
+					return true, "trusted parent"
+				}
 			}
 		}
 	}

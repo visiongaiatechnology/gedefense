@@ -89,10 +89,14 @@ function setPath(root, path, value) {
   const keys = path.split('.');
   let target = root;
   for (let index = 0; index < keys.length - 1; index++) {
-    if (!target[keys[index]] || typeof target[keys[index]] !== 'object') target[keys[index]] = {};
-    target = target[keys[index]];
+    const key = keys[index];
+    if (key === '__proto__' || key === 'constructor' || key === 'prototype') return;
+    if (!Object.prototype.hasOwnProperty.call(target, key) || typeof target[key] !== 'object' || target[key] === null) target[key] = {};
+    target = target[key];
   }
-  target[keys[keys.length - 1]] = value;
+  const leaf = keys[keys.length - 1];
+  if (leaf === '__proto__' || leaf === 'constructor' || leaf === 'prototype') return;
+  target[leaf] = value;
 }
 
 function formatScalar(value) {

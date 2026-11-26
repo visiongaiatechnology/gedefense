@@ -70,6 +70,7 @@ var webAssetAllowlist = map[string]bool{
 	"js/navigation.js":        true,
 	"js/views_overview.js":    true,
 	"js/views_xdr_spyware.js": true,
+	"js/views_antispyware.js": true,
 	"js/views_titan_styx.js":  true,
 	"js/views_logs_audit.js":  true,
 	"css/tokens.css":          true,

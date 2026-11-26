@@ -58,7 +58,7 @@ function renderFIM(status) {
   text('fimGeneration', number(status?.generation));
   const findings = Array.isArray(status?.last_scan?.findings) ? status.last_scan.findings : [];
   text('fimFindings', number(findings.length));
-  text('fimRoots', Array.isArray(status?.roots) && status.roots.length ? status.roots.join(' Â· ') : t('fim.noPaths'));
+  text('fimRoots', Array.isArray(status?.roots) && status.roots.length ? status.roots.join(' · ') : t('fim.noPaths'));
   const body = byID('fimRows');
   if (!findings.length) {
     emptyTable(body, 5, t('fim.noFindings'));

@@ -66,6 +66,8 @@ MAX_PREFIXES = 950_000             # Strict safety margin below 1,000,000 limit
 GEOIP_INTEGRITY_SCHEMA = "vgt.gedefense.geoip-integrity.v1"
 DEFAULT_CACHE_DIR = "/var/cache/vgt-gedefense"
 MAX_SIGNATURE_BYTES = 1024
+MAX_DOWNLOAD_BYTES = 128 * 1024 * 1024
+MAX_DECOMPRESSED_BYTES = 512 * 1024 * 1024
 
 DBIP_IPV4_URL = "https://github.com/sapics/ip-location-db/releases/download/latest/dbip-city-ipv4.csv.gz"
 DBIP_IPV6_URL = "https://github.com/sapics/ip-location-db/releases/download/latest/dbip-city-ipv6.csv.gz"
@@ -266,6 +268,8 @@ def download_cached(url: str, cache_dir: Path, description: str, force: bool = F
             if not str(final_url).startswith("https://"):
                 raise RuntimeError(f"download redirected outside HTTPS: {final_url}")
             total = int(resp.headers.get("content-length", 0))
+            if total > MAX_DOWNLOAD_BYTES:
+                raise RuntimeError(f"upstream content-length exceeds {MAX_DOWNLOAD_BYTES} bytes for {description}")
             downloaded = 0
             with os.fdopen(fd, "wb") as handle:
                 fd = -1  # ownership transferred to the file object
@@ -273,8 +277,10 @@ def download_cached(url: str, cache_dir: Path, description: str, force: bool = F
                     chunk = resp.read(1024 * 1024)
                     if not chunk:
                         break
-                    handle.write(chunk)
                     downloaded += len(chunk)
+                    if downloaded > MAX_DOWNLOAD_BYTES:
+                        raise RuntimeError(f"downloaded payload exceeds {MAX_DOWNLOAD_BYTES} bytes for {description}")
+                    handle.write(chunk)
                     if total > 0:
                         pct = downloaded * 100 // total
                         print(f"\r    {description}: {downloaded // (1024*1024)} MiB / {total // (1024*1024)} MiB ({pct}%)", end="", flush=True)
@@ -363,6 +369,16 @@ class MergedRange:
         self.as_name = as_name
 
 
+def _iter_bounded_gzip_csv_lines(gz_path: Path, max_bytes: int = MAX_DECOMPRESSED_BYTES):
+    total_bytes = 0
+    with gzip.open(gz_path, "rt", encoding="utf-8", errors="replace") as f:
+        for line in f:
+            total_bytes += len(line.encode("utf-8", errors="ignore"))
+            if total_bytes > max_bytes:
+                raise RuntimeError(f"decompressed GeoIP stream exceeded {max_bytes} bytes: {gz_path}")
+            yield line
+
+
 def parse_and_coalesce_v4(v4_gz_file: Path, asn_trie: RadixTrie) -> list[MergedRange]:
     """Parse IPv4 DB-IP city data, align micro-allocations to /24, and coalesce adjacent blocks."""
     print("[*] Processing DB-IP City IPv4 dataset (/24 aligned)...")
@@ -371,9 +387,8 @@ def parse_and_coalesce_v4(v4_gz_file: Path, asn_trie: RadixTrie) -> list[MergedR
     ranges: list[MergedRange] = []
     curr: Optional[MergedRange] = None
 
-    with gzip.open(v4_gz_file, "rt", encoding="utf-8", errors="replace") as f:
-        reader = csv.reader(f)
-        for row in reader:
+    reader = csv.reader(_iter_bounded_gzip_csv_lines(v4_gz_file))
+    for row in reader:
             if len(row) < 9:
                 continue
             cc = row[2].strip().upper()
@@ -426,9 +441,8 @@ def parse_and_coalesce_v6(v6_gz_file: Path, asn_trie: RadixTrie) -> list[MergedR
     ranges: list[MergedRange] = []
     curr: Optional[MergedRange] = None
 
-    with gzip.open(v6_gz_file, "rt", encoding="utf-8", errors="replace") as f:
-        reader = csv.reader(f)
-        for row in reader:
+    reader = csv.reader(_iter_bounded_gzip_csv_lines(v6_gz_file))
+    for row in reader:
             if len(row) < 9:
                 continue
             cc = row[2].strip().upper()
@@ -706,16 +720,13 @@ def authenticate_staged_dataset(
 
 
 def _install_owner_and_mode(path: Path) -> None:
-    try:
-        os.chmod(path, 0o640)
-        # Attempt to chown to gedefense:gedefense if running as root
-        if os.geteuid() == 0:
-            import pwd, grp
-            uid = pwd.getpwnam("gedefense").pw_uid
-            gid = grp.getgrnam("gedefense").gr_gid
-            os.chown(path, uid, gid)
-    except Exception:
-        pass
+    os.chmod(path, 0o640)
+    # Fail closed if root chown to gedefense:gedefense fails.
+    if os.geteuid() == 0:
+        import pwd, grp
+        uid = pwd.getpwnam("gedefense").pw_uid
+        gid = grp.getgrnam("gedefense").gr_gid
+        os.chown(path, uid, gid)
 
 
 def commit_staged_dataset(staged: StagedGeoIPDataset) -> Path:
@@ -797,6 +808,7 @@ def main() -> int:
     parser.add_argument("--signature", default="", help="Base64 Ed25519 signature over the canonical geoip.csv.sha256 JSON sidecar (pinned mirror key)")
     parser.add_argument("--verify-key", default="", help="Pinned raw Ed25519 public key for --signature")
     parser.add_argument("--signing-key", default="", help="Optional raw 0600 Ed25519 private key to sign the canonical sidecar and install geoip.csv.sig")
+    parser.add_argument("--allow-unpinned", action="store_true", help="Explicitly allow installing an unpinned dataset without expected digest or Ed25519 signature (non-production only)")
     args = parser.parse_args()
 
     try:
@@ -806,10 +818,15 @@ def main() -> int:
         return 2
     dest = Path(args.dest).expanduser()
     if not (args.expected_sha256 or (args.signature and args.verify_key) or args.signing_key):
+        if not args.allow_unpinned:
+            print(
+                "ERROR: refusing unpinned upstream GeoIP installation; supply --expected-sha256, "
+                "--signature + --verify-key, or --signing-key (or --allow-unpinned for local dev)",
+                file=sys.stderr,
+            )
+            return 2
         print(
-            "[!] WARNING: no --expected-sha256, --signature/--verify-key or --signing-key supplied; "
-            "the generated dataset is installed without an operator pin. Raw upstream downloads are "
-            "untrusted inputs; release automation must pin the output digest/signature.",
+            "[!] WARNING: --allow-unpinned enabled; installing unpinned upstream GeoIP dataset.",
             file=sys.stderr,
         )
 

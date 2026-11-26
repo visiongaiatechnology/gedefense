@@ -68,9 +68,17 @@ for binary in gedefense-control gedefense-access; do
 done
 [[ $("$ROOT/dist/gedefense-control" --version) == "$VERSION" ]]
 [[ $("$ROOT/dist/gedefense-access" --version) == "${VERSION}-access" ]]
-for artifact in gedefense-core gedefense-ebpf gedefense-cell-helper; do
+for artifact in gedefense-core gedefense-core-musl gedefense-ebpf gedefense-cell-helper; do
   [[ -f "$ROOT/dist/$artifact" ]] || { echo "missing release artifact dist/$artifact - run 'make rust' with the pinned Rust toolchains first (fail closed)" >&2; exit 1; }
 done
+if readelf -d "$ROOT/dist/gedefense-core-musl" 2>/dev/null | grep -q 'NEEDED'; then
+  echo "release musl core dist/gedefense-core-musl carries a dynamic NEEDED entry (fail closed)" >&2
+  exit 1
+fi
+if ! file "$ROOT/dist/gedefense-core-musl" | grep -Eq 'statically linked|static-pie linked'; then
+  echo "release musl core dist/gedefense-core-musl is not statically linked (fail closed)" >&2
+  exit 1
+fi
 ldd "$ROOT/dist/gedefense-access" | grep -q 'libargon2.so.1'
 ! ldd "$ROOT/dist/gedefense-access" | grep -q 'not found'
 
@@ -93,7 +101,8 @@ RELEASE_STAGE="$WORK/release-stage"
 mkdir -p "$RELEASE_STAGE"
 install -m 0755 "$ROOT/dist/gedefense-control" "$RELEASE_STAGE/gedefense-control"
 install -m 0755 "$ROOT/dist/gedefense-access" "$RELEASE_STAGE/gedefense-access"
-install -m 0755 "$ROOT/dist/gedefense-core" "$RELEASE_STAGE/gedefense-core"
+# F-05 / AP-0: ship the verified static musl build as the signed release core binary.
+install -m 0755 "$ROOT/dist/gedefense-core-musl" "$RELEASE_STAGE/gedefense-core"
 install -m 0755 "$ROOT/dist/gedefense-cell-helper" "$RELEASE_STAGE/gedefense-cell-helper"
 install -m 0644 "$ROOT/dist/gedefense-ebpf" "$RELEASE_STAGE/gedefense-ebpf"
 
@@ -122,12 +131,13 @@ release_tool verify-manifest --manifest "$RELEASE_STAGE/release-manifest.signed.
 
 echo "== build installer payload =="
 PAYLOAD="$WORK/payload"
-mkdir -p "$PAYLOAD/bin" "$PAYLOAD/rust" "$PAYLOAD/share" "$PAYLOAD/systemd" "$PAYLOAD/tmpfiles" "$PAYLOAD/templates" "$PAYLOAD/integration/linux" "$PAYLOAD/integration/nginx"
+mkdir -p "$PAYLOAD/bin" "$PAYLOAD/rust" "$PAYLOAD/share" "$PAYLOAD/systemd" "$PAYLOAD/tmpfiles" "$PAYLOAD/templates" "$PAYLOAD/scripts" "$PAYLOAD/integration/linux" "$PAYLOAD/integration/nginx"
 install -m 0755 "$ROOT/dist/gedefense-control" "$PAYLOAD/bin/gedefense-control"
 install -m 0755 "$ROOT/dist/gedefense-access" "$PAYLOAD/bin/gedefense-access"
 # POINT 2: the cell helper is shipped prebuilt (like control/access) and its
 # hash is rendered into the installer header by render-installer-header.py.
 install -m 0755 "$ROOT/dist/gedefense-cell-helper" "$PAYLOAD/bin/gedefense-cell-helper"
+install -m 0755 "$ROOT/scripts/apply-chameleon-profile.sh" "$PAYLOAD/scripts/apply-chameleon-profile.sh"
 cp -a "$ROOT/rust/." "$PAYLOAD/rust/"
 rm -rf "$PAYLOAD/rust/target"
 for f in README.md VALIDATION.md SECURITY.md THIRD-PARTY-LICENSES.md CRYPTOGRAPHY.md TOOLCHAINS.lock; do install -m 0644 "$ROOT/$f" "$PAYLOAD/share/$f"; done

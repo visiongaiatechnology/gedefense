@@ -88,9 +88,9 @@ type gatewayCriticalClaimKey struct{}
 
 // gatewayCriticalClaimMAC is the exact MAC the control plane recomputes:
 // HMAC-SHA256 over the domain-separated bytes role|step-up|timestamp|nonce with
-// the backend credential as the key.
-func gatewayCriticalClaimMAC(backendToken, role, stepUp string, timestamp int64, nonce string) []byte {
-	mac := hmac.New(sha256.New, []byte(backendToken))
+// the dedicated gateway critical claim key.
+func gatewayCriticalClaimMAC(claimKey []byte, role, stepUp string, timestamp int64, nonce string) []byte {
+	mac := hmac.New(sha256.New, claimKey)
 	mac.Write([]byte(gatewayClaimDomain))
 	mac.Write([]byte(role + "|" + stepUp + "|" + formatGatewayUnix(timestamp) + "|" + nonce))
 	return mac.Sum(nil)
@@ -118,13 +118,16 @@ func formatGatewayInt(value int64) string {
 
 // newGatewayCriticalClaim produces the four header values for one verified
 // step-up. The caller must already have consumed a valid proof for this session.
-func newGatewayCriticalClaim(backendToken string, now time.Time) (gatewayCriticalClaimHeaders, error) {
+func newGatewayCriticalClaim(claimKey []byte, now time.Time) (gatewayCriticalClaimHeaders, error) {
+	if len(claimKey) < 32 {
+		return gatewayCriticalClaimHeaders{}, errors.New("gateway claim key is not provisioned")
+	}
 	nonce, err := randomLowerHex(gatewayStepUpProofTokenBytes)
 	if err != nil {
 		return gatewayCriticalClaimHeaders{}, errors.New("claim nonce could not be generated")
 	}
 	timestamp := now.UTC().Unix()
-	mac := gatewayCriticalClaimMAC(backendToken, gatewayCriticalRole, gatewayStepUpMethodPassword, timestamp, nonce)
+	mac := gatewayCriticalClaimMAC(claimKey, gatewayCriticalRole, gatewayStepUpMethodPassword, timestamp, nonce)
 	return gatewayCriticalClaimHeaders{
 		Role:      gatewayCriticalRole,
 		StepUp:    gatewayStepUpMethodPassword + ":" + nonce,
@@ -165,6 +168,15 @@ func gatewayCriticalRoute(method, path string) bool {
 	case method == http.MethodDelete && strings.HasPrefix(path, "/api/v1/xdr/review/"):
 		id := strings.TrimPrefix(path, "/api/v1/xdr/review/")
 		return id != "" && !strings.Contains(id, "/")
+	case method == http.MethodPost && path == "/api/v1/xdr/permits":
+		return true
+	case method == http.MethodDelete && strings.HasPrefix(path, "/api/v1/xdr/permits/"):
+		id := strings.TrimPrefix(path, "/api/v1/xdr/permits/")
+		return id != "" && !strings.Contains(id, "/")
+	case method == http.MethodPost && path == "/api/v1/chameleon/reveal":
+		return true
+	case method == http.MethodPost && path == "/api/v1/xdr/update-window/override":
+		return true
 	}
 	return false
 }

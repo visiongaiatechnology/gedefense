@@ -4,8 +4,9 @@
 //! Everything crossing the wire or a syscall boundary has a hard cap; the error
 //! code list is closed (POINT2 spec §3). No serde/TOML: see `protocol`/`config`.
 
-use std::os::fd::RawFd;
+use std::os::fd::{OwnedFd, RawFd};
 use std::path::PathBuf;
+use std::sync::Arc;
 
 pub const ABI: &str = "cell-runtime-v1";
 #[allow(dead_code)]
@@ -155,6 +156,8 @@ pub struct CellSpec {
     pub wayland: bool,
     pub pipewire: bool,
     pub input_path: PathBuf,
+    /// Pre-opened, O_NOFOLLOW + SHA-256 verified read-only input FD (eliminates validate->spawn TOCTOU).
+    pub input_fd: Option<Arc<OwnedFd>>,
     pub input_size: u64,
     pub input_sha256: String,
     pub input_token: String,

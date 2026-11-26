@@ -345,7 +345,7 @@ function renderHardeningSwitches(checks) {
     const detail = document.createElement('small');
     detail.textContent = configurable
       ? String(check.recommendation || t('hardening.managedActive'))
-      : `${String(check.evidence || t('dynamic.notMeasurable'))} Â· ${String(check.recommendation || t('hardening.platformOnly'))}`;
+      : `${String(check.evidence || t('dynamic.notMeasurable'))} · ${String(check.recommendation || t('hardening.platformOnly'))}`;
     const meta = document.createElement('span');
     meta.className = 'hardening-control-meta';
     const domain = document.createElement('em');
@@ -431,7 +431,7 @@ function renderHardening(payload) {
     const parts = [t('hardening.coverageLine', { measured, total })];
     if (unavailable > 0) parts.push(t('hardening.coverageUnavailable', { count: unavailable }));
     if (!sufficient && payload?.coverage_note) parts.push(String(payload.coverage_note));
-    coverageNode.textContent = parts.join(' Â· ');
+    coverageNode.textContent = parts.join(' · ');
     coverageNode.setAttribute('data-sufficient', sufficient ? 'yes' : 'no');
   }
   text('hardeningCollected', payload?.collected_at ? formatTime(payload.collected_at) : t('hardening.noMeasurement'));

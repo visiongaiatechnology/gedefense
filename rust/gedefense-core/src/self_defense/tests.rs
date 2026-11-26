@@ -279,4 +279,26 @@ mod tests {
         assert_eq!(core.canary_runs, 1);
         assert_eq!(core.take_events().expect("drain"), "empty");
     }
+
+    #[test]
+    fn self_test_canary_hits_are_isolated_from_operator_ipc_drain() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = std::env::temp_dir().join(format!("vgt-canary-iso-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).expect("mkdir");
+        fs::set_permissions(&root, fs::Permissions::from_mode(0o750)).expect("chmod");
+        let broker = crate::canary::CanaryBroker::new(&[root.clone()]).expect("broker");
+        let self_test_path = root.join(SELF_TEST_DECOY_NAME);
+        broker.record_event(crate::canary::CanaryEvent {
+            pid: 7777,
+            uid: 0,
+            path: self_test_path.clone(),
+            canary_type: "DOTENV".to_owned(),
+            exec: false,
+        });
+        assert_eq!(broker.take_events().expect("operator drain"), "empty");
+        assert!(broker.consume_self_test_hit(&self_test_path, 7777));
+        assert!(!broker.consume_self_test_hit(&self_test_path, 7777));
+        let _ = fs::remove_dir_all(&root);
+    }
 }

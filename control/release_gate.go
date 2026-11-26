@@ -82,7 +82,7 @@ func (r *ReleaseController) currentBlockersLocked(target string, includeDuration
 		blockers = append(blockers, "mandatory evidence ledger is unavailable")
 	}
 	runtime := r.runtimeSettingsLocked()
-	if runtime.XDREnabled && snap.XDR.Degraded {
+	if runtime.XDREnabled && snap.XDR.Degraded && !isNonFatalSecCritThrottleReason(snap.XDR.DegradedReason) {
 		blockers = append(blockers, "XDR is degraded")
 	}
 	if r.cfg.L7.Enabled && target != ReleasePhaseObserve && target != ReleasePhaseDegraded && !snap.L7.Healthy {

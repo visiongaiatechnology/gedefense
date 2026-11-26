@@ -210,6 +210,8 @@ func (e *WitnessEngine) activateLocked() error {
 
 // ApplyRuntimeSettings applies a committed settings revision to the engine.
 func (e *WitnessEngine) ApplyRuntimeSettings(settings RuntimeSettings) error {
+	e.opsMu.Lock()
+	defer e.opsMu.Unlock()
 	e.mu.Lock()
 	next := effectiveWitnessSettings(settings)
 	if next == e.settings {

@@ -111,8 +111,9 @@ fn inspect_tc_ipv4(ctx: &TcContext, offset: usize) -> Result<bool, ()> {
         return Err(());
     }
     let key = Key::new(32, header.src);
-    let (src_port, dst_port, flags) = if header.version_ihl & 0x0f == 5 {
-        tc_transport_metadata(ctx, offset + mem::size_of::<Ipv4Hdr>(), header.protocol)
+    let ihl = usize::from(header.version_ihl & 0x0f);
+    let (src_port, dst_port, flags) = if ihl >= 5 && ihl <= 15 {
+        tc_transport_metadata(ctx, offset + ihl * 4, header.protocol)
     } else {
         (0, 0, 0)
     };

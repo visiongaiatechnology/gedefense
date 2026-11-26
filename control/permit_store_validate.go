@@ -73,8 +73,7 @@ func loadOrCreatePrivateKey(path string, length int) ([]byte, error) {
 	if err := ensurePrivateStoreDir(filepath.Dir(path)); err != nil {
 		return nil, err
 	}
-	raw, err := os.ReadFile(path)
-	if errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Lstat(path); errors.Is(err, os.ErrNotExist) {
 		key := make([]byte, length)
 		if _, err := rand.Read(key); err != nil {
 			return nil, errors.New("permit store key random source unavailable")
@@ -83,11 +82,14 @@ func loadOrCreatePrivateKey(path string, length int) ([]byte, error) {
 			return nil, err
 		}
 		return key, nil
-	}
-	if err != nil {
+	} else if err != nil {
 		return nil, fmt.Errorf("permit store key: %w", err)
 	}
 	if err := checkPrivateStoreFile(path, int64(length+16)); err != nil {
+		return nil, fmt.Errorf("permit store key: %w", err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
 		return nil, fmt.Errorf("permit store key: %w", err)
 	}
 	if len(raw) != length {

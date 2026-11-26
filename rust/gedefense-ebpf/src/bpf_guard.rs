@@ -198,6 +198,7 @@ fn emit_event(action: u8, command: u8, prog_type: u8, helper_mask: u32, helper_i
             [0u8; 8],
         );
     }
+    let (exe_dev, exe_ino) = crate::exec_inode::current_exe_dev_ino();
     let event = BpfGuardEvent {
         ts_ns,
         pid,
@@ -209,12 +210,8 @@ fn emit_event(action: u8, command: u8, prog_type: u8, helper_mask: u32, helper_i
         reserved: 0,
         helper_mask,
         helper_ids,
-        // Loader executable identity: resolving `current->mm->exe_file` would
-        // need task_struct offsets this guard does not own. Zero/zero is the
-        // documented "unresolved" identity; the control plane correlates the
-        // loader pid with the XDR exec sensor and records comm/pid evidence.
-        exe_dev: 0,
-        exe_ino: 0,
+        exe_dev,
+        exe_ino,
         comm,
     };
     if let Some(mut entry) = BPF_GUARD_EVENTS.reserve::<BpfGuardEvent>(0) {

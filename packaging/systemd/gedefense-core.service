@@ -66,7 +66,7 @@ ReadOnlyPaths=/opt/vgt/gedefense/current /etc/vgt/gedefense/secrets /etc/vgt/ged
 # a future, broader read from silently widening it. No write, no capability and
 # no address-family is added by this line.
 ReadOnlyPaths=-/sys/module -/proc/modules -/proc/sys/kernel/tainted
-ReadWritePaths=/run/vgt-gedefense /run/gedefense-scan /sys/fs/bpf /var/lib/vgt/gedefense/quarantine /var/lib/vgt/gedefense/canaries
+ReadWritePaths=/run/vgt-gedefense /run/gedefense-scan /sys/fs/bpf -/sys/fs/bpf/gedefense /var/lib/vgt/gedefense/quarantine /var/lib/vgt/gedefense/canaries
 # M1.1/M1.3 (6.2.0): the four on-write drop roots. They are the exact default
 # `--on-write-watch-root` set of the core; write access is required so the
 # quarantine broker can rename the detected file out of the drop path. The

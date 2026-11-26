@@ -88,12 +88,20 @@ check() {
 
 package() {
   local release_root="${pkgdir}/opt/vgt/gedefense/releases/${_release}"
+  local core_bin="${_source_root}/dist/gedefense-core"
+  if [[ -f "${_source_root}/dist/gedefense-core-musl" ]]; then
+    if readelf -d "${_source_root}/dist/gedefense-core-musl" 2>/dev/null | grep -q 'NEEDED'; then
+      printf 'Refusing dynamic NEEDED entry in gedefense-core-musl\n' >&2
+      return 1
+    fi
+    core_bin="${_source_root}/dist/gedefense-core-musl"
+  fi
 
   install -Dm755 "${_source_root}/dist/gedefense-control" \
     "${release_root}/bin/gedefense-control"
   install -Dm755 "${_source_root}/dist/gedefense-access" \
     "${release_root}/bin/gedefense-access"
-  install -Dm755 "${_source_root}/dist/gedefense-core" \
+  install -Dm755 "${core_bin}" \
     "${release_root}/libexec/gedefense-core"
   # POINT 2: privileged ephemeral parser-cell helper (root unit; the Go control
   # plane never spawns cells itself).

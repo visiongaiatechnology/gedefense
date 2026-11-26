@@ -350,7 +350,16 @@ func (c *witnessHTTPClient) doJSON(ctx context.Context, path string, body []byte
 					backoff = time.Hour
 				}
 			}
-			c.sleep(backoff)
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+			timer := time.NewTimer(backoff)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return nil, ctx.Err()
+			case <-timer.C:
+			}
 		}
 		request, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpointURL(path), bytes.NewReader(body))
 		if err != nil {

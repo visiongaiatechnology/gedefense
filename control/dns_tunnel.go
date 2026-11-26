@@ -190,6 +190,7 @@ type DNSTunnelEngine struct {
 	windowEvictions  uint64
 	domains          map[string]*dnsDomainState
 	seen             map[string]time.Time
+	pidLastQuery     map[int]time.Time
 	lastOverflow     time.Time
 	queries          uint64
 	droppedTotal     uint64
@@ -202,8 +203,9 @@ type DNSTunnelEngine struct {
 // drain/status answer.
 func NewDNSTunnelEngine() *DNSTunnelEngine {
 	return &DNSTunnelEngine{
-		domains: make(map[string]*dnsDomainState),
-		seen:    make(map[string]time.Time),
+		domains:      make(map[string]*dnsDomainState),
+		seen:         make(map[string]time.Time),
+		pidLastQuery: make(map[int]time.Time),
 	}
 }
 
@@ -347,6 +349,12 @@ func (e *XDREngine) consumeDnsStatus(status CoreDnsStatus, statusErr error, now 
 	t.capabilitySeen = true
 	known := t.capabilityKnown
 	t.mu.Unlock()
+	if e.styxBeacon != nil {
+		dnsAvail := e.DNSObservationAvailable()
+		e.styxBeacon.mu.Lock()
+		e.styxBeacon.cfg.DNSObservationAvailable = dnsAvail
+		e.styxBeacon.mu.Unlock()
+	}
 	if e.state == nil {
 		return
 	}
@@ -395,6 +403,9 @@ func (t *DNSTunnelEngine) observeBatchLocked(events []CoreDnsEvent, dropped uint
 	if t.seen == nil {
 		t.seen = make(map[string]time.Time)
 	}
+	if t.pidLastQuery == nil {
+		t.pidLastQuery = make(map[int]time.Time)
+	}
 	bucket := now.Unix() / int64(dnsWindowBucketWidth/time.Second)
 	accepted := 0
 	for _, event := range events {
@@ -407,6 +418,23 @@ func (t *DNSTunnelEngine) observeBatchLocked(events []CoreDnsEvent, dropped uint
 			continue
 		}
 		t.queries++
+		if observation.pid > 0 {
+			if len(t.pidLastQuery) >= 4096 {
+				cutoff := now.Add(-FlowTTLSeconds * time.Second)
+				for pid, seenAt := range t.pidLastQuery {
+					if seenAt.Before(cutoff) {
+						delete(t.pidLastQuery, pid)
+					}
+				}
+				if len(t.pidLastQuery) >= 4096 {
+					for pid := range t.pidLastQuery {
+						delete(t.pidLastQuery, pid)
+						break
+					}
+				}
+			}
+			t.pidLastQuery[observation.pid] = now
+		}
 		t.appendObservationLocked(observation)
 		t.rememberHourDistinctLocked(observation, now)
 	}
@@ -449,6 +477,22 @@ type DNSReport struct {
 // attribution exists (no styx file is edited here).
 func (e *XDREngine) DNSObservationAvailable() bool {
 	return e.dnsReportLockedProjection().Observation == "available"
+}
+
+// DNSQueryObservedForPID reports whether the DNS capture observed at least one
+// DNS query from pid since the given cutoff timestamp.
+func (e *XDREngine) DNSQueryObservedForPID(pid int, since time.Time) bool {
+	if e == nil || e.dnsTunnel == nil || pid <= 0 {
+		return false
+	}
+	t := e.dnsTunnel
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.pidLastQuery == nil {
+		return false
+	}
+	last, ok := t.pidLastQuery[pid]
+	return ok && !last.Before(since)
 }
 
 // DNSReport returns the bounded operator projection of the DNS capture and the

@@ -230,13 +230,14 @@ pub fn sha256_reader<R: Read>(reader: &mut R, max_bytes: Option<u64>) -> Result<
 /// Checks (all on the opened descriptor): token is 32 lowercase hex chars,
 /// file is a regular non-symlink, owned by `owner_uid` (the `gedefense`
 /// account), mode 0640, size equals `meta.size`, size ≤ cap and SHA-256
-/// matches.  The returned path is only used for the read-only cell bind.
-pub fn validate_input(
+/// matches. Returns both the canonical path and the rewound, verified `File`
+/// descriptor so the sandbox never re-opens `staging_inputs` by path (TOCTOU).
+pub fn validate_input_fd(
     staging_inputs: &Path,
     meta: &InputMeta,
     owner_uid: u32,
     max_input_bytes: u64,
-) -> Result<PathBuf, ErrorCode> {
+) -> Result<(PathBuf, File), ErrorCode> {
     meta.validate(max_input_bytes.min(HARD_MAX_INPUT_BYTES))?;
     let path = staging_inputs.join(meta.file_name());
     if path.parent() != Some(staging_inputs) {
@@ -261,7 +262,18 @@ pub fn validate_input(
     if size != meta.size || sha != meta.sha256 {
         return Err(ErrorCode::InputInvalid);
     }
-    Ok(path)
+    f.seek(SeekFrom::Start(0)).map_err(|_| ErrorCode::InputInvalid)?;
+    Ok((path, f))
+}
+
+#[allow(dead_code)]
+pub fn validate_input(
+    staging_inputs: &Path,
+    meta: &InputMeta,
+    owner_uid: u32,
+    max_input_bytes: u64,
+) -> Result<PathBuf, ErrorCode> {
+    validate_input_fd(staging_inputs, meta, owner_uid, max_input_bytes).map(|(p, _)| p)
 }
 /// Validate an export destination directory `<staging_exports>/<uuid>`.
 /// Returns the `export.bin` path (creation happens in `export.rs`).

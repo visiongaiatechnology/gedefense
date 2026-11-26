@@ -336,10 +336,11 @@ func buildOverviewSituation(in situationInput) OverviewSituationResponse {
 	layers = append(layers, OverviewSituationLayer{ID: "web", Label: "Web & TLS", State: webState, Metric: webMetric})
 
 	// 4. XDR & Titan
+	xdrDegraded := isXDROperationallyDegraded(snap.XDR)
 	xdrState := "off"
 	xdrMetric := "off"
 	if snap.XDR.Enabled {
-		if snap.XDR.Degraded {
+		if xdrDegraded {
 			xdrState = "warn"
 			xdrMetric = "degraded"
 		} else if strings.EqualFold(snap.XDR.Mode, "enforce") {
@@ -456,7 +457,7 @@ func buildOverviewSituation(in situationInput) OverviewSituationResponse {
 			}
 			addReason("warn", "fim_new_files", strconv.Itoa(snap.FIM.LastScan.New)+" new unbaselined system file(s) pending FIM review.")
 		}
-		if snap.XDR.Degraded {
+		if xdrDegraded {
 			level = "yellow"
 			addReason("warn", "xdr_degraded", "XDR sensor reported degraded telemetry pipeline.")
 		}
