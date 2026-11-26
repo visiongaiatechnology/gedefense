@@ -20,8 +20,6 @@
 
 **KERNEL-NEAR NETWORK DEFENSE · HOST XDR · `AP-0`–`AP-9` ANTI-SPYWARE · ENCRYPTED EVIDENCE · REVERSIBLE HARDENING · NO CLOUD CONTROL PLANE**
 
-<img width="260" height="358" alt="Sir Quacksec — VGT" src="https://github.com/user-attachments/assets/1ce4d172-df4f-49a5-aaa1-dd24074b8073" />
-
 <br />
 
 🌐 **Languages / Sprachen / Языки / 语言:**  
