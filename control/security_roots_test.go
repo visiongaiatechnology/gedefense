@@ -59,6 +59,55 @@ func TestSecurityProtectionRootsOnlyAddsExistingPaths(t *testing.T) {
 	}
 }
 
+func TestSecurityProtectionRootsSkipsSymlinksAndUnreadableCandidates(t *testing.T) {
+	dir := t.TempDir()
+	readableFile := filepath.Join(dir, "sshd_config")
+	if err := os.WriteFile(readableFile, []byte("PermitRootLogin no\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	emptyDir := filepath.Join(dir, "empty_dir")
+	if err := os.Mkdir(emptyDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	symTarget := filepath.Join(dir, "sym_link")
+	if err := os.Symlink(readableFile, symTarget); err != nil {
+		t.Fatal(err)
+	}
+	lockedDir := filepath.Join(dir, "root_only_dir")
+	if err := os.Mkdir(lockedDir, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(lockedDir, 0o755) })
+
+	original := securityProtectionRootCandidates
+	securityProtectionRootCandidates = []string{readableFile, emptyDir, symTarget, lockedDir}
+	defer func() { securityProtectionRootCandidates = original }()
+
+	_, added := securityProtectionRoots([]string{"/opt/vgt/gedefense/current/bin/gedefense-control"}, true, securityProtectionRootLimit)
+	hasReadable, hasEmpty, hasSym, hasLocked := false, false, false, false
+	for _, p := range added {
+		switch p {
+		case readableFile:
+			hasReadable = true
+		case emptyDir:
+			hasEmpty = true
+		case symTarget:
+			hasSym = true
+		case lockedDir:
+			hasLocked = true
+		}
+	}
+	if !hasReadable || !hasEmpty {
+		t.Fatalf("expected readable file and empty dir in added=%v", added)
+	}
+	if hasSym {
+		t.Fatalf("symlink candidate must not be added: %v", added)
+	}
+	if os.Geteuid() != 0 && hasLocked {
+		t.Fatalf("unreadable 0000 dir must be skipped for non-root user: %v", added)
+	}
+}
+
 // TestAttackChainRulesAreWired proves the four new rules are part of the catalogue and that an
 // operator may tune them - a rule that cannot be overridden is a rule that gets switched off
 // wholesale instead of adjusted.

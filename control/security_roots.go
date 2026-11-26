@@ -5,6 +5,8 @@
 package main
 
 import (
+	"errors"
+	"io"
 	"os"
 	"sort"
 	"strings"
@@ -82,8 +84,10 @@ func securityProtectionRoots(configured []string, includeSecurityRoots bool, lim
 		if _, exists := seen[candidate]; exists {
 			continue
 		}
-		if !pathExists(candidate) {
-			// A path that is not on this host would only produce "missing" findings for ever.
+		if !pathReadableCandidate(candidate) {
+			// A path that does not exist or cannot be opened read-only by the unprivileged
+			// control service (e.g. 0750 root:root /etc/sudoers.d) would either emit
+			// permanent missing findings or quarantine FIM with EACCES.
 			continue
 		}
 		seen[candidate] = struct{}{}
@@ -94,7 +98,27 @@ func securityProtectionRoots(configured []string, includeSecurityRoots bool, lim
 	return roots, added
 }
 
-func pathExists(path string) bool {
-	info, err := os.Stat(path)
-	return err == nil && info != nil
+func pathReadableCandidate(path string) bool {
+	info, err := os.Lstat(path)
+	if err != nil || info == nil || info.Mode()&os.ModeSymlink != 0 {
+		return false
+	}
+	if info.IsDir() {
+		f, err := os.Open(path)
+		if err != nil {
+			return false
+		}
+		defer f.Close()
+		_, err = f.Readdirnames(1)
+		return err == nil || errors.Is(err, io.EOF)
+	}
+	if !info.Mode().IsRegular() {
+		return false
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	_ = f.Close()
+	return true
 }

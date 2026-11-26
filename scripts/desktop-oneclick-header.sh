@@ -61,7 +61,16 @@ cleanup() {
         fi
     done
 }
+on_err() {
+    local line=$1 rc=$?
+    printf 'ERROR: desktop installer failed at line %s (exit %s).\n' "$line" "$rc" >&2
+    if (( LOG_READY )) && [[ -s "$LOG_FILE" ]]; then
+        printf '--- Last 20 lines of %s ---\n' "$LOG_FILE" >&2
+        tail -n 20 -- "$LOG_FILE" >&2 || true
+    fi
+}
 trap cleanup EXIT
+trap 'on_err "$LINENO"' ERR
 
 release_placeholder_ok() {
     local value=$1 name=$2

@@ -2,7 +2,8 @@
 # STATUS: DIAMANT VGT SUPREME
 # Toolchain gate (F-25 / G-SC-12 / HB-6).
 #
-# - exact Node.js pin and Go >= pinned release version,
+# - Go >= pinned release version (stripping distro -X:... experiment suffixes)
+#   and Node.js >= pinned version for local syntax checks (--strict-node-pin enforces exact match),
 # - Go security floor: a release must be built with a toolchain that contains
 #   the known crypto/x509 and net/http fixes (GO-2026-6809 fixed in go1.26.10;
 #   GO-2026-6600..6617 fixed in go1.26.9). ``--require-security-floor`` makes a
@@ -13,11 +14,13 @@ set -Eeuo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
 LOCK="$ROOT/TOOLCHAINS.lock"
 REQUIRE_FLOOR=0
+STRICT_NODE=0
 SELF_TEST=0
 TEST_VERSION_GE=()
 while [[ $# -gt 0 ]]; do
   case $1 in
     --require-security-floor) REQUIRE_FLOOR=1 ;;
+    --strict-node-pin) STRICT_NODE=1 ;;
     --self-test) SELF_TEST=1 ;;
     --test-version-ge)
       [[ $# -ge 3 ]] || { echo "--test-version-ge requires LEFT RIGHT" >&2; exit 2; }
@@ -104,16 +107,24 @@ GO_SECURITY_FLOOR=${GEDEFENSE_GO_SECURITY_FLOOR:-1.27.4}
 command -v go >/dev/null 2>&1 || { echo "missing Go toolchain" >&2; exit 1; }
 command -v node >/dev/null 2>&1 || { echo "missing Node.js toolchain" >&2; exit 1; }
 
-ACTUAL_GO_VERSION=$(go env GOVERSION | sed 's/^go//')
+ACTUAL_GO_VERSION=$(go env GOVERSION | sed -E 's/^go//; s/-X:[^[:space:]]+$//')
 ACTUAL_NODE=$(node --version)
+ACTUAL_NODE_VERSION=${ACTUAL_NODE#v}
 if ! version_ge "$ACTUAL_GO_VERSION" "$EXPECTED_GO"; then
   echo "Go release toolchain too old: pinned go$EXPECTED_GO, got go$ACTUAL_GO_VERSION" >&2
   exit 1
 fi
-[[ $ACTUAL_NODE == "v$EXPECTED_NODE" ]] || {
-  echo "Node.js release toolchain mismatch: expected v$EXPECTED_NODE, got $ACTUAL_NODE" >&2
-  exit 1
-}
+if (( STRICT_NODE == 1 )); then
+  [[ $ACTUAL_NODE == "v$EXPECTED_NODE" ]] || {
+    echo "Node.js release toolchain mismatch: expected v$EXPECTED_NODE, got $ACTUAL_NODE" >&2
+    exit 1
+  }
+else
+  if ! version_ge "$ACTUAL_NODE_VERSION" "$EXPECTED_NODE"; then
+    echo "Node.js toolchain too old: minimum v$EXPECTED_NODE, got $ACTUAL_NODE" >&2
+    exit 1
+  fi
+fi
 
 if ! version_ge "$EXPECTED_GO" "$GO_SECURITY_FLOOR"; then
   message="TOOLCHAINS.lock pins Go $EXPECTED_GO but the patched security floor is $GO_SECURITY_FLOOR (GO-2026-6809 crypto/x509; net/http and TLS fixes in 1.26.9)."
@@ -124,4 +135,4 @@ if ! version_ge "$EXPECTED_GO" "$GO_SECURITY_FLOOR"; then
   fi
 fi
 
-printf 'Release toolchains verified: Go %s (pinned %s, security floor %s), Node.js %s\n' "$ACTUAL_GO_VERSION" "$EXPECTED_GO" "$GO_SECURITY_FLOOR" "$EXPECTED_NODE"
+printf 'Release toolchains verified: Go %s (pinned %s, security floor %s), Node.js %s (min %s)\n' "$ACTUAL_GO_VERSION" "$EXPECTED_GO" "$GO_SECURITY_FLOOR" "$ACTUAL_NODE_VERSION" "$EXPECTED_NODE"
