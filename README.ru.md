@@ -10,7 +10,7 @@
 [![License](https://img.shields.io/badge/License-AGPL--3.0--only-blue?style=for-the-badge)](https://www.gnu.org/licenses/agpl-3.0)
 [![Version](https://img.shields.io/badge/Version-6.3.0-orange?style=for-the-badge)](RELEASE-NOTES.md)
 [![Edition](https://img.shields.io/badge/Edition-GeDefense_Vasili_Edition-ff6f61?style=for-the-badge)](RELEASE-NOTES.md)
-[![Status](https://img.shields.io/badge/Release-v6.3.0_(Current)-brightgreen?style=for-the-badge)](RELEASE-NOTES.md)
+[![Status](https://img.shields.io/badge/Stage-Public_Beta_v6.3.0-yellow?style=for-the-badge)](BETA-TEST-PLAN.md)
 [![Platform](https://img.shields.io/badge/Platform-Linux_x86__64-lightgrey?style=for-the-badge&logo=linux)](docs/INSTALLATION.md)
 [![Data Plane](https://img.shields.io/badge/Data_Plane-Rust_eBPF%2FXDP%2FLSM-red?style=for-the-badge&logo=rust)](docs/ARCHITECTURE.md)
 [![Control Plane](https://img.shields.io/badge/Control_Plane-Go_1.27-00ADD8?style=for-the-badge&logo=go)](docs/ARCHITECTURE.md)
@@ -79,8 +79,8 @@ VGT GeDefense Linux 6.3.0
 ```
 
 > [!IMPORTANT]
-> **Готовность к эксплуатации и квалификация целевого хоста (`6.3.0`):**  
-> GeDefense Linux `6.3.0` — прошедший аудит и подтверждённый бенчмарками **Production-Candidate релиз**. Каждый выпуск сопровождается криптографической прослеживаемостью (`SHA256SUMS`, SPDX SBOM, подписанными манифестами/индексом), тестами Go/Rust, 10-этапным аудитом и воспроизводимыми прогонами HardRed `1.2` / `1.3` и ARES (`PASS`). На хосте система всегда стартует безопасно в режиме `observe` и требует проверки ядра (`lsm=...,bpf`), XDP-драйвера, systemd/IPC, Management Allowlist и прочтения [`SECURITY.md`](SECURITY.md) перед включением `enforce`.
+> **Статус Public Beta и квалификация целевого хоста (`6.3.0`):**  
+> GeDefense Linux `6.3.0` по-прежнему находится в активной фазе **Public Beta** (публичное тестирование и квалификация; см. [`BETA-TEST-PLAN.md`](BETA-TEST-PLAN.md)). Каждый выпуск сопровождается криптографической прослеживаемостью (`SHA256SUMS`, SPDX SBOM, подписанными манифестами/индексом), тестами Go/Rust, 10-этапным аудитом и воспроизводимыми прогонами HardRed `1.2` / `1.3` и ARES (`PASS`). На хосте система всегда стартует безопасно в режиме `observe` и требует проверки ядра (`lsm=...,bpf`), XDP-драйвера, systemd/IPC, Management Allowlist и прочтения [`SECURITY.md`](SECURITY.md) перед включением `enforce`.
 
 ---
 

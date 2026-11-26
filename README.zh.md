@@ -10,7 +10,7 @@
 [![License](https://img.shields.io/badge/License-AGPL--3.0--only-blue?style=for-the-badge)](https://www.gnu.org/licenses/agpl-3.0)
 [![Version](https://img.shields.io/badge/Version-6.3.0-orange?style=for-the-badge)](RELEASE-NOTES.md)
 [![Edition](https://img.shields.io/badge/Edition-GeDefense_Vasili_Edition-ff6f61?style=for-the-badge)](RELEASE-NOTES.md)
-[![Status](https://img.shields.io/badge/Release-v6.3.0_(Current)-brightgreen?style=for-the-badge)](RELEASE-NOTES.md)
+[![Status](https://img.shields.io/badge/Stage-Public_Beta_v6.3.0-yellow?style=for-the-badge)](BETA-TEST-PLAN.md)
 [![Platform](https://img.shields.io/badge/Platform-Linux_x86__64-lightgrey?style=for-the-badge&logo=linux)](docs/INSTALLATION.md)
 [![Data Plane](https://img.shields.io/badge/Data_Plane-Rust_eBPF%2FXDP%2FLSM-red?style=for-the-badge&logo=rust)](docs/ARCHITECTURE.md)
 [![Control Plane](https://img.shields.io/badge/Control_Plane-Go_1.27-00ADD8?style=for-the-badge&logo=go)](docs/ARCHITECTURE.md)
@@ -79,8 +79,8 @@ VGT GeDefense Linux 6.3.0
 ```
 
 > [!IMPORTANT]
-> **生产就绪度与目标主机资格认证声明 (`6.3.0`)：**  
-> GeDefense Linux `6.3.0` 是通过审计与基准测试验证的**生产候选 / 主机资格版本**。每次发布均附带可验证的构建溯源（`SHA256SUMS`、SPDX SBOM、Ed25519 签名清单与索引）、Go/Rust 自动化测试、10 阶段静态安全审计以及完整的 HardRed `1.2` / `1.3` 与 ARES 实测结果（`PASS`）。部署到目标主机时系统默认以 `observe` 安全模式启动；启用 `enforce` 前必须完成目标内核 (`lsm=...,bpf`)、网卡 XDP 模式、systemd/IPC 及管理白名单验证，并审阅 [`SECURITY.md`](SECURITY.md)。
+> **公开测试版 (Public Beta) 与目标主机资格声明 (`6.3.0`)：**  
+> GeDefense Linux `6.3.0` 目前仍处于活跃的 **Public Beta（公开测试）** 阶段（详见 [`BETA-TEST-PLAN.md`](BETA-TEST-PLAN.md)）。每次发布均附带可验证的构建溯源（`SHA256SUMS`、SPDX SBOM、Ed25519 签名清单与索引）、Go/Rust 自动化测试、10 阶段静态安全审计以及完整的 HardRed `1.2` / `1.3` 与 ARES 实测结果（`PASS`）。部署到目标主机时系统默认以 `observe` 安全模式启动；启用 `enforce` 前必须完成目标内核 (`lsm=...,bpf`)、网卡 XDP 模式、systemd/IPC 及管理白名单验证，并审阅 [`SECURITY.md`](SECURITY.md)。
 
 ---
 

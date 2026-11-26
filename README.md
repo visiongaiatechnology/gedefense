@@ -8,7 +8,7 @@
 [![License](https://img.shields.io/badge/License-AGPL--3.0--only-blue?style=for-the-badge)](https://www.gnu.org/licenses/agpl-3.0)
 [![Version](https://img.shields.io/badge/Version-6.3.0-orange?style=for-the-badge)](RELEASE-NOTES.md)
 [![Edition](https://img.shields.io/badge/Edition-GeDefense_Vasili_Edition-ff6f61?style=for-the-badge)](RELEASE-NOTES.md)
-[![Status](https://img.shields.io/badge/Release-v6.3.0_(Current)-brightgreen?style=for-the-badge)](RELEASE-NOTES.md)
+[![Status](https://img.shields.io/badge/Stage-Public_Beta_v6.3.0-yellow?style=for-the-badge)](BETA-TEST-PLAN.md)
 [![Platform](https://img.shields.io/badge/Platform-Linux_x86__64-lightgrey?style=for-the-badge&logo=linux)](docs/INSTALLATION.md)
 [![Data Plane](https://img.shields.io/badge/Data_Plane-Rust_eBPF%2FXDP%2FLSM-red?style=for-the-badge&logo=rust)](docs/ARCHITECTURE.md)
 [![Control Plane](https://img.shields.io/badge/Control_Plane-Go_1.27-00ADD8?style=for-the-badge&logo=go)](docs/ARCHITECTURE.md)
@@ -75,8 +75,8 @@ VGT GeDefense Linux 6.3.0
 ```
 
 > [!IMPORTANT]
-> **Production Readiness & Host Qualification Status (`6.3.0`):**  
-> GeDefense Linux `6.3.0` is an audited, benchmark-verified **production-candidate / host-qualified release**. Every build ships with cryptographic provenance (`SHA256SUMS`, SPDX SBOM, signed manifest/index), passing Go/Rust test suites, 10-stage static security audits, and reproducible HardRed `1.2` / `1.3` + ARES evaluations (`PASS`). On deployment targets, installations start safely in `observe` and require target-host qualification (`lsm=...,bpf`, NIC XDP mode, systemd, IPC, allowlist sync) plus reviewing [`SECURITY.md`](SECURITY.md) before enabling `enforce`.
+> **Public Beta & Host Qualification Status (`6.3.0`):**  
+> GeDefense Linux `6.3.0` remains an active **Public Beta** release (public field validation; see [`BETA-TEST-PLAN.md`](BETA-TEST-PLAN.md)). Every build ships with cryptographic provenance (`SHA256SUMS`, SPDX SBOM, signed manifest/index), passing Go/Rust test suites, 10-stage static security audits, and reproducible HardRed `1.2` / `1.3` + ARES evaluations (`PASS`). On deployment targets, installations start safely in `observe` and require target-host qualification (`lsm=...,bpf`, NIC XDP mode, systemd, IPC, allowlist sync) plus reviewing [`SECURITY.md`](SECURITY.md) before enabling `enforce`.
 
 ---
 

@@ -133,6 +133,7 @@ jobs:
           # persistence target; the release gate refuses any dynamically linked
           # core artifact (no dynamic NEEDED entry, statically linked ELF).
           cargo +1.97.1 build --locked --release --manifest-path rust/Cargo.toml -p gedefense-core --target x86_64-unknown-linux-musl
+          mkdir -p dist
           install -m 0755 rust/target/x86_64-unknown-linux-musl/release/gedefense-core dist/gedefense-core-musl
           ! readelf -d dist/gedefense-core-musl | grep -q 'NEEDED'
           file dist/gedefense-core-musl | grep -Eq 'statically linked|static-pie linked'
